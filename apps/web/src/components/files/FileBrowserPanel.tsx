@@ -1,40 +1,88 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import type {
-  ContextMenuItem as TreeContextMenuItem,
-  ContextMenuOpenContext as TreeContextMenuOpenContext,
-} from "@pierre/trees";
-import type { EnvironmentId, ProjectEntry } from "@d4research/contracts";
-import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
-import { settlePromise } from "@d4research/client-runtime/state/runtime";
+import { joinHostPath } from "./filePath";
+import type { EnvironmentId, GitFileChange, ProjectEntry } from "@d4research/contracts";
 import { serializeComposerFileLink } from "@d4research/shared/composerTrigger";
-import * as AsyncResult from "effect/reactivity/AsyncResult";
-import * as Cause from "effect/Cause";
-import { ChevronsDownUp, ChevronsUpDown } from "lucide";
-import { useEffect, useRef, useState } from "react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
-import { MorphIcon } from "~/components/MorphIcon";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
-import { T3_PIERRE_ICONS } from "~/pierre-icons";
-import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
-
-import { joinHostPath } from "./filePath";
-import { createFileTreeDragMentionController } from "./fileTreeDragMention";
-import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
-import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
-import { useDirectoryEntries } from "./useDirectoryEntries";
+import { useFileContextMenu } from "~/fileContextMenu";
+import { projectEnvironment } from "~/state/projects";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { useProjectPathSearch } from "~/state/queries";
+import { resolvePathLinkTarget } from "~/terminal-links";
+
+import { NativeProjectFileTree } from "./NativeProjectFileTree";
+import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import { mergeDirectoryListings } from "./directoryListings";
+import { useGitDetailedStatus } from "./gitChangesState";
+
+function ExpandedDirectory(props: {
+  environmentId: EnvironmentId;
+  cwd: string;
+  path: string;
+  refreshId: number;
+  active: boolean;
+  workspaceMutationId: string | null;
+  onEntries: (path: string, entries: readonly ProjectEntry[]) => void;
+}) {
+  const query = useProjectEntriesQuery(props.environmentId, props.cwd, props.path, props.active);
+  useEffect(() => {
+    if (query.data) props.onEntries(props.path, query.data.entries);
+    else if (query.error) props.onEntries(props.path, []);
+  }, [props.onEntries, props.path, query.data, query.error]);
+  useWorkspaceMutationRefresh({
+    enabled: props.active,
+    mutationId: `${props.refreshId}:${props.workspaceMutationId ?? ""}`,
+    resourceKey: props.path,
+    refresh: query.refresh,
+  });
+  return null;
+}
+
+/** Status reads run only for the visible tree and follow its filesystem invalidations. */
+function FileTreeStatus(props: {
+  environmentId: EnvironmentId;
+  cwd: string;
+  revision: unknown;
+  mutationId: string | null;
+  refreshId: number;
+  onStatus: (files: readonly GitFileChange[]) => void;
+}) {
+  const status = useGitDetailedStatus(props.environmentId, props.cwd);
+  useEffect(() => {
+    status.refresh();
+  }, [props.revision, status.refresh]);
+  useWorkspaceMutationRefresh({
+    mutationId: `${props.refreshId}:${props.mutationId ?? ""}`,
+    resourceKey: `tree-status:${props.environmentId}:${props.cwd}`,
+    refresh: status.refresh,
+  });
+  useEffect(() => {
+    props.onStatus(status.data?.files ?? []);
+  }, [props.onStatus, status.data]);
+  return null;
+}
 
 interface FileBrowserPanelProps {
+  active?: boolean;
   environmentId: EnvironmentId;
   cwd: string;
   projectName: string;
@@ -49,11 +97,7 @@ interface FileBrowserPanelProps {
    */
   hostFolder?: boolean;
   onRefreshSelectedFile?: () => void;
-  workspaceMutationId: string | null;
-}
-
-function treePath(entry: ProjectEntry): string {
-  return entry.kind === "directory" ? `${entry.path}/` : entry.path;
+  workspaceMutationId?: string | null;
 }
 
 function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }) {
@@ -77,10 +121,30 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
   );
 }
 
+function CollapseDirectoriesButton(props: { onCollapse: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Collapse all directories except the open file"
+            onClick={props.onCollapse}
+          />
+        }
+      >
+        <ChevronsDownUpIcon />
+      </TooltipTrigger>
+      <TooltipPopup>Collapse all, keeping the open file</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function FileSearchField(props: {
   ariaLabel: string;
   name: string;
-  onClose: () => void;
   onValueChange: (value: string) => void;
   value: string;
 }) {
@@ -97,7 +161,7 @@ function FileSearchField(props: {
         onChange={(event) => props.onValueChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
-          props.onClose();
+          props.onValueChange("");
           event.currentTarget.blur();
         }}
       />
@@ -105,35 +169,24 @@ function FileSearchField(props: {
   );
 }
 
-// The tree diffs `treePaths` by identity, so the panel must keep this result cached
-// across the hooks that read it.
-function buildTreeEntries(
-  directoryEntries: readonly ProjectEntry[],
-  searchEntries: readonly ProjectEntry[],
-  searchPending: boolean,
-  query: string,
-) {
-  const result = new Map(directoryEntries.map((entry) => [entry.path, entry]));
-  if (query.trim() && !searchPending) {
-    for (const entry of searchEntries) {
-      if (!result.has(entry.path)) result.set(entry.path, entry);
-      const segments = entry.path.split("/");
-      for (let index = 1; index < segments.length; index++) {
-        const path = segments.slice(0, index).join("/");
-        if (!result.has(path)) result.set(path, { path, kind: "directory" });
-      }
-    }
-  }
-  const entries = [...result.values()];
-  const entryKinds: ReadonlyMap<string, ProjectEntry["kind"]> = new Map(
-    entries.map((entry) => [entry.path, entry.kind] as const),
+/**
+ * Ceiling on what one delete keeps in memory to be undoable. Past it the delete still happens; it
+ * just stops promising it can be taken back.
+ */
+const UNDO_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+
+const UNDO_SHORTCUT_LABEL = isMacPlatform(navigator.platform) ? "\u2318Z" : "Ctrl+Z";
+
+function uniqueProjectEntries(entries: ReadonlyArray<ProjectEntry>): ProjectEntry[] {
+  return Array.from(
+    new Map(
+      entries.map((entry) => [`${entry.kind}:${entry.path.replace(/\/+$/, "")}`, entry]),
+    ).values(),
   );
-  const treePaths = entries.map(treePath);
-  const directoryPaths = entries.filter((entry) => entry.kind === "directory").map(treePath);
-  return { entries, entryKinds, treePaths, directoryPaths };
 }
 
 export default function FileBrowserPanel({
+  active = true,
   environmentId,
   cwd,
   projectName,
@@ -141,7 +194,7 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   onRefreshSelectedFile,
-  workspaceMutationId,
+  workspaceMutationId = null,
   hostFolder = false,
 }: FileBrowserPanelProps) {
   const panelPath = (relativePath: string) =>
@@ -149,430 +202,521 @@ export default function FileBrowserPanel({
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const fileContextMenu = useFileContextMenu(environmentId);
-  const {
-    entries: directoryEntries,
-    load,
-    refresh,
-    ready,
-    error,
-    isPending,
-    loadingDirectories,
-  } = useDirectoryEntries(environmentId, cwd);
+  const entriesQuery = useProjectEntriesQuery(environmentId, cwd, "", active);
+  const [expandedDirectories, setExpandedDirectories] = useState<readonly string[]>([]);
+  const [directoryListings, setDirectoryListings] = useState<
+    ReadonlyMap<string, readonly ProjectEntry[]>
+  >(() => new Map());
+  const [refreshId, setRefreshId] = useState(0);
   const [query, setQuery] = useState("");
-  const [expandAll, setExpandAll] = useState(false);
-  const pathSearch = useProjectPathSearch(
-    { environmentId, cwd: hostFolder ? null : cwd, query: query.slice(0, 256) },
+  const deferredQuery = useDeferredValue(query);
+  const search = useProjectPathSearch(
+    { environmentId, cwd: hostFolder ? null : cwd, query: deferredQuery, kind: "file" },
     200,
   );
-  const { entries, entryKinds, treePaths, directoryPaths } = buildTreeEntries(
-    directoryEntries,
-    pathSearch.entries,
-    pathSearch.isPending,
-    query,
-  );
-  const entryKindsRef = useRef(entryKinds);
-  const previousTreePathsRef = useRef<readonly string[] | null>(null);
-  const syncingSelectionRef = useRef(false);
-  const treeSelectionPathRef = useRef<string | null>(null);
-  const handledRevealRef = useRef<{ path: string; revealId: number } | null>(null);
-
-  // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
-  // capture the right-click position ourselves; contextmenu is a composed
-  // event, so a capture-phase listener sees it with viewport coordinates.
-  const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
-  useEffect(() => {
-    const capturePointer = (event: MouseEvent) => {
-      contextMenuPointerRef.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
-    };
-    document.addEventListener("contextmenu", capturePointer, true);
-    return () => document.removeEventListener("contextmenu", capturePointer, true);
+  const onExpandedDirectoriesChange = useCallback((paths: readonly string[]) => {
+    setExpandedDirectories((current) =>
+      current.length === paths.length && current.every((path, i) => path === paths[i])
+        ? current
+        : paths,
+    );
+    setDirectoryListings((current) => {
+      if ([...current.keys()].every((path) => paths.includes(path))) return current;
+      return new Map([...current].filter(([path]) => paths.includes(path)));
+    });
   }, []);
+  const onDirectoryEntries = useCallback((path: string, entries: readonly ProjectEntry[]) => {
+    setDirectoryListings((current) =>
+      current.get(path) === entries ? current : new Map(current).set(path, entries),
+    );
+  }, []);
+  const deleteEntry = useAtomCommand(projectEnvironment.deleteEntry, { reportFailure: false });
+  const readFileOnce = useAtomCommand(projectEnvironment.readFileOnce, { reportFailure: false });
+  const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const entries = useMemo(
+    () =>
+      uniqueProjectEntries(
+        deferredQuery.trim() && !hostFolder
+          ? search.entries
+          : mergeDirectoryListings(
+              entriesQuery.data?.entries ?? [],
+              directoryListings,
+              expandedDirectories,
+            ),
+      ),
+    [
+      hostFolder,
+      deferredQuery,
+      search.entries,
+      entriesQuery.data?.entries,
+      directoryListings,
+      expandedDirectories,
+    ],
+  );
+  const loadingDirectories = useMemo(
+    () => new Set(expandedDirectories.filter((path) => !directoryListings.has(path))),
+    [expandedDirectories, directoryListings],
+  );
+  const treeRevision = useMemo(
+    () => ({ root: entriesQuery.data, directories: directoryListings }),
+    [entriesQuery.data, directoryListings],
+  );
+  const filePaths = useMemo(
+    () => new Set(entries.filter((entry) => entry.kind === "file").map((entry) => entry.path)),
+    [entries],
+  );
+  const [selectedPaths, setSelectedPaths] = useState<ReadonlyArray<string>>([]);
+  const [collapseRequestId, setCollapseRequestId] = useState(0);
+  const [expandAllRequestId, setExpandAllRequestId] = useState(0);
+  const [fileChanges, setFileChanges] = useState<readonly GitFileChange[]>([]);
+  const fileColors = useMemo(
+    () =>
+      new Map(
+        fileChanges.map((file) => [
+          file.path,
+          file.untracked || file.unstaged
+            ? "#f5a3a3"
+            : file.indexStatus === "added" || file.indexStatus === "copied"
+              ? "#3fb950"
+              : file.indexStatus === "deleted"
+                ? "#f85149"
+                : file.indexStatus === "renamed"
+                  ? "#d29922"
+                  : "#4c9ffe",
+        ]),
+      ),
+    [fileChanges],
+  );
+  const pendingDirectories = expandedDirectories.filter((path) => !directoryListings.has(path));
+  const [isDeleting, setIsDeleting] = useState(false);
+  /**
+   * Contents of the last delete, so it can be put back. Only whole text files are held: a folder
+   * and a file too large to have been read in one piece cannot be reconstructed from this, and the
+   * confirmation says so rather than promising an undo that would restore part of the work.
+   */
+  const [undoableDelete, setUndoableDelete] = useState<ReadonlyArray<{
+    readonly relativePath: string;
+    readonly contents: string;
+  }> | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const selectedFiles = useMemo(
+    () => selectedPaths.filter((path) => filePaths.has(path)),
+    [filePaths, selectedPaths],
+  );
 
-  const showEntryContextMenu = useStableCallback(
-    (item: TreeContextMenuItem, context: TreeContextMenuOpenContext) => {
+  const clearSelection = useCallback(() => setSelectedPaths([]), []);
+  // An undo entry belongs to the directory it was taken from; carrying it across would write those
+  // files into a different workspace root.
+  const undoRoot = `${environmentId}:${cwd}`;
+  const [undoRootIdentity, setUndoRootIdentity] = useState(undoRoot);
+  if (undoRootIdentity !== undoRoot) {
+    setUndoRootIdentity(undoRoot);
+    setUndoableDelete(null);
+  }
+
+  /**
+   * Reads every path back so a delete can be undone, or gives up on the whole set. Partial recovery
+   * is worse than none: it looks like the undo worked while quietly leaving files behind.
+   */
+  const snapshotPaths = useCallback(
+    async (paths: readonly string[]) => {
+      if (paths.some((path) => !filePaths.has(path))) return null;
+      let bytes = 0;
+      const snapshot: { relativePath: string; contents: string }[] = [];
+      for (const relativePath of paths) {
+        const result = await readFileOnce({ environmentId, input: { cwd, relativePath } });
+        // A binary or over-long file comes back truncated or not at all; either way what we hold is
+        // not the file, so there is nothing honest to put back.
+        if (result._tag === "Failure" || result.value.truncated) return null;
+        bytes += result.value.byteLength;
+        if (bytes > UNDO_SNAPSHOT_MAX_BYTES) return null;
+        snapshot.push({ relativePath, contents: result.value.contents });
+      }
+      return snapshot;
+    },
+    [cwd, environmentId, filePaths, readFileOnce],
+  );
+
+  const restoreSnapshot = useCallback(
+    async (snapshot: ReadonlyArray<{ relativePath: string; contents: string }>) => {
+      setIsRestoring(true);
+      const results = await Promise.all(
+        snapshot.map((file) =>
+          writeFile({
+            environmentId,
+            input: { cwd, relativePath: file.relativePath, contents: file.contents },
+          }),
+        ),
+      );
+      setIsRestoring(false);
+      setUndoableDelete(null);
+      entriesQuery.refresh();
+      const failed = results.filter((result) => result._tag === "Failure");
+      toastManager.add(
+        failed.length > 0
+          ? {
+              type: "error",
+              title: `Could not restore ${failed.length} of ${snapshot.length}`,
+              description: "The rest were written back.",
+            }
+          : {
+              type: "success",
+              title:
+                snapshot.length === 1
+                  ? `Restored ${snapshot[0]?.relativePath}`
+                  : `Restored ${snapshot.length} files`,
+            },
+      );
+    },
+    [cwd, entriesQuery, environmentId, writeFile],
+  );
+
+  /**
+   * Confirms and removes entries from disk. A directory goes with its contents, which is what the
+   * server's remove already does, so the confirmation has to say so.
+   */
+  const deletePaths = useCallback(
+    async (paths: readonly string[]) => {
+      if (isDeleting || paths.length === 0) return;
       const api = readLocalApi();
-      if (!api) {
-        context.close();
+      if (!api) return;
+      const directories = paths.filter((path) => !filePaths.has(path));
+      const listedPaths = paths.slice(0, 6).map((path) => `• ${path}`);
+      const remainingCount = paths.length - listedPaths.length;
+      const snapshot = await snapshotPaths(paths);
+      const confirmed = await api.dialogs.confirm(
+        [
+          paths.length === 1 ? `Delete ${paths[0]}?` : `Delete ${paths.length} selected entries?`,
+          ...(paths.length === 1 ? [] : listedPaths),
+          ...(remainingCount > 0 ? [`• and ${remainingCount} more`] : []),
+          directories.length > 0
+            ? "This removes them from disk, folders with everything inside them."
+            : "This removes them from disk.",
+          snapshot === null
+            ? "This cannot be undone."
+            : `Undo with ${UNDO_SHORTCUT_LABEL} while the file list has focus.`,
+        ].join("\n"),
+        { variant: "destructive" },
+      );
+      if (!confirmed) return;
+      setIsDeleting(true);
+      const results = await Promise.all(
+        paths.map((relativePath) => deleteEntry({ environmentId, input: { cwd, relativePath } })),
+      );
+      const failed = results.filter((result) => result._tag === "Failure");
+      setIsDeleting(false);
+      setSelectedPaths([]);
+      setUndoableDelete(snapshot);
+      entriesQuery.refresh();
+      // Focus survives the rows unmounting, so the undo shortcut still has somewhere to land.
+      panelRef.current?.focus({ preventScroll: true });
+      if (failed.length > 0) {
+        toastManager.add({
+          type: "error",
+          title: `Could not delete ${failed.length} of ${paths.length}`,
+          description: "Refresh the file list and try again.",
+        });
         return;
       }
-      const relativePath = item.path.replace(/\/$/, "");
-      const mention = serializeComposerFileLink(panelPath(relativePath));
-      const pointer = contextMenuPointerRef.current;
-      const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1000;
-      const anchorRect = context.anchorElement.getBoundingClientRect();
-      const position = pointerIsFresh
-        ? { x: pointer.x, y: pointer.y }
-        : { x: anchorRect.left, y: anchorRect.bottom };
-      const fileTarget = { environmentId, filePath: relativePath, workspaceRoot: cwd };
-      const fileMenuItems = fileContextMenu.buildItems(fileTarget);
-      void settlePromise(async () => {
-        const clicked = await api.contextMenu.show(
-          [
-            ...fileMenuItems,
-            { id: "copy-mention", label: "Copy mention" },
-            { id: "add-to-chat", label: "Add to chat" },
-          ],
-          position,
-        );
-        if (clicked === null) return;
-        // "Open with" submenu selections report the child id ("editor:<id>"),
-        // which is not present in the top-level item list.
-        const isFileMenuAction =
-          fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:");
-        if (isFileMenuAction) {
-          await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
-          return;
-        }
-        if (clicked === "copy-mention") {
-          try {
-            await writeTextToClipboard(mention);
-            toastManager.add({
-              type: "success",
-              title: "Mention copied",
-              description: relativePath,
-            });
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to copy mention",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
-          return;
-        }
-        if (clicked === "add-to-chat") {
-          const composer = composerRef?.current;
-          if (!composer) {
-            toastManager.add({
-              type: "error",
-              title: "Unable to add to chat",
-              description: "Open a chat for this project and try again.",
-            });
-            return;
-          }
-          const inserted = composer.insertTextAtEnd(`${mention} `, { ensureLeadingBoundary: true });
-          if (!inserted) {
-            toastManager.add({
-              type: "error",
-              title: "Unable to add to chat",
-              description: "The chat isn't ready to accept input right now.",
-            });
-          }
-        }
-      }).then((result) => {
-        context.close();
-        // Keep surfacing unexpected failures as unhandled rejections.
-        if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
+      toastManager.add({
+        type: "success",
+        title: paths.length === 1 ? `Deleted ${paths[0]}` : `Deleted ${paths.length} entries`,
+        ...(snapshot === null
+          ? {}
+          : {
+              actionProps: {
+                children: "Undo",
+                onClick: () => void restoreSnapshot(snapshot),
+              },
+            }),
       });
     },
+    [
+      cwd,
+      deleteEntry,
+      entriesQuery,
+      environmentId,
+      filePaths,
+      isDeleting,
+      restoreSnapshot,
+      snapshotPaths,
+    ],
   );
 
-  const loadingDirectoriesRef = useRef(loadingDirectories);
-  const dragMention = createFileTreeDragMentionController(
-    hostFolder ? { mentionPath: (path: string) => joinHostPath(cwd, path) } : {},
-  );
-  const { model } = useFileTree({
-    composition: {
-      contextMenu: {
-        triggerMode: "right-click",
-        onOpen: (item, context) => {
-          showEntryContextMenu(item, context);
-        },
-      },
-    },
-    dragAndDrop: { canDrop: () => false },
-    density: "compact",
-    fileTreeSearchMode: "hide-non-matches",
-    flattenEmptyDirectories: true,
-    initialExpansion: "closed",
-    icons: T3_PIERRE_ICONS,
-    onSelectionChange: (selectedPaths) => {
-      // The drag controller's selection cache must track every change,
-      // including reveal-driven ones, or drags act on a stale selection.
-      dragMention.handleSelectionChange(selectedPaths);
-      if (syncingSelectionRef.current) return;
-      if (dragMention.isDragInProgress()) {
+  const showEntryContextMenu = useCallback(
+    async (relativePath: string, position: { x: number; y: number }) => {
+      const api = readLocalApi();
+      if (!api) return;
+      const mention = serializeComposerFileLink(
+        hostFolder ? joinHostPath(cwd, relativePath) : relativePath,
+      );
+      const absolutePath = resolvePathLinkTarget(relativePath, cwd);
+      // Folders share the environment open/reveal actions, but cannot become composer mentions.
+      const isFile = filePaths.has(relativePath);
+      const fileTarget = { environmentId, filePath: relativePath, workspaceRoot: cwd };
+      const fileMenuItems = fileContextMenu.buildItems(fileTarget);
+      const clicked = await api.contextMenu.show(
+        [
+          ...fileMenuItems,
+          ...(isFile ? [{ id: "copy-mention", label: "Copy mention" }] : []),
+          { id: "copy-absolute-path", label: "Copy absolute path" },
+          ...(isFile ? [{ id: "add-to-chat", label: "Add to chat" }] : []),
+          {
+            id: "delete",
+            label: isFile ? "Delete file" : "Delete folder",
+            destructive: true,
+            icon: "trash",
+          },
+        ],
+        position,
+      );
+      if (clicked === null) return;
+      if (clicked === "open" || clicked === "reveal-in-folder" || clicked?.startsWith("editor:")) {
+        await fileContextMenu.activate(
+          clicked as Parameters<typeof fileContextMenu.activate>[0],
+          fileTarget,
+        );
         return;
       }
-      const selectedPath = selectedPaths.at(-1)?.replace(/\/$/, "");
-      if (selectedPath && entryKindsRef.current.get(selectedPath) === "file") {
-        treeSelectionPathRef.current = selectedPath;
-        onOpenFile(panelPath(selectedPath));
-      }
-    },
-    paths: [],
-    renderRowDecoration: ({ item, row }) =>
-      row.kind === "directory" &&
-      row.isExpanded &&
-      loadingDirectoriesRef.current.has(item.path.replace(/\/$/, ""))
-        ? { icon: "t3-tree-icon-loading", title: "Loading…" }
-        : null,
-    search: false,
-    onSearchChange: (value) => setQuery(value ?? ""),
-    unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
-  });
-  useEffect(() => {
-    if (loadingDirectoriesRef.current === loadingDirectories) return;
-    loadingDirectoriesRef.current = loadingDirectories;
-    model.setComposition(model.getComposition());
-  }, [loadingDirectories, model]);
-  const search = useFileTreeSearch(model);
-  const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
-    areAllDirectoriesExpanded(currentModel, directoryPaths),
-  );
-  const toggleAllDirectories = () => {
-    const expanded = !(expandAll || allDirectoriesExpanded);
-    setExpandAll(expanded);
-    setAllDirectoriesExpanded(model, directoryPaths, expanded);
-  };
-  const closeSearch = () => {
-    setQuery("");
-    search.close();
-  };
-  const expandedPathsRef = useRef(new Set<string>());
-  useEffect(() => {
-    const currentPaths = new Set(directoryPaths);
-    for (const path of expandedPathsRef.current) {
-      if (!currentPaths.has(path)) expandedPathsRef.current.delete(path);
-    }
-    const loadExpanded = () => {
-      if (model.isSearchOpen()) return;
-      for (const path of directoryPaths) {
-        const item = model.getItem(path);
-        if (item?.isDirectory() && "isExpanded" in item && item.isExpanded()) {
-          if (!expandedPathsRef.current.has(path)) {
-            expandedPathsRef.current.add(path);
-            void load(path.replace(/\/$/, ""));
-          }
-        } else {
-          if (item?.isDirectory() && expandedPathsRef.current.has(path)) setExpandAll(false);
-          expandedPathsRef.current.delete(path);
+      if (clicked === "copy-mention") {
+        try {
+          await writeTextToClipboard(mention);
+          toastManager.add({ type: "success", title: "Mention copied", description: relativePath });
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy mention",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
         }
+        return;
       }
-    };
-    loadExpanded();
-    return model.subscribe(loadExpanded);
-  }, [directoryPaths, load, model]);
-  useEffect(() => {
-    model.setGitStatus(
-      entries
-        .filter((entry) => entry.ignored)
-        .map((entry) => ({
-          path: treePath(entry),
-          status: "ignored",
-        })),
-    );
-  }, [entries, model]);
-  useEffect(() => {
-    if (!selectedPath) return;
-    const controller = new AbortController();
-    void (async () => {
-      const segments = selectedPath.split("/");
-      for (let index = 0; index < segments.length && !controller.signal.aborted; index++) {
-        await load(segments.slice(0, index).join("/"));
+      if (clicked === "copy-absolute-path") {
+        try {
+          await writeTextToClipboard(absolutePath);
+          toastManager.add({
+            type: "success",
+            title: "Absolute path copied",
+            description: absolutePath,
+          });
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy absolute path",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
+        return;
       }
-    })();
-    return () => {
-      controller.abort();
-    };
-  }, [load, selectedPath]);
-  const handleSearchValueChange = (value: string) => {
-    setQuery(value);
-    if (value.trim().length === 0) {
-      search.close();
-      return;
-    }
-    search.setValue(value);
-  };
-  const handleRefresh = () => {
-    refresh();
-    if (query.trim()) pathSearch.refresh();
-    onRefreshSelectedFile?.();
-  };
-  useWorkspaceMutationRefresh({
-    mutationId: workspaceMutationId,
-    refresh: () => {
-      refresh();
-      if (query.trim()) pathSearch.refresh();
+      if (clicked === "delete") {
+        await deletePaths([relativePath]);
+        return;
+      }
+      if (clicked !== "add-to-chat") return;
+      const inserted = composerRef?.current?.insertTextAtEnd(`${mention} `, {
+        ensureLeadingBoundary: true,
+      });
+      if (!inserted) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to add to chat",
+          description: "The chat isn't ready to accept input right now.",
+        });
+      }
     },
+    [composerRef, cwd, deletePaths, environmentId, fileContextMenu, filePaths, hostFolder],
+  );
+  const handleRefresh = useCallback(() => {
+    setRefreshId((value) => value + 1);
+    entriesQuery.refresh();
+    onRefreshSelectedFile?.();
+  }, [entriesQuery, onRefreshSelectedFile]);
+  useWorkspaceMutationRefresh({
+    enabled: active,
+    mutationId: workspaceMutationId,
+    refresh: entriesQuery.refresh,
     resourceKey: `files:${environmentId}:${cwd}`,
   });
 
-  useEffect(() => {
-    if (!ready) return;
-    if (previousTreePathsRef.current === treePaths) return;
-    entryKindsRef.current = entryKinds;
-    const previousTreePaths = previousTreePathsRef.current;
-    previousTreePathsRef.current = treePaths;
-    if (previousTreePaths === null) {
-      model.resetPaths(treePaths);
-      return;
-    }
-    const updates = buildFileTreePathUpdates(previousTreePaths, treePaths);
-    if (updates.length > 0) model.batch(updates);
-  }, [ready, entryKinds, model, treePaths]);
+  const deleteSelectedFiles = useCallback(
+    () => deletePaths(selectedFiles),
+    [deletePaths, selectedFiles],
+  );
 
-  useEffect(() => {
-    if (expandAll && !query.trim()) setAllDirectoriesExpanded(model, directoryPaths, true);
-  }, [directoryPaths, expandAll, model, query]);
-
-  useEffect(() => {
-    if (!selectedPath) {
-      handledRevealRef.current = null;
-      return;
-    }
-    const selectedKind = entryKinds.get(selectedPath);
-    if (selectedKind === undefined) {
-      handledRevealRef.current = null;
-      return;
-    }
-    const revealRequest = { path: selectedPath, revealId: selectedPathRevealId };
-    const handledReveal = handledRevealRef.current;
-    // Entry refreshes rebuild treePaths while the same preview stays open.
-    // Replaying a handled reveal would close an active tree search and steal focus.
-    if (
-      handledReveal?.path === revealRequest.path &&
-      handledReveal.revealId === revealRequest.revealId
-    ) {
-      return;
-    }
-    const selectedTreePath = selectedKind === "directory" ? `${selectedPath}/` : selectedPath;
-    const selectedItem = model.getItem(selectedTreePath);
-    if (!selectedItem) return;
-
-    // A selection that originated inside the tree (clicking a row, possibly
-    // in an active tree search) is already visible; re-revealing it would
-    // close the search and clobber the user's context. Only sync external
-    // opens (file picker, content search, chat links).
-    const selectedInTree = model
-      .getSelectedPaths()
-      .some((path) => path.replace(/\/$/, "") === selectedPath);
-    if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
-      treeSelectionPathRef.current = null;
-      handledRevealRef.current = revealRequest;
-      return;
-    }
-    treeSelectionPathRef.current = null;
-    handledRevealRef.current = revealRequest;
-
-    syncingSelectionRef.current = true;
-    setQuery("");
-    model.closeSearch();
-    for (const path of model.getSelectedPaths()) {
-      model.getItem(path)?.deselect();
-    }
-
-    // Directory rows are registered with a trailing slash (see treePath), so
-    // ancestor lookups must use the same form to expand them.
-    const segments = selectedPath.split("/");
-    let ancestorPath = "";
-    for (const segment of segments.slice(0, -1)) {
-      ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
-      const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
-      if (item && "expand" in item) item.expand();
-    }
-
-    if ("expand" in selectedItem) selectedItem.expand();
-    selectedItem.select();
-    model.scrollToPath(selectedTreePath, {
-      focus: true,
-      offset: "center",
-    });
-    queueMicrotask(() => {
-      syncingSelectionRef.current = false;
-    });
-  }, [entryKinds, model, selectedPath, selectedPathRevealId]);
-
-  // The capture phase runs before the tree's own dragstart handler selects
-  // the dragged row, so the drag flag is up before that selection emits.
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const panel = panelRef.current;
-    if (panel === null) {
-      return;
-    }
-    const handleDragStart = (event: DragEvent) => dragMention.handleDragStart(event);
-    const handleDragEnd = () =>
-      dragMention.handleDragEnd((path) => model.getItem(path)?.deselect());
-    panel.addEventListener("dragstart", handleDragStart, true);
-    panel.addEventListener("dragend", handleDragEnd);
-    return () => {
-      panel.removeEventListener("dragstart", handleDragStart, true);
-      panel.removeEventListener("dragend", handleDragEnd);
-    };
-  }, [dragMention, model]);
+  // Scoped to this panel rather than the window: Backspace is a text key everywhere else, and the
+  // editor owns undo while it has focus.
+  const onPanelKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, [contenteditable]")) {
+        return;
+      }
+      if (
+        (event.key === "Backspace" || event.key === "Delete") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        selectedFiles.length > 0
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void deleteSelectedFiles();
+        return;
+      }
+      if (
+        event.key.toLowerCase() === "z" &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        undoableDelete !== null &&
+        !isRestoring
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void restoreSnapshot(undoableDelete);
+      }
+    },
+    [deleteSelectedFiles, isRestoring, restoreSnapshot, selectedFiles.length, undoableDelete],
+  );
 
   return (
     <div
       ref={panelRef}
-      className="flex min-h-0 flex-1 flex-col bg-background"
+      tabIndex={-1}
+      onKeyDown={onPanelKeyDown}
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background outline-none"
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >
-      <div
-        className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-1 in-data-[preview-panel-mode=inline]:h-9 in-data-[preview-panel-mode=inline]:min-h-9 in-data-[preview-panel-mode=inline]:border-b-transparent"
-        data-surface-subheader
-      >
-        <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
+      {active ? (
+        <FileTreeStatus
+          environmentId={environmentId}
+          cwd={cwd}
+          revision={treeRevision}
+          mutationId={workspaceMutationId}
+          refreshId={refreshId}
+          onStatus={setFileChanges}
+        />
+      ) : null}
+      {!deferredQuery.trim() &&
+        expandedDirectories
+          .filter((path) => directoryListings.has(path) || pendingDirectories.indexOf(path) < 4)
+          .map((path) => (
+            <ExpandedDirectory
+              key={`${environmentId}:${cwd}:${path}`}
+              environmentId={environmentId}
+              active={active}
+              cwd={cwd}
+              path={path}
+              onEntries={onDirectoryEntries}
+              refreshId={refreshId}
+              workspaceMutationId={workspaceMutationId}
+            />
+          ))}
+      <div className="surface-subheader shrink-0 gap-1 px-2" data-surface-subheader>
+        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Expand all folders"
+                disabled={hostFolder}
+                onClick={() => setExpandAllRequestId((id) => id + 1)}
+              />
+            }
+          >
+            <ChevronsUpDownIcon />
+          </TooltipTrigger>
+          <TooltipPopup>Expand all folders</TooltipPopup>
+        </Tooltip>
+        <CollapseDirectoriesButton onCollapse={() => setCollapseRequestId((value) => value + 1)} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
-          value={search.value}
-          onValueChange={handleSearchValueChange}
-          onClose={closeSearch}
+          value={query}
+          onValueChange={setQuery}
         />
-        {directoryPaths.length > 0 && !hostFolder ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  aria-label={
-                    expandAll || allDirectoriesExpanded
-                      ? "Collapse all folders"
-                      : "Expand all folders"
-                  }
-                  onClick={toggleAllDirectories}
-                />
-              }
-            >
-              <MorphIcon
-                className="size-3.5"
-                icon={allDirectoriesExpanded ? ChevronsDownUp : ChevronsUpDown}
-              />
-            </TooltipTrigger>
-            <TooltipPopup>
-              {expandAll || allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
-            </TooltipPopup>
-          </Tooltip>
+        {selectedFiles.length > 0 ? (
+          <>
+            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+              {selectedFiles.length} selected
+            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Clear file selection"
+                    onClick={clearSelection}
+                  />
+                }
+              >
+                <XIcon />
+              </TooltipTrigger>
+              <TooltipPopup>Clear selection</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-destructive hover:text-destructive"
+                    aria-label={`Delete ${selectedFiles.length} selected files`}
+                    disabled={isDeleting}
+                    onClick={() => void deleteSelectedFiles()}
+                  />
+                }
+              >
+                <Trash2Icon className={cn(isDeleting && "animate-pulse")} />
+              </TooltipTrigger>
+              <TooltipPopup>
+                Delete {selectedFiles.length} selected file{selectedFiles.length === 1 ? "" : "s"}
+              </TooltipPopup>
+            </Tooltip>
+          </>
         ) : null}
       </div>
-      {error || pathSearch.error ? (
-        <button
-          type="button"
-          onClick={handleRefresh}
-          className="p-4 text-left text-xs leading-relaxed text-destructive"
-        >
-          {error ?? pathSearch.error} Click to retry.
-        </button>
-      ) : null}
-      {query.trim() && pathSearch.truncated && !pathSearch.isPending ? (
-        <div className="px-3 py-1 text-xs text-muted-foreground">
-          More matches available. Refine your search.
-        </div>
-      ) : null}
-      {(!ready || pathSearch.isPending) && (
-        <div role="status" className="px-3 py-1 text-xs text-muted-foreground">
-          Loading files…
-        </div>
+      {entriesQuery.error && entriesQuery.data === null ? (
+        <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
+      ) : entriesQuery.data === null ? (
+        <div className="p-4 text-xs text-muted-foreground">Loading files…</div>
+      ) : deferredQuery.trim() && !hostFolder && search.isPending ? (
+        <div className="p-4 text-xs text-muted-foreground">Searching files…</div>
+      ) : deferredQuery.trim() && !hostFolder && search.error ? (
+        <div className="p-4 text-xs text-destructive">{search.error}</div>
+      ) : entries.length === 0 ? (
+        <div className="p-4 text-xs text-muted-foreground">No files found in this directory.</div>
+      ) : (
+        <NativeProjectFileTree
+          active={active}
+          workspaceKey={`${encodeURIComponent(environmentId)}|${encodeURIComponent(cwd)}`}
+          entries={entries}
+          loadingDirectories={loadingDirectories}
+          fileColors={fileColors}
+          expandAllRequestId={hostFolder ? 0 : expandAllRequestId}
+          query={deferredQuery}
+          selectedPath={selectedPath}
+          selectedPathRevealId={selectedPathRevealId}
+          selectedPaths={selectedPaths}
+          resolvedTheme={resolvedTheme}
+          onOpenFile={(path) => onOpenFile(panelPath(path))}
+          mentionPath={panelPath}
+          onSelectionChange={setSelectedPaths}
+          onDeleteSelected={deleteSelectedFiles}
+          onDeleteEntry={(path) => deletePaths([path])}
+          onContextMenu={(path, position) => void showEntryContextMenu(path, position)}
+          collapseRequestId={collapseRequestId}
+          onExpandedDirectoriesChange={onExpandedDirectoriesChange}
+        />
       )}
-      <FileTree
-        model={model}
-        aria-label={`${projectName} files`}
-        className="min-h-0 flex-1 overflow-hidden"
-        style={pierreTreeStyle(resolvedTheme)}
-      />
     </div>
   );
 }

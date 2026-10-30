@@ -13,13 +13,14 @@ import * as HandoffMemory from "./handoffMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerConfig from "./config.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 
 const settingsLayer = ServerSettings.layerTest({ memory: { localEnabled: false } });
 const layer = HandoffMemory.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       settingsLayer,
-      ProjectionStore.layerMemory,
+      ProjectionStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
       ServerConfig.layerTest(process.cwd(), { prefix: "meko-handoff-test-" }).pipe(
         Layer.provide(NodeServices.layer),
       ),

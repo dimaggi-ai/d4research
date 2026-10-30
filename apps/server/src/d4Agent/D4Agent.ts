@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NiaRequestRecovery from "./NiaRequestRecovery.ts";
 import { providerDecisionContext } from "./providerContext.ts";
 import * as OverviewThreads from "./OverviewThreads.ts";
@@ -85,6 +86,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AttachmentClaims from "../orchestration-v2/AttachmentClaims.ts";
 import * as ThreadMessageIntake from "../orchestration-v2/ThreadMessageIntake.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as AgentMonitor from "../orchestration-v2/AgentMonitorReactor.ts";
@@ -446,6 +448,10 @@ export const layer = Layer.effect(
     const settingsService = yield* ServerSettings.ServerSettingsService;
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const threads = yield* ThreadManagement.ThreadManagementService;
+    // Thread intake extracts attachment text; Nia's dispatches use the server's extractor.
+    const documentText = yield* DocumentText.DocumentText;
+    const withDocumentText = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(Effect.provideService(DocumentText.DocumentText, documentText));
     const fileSystem = yield* FileSystem.FileSystem;
     const serverConfig = yield* ServerConfig.ServerConfig;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -4215,30 +4221,32 @@ export const layer = Layer.effect(
       claimSystemAttention,
       ensureThread: () => lock.withPermits(1)(ensure()),
       sendMessage: (input) =>
-        lock.withPermits(1)(
-          Effect.gen(function* () {
-            // Checked before idle sessions close, so only a change made by another client or a
-            // size rotation counts. A closed session is not stale: the send reopens the same context.
-            const state = yield* store.get;
-            if (input.expectedContext === undefined || input.expectedThreadId === undefined)
-              return yield* new D4AgentError({ reason: "client-outdated" });
-            if (
-              input.expectedContext !== state.brainContext ||
-              (input.expectedThreadId != null &&
-                state.threadId !== null &&
-                input.expectedThreadId !== state.threadId)
-            )
-              return yield* new D4AgentError({ reason: "stale" });
-            return yield* send(input);
-          }),
+        withDocumentText(
+          lock.withPermits(1)(
+            Effect.gen(function* () {
+              // Checked before idle sessions close, so only a change made by another client or a
+              // size rotation counts. A closed session is not stale: the send reopens the same context.
+              const state = yield* store.get;
+              if (input.expectedContext === undefined || input.expectedThreadId === undefined)
+                return yield* new D4AgentError({ reason: "client-outdated" });
+              if (
+                input.expectedContext !== state.brainContext ||
+                (input.expectedThreadId != null &&
+                  state.threadId !== null &&
+                  input.expectedThreadId !== state.threadId)
+              )
+                return yield* new D4AgentError({ reason: "stale" });
+              return yield* send(input);
+            }),
+          ),
         ),
-      resolveAction,
-      requestAction,
+      resolveAction: (input) => withDocumentText(resolveAction(input)),
+      requestAction: (action, note) => withDocumentText(requestAction(action, note)),
       tasks,
       list: () => lock.withPermits(1)(list()),
       environment: () => lock.withPermits(1)(environment()),
       systemHealth: () => bound().pipe(Effect.andThen(systemHealth())),
-      tick,
+      tick: withDocumentText(tick),
       readTail: (threadId, limit) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
@@ -4356,7 +4364,7 @@ export const layer = Layer.effect(
           } satisfies D4AgentHostRead;
         }),
       start: () =>
-        tick.pipe(
+        withDocumentText(tick).pipe(
           Effect.catch(() => Effect.logWarning("d4 Agent heartbeat unavailable")),
           Effect.repeat(Schedule.spaced("15 seconds")),
           Effect.forkScoped,

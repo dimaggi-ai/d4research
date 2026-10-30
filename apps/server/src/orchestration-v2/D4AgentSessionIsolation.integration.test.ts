@@ -1,3 +1,4 @@
+import * as DocumentText from "../provider/DocumentText.ts";
 import { expect, vi } from "vite-plus/test";
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -302,7 +303,7 @@ it.effect.each([
           { name: `d4-${operation}` },
           ProviderAdapterRegistry.layerSingle(makeRecordingAdapter(opened, started, resumed)),
           {
-            layerDatabase: database,
+            databaseLayer: database,
             layerServerSettings: settings,
             layerProjectService: projects,
             layerSecondBrain: Layer.mock(SecondBrain.SecondBrainService)({ buildTurnContext }),
@@ -322,6 +323,7 @@ it.effect.each([
               store,
               ProjectionStore.layer.pipe(Layer.provide(database)),
               common,
+              Layer.succeed(DocumentText.DocumentText, { ensure: () => Effect.succeed(undefined) }),
             ),
           ),
         );

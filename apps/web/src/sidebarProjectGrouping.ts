@@ -2,9 +2,9 @@ import type { EnvironmentId, ScopedProjectRef } from "@d4research/contracts";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
+  resolveScratchProjectScopeKey,
   type ProjectGroupingSettings,
-} from "./logicalProject";
-import { resolveScratchProjectScopeKey } from "@d4research/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 import type { Project } from "./types";
 
 export type EnvironmentPresence = "local-only" | "remote-only" | "mixed";

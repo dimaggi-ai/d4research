@@ -14,6 +14,7 @@ import * as ServerConfig from "../config.ts";
 import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 import * as ServerLogger from "../serverLogger.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
+import * as HeapAttribution from "./HeapAttribution.ts";
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
@@ -28,8 +29,7 @@ export const layer = Layer.unwrap(
     const layerTraceReferences = Layer.mergeAll(
       Layer.succeed(Tracer.MinimumTraceLevel, config.traceMinLevel),
       Layer.succeed(References.TracerTimingEnabled, config.traceTimingEnabled),
-      // Keeps each SQL statement's span current while it waits for a connection,
-      // so the client can record the lock wait on it.
+      // Preserve SQL spans while awaiting connections so lock waits can be recorded on them.
       Layer.succeed(Statement.SpanPropagationEnabled, true),
       HttpObservability.layer,
     );
@@ -58,8 +58,11 @@ export const layer = Layer.unwrap(
           sink,
         });
 
+        const heapAttribution = yield* HeapAttribution.make(tracer);
+        yield* heapAttribution.run;
+
         return Layer.mergeAll(
-          Layer.succeed(Tracer.Tracer, tracer),
+          Layer.succeed(Tracer.Tracer, heapAttribution.tracer),
           BrowserTraceCollector.layer(sink),
         );
       }),

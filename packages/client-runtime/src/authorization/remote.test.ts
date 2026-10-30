@@ -11,12 +11,11 @@ import {
   bootstrapRemoteBearerSession,
   fetchRemoteSessionState,
   issueRemoteWebSocketTicket,
-  RemoteEnvironmentAuthInvalidJsonError,
-  RemoteEnvironmentAuthTimeoutError,
   resolveRemoteWebSocketConnectionUrl,
 } from "./remote.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import * as RpcHttp from "../rpc/http.ts";
+import { RemoteEnvironmentAuthTimeoutError } from "../rpc/http.ts";
 
 const isEnvironmentAuthInvalidError = Schema.is(EnvironmentAuthInvalidError);
 
@@ -396,7 +395,7 @@ describe("remote environment authorization", () => {
         credential: "pairing-token",
       }).pipe(provideRemoteHttp(fetch.fetchFn), Effect.flip);
 
-      expect(error).toBeInstanceOf(RemoteEnvironmentAuthInvalidJsonError);
+      expect(error).toMatchObject({ _tag: "RemoteEnvironmentAuthInvalidJsonError" });
       expect(error.message).toBe(
         "Remote environment endpoint returned an invalid response from https://remote.example.com/oauth/token.",
       );

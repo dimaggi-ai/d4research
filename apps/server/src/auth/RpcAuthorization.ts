@@ -13,6 +13,7 @@ import {
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
   AuthEnvironmentMaintainScope,
+  AuthSourceControlWriteScope,
   AuthFilesystemReadScope,
   AuthFilesystemWriteScope,
   AuthDiagnosticsReadScope,
@@ -53,10 +54,12 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.searchThread]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.searchThreadStream]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.launchThread]: AuthOrchestrationOperateScope,
-  [ORCHESTRATION_V2_WS_METHODS.subscribeArchivedShell]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput]: AuthOrchestrationReadScope,
@@ -74,7 +77,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.chatGptReconnectProfile]: AuthProvidersManageScope,
   [WS_METHODS.chatGptImportProfile]: AuthProvidersManageScope,
   [WS_METHODS.chatGptHandoffSubscribe]: AuthProvidersManageScope,
-  [WS_METHODS.codexAuthCallbackSubscribe]: AuthProvidersManageScope,
   [WS_METHODS.providerAuthRespond]: AuthProvidersManageScope,
   [WS_METHODS.providerAuthCancel]: AuthProvidersManageScope,
   [WS_METHODS.providerAuthLogout]: AuthProvidersManageScope,
@@ -91,7 +93,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetStorageCleanupReport]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetDatabaseStorage]: AuthOrchestrationReadScope,
   [WS_METHODS.agentMonitorClaimAttention]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverGetSettings]: AuthOrchestrationReadScope,
+  [WS_METHODS.peerLinksList]: AuthAccessReadScope,
   [WS_METHODS.d4AgentGetState]: AuthOrchestrationReadScope,
   [WS_METHODS.d4AgentGetIdentity]: AuthOrchestrationReadScope,
   [WS_METHODS.d4AgentGetAction]: AuthOrchestrationReadScope,
@@ -121,8 +123,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthDiagnosticsReadScope,
-  // Load-balancing new threads reads host load; that is part of operating
-  // threads, not of inspecting diagnostics.
+  // Thread load balancing reads host load, so it needs thread scope rather than diagnostics scope.
   [WS_METHODS.serverGetHostResources]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessResourceHistory]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverGetResourceTelemetryHistory]: AuthDiagnosticsReadScope,
@@ -130,10 +131,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetUsageSummary]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverRefreshUsageRates]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverSignalProcess]: AuthEnvironmentMaintainScope,
+  [WS_METHODS.serverGetAccountLimits]: AuthDiagnosticsReadScope,
+  [WS_METHODS.serverGetUsageLimitHistory]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverReportHostPowerState]: AuthEnvironmentMaintainScope,
-  [WS_METHODS.serverGetBackgroundPolicy]: AuthOrchestrationReadScope,
-  [WS_METHODS.scheduledTasksList]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksUpsert]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksSetEnabled]: AuthOrchestrationOperateScope,
@@ -145,6 +145,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.scheduledTasksGetWebhookDelivery]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsListStats]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsFilterOptions]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSummary]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRouting]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRoutingIdentity]: AuthOrchestrationReadScope,
@@ -158,19 +159,32 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsFilesViewed]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsChangeBreakdown]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsInvalidate]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsReportState]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSubscribeRefreshes]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsReviewerCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsLabelCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlAppAccess]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
+  [WS_METHODS.peerFilesList]: AuthFilesystemReadScope,
+  [WS_METHODS.peerFilesRead]: AuthFilesystemReadScope,
+  [WS_METHODS.peerFilesWrite]: AuthFilesystemWriteScope,
+  // A relay answers agents' requests and receives the files they send out.
+  [WS_METHODS.peerRelayConnect]: AuthFilesystemWriteScope,
+  [WS_METHODS.peerRelayRespond]: AuthFilesystemWriteScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,
+  [WS_METHODS.projectsListIgnoredFiles]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
   [WS_METHODS.projectsLocateFile]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchContents]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,
+  [WS_METHODS.projectsWatchEntries]: AuthFilesystemReadScope,
+  [WS_METHODS.projectsSearchCode]: AuthFilesystemReadScope,
+  [WS_METHODS.projectsDeleteEntry]: AuthFilesystemWriteScope,
+  [WS_METHODS.sessionsListResumable]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsEnsureScratch]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsCreateNew]: AuthOrchestrationOperateScope,
   [WS_METHODS.shellOpenInEditor]: AuthOrchestrationOperateScope,
@@ -192,34 +206,53 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.worktreeSetupCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthDiagnosticsReadScope,
   [WS_METHODS.vcsRefreshStatus]: AuthOrchestrationReadScope,
+  [WS_METHODS.vcsFetch]: AuthSourceControlWriteScope,
   [WS_METHODS.gitResolvePullRequest]: AuthOrchestrationReadScope,
+  [WS_METHODS.gitDetailedStatus]: AuthOrchestrationReadScope,
+  [WS_METHODS.gitStageFiles]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitUnstageFiles]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitDiscardChanges]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitResolveConflict]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitCommitStaged]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitGenerateCommitMessage]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitFileDiff]: AuthOrchestrationReadScope,
+  [WS_METHODS.gitHistory]: AuthOrchestrationReadScope,
+  [WS_METHODS.gitCommitDetails]: AuthOrchestrationReadScope,
+  [WS_METHODS.gitCommitDiff]: AuthOrchestrationReadScope,
+  [WS_METHODS.threadWorkspaceInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.threadWorkspaceSelect]: AuthOrchestrationOperateScope,
+  [WS_METHODS.threadWorkspaceCreate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectMemoryList]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectMemoryRead]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectMemorySave]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectMemoryRemove]: AuthOrchestrationOperateScope,
   [WS_METHODS.vcsListRefs]: AuthOrchestrationReadScope,
   [WS_METHODS.reviewGetDiffPreview]: AuthFilesystemReadScope,
   [WS_METHODS.reviewGetDiffFileContents]: AuthFilesystemReadScope,
+  [WS_METHODS.projectsWatchFile]: AuthFilesystemReadScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalObserve]: AuthTerminalReadScope,
   [WS_METHODS.terminalWrite]: AuthTerminalOperateScope,
   [WS_METHODS.terminalResize]: AuthTerminalOperateScope,
   [WS_METHODS.terminalClear]: AuthTerminalOperateScope,
-  [WS_METHODS.terminalRestart]: AuthTerminalOperateScope,
   [WS_METHODS.terminalClose]: AuthTerminalOperateScope,
-  [WS_METHODS.subscribeTerminalEvents]: AuthTerminalReadScope,
   [WS_METHODS.subscribeTerminalMetadata]: AuthTerminalReadScope,
   [WS_METHODS.previewOpen]: AuthPreviewOperateScope,
-  [WS_METHODS.previewNavigate]: AuthPreviewOperateScope,
   [WS_METHODS.previewResize]: AuthPreviewOperateScope,
   [WS_METHODS.previewAdjust]: AuthPreviewOperateScope,
-  [WS_METHODS.previewRefresh]: AuthPreviewOperateScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   [WS_METHODS.previewList]: AuthOrchestrationReadScope,
   [WS_METHODS.previewClearProfile]: AuthPreviewOperateScope,
   [WS_METHODS.previewReportProfiles]: AuthPreviewOperateScope,
   [WS_METHODS.previewReportStatus]: AuthPreviewOperateScope,
+  [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
   [WS_METHODS.subscribePreviewEvents]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeDiscoveredLocalServers]: AuthOrchestrationReadScope,
   [WS_METHODS.deviceConfigure]: AuthSettingsWriteScope,
   [WS_METHODS.deviceTestHost]: AuthSettingsWriteScope,
+  [WS_METHODS.deviceEasAccount]: AuthSettingsWriteScope,
+  [WS_METHODS.deviceSimlockIdentity]: AuthSettingsWriteScope,
   [WS_METHODS.deviceList]: AuthOrchestrationReadScope,
   [WS_METHODS.deviceOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.deviceClose]: AuthOrchestrationOperateScope,
@@ -230,7 +263,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeServerConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,
-  [WS_METHODS.subscribeBackgroundPolicy]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {
@@ -254,28 +286,32 @@ const SettingsUpdate = Schema.Struct({
   patch: ServerSettingsPatch,
   providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
 });
+const decodeSettingsUpdate = Schema.decodeUnknownSync(SettingsUpdate);
 
 const requiredScopesForSettingsUpdate = (payload: unknown) => {
-  const input = Schema.decodeUnknownSync(SettingsUpdate)(payload);
+  const input = decodeSettingsUpdate(payload);
   const scopes = requiredScopesForServerSettingsPatch(input.patch);
   if (input.providerInstanceMutation === undefined) return scopes;
-  // An atomic provider mutation carries an empty patch unless it also changes settings.
   return Object.values(input.patch).every((value) => value === undefined)
     ? [AuthProvidersManageScope]
     : [...new Set([...scopes, AuthProvidersManageScope])];
 };
 
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
+const decodeAssetCreateUrlInput = Schema.decodeUnknownSync(AssetCreateUrlInput);
 
 const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
 ): ReadonlyArray<AuthEnvironmentScope> => {
+  if (method === WS_METHODS.peerRelayConnect || method === WS_METHODS.peerRelayRespond) {
+    return [AuthFilesystemWriteScope, AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
+  }
   if (method === WS_METHODS.serverRetryResourceTelemetry) {
     return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
   }
   if (method === WS_METHODS.assetsCreateUrl) {
-    const { resource } = Schema.decodeUnknownSync(AssetCreateUrlInput)(payload);
+    const { resource } = decodeAssetCreateUrlInput(payload);
     return [
       resource._tag === "workspace-file" ||
       resource._tag === "media-file" ||
@@ -293,11 +329,22 @@ const requiredScopesForRpcCall = (
   return [requiredScopeForRpcMethod(method)];
 };
 
-export const layer = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
+/**
+ * `onAuthorized` runs once after an authorized request succeeds; for a stream
+ * RPC, that is when the stream completes. Every RPC passes through here, so it
+ * is the one place to observe requests without wrapping each handler.
+ */
+export const layer = (
+  scopes: ReadonlyArray<AuthEnvironmentScope>,
+  onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>,
+) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
     const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
     const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
-    return requiredScope === undefined ? effect : Effect.fail(rpcAuthorizationError(requiredScope));
+    if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
+    return onAuthorized === undefined
+      ? effect
+      : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
   });
 
 /** Retrying can install or restart tools even though ordinary listing is readable. */

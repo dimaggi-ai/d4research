@@ -259,6 +259,7 @@ import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
 import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
+import { resolveThreadWorkspaces } from "@d4research/shared/threadWorkspaces";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
   type ThreadPanelPresentation,
@@ -334,7 +335,6 @@ import {
 } from "~/projectScripts";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
-import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import {
   applyProviderInstanceSettings,
@@ -361,7 +361,11 @@ import {
 } from "./chat/composerProviderState";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import {
+  focusActiveDrawerTerminal,
+  focusActivePanelTerminal,
+  getTerminalFocusOwner,
+} from "../lib/terminalFocus";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import {
   derivePhysicalProjectKey,
@@ -749,6 +753,7 @@ const PreviewPanel = lazyWithReload(() =>
 );
 
 const DiffPanel = lazyWithReload(() => import("./DiffPanel"));
+const GitHistoryPanel = lazyWithReload(() => import("./GitHistoryPanel"));
 
 const selectAutoShowFloatingPreview = (settings: { browserAutoShowFloatingPreview: boolean }) =>
   settings.browserAutoShowFloatingPreview;
@@ -1280,6 +1285,11 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     reconcileTerminalIds(threadRef, serverOrderedTerminalIds);
   }, [reconcileTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds, threadRef]);
   const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
+  const drawerFocusRequest = focusRequestId + localFocusRequestId + (visible ? 1 : 0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the drawer no longer takes a focus request id, so each new request focuses its active terminal here
+  useEffect(() => {
+    if (visible && drawerFocusRequest > 0) focusActiveDrawerTerminal(threadRef);
+  }, [drawerFocusRequest, threadRef, visible]);
   const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveWorktreePath = (() => {
     if (launchContext !== null) {
@@ -1438,7 +1448,6 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
           activeTerminalId={terminalUiState.activeTerminalId}
           terminalGroups={terminalUiState.terminalGroups}
           activeTerminalGroupId={terminalUiState.activeTerminalGroupId}
-          focusRequestId={focusRequestId + localFocusRequestId + (visible ? 1 : 0)}
           onSplitTerminal={splitTerminal}
           onSplitTerminalVertical={splitTerminalVertical}
           onNewTerminal={createNewTerminal}
@@ -1494,6 +1503,10 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   newShortcutLabel,
   closeShortcutLabel,
 }: PersistentThreadTerminalPanelProps) {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the panel no longer takes a focus request id, so each new request focuses its active terminal here
+  useEffect(() => {
+    if (focusRequestId > 0) focusActivePanelTerminal(threadRef);
+  }, [focusRequestId, threadRef]);
   const serverThread = useThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const projectRef = serverThread
@@ -1595,7 +1608,6 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
         },
       ]}
       activeTerminalGroupId={surface.id}
-      focusRequestId={focusRequestId}
       onSplitTerminal={onSplitTerminal}
       onSplitTerminalVertical={onSplitTerminalVertical}
       onNewTerminal={onNewTerminal}
@@ -2374,7 +2386,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadRef?.environmentId ?? null,
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
-  const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
+  const previewPanelInlineSize = usePreviewPanelInlineSize({
     container: workspaceLayoutElement,
     widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
   });
@@ -2736,10 +2748,6 @@ function ChatViewContent(props: ChatViewProps) {
 
   const allProjects = useProjects();
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
-  useEffect(() => {
-    if (!activeThreadRef || !activeProjectRef) return;
-    registerFaviconProjectForThread(activeThreadRef, activeProjectRef);
-  }, [activeProjectRef, activeThreadRef]);
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
@@ -3925,7 +3933,7 @@ function ChatViewContent(props: ChatViewProps) {
     (model) => model.slug === providerSubagentModelSlug,
   );
   const providerSubagentModelLabel = providerSubagentCatalogModel
-    ? getTriggerDisplayModelName(providerSubagentCatalogModel)
+    ? getTriggerDisplayModelName(providerSubagentCatalogModel, null)
     : formatModelSlugName(activeThread?.modelSelection.model ?? "");
   const providerSubagentEffortLabel =
     activeThread === undefined
@@ -9062,11 +9070,6 @@ function ChatViewContent(props: ChatViewProps) {
   }, [isWorkspaceFileDragActive]);
 
   useEffect(() => {
-    if (!activeThreadRef || !activeProjectRef) return;
-    registerFaviconProjectForThread(activeThreadRef, activeProjectRef);
-  }, [activeProjectRef, activeThreadRef]);
-
-  useEffect(() => {
     if (!clientSettingsHydrated || !activeThreadRef || !activeProject) return;
     // Reuse the sidebar's grouping so history follows the project rows the user
     // sees. Deriving the key from the active project alone would miss the
@@ -9189,6 +9192,15 @@ function ChatViewContent(props: ChatViewProps) {
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
           workspaceMutationId={workspaceMutationId}
+          visible={rightPanelOpen}
+        />
+      </Suspense>
+    ) : renderedRightPanelSurface?.kind === "git-history" && activeProject && activeThread ? (
+      <Suspense fallback={null}>
+        <GitHistoryPanel
+          environmentId={activeProject.environmentId}
+          primaryCwd={gitCwd ?? activeProject.workspaceRoot}
+          workspaceRoots={resolveThreadWorkspaces(activeProject, activeThread)}
         />
       </Suspense>
     ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
@@ -9274,6 +9286,9 @@ function ChatViewContent(props: ChatViewProps) {
       <Suspense fallback={null}>
         <FilePreviewPanel
           active={rightPanelOpen}
+          openInShortcutEnabled={rightPanelOpen}
+          primaryCwd={activeWorkspaceRoot ?? ""}
+          projectRoot={activeProject?.workspaceRoot ?? activeWorkspaceRoot ?? ""}
           key={`${activeThread.environmentId}:${
             renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment
               ? `attachment:${renderedRightPanelSurface.attachment.id}`
@@ -9442,7 +9457,6 @@ function ChatViewContent(props: ChatViewProps) {
             onOpenThread={onOpenRelatedThreadStable}
             rightPanelOpen={inlineRightPanelOwnsTitleBar}
             onNewThreadInProject={handleNewThreadInActiveProject}
-            changeRequestState={activeThreadPr?.state ?? null}
             onExportResearch={onExportResearchStable}
             {...(activeDraftLogicalProjectKey
               ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
@@ -9959,6 +9973,9 @@ function ChatViewContent(props: ChatViewProps) {
                                 ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
+                                projectId={activeThread.projectId}
+                                worktreePath={activeThread.worktreePath}
+                                isServerThread={isServerThread}
                                 showGitControls={isGitRepo}
                                 {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                 onEnvModeChange={onEnvModeChangeStable}
@@ -10032,6 +10049,9 @@ function ChatViewContent(props: ChatViewProps) {
               anchor={threadPanelPopoverAnchorRef}
               handle={threadPanelPopoverHandle}
               onPresentationChange={setThreadPanelPresentation}
+              projectId={activeThread.projectId}
+              worktreePath={activeThread.worktreePath}
+              isServerThread={isServerThread}
               forceNewWorktree={multipleModelSelections !== null}
               environmentId={activeThread.environmentId}
               threadId={activeThread.id}
@@ -10115,6 +10135,10 @@ function ChatViewContent(props: ChatViewProps) {
         <RightPanelTabs
           mode="inline"
           open={rightPanelOpen}
+          gitHistoryAvailable={isGitRepo}
+          onAddGitHistory={() => {
+            if (activeThreadRef) useRightPanelStore.getState().open(activeThreadRef, "git-history");
+          }}
           keybindings={keybindings}
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}
@@ -10166,6 +10190,11 @@ function ChatViewContent(props: ChatViewProps) {
           <RightPanelTabs
             mode="sheet"
             open={rightPanelOpen}
+            gitHistoryAvailable={isGitRepo}
+            onAddGitHistory={() => {
+              if (activeThreadRef)
+                useRightPanelStore.getState().open(activeThreadRef, "git-history");
+            }}
             keybindings={keybindings}
             getShortcutContext={getShortcutContextStable}
             inlineSize={previewPanelInlineSize}

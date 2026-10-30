@@ -18,11 +18,7 @@ import {
   usePrimarySettings,
   useUpdatePrimarySettings,
 } from "../../hooks/useSettings";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
+import { providerInstanceEntriesFor } from "../../providerInstances";
 import { primaryServerProvidersAtom } from "../../state/server";
 import {
   deriveDirectiveSuggestions,
@@ -96,9 +92,7 @@ export function ResearchSettingsPanel() {
       document.activeElement === pipelineRef.current ? current : scenario.pipelinePrompt,
     );
   }, [scenario.pipelinePrompt]);
-  const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings, null),
-  );
+  const instanceEntries = providerInstanceEntriesFor(serverProviders, settings, null);
   const candidates = deriveResearchProviderCandidates(instanceEntries);
   const resolutions = resolveResearchDirectives(pipelineDraft, candidates, promptFiles);
   const suggestions = suggestionsDismissed

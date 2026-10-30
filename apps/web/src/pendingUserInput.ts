@@ -10,7 +10,9 @@ export function projectPendingUserInputAnswer(
   const recordsById = new Map(threadContexts.map((record) => [record.contextId, record]));
   return replaceComposerContextReferences(answer, (reference) => {
     const record = reference.kind === "thread" ? recordsById.get(reference.contextId) : undefined;
-    return record ? formatThreadLink(record.threadId, reference.label) : reference.source;
+    return record
+      ? formatThreadLink({ environmentId: null, threadId: record.threadId }, reference.label)
+      : reference.source;
   });
 }
 

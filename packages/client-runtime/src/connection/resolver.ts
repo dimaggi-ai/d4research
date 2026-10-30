@@ -9,8 +9,15 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
 
-import { appendClientConnectionParams } from "../authorization/remote.ts";
+import {
+  appendClientConnectionParams,
+  type ClientOwnerParams,
+  readClientOwnerParams,
+  resolveRemoteWebSocketConnectionUrl,
+} from "../authorization/remote.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
@@ -27,9 +34,9 @@ import {
   profileMissingError,
 } from "./errors.ts";
 import {
-  GitHubRoutingPermissions,
-  gitHubRoutingConnectionKey,
-} from "./githubRoutingPermissions.ts";
+  PullRequestRoutingPermissions,
+  pullRequestRoutingConnectionKey,
+} from "./pullRequestRoutingPermissions.ts";
 import type {
   BearerConnectionTarget,
   ConnectionTarget,
@@ -43,7 +50,7 @@ import {
   appendOrchestrationProtocol,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
-import { credentialConnectionId } from "./routes.ts";
+import { credentialConnectionId, isSharedHostConnectionTarget } from "./routes.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
 export class ConnectionResolver extends Context.Service<
@@ -73,12 +80,13 @@ const isBearerCredential = Schema.is(BearerConnectionCredential);
 function primarySocketUrl(
   target: PrimaryConnectionTarget,
   clientMetadata: AuthClientPresentationMetadata | undefined,
+  owners: ClientOwnerParams,
 ): string {
   const url = new URL(target.wsBaseUrl);
   if (url.pathname === "" || url.pathname === "/") {
     url.pathname = "/ws";
   }
-  appendClientConnectionParams(url, clientMetadata, "direct");
+  appendClientConnectionParams(url, clientMetadata, "direct", owners);
   return url.toString();
 }
 
@@ -86,17 +94,76 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
   const auth = yield* ClientCapabilities.PrimaryEnvironmentAuth;
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+  const profiles = yield* ConnectionProfileStore.ConnectionProfileStore;
+  const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
+  const httpClient = yield* HttpClient.HttpClient;
 
   return Effect.fn("clientRuntime.connection.broker.primary")(function* (
     target: PrimaryConnectionTarget,
   ) {
+    if (target.sharedHost !== undefined) {
+      const host = target.sharedHost;
+      const profile = yield* profiles
+        .get(host.connectionId)
+        .pipe(Effect.flatMap(Effect.fromOption(() => profileMissingError(host.connectionId))));
+      const gatewayPath = environmentGatewayPath(target.httpBaseUrl);
+      const socket = new URL(target.wsBaseUrl);
+      socket.protocol = socket.protocol === "wss:" ? "https:" : "http:";
+      if (
+        !isBearerProfile(profile) ||
+        profile.environmentId !== host.environmentId ||
+        gatewayPath === "" ||
+        environmentGatewayPath(profile.httpBaseUrl) !== "" ||
+        new URL(target.httpBaseUrl).origin !== new URL(profile.httpBaseUrl).origin ||
+        socket.origin !== new URL(profile.httpBaseUrl).origin ||
+        socket.pathname !== `${gatewayPath}/ws`
+      ) {
+        return yield* new ConnectionBlockedError({
+          reason: "configuration",
+          detail: "The shared environment must use its paired host's gateway.",
+        });
+      }
+      // Prove the paired host's identity before sending its credential on this network.
+      const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+        httpBaseUrl: profile.httpBaseUrl,
+      }).pipe(
+        Effect.mapError(mapRemoteEnvironmentError),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
+      );
+      if (descriptor.environmentId !== host.environmentId)
+        return yield* environmentMismatchError({
+          expected: host.environmentId,
+          actual: descriptor.environmentId,
+        });
+      const credential = yield* credentials
+        .get(credentialConnectionId(host.connectionId))
+        .pipe(Effect.flatMap(Effect.fromOption(() => credentialMissingError(host.connectionId))));
+      const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
+        httpBaseUrl: target.httpBaseUrl,
+        wsBaseUrl: target.wsBaseUrl,
+        bearerToken: credential.token,
+        clientMetadata: presentation.metadata,
+        connectionMethod: "direct",
+      }).pipe(
+        Effect.mapError(mapRemoteEnvironmentError),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
+      );
+      return {
+        environmentId: target.environmentId,
+        label: target.label,
+        httpBaseUrl: target.httpBaseUrl,
+        socketUrl,
+        httpAuthorization: { _tag: "Bearer" as const, token: credential.token },
+        target,
+      } satisfies PreparedConnection;
+    }
     const bearerToken = yield* auth.bearerToken;
     if (Option.isNone(bearerToken)) {
       return {
         environmentId: target.environmentId,
         label: target.label,
         httpBaseUrl: target.httpBaseUrl,
-        socketUrl: primarySocketUrl(target, presentation.metadata),
+        socketUrl: primarySocketUrl(target, presentation.metadata, yield* readClientOwnerParams),
         httpAuthorization: null,
         target,
       } satisfies PreparedConnection;
@@ -164,11 +231,7 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
       connectionMethod: "direct",
     });
     return {
-      environmentId: authorized.environmentId,
-      label: authorized.label,
-      httpBaseUrl: authorized.httpBaseUrl,
-      socketUrl: authorized.socketUrl,
-      httpAuthorization: authorized.httpAuthorization,
+      ...authorized,
       target,
     } satisfies PreparedConnection;
   });
@@ -221,10 +284,10 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
       target: prepared.bootstrap.target,
     });
     if (
-      gitHubRoutingConnectionKey(entry) !==
-      gitHubRoutingConnectionKey({ ...entry, profile: Option.some(preparedProfile) })
+      pullRequestRoutingConnectionKey(entry) !==
+      pullRequestRoutingConnectionKey({ ...entry, profile: Option.some(preparedProfile) })
     ) {
-      const permissions = yield* GitHubRoutingPermissions;
+      const permissions = yield* PullRequestRoutingPermissions;
       yield* permissions.forget(target.environmentId);
     }
     yield* profiles.put(preparedProfile);
@@ -236,17 +299,13 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
       connectionMethod: "ssh",
     });
     return {
-      environmentId: authorized.environmentId,
-      label: authorized.label,
-      httpBaseUrl: authorized.httpBaseUrl,
-      socketUrl: authorized.socketUrl,
-      httpAuthorization: authorized.httpAuthorization,
+      ...authorized,
       target,
     } satisfies PreparedConnection;
   });
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const primary = yield* makePrimaryBroker();
   const bearer = yield* makeBearerBroker();
@@ -261,7 +320,9 @@ export const make = Effect.gen(function* () {
       "connection.environment.id": target.environmentId,
       "connection.target.kind": target._tag,
     });
-    const prepared = yield* (() => {
+    const authorized: PreparedConnection & {
+      readonly descriptor?: ExecutionEnvironmentDescriptor;
+    } = yield* (() => {
       switch (target._tag) {
         case "PrimaryConnectionTarget":
           return primary(target);
@@ -278,12 +339,24 @@ export const make = Effect.gen(function* () {
           return ssh({ ...entry, target });
       }
     })();
-    const descriptor = yield* fetchRemoteEnvironmentDescriptor({
-      httpBaseUrl: prepared.httpBaseUrl,
-    }).pipe(
-      Effect.mapError(mapRemoteEnvironmentError),
-      Effect.provideService(HttpClient.HttpClient, httpClient),
-    );
+    const { descriptor: authorizedDescriptor, ...prepared } = authorized;
+    const descriptor =
+      authorizedDescriptor ??
+      (yield* fetchRemoteEnvironmentDescriptor({
+        httpBaseUrl: prepared.httpBaseUrl,
+      }).pipe(
+        Effect.mapError(mapRemoteEnvironmentError),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          isSharedHostConnectionTarget(target) && prepared.httpAuthorization?._tag === "Bearer"
+            ? httpClient.pipe(
+                HttpClient.mapRequest(
+                  HttpClientRequest.bearerToken(prepared.httpAuthorization.token),
+                ),
+              )
+            : httpClient,
+        ),
+      ));
     if (descriptor.environmentId !== target.environmentId) {
       return yield* environmentMismatchError({
         expected: target.environmentId,

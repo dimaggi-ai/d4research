@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as Effect from "effect/Effect";
 
 import { readSkillsInventory, type SkillsInventoryEntry } from "../../../skillsInventory.ts";

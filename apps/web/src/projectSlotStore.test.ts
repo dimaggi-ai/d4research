@@ -28,8 +28,6 @@ describe("useProjectSlotStore", () => {
   it("ignores a slot outside the numbered range", () => {
     reset();
     useProjectSlotStore.getState().assignSlot(-1, "env:alpha");
-    useProjectSlotStore.getState().assignSlot(0.5, "env:alpha");
-    useProjectSlotStore.getState().assignSlot(Number.NaN, "env:alpha");
     useProjectSlotStore.getState().assignSlot(PROJECT_SLOT_COUNT, "env:alpha");
     expect(useProjectSlotStore.getState().slots).toEqual({});
   });

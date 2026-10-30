@@ -7,17 +7,17 @@ import {
 } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
-import { memo, type ReactElement } from "react";
+import { memo, type ReactNode } from "react";
+
+import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
 import { Button } from "../ui/button";
 
 export interface PanelLayoutControlsProps {
-  showLocalTools?: boolean;
   showThreadPanelControl?: boolean;
   showTerminalControl?: boolean;
   showRightPanelControl?: boolean;
@@ -32,9 +32,9 @@ export interface PanelLayoutControlsProps {
   rightPanelOpen: boolean;
   rightPanelShortcutLabel: string | null;
   rightPanelUnavailableLabel?: string;
+  /** Files and Tasks shortcuts; shown only when the caller wires them. */
   tasksOpen?: boolean;
   tasksLabel?: string;
-  /** Running + waiting subagents in this thread; badges the right panel toggle. */
   onOpenFiles?: () => void;
   onToggleTasks?: () => void;
   onToggleTerminal: () => void;
@@ -43,7 +43,6 @@ export interface PanelLayoutControlsProps {
 }
 
 export const PanelLayoutControls = memo(function PanelLayoutControls({
-  showLocalTools = true,
   showThreadPanelControl = true,
   showTerminalControl = true,
   showRightPanelControl = true,
@@ -60,17 +59,17 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelUnavailableLabel = "Right panel is unavailable",
   tasksOpen = false,
   tasksLabel = "Tasks",
-  onOpenFiles = () => undefined,
-  onToggleTasks = () => undefined,
+  onOpenFiles,
+  onToggleTasks,
   onToggleTerminal,
   onToggleThreadPanel,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
-  const tasksActionLabel = tasksOpen ? `Close ${tasksLabel}` : `Open ${tasksLabel}`;
   const threadPanelToggle = (
     <Toggle
       className="relative shrink-0 [-webkit-app-region:no-drag]"
       pressed={threadPanelOpen}
+      onPressedChange={threadPanelPresentation === "popover" ? undefined : onToggleThreadPanel}
       aria-label="Toggle thread details panel"
       variant="ghost"
       size="sm"
@@ -78,87 +77,83 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       <SquareMenuIcon className="size-4" />
     </Toggle>
   );
-  const threadPanelTooltip = (trigger: ReactElement) => (
+  const threadPanelControl = (
     <Tooltip>
-      <TooltipTrigger
-        render={trigger}
-        {...(threadPanelPresentation === "popover" ? {} : { onClick: onToggleThreadPanel })}
-      />
+      <TooltipTrigger render={<span className="flex shrink-0" />}>
+        {threadPanelPresentation === "popover" ? (
+          <PopoverTrigger handle={threadPanelPopoverHandle} render={threadPanelToggle} />
+        ) : (
+          threadPanelToggle
+        )}
+      </TooltipTrigger>
       <TooltipPopup side="bottom">
         Toggle thread details
         {threadPanelShortcutLabel ? ` (${threadPanelShortcutLabel})` : ""}
       </TooltipPopup>
     </Tooltip>
   );
+
   return (
     <div
-      className="flex h-full shrink-0 items-center gap-0 sm:gap-1 [-webkit-app-region:no-drag]"
+      className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
-      {showLocalTools ? (
-        <>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  className="shrink-0 [-webkit-app-region:no-drag]"
-                  aria-label="Open Files"
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={!rightPanelAvailable}
-                  onClick={onOpenFiles}
-                >
-                  <FilesIcon className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="bottom">
-              {rightPanelAvailable ? "Open Files" : "Files are unavailable"}
-            </TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  className="shrink-0 [-webkit-app-region:no-drag]"
-                  pressed={tasksOpen}
-                  onPressedChange={onToggleTasks}
-                  aria-label={tasksActionLabel}
-                  variant="ghost"
-                  size="sm"
-                >
-                  <ListTodoIcon className="size-3.5" />
-                </Toggle>
-              }
-            />
-            <TooltipPopup side="bottom">{tasksActionLabel}</TooltipPopup>
-          </Tooltip>
-        </>
-      ) : null}
-      {showThreadPanelControl
-        ? threadPanelPresentation === "popover"
-          ? threadPanelTooltip(
-              <PopoverTrigger handle={threadPanelPopoverHandle} render={threadPanelToggle} />,
-            )
-          : threadPanelTooltip(threadPanelToggle)
-        : null}
-      {showTerminalControl ? (
+      {onOpenFiles ? (
         <Tooltip>
           <TooltipTrigger
             render={
-              <Toggle
+              <Button
                 className="shrink-0 [-webkit-app-region:no-drag]"
-                pressed={terminalOpen}
-                onPressedChange={onToggleTerminal}
-                aria-label="Toggle terminal drawer"
+                aria-label="Open Files"
                 variant="ghost"
-                size="sm"
-                disabled={!terminalAvailable}
+                size="icon-sm"
+                disabled={!rightPanelAvailable}
+                onClick={onOpenFiles}
               >
-                <PanelBottomIcon className="size-3.5" />
-              </Toggle>
+                <FilesIcon className="size-3.5" />
+              </Button>
             }
           />
+          <TooltipPopup side="bottom">
+            {rightPanelAvailable ? "Open Files" : "Files are unavailable"}
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
+      {onToggleTasks ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="flex shrink-0" />}>
+            <Toggle
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              pressed={tasksOpen}
+              onPressedChange={onToggleTasks}
+              aria-label={tasksOpen ? `Close ${tasksLabel}` : `Open ${tasksLabel}`}
+              variant="ghost"
+              size="sm"
+            >
+              <ListTodoIcon className="size-3.5" />
+            </Toggle>
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">
+            {tasksOpen ? `Close ${tasksLabel}` : `Open ${tasksLabel}`}
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
+      {showThreadPanelControl ? threadPanelControl : null}
+      {showTerminalControl ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="flex shrink-0" />}>
+            <Toggle
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              pressed={terminalOpen}
+              onPressedChange={onToggleTerminal}
+              aria-label="Toggle terminal drawer"
+              variant="ghost"
+              size="sm"
+              disabled={!terminalAvailable}
+            >
+              <PanelBottomIcon className="size-4" />
+            </Toggle>
+          </TooltipTrigger>
           <TooltipPopup side="bottom">
             {terminalAvailable
               ? `Toggle terminal drawer${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
@@ -174,6 +169,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               pressed={rightPanelOpen}
               onPressedChange={onToggleRightPanel}
               aria-label="Toggle right panel"
+              data-right-panel-toggle
               variant="ghost"
               size="sm"
               disabled={!rightPanelAvailable}
@@ -212,7 +208,7 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
             variant="ghost"
             size="sm"
           >
-            <MorphIcon className="size-3.5" icon={maximized ? Minimize2 : Maximize2} />
+            <MorphIcon className="size-4" icon={maximized ? Minimize2 : Maximize2} />
           </Toggle>
         }
       />
@@ -220,3 +216,53 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
     </Tooltip>
   );
 });
+
+/** The thread panel toggle on a header whose right side the inline right panel covers. */
+export function ThreadPanelHeaderControl(props: PanelLayoutControlsProps) {
+  return (
+    <div
+      className="absolute top-[var(--workspace-controls-top)] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
+      data-workspace-titlebar-controls
+    >
+      <PanelLayoutControls {...props} showTerminalControl={false} showRightPanelControl={false} />
+    </div>
+  );
+}
+
+/** The window's top-right panel controls, with the maximize toggle while the panel is open. */
+export function WorkspaceTitlebarControls(props: {
+  readonly showMaximizeControl: boolean;
+  readonly rightPanelOpen: boolean;
+  readonly animationsActive: boolean;
+  readonly maximized: boolean;
+  readonly onToggleMaximized: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div
+      className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]"
+      data-workspace-titlebar-controls
+    >
+      {props.showMaximizeControl ? (
+        <span
+          aria-hidden={!props.rightPanelOpen}
+          className={cn(
+            "flex shrink-0",
+            props.animationsActive &&
+              "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
+            props.rightPanelOpen
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none absolute right-full mr-1 opacity-0",
+          )}
+          inert={!props.rightPanelOpen}
+        >
+          <RightPanelMaximizeControl
+            maximized={props.maximized}
+            onToggle={props.onToggleMaximized}
+          />
+        </span>
+      ) : null}
+      <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
+    </div>
+  );
+}

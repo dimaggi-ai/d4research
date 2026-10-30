@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@d4research/contracts";
 import {
@@ -19,7 +20,7 @@ const project: Project = {
       remoteName: "origin",
       remoteUrl: "https://example.test/notes.git",
     },
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     owner: "example",
     name: "notes",
     displayName: "Notes",

@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NodeSqlite from "node:sqlite";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Pure path operations also run inside synchronous SQLite and filesystem boundaries.
 import * as NodePath from "node:path";

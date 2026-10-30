@@ -2,13 +2,12 @@ import {
   AuthFilesystemReadScope,
   EnvironmentId,
   type AuthSessionState,
-  type ProjectListEntriesResult,
   ProjectReadFileError,
   type ProjectReadFileResult,
 } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -34,6 +33,8 @@ const projectMocks = vi.hoisted(() => ({
   listEntries: vi.fn(),
   optimisticFile: vi.fn(),
   readFile: vi.fn(),
+  watchEntries: vi.fn(),
+  watchFile: vi.fn(),
 }));
 
 const atomHooks = vi.hoisted(() => ({
@@ -54,6 +55,14 @@ const reactHooks = vi.hoisted(() => {
     b !== undefined &&
     a.length === b.length &&
     a.every((v, i) => Object.is(v, b[i]));
+  let states: unknown[] = [];
+  let effects: Array<{ deps?: readonly unknown[]; cleanup?: () => void }> = [];
+  let callbacks: Array<{ deps?: readonly unknown[]; value: unknown }> = [];
+  const same = (a?: readonly unknown[], b?: readonly unknown[]) =>
+    a !== undefined &&
+    b !== undefined &&
+    a.length === b.length &&
+    a.every((v, i) => Object.is(v, b[i]));
   const nextIndex = () => cursor++;
 
   return {
@@ -64,8 +73,12 @@ const reactHooks = vi.hoisted(() => {
       effects.forEach((effect) => effect?.cleanup?.());
       effects = [];
       callbacks = [];
+      effects.forEach((effect) => effect?.cleanup?.());
+      effects = [];
+      callbacks = [];
       cursor = 0;
       refs = [];
+      states = [];
       states = [];
     },
     useCallback<A>(callback: A, deps?: readonly unknown[]): A {
@@ -88,6 +101,17 @@ const reactHooks = vi.hoisted(() => {
       const index = nextIndex();
       refs[index] ??= { current: initialValue };
       return refs[index] as { current: A };
+    },
+    useState<A>(initialValue: A): [A, (next: A | ((current: A) => A)) => void] {
+      const index = nextIndex();
+      if (!(index in states)) states[index] = initialValue;
+      return [
+        states[index] as A,
+        (next) => {
+          const current = states[index] as A;
+          states[index] = typeof next === "function" ? (next as (value: A) => A)(current) : next;
+        },
+      ];
     },
     useState<A>(initialValue: A): [A, (next: A | ((current: A) => A)) => void] {
       const index = nextIndex();
@@ -123,10 +147,10 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useCallback: reactHooks.useCallback,
-    useEffect: reactHooks.useEffect,
     useMemo: reactHooks.useMemo,
-    useState: reactHooks.useState,
+    useEffect: reactHooks.useEffect,
     useRef: reactHooks.useRef,
+    useState: reactHooks.useState,
   };
 });
 
@@ -140,11 +164,11 @@ vi.mock("~/state/queries", () => ({
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
+import { appAtomRegistry, resetAppAtomRegistryForTests } from "~/rpc/atomRegistry";
 import { useT3ProjectFileState } from "~/hooks/useT3ProjectFileScripts";
 import { useProjectEntriesQuery, useProjectFileQuery } from "./projectFilesQueryState";
 
 const environmentId = EnvironmentId.make("environment-1");
-const decodeReadError = Schema.decodeSync(ProjectReadFileError);
 
 function deferred<A>() {
   let resolve!: (value: A) => void;
@@ -159,13 +183,6 @@ function file(contents: string): ProjectReadFileResult {
     relativePath: "src/preview.ts",
     contents,
     byteLength: contents.length,
-    truncated: false,
-  };
-}
-
-function projectEntries(paths: readonly string[]): ProjectListEntriesResult {
-  return {
-    entries: paths.map((path) => ({ path, kind: "file" })),
     truncated: false,
   };
 }
@@ -185,7 +202,52 @@ describe("project query refresh", () => {
     projectMocks.listEntries.mockReset();
     projectMocks.optimisticFile.mockReset();
     projectMocks.readFile.mockReset();
+    projectMocks.watchEntries.mockReset();
+    projectMocks.watchFile.mockReset();
     reactHooks.reset();
+  });
+
+  it("refreshes the workspace listing when its filesystem watcher advances", async () => {
+    let reads = 0;
+    const result: ProjectListEntriesResult = {
+      entries: [],
+      truncated: false,
+    };
+    const entriesAtom = Atom.make(
+      Effect.sync(() => {
+        reads += 1;
+        return result;
+      }),
+    ).pipe(Atom.swr({ staleTime: 30_000, revalidateOnMount: true }));
+    const watchAtom = Atom.make(AsyncResult.success({ revision: 0 }));
+    const registry = appAtomRegistry;
+    const unmountEntries = registry.mount(entriesAtom);
+    const unmountWatch = registry.mount(watchAtom);
+    projectMocks.listEntries.mockReturnValue(entriesAtom);
+    projectMocks.watchEntries.mockReturnValue(watchAtom);
+    atomHooks.registry = registry;
+
+    const render = () => {
+      reactHooks.beginRender();
+      useProjectEntriesQuery(environmentId, "/repo");
+    };
+
+    try {
+      render();
+      await flushEffects();
+      const readsBeforeChange = reads;
+
+      registry.set(watchAtom, AsyncResult.success({ revision: 1 }));
+      render();
+      await flushEffects();
+
+      expect(reads).toBeGreaterThan(readsBeforeChange);
+    } finally {
+      unmountWatch();
+      unmountEntries();
+      atomHooks.registry = null;
+      resetAppAtomRegistryForTests();
+    }
   });
 
   it("does not query or expose optimistic file contents without read permission", () => {
@@ -227,6 +289,7 @@ describe("project query refresh", () => {
       Atom.make(AsyncResult.success(projectEntries(["t3.json"]))),
     );
     projectMocks.optimisticFile.mockReturnValue(Atom.make(null));
+    projectMocks.watchEntries.mockReturnValue(Atom.make(AsyncResult.success({ revision: 0 })));
     try {
       expect(useProjectFileQuery(environmentId, "/repo", "t3.json")).toMatchObject({
         data: null,
@@ -376,6 +439,7 @@ describe("project query refresh", () => {
     atomHooks.registry = registry;
     let renderedContents: string | null = null;
     let unmountMetadata = () => {};
+    let unmountMetadata = () => {};
 
     const render = (mutationId: string | null) => {
       reactHooks.beginRender();
@@ -391,6 +455,11 @@ describe("project query refresh", () => {
 
     try {
       render(null);
+      await vi.waitFor(() => expect(requests).toHaveLength(1));
+      unmountMetadata = registry.mount(metadataAtom);
+      expect(renderedContents).toBe("cached");
+      requests.at(-1)!.resolve({ ...file(""), revision: "1", metadataOnly: true });
+      await vi.waitFor(() => expect(registry.get(metadataAtom).waiting).toBe(false));
       await vi.waitFor(() => expect(requests).toHaveLength(1));
       unmountMetadata = registry.mount(metadataAtom);
       expect(renderedContents).toBe("cached");
@@ -413,9 +482,11 @@ describe("project query refresh", () => {
     } finally {
       reactHooks.reset();
       unmountMetadata();
+      reactHooks.reset();
+      unmountMetadata();
       unmount();
       atomHooks.registry = null;
-      appAtomRegistry.reset();
+      resetAppAtomRegistryForTests();
     }
   });
 
@@ -425,11 +496,16 @@ describe("project query refresh", () => {
       data: file("old editor snapshot"),
       confirmedAgainst: undefined,
     });
+    const watchAtom = Atom.make(
+      AsyncResult.success({ relativePath: "src/preview.ts", revision: 0 }),
+    );
     const registry = appAtomRegistry;
     const unmountRead = registry.mount(readAtom);
     const unmountOptimistic = registry.mount(optimisticAtom);
+    const unmountWatch = registry.mount(watchAtom);
     projectMocks.readFile.mockReturnValue(readAtom);
     projectMocks.optimisticFile.mockReturnValue(optimisticAtom);
+    projectMocks.watchFile.mockReturnValue(watchAtom);
     atomHooks.registry = registry;
     let renderedContents: string | null = null;
 
@@ -454,10 +530,11 @@ describe("project query refresh", () => {
       expect(registry.get(optimisticAtom)).toBeNull();
       expect(renderedContents).toBe("fresh from disk");
     } finally {
+      unmountWatch();
       unmountOptimistic();
       unmountRead();
       atomHooks.registry = null;
-      appAtomRegistry.reset();
+      resetAppAtomRegistryForTests();
     }
   });
 
@@ -477,13 +554,17 @@ describe("project query refresh", () => {
         return { ...snapshot, contents: "", metadataOnly: true };
       }),
     );
+    const watchAtom = Atom.make(
+      AsyncResult.success({ relativePath: "src/preview.ts", revision: 0 }),
+    );
     const optimisticAtom = Atom.make(null);
     const registry = appAtomRegistry;
-    const release = [readAtom, optimisticAtom].map((atom) => registry.mount(atom));
+    const release = [readAtom, watchAtom, optimisticAtom].map((atom) => registry.mount(atom));
     projectMocks.readFile.mockImplementation(({ input }) =>
       input.metadataOnly ? metadataAtom : readAtom,
     );
     projectMocks.optimisticFile.mockReturnValue(optimisticAtom);
+    projectMocks.watchFile.mockReturnValue(watchAtom);
     atomHooks.registry = registry;
     const render = (active: boolean) => {
       reactHooks.beginRender();
@@ -511,7 +592,7 @@ describe("project query refresh", () => {
       reactHooks.reset();
       release.forEach((unmount) => unmount());
       atomHooks.registry = null;
-      appAtomRegistry.reset();
+      resetAppAtomRegistryForTests();
     }
   });
 
@@ -532,13 +613,17 @@ describe("project query refresh", () => {
         return { ...snapshot, contents: "", metadataOnly: true };
       }),
     ).pipe(Atom.swr({ staleTime: Infinity, revalidateOnMount: true }), Atom.setIdleTTL(0));
+    const watchAtom = Atom.make(
+      AsyncResult.success({ relativePath: "src/preview.ts", revision: 0 }),
+    );
     const optimisticAtom = Atom.make(null);
     const registry = appAtomRegistry;
-    const release = [readAtom, optimisticAtom].map((atom) => registry.mount(atom));
+    const release = [readAtom, watchAtom, optimisticAtom].map((atom) => registry.mount(atom));
     projectMocks.readFile.mockImplementation(({ input }) =>
       input.metadataOnly ? metadataAtom : readAtom,
     );
     projectMocks.optimisticFile.mockReturnValue(optimisticAtom);
+    projectMocks.watchFile.mockReturnValue(watchAtom);
     atomHooks.registry = registry;
     const render = (active = true, dirty = false) => {
       reactHooks.beginRender();
@@ -589,7 +674,7 @@ describe("project query refresh", () => {
       reactHooks.reset();
       release.forEach((unmount) => unmount());
       atomHooks.registry = null;
-      appAtomRegistry.reset();
+      resetAppAtomRegistryForTests();
       vi.useRealTimers();
     }
   });
@@ -602,14 +687,16 @@ describe("project query refresh", () => {
       const metadataAtom = Atom.make(
         Effect.sync(() => ({ ...file(""), relativePath, revision, metadataOnly: true })),
       ).pipe(Atom.swr({ staleTime: Infinity, revalidateOnMount: true }));
+      const watchAtom = Atom.make(AsyncResult.success({ relativePath, revision: 0 }));
       const optimisticAtom = Atom.make(null);
       const registry = appAtomRegistry;
-      const release = [metadataAtom, optimisticAtom].map((atom) => registry.mount(atom));
+      const release = [metadataAtom, watchAtom, optimisticAtom].map((atom) => registry.mount(atom));
       projectMocks.readFile.mockImplementation(({ input }) => {
         expect(input.metadataOnly).toBe(true);
         return metadataAtom;
       });
       projectMocks.optimisticFile.mockReturnValue(optimisticAtom);
+      projectMocks.watchFile.mockReturnValue(watchAtom);
       atomHooks.registry = registry;
       const render = () => {
         reactHooks.beginRender();
@@ -626,7 +713,7 @@ describe("project query refresh", () => {
         reactHooks.reset();
         release.forEach((unmount) => unmount());
         atomHooks.registry = null;
-        appAtomRegistry.reset();
+        resetAppAtomRegistryForTests();
         vi.useRealTimers();
       }
     },
@@ -642,13 +729,17 @@ describe("project query refresh", () => {
       }),
     );
     const metadataAtom = Atom.make(Effect.promise(() => request.promise));
+    const watchAtom = Atom.make(
+      AsyncResult.success({ relativePath: "src/preview.ts", revision: 0 }),
+    );
     const optimisticAtom = Atom.make({ data: file("local edit"), confirmedAgainst: undefined });
     const registry = appAtomRegistry;
-    const release = [readAtom, optimisticAtom].map((atom) => registry.mount(atom));
+    const release = [readAtom, watchAtom, optimisticAtom].map((atom) => registry.mount(atom));
     projectMocks.readFile.mockImplementation(({ input }) =>
       input.metadataOnly ? metadataAtom : readAtom,
     );
     projectMocks.optimisticFile.mockReturnValue(optimisticAtom);
+    projectMocks.watchFile.mockReturnValue(watchAtom);
     atomHooks.registry = registry;
     const render = (dirty: boolean) => {
       reactHooks.beginRender();
@@ -666,7 +757,7 @@ describe("project query refresh", () => {
       reactHooks.reset();
       release.forEach((unmount) => unmount());
       atomHooks.registry = null;
-      appAtomRegistry.reset();
+      resetAppAtomRegistryForTests();
     }
   });
 
@@ -679,9 +770,12 @@ describe("project query refresh", () => {
         return request.promise;
       }),
     ).pipe(Atom.swr({ staleTime: 30_000, revalidateOnMount: true }));
-    const registry = AtomRegistry.make();
+    const registry = appAtomRegistry;
     const unmount = registry.mount(entriesAtom);
+    const watchAtom = Atom.make(AsyncResult.success({ revision: 0 }));
+    const unmountWatch = registry.mount(watchAtom);
     projectMocks.listEntries.mockReturnValue(entriesAtom);
+    projectMocks.watchEntries.mockReturnValue(watchAtom);
     atomHooks.registry = registry;
     let renderedPaths: readonly string[] = [];
 
@@ -703,25 +797,38 @@ describe("project query refresh", () => {
       await flushEffects();
 
       render("mutation-1");
+      await vi.waitFor(() => expect(requests).toHaveLength(2));
+      requests.at(-1)!.resolve({ ...file(""), revision: "1", metadataOnly: true });
+      await vi.waitFor(() => expect(registry.get(metadataAtom).waiting).toBe(false));
+      // Opening is stale-while-revalidate: show cached rows without a loading flash.
       expect(renderedPaths).toEqual(["src/old.ts"]);
       await flushEffects();
       expect(requests).toHaveLength(2);
 
       requests[1]!.resolve(projectEntries(["src/new.ts"]));
       await flushEffects();
+      await flushEffects();
       render("mutation-1");
       expect(renderedPaths).toEqual(["src/new.ts"]);
       expect(requests).toHaveLength(2);
     } finally {
+      unmountWatch();
       unmount();
-      registry.dispose();
       atomHooks.registry = null;
+      resetAppAtomRegistryForTests();
     }
   });
 
   it("does not issue a file read for a disabled image preview", async () => {
     const requests: Array<ReturnType<typeof deferred<ProjectReadFileResult>>> = [];
+    let reads = 0;
     const readAtom = Atom.make(
+      Effect.sync(() => {
+        reads++;
+        return { ...file(reads === 1 ? "cached" : "fresh"), revision: String(reads) };
+      }),
+    );
+    const metadataAtom = Atom.make(
       Effect.promise(() => {
         const request = deferred<ProjectReadFileResult>();
         requests.push(request);
@@ -813,18 +920,28 @@ describe("project query refresh", () => {
     }
   });
 
-  it("retains decoded read failure context for the connected environment", async () => {
-    const error = decodeReadError({
-      _tag: "ProjectReadFileError",
-      cwd: "C:\\workspace",
-      relativePath: "workspace/outline.md",
-      failure: "operation_failed",
-      operation: "realpath-target",
-      operationPath: "C:\\workspace\\workspace\\outline.md",
-      resolvedPath: "C:\\workspace\\workspace\\outline.md",
-      message: "Failed to read workspace file.",
-    });
-    const readAtom = Atom.make(Effect.fail(error));
+  it("clears failed reads while distinguishing a definitive folder result", () => {
+    const contents = file("# readme");
+    const success = AsyncResult.success(contents);
+    const failure = (kind: ProjectReadFileError["failure"], cached = false) =>
+      AsyncResult.failure(
+        Cause.fail(
+          new ProjectReadFileError({ cwd: "/repo", relativePath: "src/preview.ts", failure: kind }),
+        ),
+        { previousSuccess: cached ? Option.some(success) : Option.none() },
+      );
+    const states = [
+      ["initial read", AsyncResult.initial(true), false, false, null],
+      ["unknown path", failure("operation_failed"), false, false, null],
+      ["binary file", failure("binary_file"), true, false, null],
+      ["read success", success, true, false, contents],
+      ["pending refresh", AsyncResult.waiting(success), true, false, contents],
+      ["transient refresh failure", failure("operation_failed", true), false, false, null],
+      ["became a folder", failure("path_not_file", true), false, true, null],
+    ] as const;
+    const readAtom = Atom.make<
+      AsyncResult.AsyncResult<ProjectReadFileResult, ProjectReadFileError>
+    >(AsyncResult.initial(true));
     const registry = AtomRegistry.make();
     const unmount = registry.mount(readAtom);
     projectMocks.readFile.mockReturnValue(readAtom);
@@ -832,17 +949,56 @@ describe("project query refresh", () => {
     atomHooks.registry = registry;
 
     try {
-      await flushEffects();
-      reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, "C:\\workspace", "workspace/outline.md");
-      expect(query.readError).toBe(error);
-      expect(query.error).toBe(error.message);
-      expect(query.isNotFile).toBe(false);
-      expect(query.data).toBeNull();
+      for (const [label, result, isFile, isNotFile, data] of states) {
+        registry.set(readAtom, result);
+        reactHooks.beginRender();
+        const query = useProjectFileQuery(environmentId, "/repo", "src/preview.ts");
+        expect(query.isFile, label).toBe(isFile);
+        expect(query.isNotFile, label).toBe(isNotFile);
+        expect(query.data, label).toBe(data);
+        expect(query.isPending, label).toBe(result.waiting);
+      }
     } finally {
       unmount();
       registry.dispose();
       atomHooks.registry = null;
     }
   });
+  it("refetches a listing when the workspace mutation changes, not when it is first read", async () => {
+    let fetches = 0;
+    const listing = Atom.make(() => {
+      fetches += 1;
+      return AsyncResult.success({ entries: [], truncated: false });
+    }).pipe(Atom.keepAlive);
+    projectMocks.listEntries.mockReturnValue(listing);
+    projectMocks.watchEntries.mockReturnValue(Atom.make(AsyncResult.initial()));
+    const registry = AtomRegistry.make();
+    atomHooks.registry = registry;
+    const read = (mutationId: string | null) => {
+      reactHooks.beginRender();
+      return useProjectEntriesQuery(environmentId, "/repo", "src", false, mutationId);
+    };
+
+    try {
+      read("mutation-1");
+      read("mutation-1");
+      expect(fetches).toBe(1);
+
+      read("mutation-2");
+      // The refetch runs after the render that read the new revision; a reader that is not
+      // subscribed sees it on its next read.
+      await Promise.resolve();
+      read("mutation-2");
+      expect(fetches).toBe(2);
+    } finally {
+      registry.dispose();
+      atomHooks.registry = null;
+    }
+  });
 });
+
+function projectEntries(
+  paths: readonly string[],
+): import("@d4research/contracts").ProjectListEntriesResult {
+  return { entries: paths.map((path) => ({ path, kind: "file" })), truncated: false };
+}

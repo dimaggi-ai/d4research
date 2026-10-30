@@ -1,4 +1,4 @@
-import { mediaKindFromPath } from "@d4research/shared/filePreview";
+import { mediaKindFromPath } from "@d4research/shared/mediaPreview";
 import { mediaUrlReference } from "@d4research/client-runtime/media-reference";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";

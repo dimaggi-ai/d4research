@@ -7,12 +7,8 @@ import type {
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { sanitizeNewRefName } from "@d4research/shared/git";
-import { toSortableTimestamp } from "../lib/threadSort";
-export {
-  dedupeRemoteBranchesWithLocalMatches,
-  deriveLocalBranchNameFromRemoteRef,
-  sanitizeNewRefName,
-} from "@d4research/shared/git";
+import { toSortableTimestamp } from "@d4research/client-runtime/state/thread-sort";
+export { deriveLocalBranchNameFromRemoteRef, sanitizeNewRefName } from "@d4research/shared/git";
 
 export interface EnvironmentOption {
   environmentId: EnvironmentId;
@@ -22,8 +18,17 @@ export interface EnvironmentOption {
   machine: EnvironmentMachineKind;
 }
 
+/** "Add to another machine" stays muted until hovered: easy to find, quieter than the machines. */
+export const ADD_TO_MACHINE_LABEL_CLASS =
+  "flex min-w-0 items-center gap-1.5 opacity-55 in-data-highlighted:opacity-100 in-data-popup-open:opacity-100";
+
 export const EnvMode = Schema.Literals(["local", "worktree"]);
 export type EnvMode = typeof EnvMode.Type;
+
+/** Env modes that provision a dedicated, isolated workspace (worktree). */
+function isIsolatedEnvMode(mode: EnvMode): boolean {
+  return mode === "worktree";
+}
 
 const GENERIC_LOCAL_ENVIRONMENT_LABELS = new Set(["local", "local environment"]);
 
@@ -66,17 +71,21 @@ export function shouldShowComposerContextStrip(input: {
   hasActiveProject: boolean;
   isGitRepo: boolean;
   showEnvironmentIndicator: boolean;
-  hostsRestingComposerControls: boolean;
+  /** The strip also carries the resting composer controls on started threads. */
+  hostsRestingComposerControls?: boolean;
 }): boolean {
+  // A new thread always shows the strip, since it names the permissions the first send uses.
   return (
     input.hasActiveProject &&
-    (input.isDraftHeroState || input.persistInActiveThreads) &&
-    (input.isGitRepo || input.showEnvironmentIndicator || input.hostsRestingComposerControls)
+    (input.isDraftHeroState ||
+      (input.persistInActiveThreads &&
+        (input.isGitRepo ||
+          input.showEnvironmentIndicator ||
+          input.hostsRestingComposerControls === true)))
   );
 }
 
-// Labels collapse to icons when the strip's content no longer fits. A small
-// hysteresis on the way back out keeps the boundary from flapping.
+// Hysteresis prevents labels and icons from flapping at the width boundary.
 const CONTEXT_STRIP_COMPACT_EXPAND_HYSTERESIS_PX = 16;
 
 export function resolveContextStripLabelsCompact(input: {
@@ -90,7 +99,22 @@ export function resolveContextStripLabelsCompact(input: {
 }
 
 export function resolveEnvModeLabel(mode: EnvMode): string {
-  return mode === "worktree" ? "New worktree" : "Current checkout";
+  if (mode === "worktree") return "New worktree";
+  return "Current checkout";
+}
+
+/** Only a real pointer/keyboard choice may move a started thread to another workspace. */
+export function isExplicitWorkspaceModeSelectionReason(reason: string): boolean {
+  return reason === "item-press" || reason === "list-navigation";
+}
+
+export function resolveCurrentCheckoutWorkspaceMetadata(
+  currentCheckoutBranch: string | null | undefined,
+): { readonly worktreePath: null; readonly branch?: string } {
+  return {
+    worktreePath: null,
+    ...(currentCheckoutBranch ? { branch: currentCheckoutBranch } : {}),
+  };
 }
 
 export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {
@@ -164,7 +188,9 @@ export function resolveEffectiveEnvMode(input: {
     if (activeWorktreePath) {
       return "local";
     }
-    return draftThreadEnvMode === "worktree" ? "worktree" : "local";
+    return draftThreadEnvMode && isIsolatedEnvMode(draftThreadEnvMode)
+      ? draftThreadEnvMode
+      : "local";
   }
   return activeWorktreePath || preparingWorktree ? "worktree" : "local";
 }
@@ -178,8 +204,8 @@ export function resolveDraftEnvModeAfterBranchChange(input: {
   if (nextWorktreePath) {
     return "worktree";
   }
-  if (effectiveEnvMode === "worktree" && !currentWorktreePath) {
-    return "worktree";
+  if (isIsolatedEnvMode(effectiveEnvMode) && !currentWorktreePath) {
+    return effectiveEnvMode;
   }
   return "local";
 }
@@ -191,7 +217,7 @@ export function resolveBranchToolbarValue(input: {
   currentGitBranch: string | null;
 }): string | null {
   const { envMode, activeWorktreePath, activeThreadBranch, currentGitBranch } = input;
-  if (envMode === "worktree" && !activeWorktreePath) {
+  if (isIsolatedEnvMode(envMode) && !activeWorktreePath) {
     return activeThreadBranch ?? currentGitBranch;
   }
   return currentGitBranch ?? activeThreadBranch;
@@ -215,11 +241,10 @@ export function resolveBranchTriggerLabel(input: {
     return "Select ref";
   }
   if (effectiveEnvMode === "worktree" && !activeWorktreePath) {
-    const baseRef =
-      startFromOrigin && resolvedActiveBranchIsRemote === false
-        ? `origin/${resolvedActiveBranch}`
-        : resolvedActiveBranch;
-    return `From ${baseRef}`;
+    // Only the server can determine a local branch's configured remote.
+    return startFromOrigin && resolvedActiveBranchIsRemote === false
+      ? `From ${resolvedActiveBranch} (remote)`
+      : `From ${resolvedActiveBranch}`;
   }
   return resolvedActiveBranch;
 }
@@ -307,4 +332,32 @@ export function shouldIncludeBranchPickerItem(input: {
     sanitizedQuery !== normalizedQuery &&
     lowerItemValue.includes(sanitizedQuery)
   );
+}
+
+/**
+ * The brief handed to a fresh thread when a fast-forward is refused. It states the facts and the
+ * options and stops there: which way to reconcile a diverged branch is a judgement call about the
+ * work, and the agent has the repository in front of it.
+ */
+export function buildBranchConflictPrompt(input: {
+  refName: string;
+  upstreamRef: string | null;
+  aheadCount: number | null;
+  behindCount: number | null;
+  detail: string | null;
+}): string {
+  const upstream = input.upstreamRef ?? "its upstream";
+  const counts = [
+    input.aheadCount === null ? null : `${input.aheadCount} local commit(s) not on ${upstream}`,
+    input.behindCount === null ? null : `${input.behindCount} commit(s) on ${upstream} not local`,
+  ].filter((entry): entry is string => entry !== null);
+
+  return [
+    `\`${input.refName}\` and \`${upstream}\` have diverged, so \`git pull --ff-only\` was refused.`,
+    counts.length > 0 ? `There are ${counts.join(", and ")}.` : null,
+    input.detail === null ? null : `Git reported:\n\n\`\`\`\n${input.detail}\n\`\`\``,
+    "Please look at both sides, tell me whether a rebase or a merge fits this history better, and carry it out. Walk me through every conflict you have to resolve and why you picked the resolution you did. Do not force-push anything.",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n\n");
 }

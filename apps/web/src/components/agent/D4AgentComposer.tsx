@@ -40,11 +40,7 @@ import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
+import { providerInstanceEntriesFor } from "../../providerInstances";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
@@ -137,11 +133,7 @@ export function D4AgentComposer({
       ? (settings?.d4Agent.taskModelSelection ?? null)
       : taskSelectionOverride;
   const taskPickerSelection = taskSelection ?? fallbackSelection;
-  const allEntries = settings
-    ? sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-      )
-    : [];
+  const allEntries = settings ? providerInstanceEntriesFor(providers, settings, null) : [];
   const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const entry = entries.find((candidate) => candidate.instanceId === selection?.instanceId);
   const modelOptions =
@@ -601,8 +593,8 @@ export function D4AgentComposer({
                     instanceId={selection.instanceId}
                     models={entry.models}
                     model={selection.model}
-                    prompt={text}
-                    onPromptChange={(value) => {
+                    onPromptEdit={(edit) => {
+                      const value = edit(text);
                       setText(value.slice(0, MAX_PROMPT_LENGTH));
                       setCursor(Math.min(value.length, MAX_PROMPT_LENGTH));
                       bindDraft();

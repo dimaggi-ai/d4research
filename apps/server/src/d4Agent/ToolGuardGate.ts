@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import type { D4AgentGuardVerdict } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

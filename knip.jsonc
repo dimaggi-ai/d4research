@@ -20,17 +20,31 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
-      // worktree setup (from t3.json) run directly.
+      // worktree setup (from t3.json) run directly. release-desktop.yml bundles the
+      // Windows verify script with esbuild through a path knip does not trace,
+      // electron-builder loads the macOS signer by path, and mobile-e2e.ts runs
+      // agent-device's CLI by path, and mobile-behavior.ts spawns its runner by path.
+      // release-desktop.yml runs the desktop launch check through xvfb-run, which knip
+      // does not trace.
       "entry": [
+        // These fixture scripts are injected into a browser page by path.
+        "fixtures/*/*.js",
         "knip-schemas.ts",
+        "mobile-behavior/run.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
+        "sign-macos.ts",
+        "smoke-desktop-app.ts",
+        "verify-windows-desktop-artifact.ts",
         // Manual research-product QA and fixture recorders, run by hand.
         "qa-*.{ts,mjs}",
         "record-claude-fixture.ts",
       ],
+      "ignoreDependencies": ["agent-device", "esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
-      "ignore": ["npm-launcher/**"],
+      // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
+      // knip run beside it in check:changed must not report.
+      "ignore": ["npm-launcher/**", ".knip-test-*/**"],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
@@ -38,13 +52,16 @@
         "src/bin.ts!",
         "src/claude-history-worker.ts!",
         "scripts/cli.ts",
-        "scripts/evaluate-thread-titles.ts",
-        "scripts/measure-pr-preview.ts",
+        "scripts/fetch-expo-schema.ts",
         "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",
         "scripts/verify-background-live.ts",
         "src/provider/testFixtures/*.mjs",
+        // graphqlgen reads its config.
+        "graphql.config.ts",
       ],
+      // The generated operations export every selection's class.
+      "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
@@ -74,8 +91,10 @@
     },
     "apps/web": {
       "entry": [
-        // Worktree setup (scripts/setup-worktree.ts) runs this directly.
+        // Worktree setup (scripts/setup-worktree.ts) runs this directly, and evidence
+        // fixtures run under node.
         "scripts/warm-dep-cache.ts",
+        "test/fixtures/**/*.mjs",
         // Manual Playwright explorations, run by hand rather than by a test runner.
         "e2e/ui.e2e.mjs",
         "e2e/menu-alignment.audit.mjs",
@@ -86,6 +105,10 @@
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
       "ignoreIssues": { "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"] },
+    },
+    "apps/marketing": {
+      // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.
+      "ignoreDependencies": ["@astrojs/check"],
     },
     "apps/mobile": {
       // Expo loads plugins and the fingerprint config by string; Metro embeds the browser entry in the native WebView.
@@ -100,6 +123,7 @@
       // Fonts are configured as asset paths; Expo autolinks the native packages.
       "ignoreDependencies": [
         "@expo-google-fonts/dm-sans",
+        "@d4research/mobile-highlights-native",
         "@d4research/mobile-review-diff-native",
         "@d4research/mobile-terminal-native",
       ],
@@ -125,7 +149,7 @@
     },
     "packages/source-control-github": {
       // graphqlgen reads its config; the generated operations export every selection's class.
-      "entry": ["graphql.config.ts"],
+      "entry": ["graphql.config.ts", "scripts/measure-pr-preview.ts"],
       "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
     },
   },

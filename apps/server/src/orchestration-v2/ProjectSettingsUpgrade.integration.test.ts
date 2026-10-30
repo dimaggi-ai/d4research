@@ -61,6 +61,10 @@ const seedV1Database = Effect.gen(function* () {
         projectId,
         title: "Upgrade",
         workspaceRoot: "/work/upgrade",
+        workspaceRoots: [
+          { path: "/work/upgrade" },
+          { path: "/work/backend", label: "Backend", agentGuidance: "Use backend checks" },
+        ],
         defaultModelSelection: null,
         faviconPath: null,
         projectIcon: null,
@@ -96,10 +100,10 @@ const seedV1Database = Effect.gen(function* () {
   yield* sql`
     INSERT INTO projection_projects (
       project_id, title, workspace_root, default_model_selection_json, default_thread_env_mode,
-      auto_pull, favicon_path, project_icon_json, scripts_json, created_at, updated_at, deleted_at
+      auto_pull, favicon_path, project_icon_json, scripts_json, workspace_roots_json, created_at, updated_at, deleted_at
     ) VALUES (
       ${projectId}, 'Upgrade', '/work/upgrade', NULL, ${expectedSettings.default_thread_env_mode},
-      1, ${expectedSettings.favicon_path}, ${expectedSettings.project_icon_json}, '[]',
+      1, ${expectedSettings.favicon_path}, ${expectedSettings.project_icon_json}, '[]', ${encodeJson([{ path: "/work/upgrade" }, { path: "/work/backend", label: "Backend", agentGuidance: "Use backend checks" }])},
       '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', NULL
     )
   `;
@@ -159,6 +163,7 @@ const layerRuntime = (dbPath: string) => {
     Layer.provide(ServerSettings.layerTest()),
     Layer.provide(
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
         getInstance: () => Effect.succeed(undefined),
         listInstances: Effect.succeed([]),
         listUnavailable: Effect.succeed([]),
@@ -189,6 +194,11 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
         assert.deepEqual(yield* readSettings, expectedSettings);
         const project = yield* (yield* ProjectService.ProjectService).getById(projectId);
         assert.equal(project._tag, "Some");
+        if (project._tag === "Some")
+          assert.deepEqual(project.value.workspaceRoots, [
+            { path: "/work/upgrade" },
+            { path: "/work/backend", label: "Backend", agentGuidance: "Use backend checks" },
+          ]);
       }).pipe(Effect.provide(layerRuntime(dbPath)));
     }),
   ).pipe(Effect.provide(NodeServices.layer)),

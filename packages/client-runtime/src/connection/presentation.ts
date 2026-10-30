@@ -3,7 +3,12 @@ import * as Option from "effect/Option";
 
 import type { ConnectionCatalogEntry } from "./catalog.ts";
 import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
-import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
+import {
+  connectionRouteId,
+  connectionRoutes,
+  routeHttpBaseUrl,
+  isSharedHostConnectionTarget,
+} from "./routes.ts";
 
 export type EnvironmentConnectionPhase =
   | "available"
@@ -94,12 +99,6 @@ export function connectionStatusTitle(connection: EnvironmentConnectionPresentat
   return connectionStatusText({ ...connection, error: null });
 }
 
-export function presentEnvironmentConnection(
-  state: SupervisorConnectionState,
-): EnvironmentConnectionPresentation {
-  return presentConnectionState(state);
-}
-
 /**
  * SSH connections ride a local forward that disappears with the client, so they have no stable
  * address.
@@ -109,6 +108,7 @@ export function environmentMcpUrl(input: {
   readonly relayHttpBaseUrl?: string | undefined;
   readonly connectedTarget?: ConnectionTarget | null | undefined;
 }): string | null {
+  if (isSharedHostConnectionTarget(input.entry.target)) return null;
   const connectedRouteId = input.connectedTarget ? connectionRouteId(input.connectedTarget) : null;
   const routes = connectionRoutes(input.entry);
   const connectedRoute = routes.find(

@@ -36,6 +36,7 @@ vi.mock("../../providerInstances", () => ({
   deriveProviderInstanceEntries: () => [],
   applyProviderInstanceSettings: (entries: unknown) => entries,
   sortProviderInstanceEntries: (entries: unknown) => entries,
+  providerInstanceEntriesFor: () => [],
 }));
 vi.mock("../../modelSelection", () => ({
   resolveAppModelSelectionState: () => mocks.defaultWorker,

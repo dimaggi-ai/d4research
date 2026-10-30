@@ -18,6 +18,18 @@ immutable runtime. Preflight checks the launcher protocol because a target that
 needs new rollback guarantees cannot safely run under an older launcher. Upgrading
 that launcher requires a local service update.
 
+## Desktop SSH fork payloads
+
+macOS desktop packages carry a self-contained CLI archive. Its SHA-256 fingerprint is the
+`serverBuildId`, because a fork can change without changing its semver. Desktop SSH stages this
+immutable payload under `runtime/forks` and never resolves it from the public release feed.
+A reconnect must reuse a healthy running server, keeping its runner file intact; activation is an
+explicit update action. Only a matching default-home environment and its recorded managed PID/port
+can be replaced. The SSH updater preserves the old runner and a stopped SQLite snapshot, then
+restores them if the trial misses readiness. Systemd/launchd services and external servers retain
+their existing owners. The desktop verifies the descriptor and the renderer waits for the requested
+build after reconnecting; a transport reconnect alone is insufficient evidence of success.
+
 ## Commit boundary
 
 The launcher durably records the pending update before acknowledging it, then
@@ -77,10 +89,11 @@ opt-out. The
 requires matching durable run, provider thread, session, and native resume identity.
 Queued runs never started, so recovery holds them and continues the run they wait
 behind. A settled run qualifies only when the restart cancels work the agent waits on
-(a monitor, subagent, or background task) and its session was live, so stale records
-from an older crash never wake it. Its continuation prompt is the note of what will not
-report back. A shell alone does not wake a settled run: most are dev servers nobody
-waits on, so that note waits for the next user message.
+(a subagent, a background task, or a shell or monitor the agent marked with
+`t3_background_wait`) and its session was live, so stale records from an older crash
+never wake it. Its continuation prompt is the note of what will not report back. An
+unmarked shell or monitor does not wake a settled run: most are dev servers and their
+watchdogs that nobody waits on, so that note waits for the next user message.
 
 Recovery retires effects tied to the lost process and records continuation intent
 in the durable outbox. That intent survives another restart before provider startup.

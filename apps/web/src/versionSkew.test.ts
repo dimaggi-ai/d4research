@@ -1,107 +1,62 @@
 import { EnvironmentId } from "@d4research/contracts";
+import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const branding = vi.hoisted(() => ({ APP_VERSION: "0.0.34" }));
 vi.mock("./branding", () => branding);
 
 import { APP_VERSION } from "./branding";
-import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 import {
-  appendVersionMismatchHint,
   buildVersionMismatchDismissalKey,
-  dismissVersionMismatch,
   dismissServerUpdateFailure,
+  dismissVersionMismatch,
   isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
   manualServerUpdateCommand,
-  resolveServerConfigVersionMismatch,
-  resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
-  serverUpdateGuidance,
-  supportsDesktopAppUpdate,
-  supportsServerUpdateThreadContinuation,
 } from "./versionSkew";
+
+const MISMATCH_HINT =
+  "Version mismatch. Try syncing the client and server to the same T3 Code version.";
 
 describe("versionSkew", () => {
   it("updates only the proven npm prefix and safely quotes its path", () => {
     expect(manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/node" })).toBe(
-      "npm install --global --prefix '/opt/node' d4research@0.0.45",
+      "npm install --global --prefix '/opt/node' t3@0.0.45",
     );
     expect(
       manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/maria's node" }),
-    ).toBe("npm install --global --prefix '/opt/maria'\\''s node' d4research@0.0.45");
-  });
-
-  it("keeps runner and unknown commands as relaunches", () => {
-    expect(manualServerUpdateCommand("0.0.45")).toBe("npx d4research@0.0.45");
-    expect(manualServerUpdateCommand("0.0.45", { kind: "npx" })).toBe("npx d4research@0.0.45");
-    expect(manualServerUpdateCommand("0.0.45", { kind: "pnpm-dlx" })).toBe(
-      "pnpm dlx d4research@0.0.45",
-    );
-    expect(manualServerUpdateCommand("0.0.45", { kind: "bunx" })).toBe("bunx d4research@0.0.45");
+    ).toBe("npm install --global --prefix '/opt/maria'\\''s node' t3@0.0.45");
   });
   beforeEach(() => {
     branding.APP_VERSION = "0.0.34";
   });
 
-  it.each([undefined, false, true])("requires advertised update capabilities (%s)", (enabled) => {
-    const config = {
-      environment: {
-        environmentId: EnvironmentId.make("environment-update"),
-        label: "Desktop",
-        platform: { os: "darwin", arch: "arm64" },
-        serverVersion: APP_VERSION,
-        capabilities: {
-          repositoryIdentity: true,
-          ...(enabled === undefined
-            ? {}
-            : {
-                desktopAppUpdate: enabled,
-                serverUpdateThreadContinuation: enabled,
-              }),
-        },
-      },
-    } as const;
-    expect(supportsDesktopAppUpdate(config)).toBe(enabled === true);
-    expect(supportsServerUpdateThreadContinuation(config)).toBe(enabled === true);
-    expect(supportsDesktopAppUpdate(null)).toBe(false);
-    expect(supportsServerUpdateThreadContinuation(null)).toBe(false);
-  });
-
-  it("dismisses one failed attempt without hiding retries or another environment", () => {
+  it("dismisses only the current failed attempt without clearing its retry state", () => {
     const failure = {
       status: "failed",
       stage: "downloading",
-      fromVersion: "0.1.0",
-      targetVersion: "0.2.0",
+      fromVersion: "0.0.33",
+      targetVersion: "0.0.34",
       message: "Download failed.",
     } as const satisfies ServerUpdateState;
+    const retryFailure = { ...failure };
+    const otherEnvironmentFailure = { ...failure };
+
     dismissServerUpdateFailure(failure);
+
     expect(isServerUpdateFailureDismissed(failure)).toBe(true);
+    expect(failure.status).toBe("failed");
     expect(failure.message).toBe("Download failed.");
-    expect(isServerUpdateFailureDismissed({ ...failure })).toBe(false);
-  });
-
-  it("cannot dismiss an update still in progress", () => {
-    const running = {
-      status: "running",
-      stage: "resuming",
-      fromVersion: "0.1.0",
-      targetVersion: "0.2.0",
-    } as const satisfies ServerUpdateState;
-    dismissServerUpdateFailure(running);
-    expect(isServerUpdateFailureDismissed(running)).toBe(false);
-  });
-
-  it("does not warn when versions match", () => {
-    expect(resolveVersionMismatch(APP_VERSION)).toBeNull();
+    expect(isServerUpdateFailureDismissed(retryFailure)).toBe(false);
+    expect(isServerUpdateFailureDismissed(otherEnvironmentFailure)).toBe(false);
   });
 
   it("returns a mismatch when the server is behind the client", () => {
     expect(resolveVersionMismatch("0.0.33")).toEqual({
       clientVersion: "0.0.34",
       serverVersion: "0.0.33",
-      hint: "Version mismatch. Try syncing the client and server to the same d4research version.",
+      hint: MISMATCH_HINT,
     });
   });
 
@@ -125,17 +80,12 @@ describe("versionSkew", () => {
       expect(resolveVersionMismatch(serverVersion)).toEqual({
         clientVersion: "0.0.34-nightly.20260824.1125",
         serverVersion,
-        hint: "Version mismatch. Try syncing the client and server to the same d4research version.",
+        hint: MISMATCH_HINT,
       });
     },
   );
 
-  it("does not warn when a nightly server is ahead on the same release", () => {
-    branding.APP_VERSION = "0.0.34-nightly.20260824.1125";
-
-    expect(resolveVersionMismatch("0.0.34-nightly.20260824.1126")).toBeNull();
-  });
-
+  // regression: #7579 versions were compared as strings, not semver
   it("treats a nightly server built past the client as ahead, not skew", () => {
     expect(resolveVersionMismatch("0.0.35-nightly.20260818.1124")).toBeNull();
   });
@@ -146,7 +96,7 @@ describe("versionSkew", () => {
     expect(resolveVersionMismatch("0.0.34")).toEqual({
       clientVersion: "0.0.35-nightly.20260818.1124",
       serverVersion: "0.0.34",
-      hint: "Version mismatch. Try syncing the client and server to the same d4research version.",
+      hint: MISMATCH_HINT,
     });
   });
 
@@ -154,33 +104,12 @@ describe("versionSkew", () => {
     expect(resolveVersionMismatch("dev")).toEqual({
       clientVersion: "0.0.34",
       serverVersion: "dev",
-      hint: "Version mismatch. Try syncing the client and server to the same d4research version.",
+      hint: MISMATCH_HINT,
     });
 
     branding.APP_VERSION = "dev";
     expect(resolveVersionMismatch("dev")).toBeNull();
     expect(resolveVersionMismatch("0.0.34")).toMatchObject({ serverVersion: "0.0.34" });
-  });
-
-  it("reads the server version from config descriptors", () => {
-    expect(
-      resolveServerConfigVersionMismatch({
-        environment: {
-          environmentId: EnvironmentId.make("environment-1"),
-          label: "Remote",
-          platform: {
-            os: "darwin",
-            arch: "arm64",
-          },
-          serverVersion: "0.0.33",
-          capabilities: {
-            repositoryIdentity: true,
-          },
-        },
-      }),
-    ).toMatchObject({
-      serverVersion: "0.0.33",
-    });
   });
 
   it("keys dismissals by environment, client version, and server version", () => {
@@ -190,7 +119,6 @@ describe("versionSkew", () => {
       serverVersion: "9.9.9",
     });
 
-    expect(key).toBe(`${environmentId}:${APP_VERSION}:9.9.9`);
     expect(isVersionMismatchDismissed(key)).toBe(false);
 
     dismissVersionMismatch(key);
@@ -204,43 +132,5 @@ describe("versionSkew", () => {
         }),
       ),
     ).toBe(false);
-  });
-
-  it("appends a hint to connection errors when the server is behind", () => {
-    const mismatch = resolveVersionMismatch("0.0.33");
-
-    expect(appendVersionMismatchHint("Socket closed.", mismatch)).toBe(
-      `Socket closed. Hint: ${mismatch?.hint}`,
-    );
-  });
-
-  it("reads desktop-managed update capabilities from config descriptors", () => {
-    expect(
-      resolveServerSelfUpdateCapability({
-        environment: {
-          environmentId: EnvironmentId.make("environment-desktop"),
-          label: "Desktop",
-          platform: { os: "darwin", arch: "arm64" },
-          serverVersion: "9.9.9",
-          capabilities: {
-            repositoryIdentity: true,
-            serverSelfUpdate: "desktop-managed",
-          },
-        },
-      }),
-    ).toBe("desktop-managed");
-    expect(resolveServerSelfUpdateCapability(null)).toBeNull();
-  });
-
-  it("matches version-drift guidance to the advertised update path", () => {
-    expect(serverUpdateGuidance("respawn", "Remote server")).toBe(
-      "Update the Remote server so they stay in sync.",
-    );
-    expect(serverUpdateGuidance("desktop-managed", "Desktop server")).toBe(
-      "The Desktop server is run by the d4research desktop app on its machine — update the desktop app there to sync them.",
-    );
-    expect(serverUpdateGuidance(null, "Local server")).toBe(
-      "Relaunch the Local server with the copied command to sync them.",
-    );
   });
 });

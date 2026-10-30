@@ -5,11 +5,7 @@ interface OnboardingEnvironment {
   readonly connection: { readonly phase: string };
 }
 
-/**
- * Continue waits only on a first connection attempt, which settles on its own.
- * Selected computers that are switched off, offline, failing, or unsupported
- * are skipped so they can never lock the user out of onboarding.
- */
+/** Waits only for first connection attempts; offline, failing, or unsupported computers cannot block setup. */
 export function resolveOnboardingSetup(
   environments: ReadonlyArray<Pick<OnboardingEnvironment, "environmentId" | "connection">>,
   selectedIds: ReadonlySet<EnvironmentId>,
@@ -30,4 +26,29 @@ export function resolveOnboardingSetup(
     environmentIds,
     skippedIds: idsInPhase((phase) => phase !== "connected" && phase !== "connecting"),
   };
+}
+
+export function resolveOnboardingTargetEnvironment<TEnvironment extends OnboardingEnvironment>({
+  mode,
+  environments,
+  primaryEnvironment,
+  pairedEnvironmentId,
+}: {
+  readonly mode: "local" | "connect" | "direct";
+  readonly environments: ReadonlyArray<TEnvironment>;
+  readonly primaryEnvironment: TEnvironment | null;
+  readonly pairedEnvironmentId: EnvironmentId | null;
+}): TEnvironment | null {
+  if (mode === "direct" && pairedEnvironmentId !== null) {
+    const pairedEnvironment = environments.find(
+      (environment) => environment.environmentId === pairedEnvironmentId,
+    );
+    return pairedEnvironment?.connection.phase === "connected" ? pairedEnvironment : null;
+  }
+
+  if (primaryEnvironment?.connection.phase === "connected") {
+    return primaryEnvironment;
+  }
+
+  return null;
 }

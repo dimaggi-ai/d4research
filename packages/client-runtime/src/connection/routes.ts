@@ -1,3 +1,4 @@
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
 import {
   isLocalLoopbackHost,
   isPrivateNetworkHost,
@@ -23,6 +24,18 @@ export type ConnectionRouteKind =
   | "public"
   | "ssh";
 
+/** Same-origin authentication can also reach environments shared by the host. */
+export function isSharedHostConnectionTarget(target: ConnectionTarget): boolean {
+  return (
+    target._tag === "PrimaryConnectionTarget" && environmentGatewayPath(target.httpBaseUrl) !== ""
+  );
+}
+
+export function isHostPrimaryConnectionTarget(target: ConnectionTarget): boolean {
+  return target._tag === "PrimaryConnectionTarget" && !isSharedHostConnectionTarget(target);
+}
+
+/** An environment has at most one T3 Connect route, so it needs no per-route id. */
 export const RELAY_ROUTE_ID = "relay";
 
 export function connectionRouteId(target: ConnectionTarget): string {
@@ -185,6 +198,10 @@ export function connectionRouteAddress(route: ConnectionRoute): string | null {
   }
   return routeHttpBaseUrl(route);
 }
+
+/** Learned routes alone must not make relay environments manually retryable. */
+export const hasSavedBearerRoute = (entry: ConnectionCatalogEntry) =>
+  connectionRoutes(entry).some((r) => !isLearned(r) && r.target._tag === "BearerConnectionTarget");
 
 export function hasRelayRoute(
   entry: Pick<ConnectionCatalogEntry, "target" | "alternateRoutes">,

@@ -1,11 +1,16 @@
-import { useClientSettings } from "../../hooks/useSettings";
 import type { ProviderInstanceId } from "@d4research/contracts";
 import { type CSSProperties, memo } from "react";
 
-import { providerInstanceInitials } from "@d4research/client-runtime/state/provider-instance-display";
+import { useClientSettings } from "../../hooks/useSettings";
+
+import {
+  normalizeProviderAccentColor,
+  providerAccentForegroundColor,
+  providerInstanceInitials,
+} from "@d4research/client-runtime/state/provider-instance-display";
 
 import { ProviderDriverKind } from "@d4research/contracts";
-import { AntigravityIcon, ClaudeAI, Icon, OpenAI } from "../Icons";
+import { AntigravityIcon, ClaudeAI, Icon, JunieIcon, MuseIcon, OpenAI } from "../Icons";
 
 import { cn } from "~/lib/utils";
 import { providerClients } from "../settings/providerDriverMeta";
@@ -16,10 +21,14 @@ import {
   resolveOfficialAcpRegistryIconUrl,
 } from "../settings/AcpRegistryIcon";
 
-const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
+export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
+  // d4research's legacy CLI adapters have no client definition icon.
+  [ProviderDriverKind.make("agy")]: AntigravityIcon,
+  [ProviderDriverKind.make("junie")]: JunieIcon,
+  [ProviderDriverKind.make("muse")]: MuseIcon,
 };
 
 const PROVIDER_TEXT_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
@@ -56,6 +65,7 @@ export function resolveProviderInstanceAcpRegistryIconUrl(input: {
 }
 
 export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
+  /** Applies the user's per-instance appearance (icon and badge) from Settings. */
   instanceId?: ProviderInstanceId | undefined;
   driverKind: ProviderDriverKind;
   displayName: string;
@@ -64,6 +74,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   acpRegistryIconUrl?: string | undefined;
   showBadge?: boolean;
   badgeContent?: "initials" | "none";
+  size?: "default" | "compact";
   className?: string;
   iconClassName?: string;
   badgeClassName?: string;
@@ -84,10 +95,15 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   const Icon = PROVIDER_ICON_BY_PROVIDER[driverKind] ?? null;
   const packageIcon = providerClients.get(driverKind)?.icon;
   const indicatorBackground = props.indicatorBackground ?? "var(--card)";
-  const accentStyle = props.accentColor
-    ? ({ "--provider-accent": props.accentColor } as CSSProperties)
+  const accentColor = normalizeProviderAccentColor(props.accentColor);
+  const accentStyle = accentColor
+    ? ({
+        "--provider-accent": accentColor,
+        "--provider-accent-foreground": providerAccentForegroundColor(accentColor),
+      } as CSSProperties)
     : undefined;
   const badgeContent = props.badgeContent ?? "initials";
+  const iconClassName = cn(props.size === "compact" && "size-3.5", props.iconClassName);
   const isAcpRegistry = driverKind === "acpRegistry";
   const acpRegistryIconUrl = resolveProviderInstanceAcpRegistryIconUrl({
     driverKind: props.driverKind,
@@ -102,24 +118,24 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
         props.className,
       )}
       style={accentStyle}
-      data-provider-accent-color={props.accentColor}
+      data-provider-accent-color={accentColor}
     >
       {isAcpRegistry ? (
         <AcpRegistryAgentIcon
-          className={cn("size-5 rounded-none bg-transparent", props.iconClassName)}
+          className={cn("size-5 rounded-none bg-transparent", iconClassName)}
           fallbackClassName="size-full"
           icon={acpRegistryIconUrl}
         />
       ) : packageIcon ? (
         <ProviderPackageIcon
           icon={packageIcon}
-          className={cn("size-5 shrink-0", props.iconClassName)}
+          className={cn("size-5 shrink-0", iconClassName)}
           aria-hidden
         />
       ) : Icon ? (
-        <Icon className={cn("size-5 shrink-0", props.iconClassName)} aria-hidden />
+        <Icon className={cn("size-5 shrink-0", iconClassName)} aria-hidden />
       ) : (
-        <span className={cn("text-3xs font-semibold leading-none", props.iconClassName)}>
+        <span className={cn("text-3xs font-semibold leading-none", iconClassName)}>
           {providerInstanceInitials(props.displayName)}
         </span>
       )}
@@ -137,9 +153,11 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
         <span
           className={cn(
             "pointer-events-none absolute right-0 bottom-0 z-10 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border px-0.5 text-4xs font-semibold leading-none shadow-sm",
-            props.accentColor
-              ? "bg-(--provider-accent) text-white"
+            accentColor
+              ? "bg-(--provider-accent) text-(--provider-accent-foreground)"
               : "bg-card text-muted-foreground",
+            props.size === "compact" &&
+              "right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-5xs",
             props.badgeClassName,
           )}
           style={{ borderColor: indicatorBackground }}

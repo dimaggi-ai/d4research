@@ -131,6 +131,7 @@ const make = Effect.gen(function* () {
     check,
     read,
     save,
+    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
     schedule: (input, onFailure) =>
       Effect.gen(function* () {
         if (!(yield* config)) return;

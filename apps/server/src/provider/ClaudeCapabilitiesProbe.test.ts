@@ -1,256 +1,33 @@
-// @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
-// @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
-import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
-import { vi } from "vite-plus/test";
-import * as Deferred from "effect/Deferred";
+import { ClaudeSettings } from "@d4research/contracts";
+import * as Schema from "effect/Schema";
+import * as Cause from "effect/Cause";
+import * as Result from "effect/Result";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
-import {
-  ClaudeSettings,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ServerProvider,
-} from "@d4research/contracts";
+import * as Deferred from "effect/Deferred";
+import { probeClaudeCapabilities } from "./ClaudeProvider.ts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- SDK fixture modules create isolated account transcripts.
 import * as NodeFSP from "node:fs/promises";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
-import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
-
-import {
-  buildClaudeCapabilitiesProbeQueryOptions,
-  CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
-  getBuiltInClaudeModelsForEnvironment,
-  claudeLocalModelOverrides,
-  claudeUsesLocalOllama,
-  isLegacyClaudeModel,
-  mapClaudeUsage,
-  parseOllamaModelList,
-  parseOllamaTagsPayload,
-  probeClaudeCapabilities,
-  probeClaudeWorkspaceSnapshot,
-} from "./ClaudeProvider.ts";
 import { COMPACT_SLASH_COMMAND } from "@d4research/provider-core/server/snapshotProbe";
+import { probeClaudeWorkspaceSnapshot } from "./ClaudeProvider.ts";
+import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
+import { type ServerProvider } from "@d4research/contracts";
+import { ProviderDriverKind } from "@d4research/contracts";
+import { ProviderInstanceId } from "@d4research/contracts";
+import * as Path from "effect/Path";
+import * as FileSystem from "effect/FileSystem";
+import * as Effect from "effect/Effect";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
+
+import { vi } from "vite-plus/test";
+import { assert, it } from "@effect/vitest";
+
+import { buildClaudeCapabilitiesProbeQueryOptions } from "./ClaudeProvider.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
-
-it("keeps only the Claude 5 family out of legacy models", () => {
-  assert.deepStrictEqual(
-    ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8"].map((model) => [
-      model,
-      isLegacyClaudeModel(model),
-    ]),
-    [
-      ["claude-fable-5", false],
-      ["claude-opus-5", false],
-      ["claude-sonnet-5", false],
-      ["claude-opus-4-8", true],
-    ],
-  );
-});
-
-it("discovers locally installed Ollama models only for the local Ollama endpoint", () => {
-  assert.deepStrictEqual(
-    parseOllamaModelList(
-      "NAME ID SIZE MODIFIED\nqwen3.5:latest abc 4 GB today\ngemma3:27b def 17 GB yesterday\nqwen3.5:latest abc 4 GB today\n",
-    ),
-    ["qwen3.5:latest", "gemma3:27b"],
-  );
-  assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11434" }), true);
-  assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "https://ollama.example" }), false);
-  assert.deepStrictEqual(
-    getBuiltInClaudeModelsForEnvironment({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11434" }, "2.1.0"),
-    [],
-  );
-  assert.ok(getBuiltInClaudeModelsForEnvironment({}, "2.1.0").length > 0);
-});
-
-it("exposes loopback Claude model overrides without inherited Claude labels", () => {
-  const environment = {
-    ANTHROPIC_BASE_URL: "http://127.0.0.1:8094",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "qwen3.8-flash-next-iq3_s",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "qwen3.8-flash-next-iq3_s",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3.8-max",
-  };
-  assert.deepStrictEqual(claudeLocalModelOverrides(environment), [
-    "qwen3.8-flash-next-iq3_s",
-    "qwen3.8-max",
-  ]);
-  assert.deepStrictEqual(getBuiltInClaudeModelsForEnvironment(environment, "2.1.0"), []);
-  assert.deepStrictEqual(
-    claudeLocalModelOverrides({
-      ...environment,
-      ANTHROPIC_BASE_URL: "https://api.anthropic.com",
-    }),
-    [],
-  );
-});
-
-it("keeps Ollama `:cloud` tags when parsing either discovery source", () => {
-  // Real `ollama list` output: cloud entries carry "-" as their size column.
-  assert.deepStrictEqual(
-    parseOllamaModelList(
-      [
-        "NAME                     ID              SIZE      MODIFIED",
-        "glm-5.2:cloud            ce8fd6f94793    -         9 days ago",
-        "gpt-oss:20b-cloud        875e8e3a629a    -         9 days ago",
-        "gemma4:e4b               c6eb396dbd59    9.6 GB    3 months ago",
-      ].join("\n"),
-    ),
-    ["glm-5.2:cloud", "gpt-oss:20b-cloud", "gemma4:e4b"],
-  );
-  assert.deepStrictEqual(
-    parseOllamaTagsPayload({
-      models: [
-        { name: "glm-5.2:cloud", model: "glm-5.2:cloud", remote_host: "https://ollama.com:443" },
-        { model: "gemma4:e4b" },
-        { name: "glm-5.2:cloud" },
-        { name: "" },
-        null,
-      ],
-    }),
-    ["glm-5.2:cloud", "gemma4:e4b"],
-  );
-  assert.deepStrictEqual(parseOllamaTagsPayload({ models: "nope" }), []);
-  assert.deepStrictEqual(parseOllamaTagsPayload(undefined), []);
-});
-
-it("recognizes the endpoint `ollama launch claude` configures, in every spelling", () => {
-  // Exactly what ollama 0.32.4 exports.
-  assert.equal(
-    claudeUsesLocalOllama({
-      ANTHROPIC_BASE_URL: "http://127.0.0.1:11434",
-      ANTHROPIC_AUTH_TOKEN: "ollama",
-      ANTHROPIC_API_KEY: "",
-    }),
-    true,
-  );
-  for (const baseUrl of [
-    "http://localhost:11434",
-    "http://127.0.0.1:11434/",
-    "http://[::1]:11434",
-    "  http://127.0.0.1:11434  ",
-  ]) {
-    assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: baseUrl }), true, baseUrl);
-  }
-  // A non-default port still counts when the Ollama sentinel token is present.
-  assert.equal(
-    claudeUsesLocalOllama({
-      ANTHROPIC_BASE_URL: "http://127.0.0.1:11437",
-      ANTHROPIC_AUTH_TOKEN: "ollama",
-    }),
-    true,
-  );
-  assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11437" }), false);
-  for (const baseUrl of [
-    "https://api.anthropic.com",
-    "http://192.168.4.34:11434",
-    "http://127.0.0.1:11434/v1",
-    "not-a-url",
-    "",
-  ]) {
-    assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: baseUrl }), false, baseUrl);
-  }
-  assert.equal(claudeUsesLocalOllama({}), false);
-});
-
-it("isolates Claude capability probes without dropping workspace setting sources", () => {
-  const abortController = new AbortController();
-  const options = buildClaudeCapabilitiesProbeQueryOptions({
-    executablePath: "/usr/bin/claude",
-    abortController,
-    environment: {
-      HOME: "/home/user",
-      ENABLE_CLAUDEAI_MCP_SERVERS: "true",
-    },
-    cwd: "/workspace/project",
-    managedMcpConfig: false,
-  });
-
-  assert.deepEqual(options.mcpServers, {});
-  assert.equal(options.strictMcpConfig, true);
-  assert.deepEqual(options.settings, { disableAllHooks: true });
-  assert.equal(options.cwd, "/workspace/project");
-  assert.deepEqual(options.settingSources, [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES]);
-  assert.deepEqual(options.allowedTools, []);
-  assert.equal(options.persistSession, false);
-  assert.equal(options.pathToClaudeCodeExecutable, "/usr/bin/claude");
-  assert.equal(options.abortController, abortController);
-  assert.equal(options.env?.HOME, "/home/user");
-  assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
-});
-
-it("maps supported and unsupported Claude usage limits", () => {
-  const checkedAt = "2026-08-05T12:00:00.000Z";
-
-  assert.deepStrictEqual(
-    mapClaudeUsage(
-      {
-        subscription_type: "max",
-        rate_limits_available: true,
-        rate_limits: {
-          five_hour: { utilization: 42.5, resets_at: "2026-08-05T15:00:00.000Z" },
-          seven_day: { utilization: null, resets_at: null },
-          seven_day_opus: { utilization: 10, resets_at: "2026-08-09T00:00:00.000Z" },
-        },
-      },
-      checkedAt,
-    ),
-    {
-      support: "supported",
-      planType: "max",
-      windows: [
-        {
-          id: "five_hour",
-          label: "5-hour",
-          utilizationPercent: 42.5,
-          resetsAt: "2026-08-05T15:00:00.000Z",
-          windowMinutes: null,
-        },
-        {
-          id: "seven_day",
-          label: "Weekly",
-          utilizationPercent: null,
-          resetsAt: null,
-          windowMinutes: null,
-        },
-        {
-          id: "seven_day_opus",
-          label: "Weekly (Opus)",
-          utilizationPercent: 10,
-          resetsAt: "2026-08-09T00:00:00.000Z",
-          windowMinutes: null,
-        },
-      ],
-      limitReached: null,
-      checkedAt,
-      message: null,
-    },
-  );
-
-  assert.deepStrictEqual(
-    mapClaudeUsage(
-      {
-        subscription_type: null,
-        rate_limits_available: false,
-        rate_limits: null,
-      },
-      checkedAt,
-    ),
-    {
-      support: "unsupported",
-      planType: null,
-      windows: [],
-      limitReached: null,
-      checkedAt,
-      message: null,
-    },
-  );
-});
 
 it("drops strict MCP mode, and only that, next to an administrator's managed-mcp.json", () => {
   const options = buildClaudeCapabilitiesProbeQueryOptions({
@@ -326,7 +103,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
         for (const [index, cwd] of workspaces.entries()) {
           const scoped = yield* probeClaudeWorkspaceSnapshot(
-            decodeClaudeSettings({ homePath: configDir }),
+            decodeClaudeSettings({ configDir, homePath: tempDir }),
             machineSnapshot,
             cwd,
             { ...process.env, T3_WORKSPACE_PROBE: "owned-instance" },
@@ -484,6 +261,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       assert.ok(capabilities.usage);
 
       assert.deepEqual(capabilities, {
+        usageCheckedAt: "1970-01-01T00:00:00.000Z",
         email: "dev@example.com",
         subscriptionType: "pro",
         tokenSource: "oauth",
@@ -563,6 +341,36 @@ it.effect("preserves initialized capabilities when optional usage times out", ()
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect("fails a hung initialization probe with a timeout", () =>
+  Effect.gen(function* () {
+    const initializationStarted = yield* Deferred.make<void>();
+    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+      () =>
+        ({
+          initializationResult: () => {
+            Deferred.doneUnsafe(initializationStarted, Effect.void);
+            return new Promise(() => {});
+          },
+          usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+            rate_limits_available: true,
+            rate_limits: {},
+          }),
+        }) as ReturnType<typeof ClaudeSdk.query>,
+    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const probe = yield* probeClaudeCapabilities(
+      decodeClaudeSettings({ binaryPath: "claude" }),
+    ).pipe(Effect.result, Effect.forkChild);
+
+    yield* Deferred.await(initializationStarted);
+    yield* TestClock.adjust("25 seconds");
+    const result = yield* Fiber.join(probe);
+
+    assert.isTrue(Result.isFailure(result));
+    if (Result.isFailure(result)) assert.isTrue(Cause.isTimeoutError(result.failure));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("asks for usage without the local transcript scan", () =>
   Effect.gen(function* () {
     let usageOptions: unknown;
@@ -583,4 +391,16 @@ it.effect("asks for usage without the local transcript scan", () =>
     yield* probeClaudeCapabilities(decodeClaudeSettings({ binaryPath: "claude" }));
     assert.deepEqual(usageOptions, { skipBehaviors: true });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("reports a deleted worktree's scan as finished, not pending", () =>
+  Effect.gen(function* () {
+    const snapshot = yield* probeClaudeWorkspaceSnapshot(
+      decodeClaudeSettings({}),
+      { skills: [], slashCommands: [] } as unknown as ServerProvider,
+      "/nonexistent/t3-deleted-worktree",
+      { HOME: "/nonexistent/t3-home" },
+    );
+    assert.strictEqual(snapshot.slashCommandsPending, false);
+  }).pipe(Effect.provide(NodeServices.layer)),
 );

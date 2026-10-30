@@ -32,6 +32,7 @@ import {
 const CONTINUE_PROMPT = "Continue where you left off.";
 
 const MAX_CONTINUATION_CHAIN = 3;
+const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
 
 function restartContinuationBlocked(
   projection: Pick<
@@ -81,10 +82,7 @@ function restartContinuationBlocked(
   );
 }
 
-/**
- * App-owned delegations are not counted: their own threads continue and report
- * back.
- */
+/** App-owned delegations continue in their own threads and report back. */
 function hasOpenAwaitedWork(
   projection: Pick<ProjectionRuntimeRecoveryState, "runs" | "turnItems">,
   providerThread: ProjectionRuntimeRecoveryState["providerThreads"][number],
@@ -110,10 +108,7 @@ function hasOpenAwaitedWork(
   );
 }
 
-/**
- * A settled run needs a live session, so stale records from an older crash
- * never wake it.
- */
+/** Settled runs require a live session so stale crash records cannot wake them. */
 export function restartContinuationRun(
   projection: Pick<
     ProjectionRuntimeRecoveryState,
@@ -163,8 +158,7 @@ export function restartContinuationRun(
   const session = projection.providerSessions.find(
     (candidate) => candidate.id === providerThread.providerSessionId,
   );
-  // Most adapters keep a live session "ready" through its turns, so only a
-  // stopped or failed session rules out a live turn.
+  // Adapters remain ready during turns; only stopped or failed sessions rule out liveness.
   if (
     session === undefined ||
     session.providerInstanceId !== run.providerInstanceId ||
@@ -229,11 +223,15 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
     // A turn that keeps crashing the server would otherwise restart it forever.
     let chainLength = 0;
+    const loopWindowStart =
+      DateTime.toEpochMillis(source.completedAt ?? source.requestedAt) -
+      CONTINUATION_LOOP_WINDOW_MS;
     for (
       let run: OrchestrationV2Run | undefined = source;
       run?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;
       run = projection.runs.find((candidate) => candidate.id === run?.restartContinuationOfRunId)
     ) {
+      if (DateTime.toEpochMillis(run.requestedAt) < loopWindowStart) break;
       chainLength += 1;
     }
     if (chainLength >= MAX_CONTINUATION_CHAIN) {
@@ -316,8 +314,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         }),
       );
   },
-  // A delegated child this declined to continue still owes its parent a
-  // result. Once a continuation run exists this is a no-op; that run settles it.
+  // Declined child continuations still owe parent results; existing continuation runs settle them instead.
   (effect, input) =>
     effect.pipe(
       Effect.andThen(

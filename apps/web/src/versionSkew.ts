@@ -95,12 +95,6 @@ export function supportsDesktopAppUpdate(
   return serverConfig?.environment.capabilities.desktopAppUpdate === true;
 }
 
-export function supportsServerUpdateThreadContinuation(
-  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
-): boolean {
-  return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
-}
-
 export function manualServerUpdateCommand(
   targetVersion: string,
   installation?: ServerInstallation,
@@ -112,23 +106,6 @@ export function manualServerUpdateCommand(
   const runner =
     installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
   return `${runner} d4research@${targetVersion}`;
-}
-
-/** One sentence telling the user how to resolve version skew for a server,
-    matched to the update path it offers. */
-export function serverUpdateGuidance(
-  capability: ServerSelfUpdateCapability | null,
-  serverLabel: string,
-): string {
-  switch (capability) {
-    case "boot-service":
-    case "respawn":
-      return `Update the ${serverLabel} so they stay in sync.`;
-    case "desktop-managed":
-      return `The ${serverLabel} is run by the d4research desktop app on its machine — update the desktop app there to sync them.`;
-    default:
-      return `Relaunch the ${serverLabel} with the copied command to sync them.`;
-  }
 }
 
 export function buildVersionMismatchDismissalKey(
@@ -184,16 +161,23 @@ export function dismissVersionMismatch(dismissalKey: string | null | undefined):
   });
 }
 
-export function appendVersionMismatchHint(
-  message: string | null | undefined,
-  mismatch: VersionMismatch | null | undefined,
-): string | null {
-  const normalizedMessage = normalizeVersion(message);
-  if (!normalizedMessage) {
-    return mismatch?.hint ?? null;
+export function supportsServerUpdateThreadContinuation(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
+}
+
+export function serverUpdateGuidance(
+  capability: ServerSelfUpdateCapability | null,
+  serverLabel: string,
+): string {
+  switch (capability) {
+    case "boot-service":
+    case "respawn":
+      return `Update the ${serverLabel} so they stay in sync.`;
+    case "desktop-managed":
+      return `The ${serverLabel} is run by the d4research desktop app on its machine — update the desktop app there to sync them.`;
+    default:
+      return `Relaunch the ${serverLabel} with the copied command to sync them.`;
   }
-  if (!mismatch) {
-    return normalizedMessage;
-  }
-  return `${normalizedMessage} Hint: ${mismatch.hint}`;
 }

@@ -96,7 +96,7 @@ export function resolveContextWindowModelDisplayName(
     .get(selection.instanceId)
     ?.find((model) => model.slug === selection.model);
 
-  return selectedModel ? getTriggerDisplayModelName(selectedModel) : selection.model;
+  return selectedModel ? getTriggerDisplayModelName(selectedModel, null) : selection.model;
 }
 
 export function formatContextWindowCompactionMessage(

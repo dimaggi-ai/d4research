@@ -4,7 +4,8 @@ import {
   ProviderDriverKind,
   type ProviderOptionDescriptor,
 } from "@d4research/contracts";
-import { buildTraitsTriggerDisplay, buildUnavailableModelOptionDescriptors } from "./TraitsPicker";
+import { buildTraitsTriggerDisplay } from "@d4research/client-runtime/model-traits";
+import { buildUnavailableModelOptionDescriptors } from "./TraitsPicker";
 
 function selectDescriptor(
   id: string,

@@ -35,7 +35,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { useCompleteOnboarding } from "../../onboarding/firstRun";
+import { completeOnboarding } from "../../onboarding/firstRun";
 import {
   groupOnboardingProjects,
   partitionOnboardingProjects,
@@ -53,7 +53,7 @@ import {
 } from "../../onboarding/providerReadiness.logic";
 import { newProjectId, randomUUID } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
-import { readProjects, useProjects } from "../../state/entities";
+import { readProjects, waitForProject } from "../../state/entities";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { resolveOnboardingSetup } from "../../onboarding/targetEnvironment.logic";
 import { useProjectScans } from "../../onboarding/useProjectScans";
@@ -107,12 +107,10 @@ export function WelcomeWizard({
   readonly resumeEnvironmentId?: EnvironmentId | undefined;
   readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
 }) {
-  const completeOnboarding = useCompleteOnboarding();
   const [step, setStep] = useState<WizardStep>(resumeEnvironmentId ? "agents" : "connection");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
-  // One registry for the wizard's lifetime, shared with the connect list, so a computer is
-  // auto-selected once even after the user unchecks it.
+  // Share the registry for the wizard's lifetime so unchecked computers are not auto-selected again.
   const [autoSelectedComputers] = useState(() => new Set<EnvironmentId>());
   const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>(
     resumeEnvironmentId ? [resumeEnvironmentId] : [],
@@ -121,6 +119,7 @@ export function WelcomeWizard({
   const finishingPromiseRef = useRef<Promise<boolean> | null>(null);
   const completionErrorToastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
   const primaryEnvironment = usePrimaryEnvironment();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks newly listed computers in the shared auto-select registry once and selects the enabled ones
   useEffect(() => {
     const newComputers = environments.filter(
       (environment) => !autoSelectedComputers.has(environment.environmentId),
@@ -209,11 +208,17 @@ export function WelcomeWizard({
   };
 
   return (
-    <Dialog open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
+    <Dialog
+      open
+      disablePointerDismissal
+      onOpenChange={(_, event) => {
+        event.cancel();
+        if (event.reason === "close-press" && !isImporting) void finish();
+      }}
+    >
       <WizardPopup
         size="wide"
         bottomStickOnMobile={false}
-        showCloseButton={false}
         initialFocus={() => document.getElementById("onboarding-pairing-url") ?? true}
       >
         <WizardHeader
@@ -303,6 +308,7 @@ function ConnectionStep({
     .filter((environment) => skippedIds.includes(environment.environmentId))
     .map((environment) => environment.label);
   const continueRef = useRef<HTMLButtonElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves DOM focus to the Continue button once setup is ready and nothing else holds focus
   useEffect(() => {
     if (
       ready &&
@@ -350,6 +356,11 @@ function ConnectionStep({
                 {environment.displayUrl ? (
                   <span className="mt-0.5 block text-xs break-all text-muted-foreground">
                     {environment.displayUrl}
+                  </span>
+                ) : null}
+                {environment.connection.phase === "unsupported" && environment.connection.error ? (
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {environment.connection.error}
                   </span>
                 ) : null}
               </span>
@@ -434,6 +445,7 @@ function PairingForm({
   const [errorMessage, setErrorMessage] = useState("");
   const mountedRef = useRef(true);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount so a pairing request that settles after unmount does not set state
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -600,6 +612,7 @@ function ConnectedAgentsStep({
   } | null>(null);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the environment to refresh its provider list when the environment changes
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
@@ -915,9 +928,9 @@ function AgentInstallTerminal({
   >("preparing");
   const terminalReady = setupState === "ready" || setupState === "writeFailed";
 
-  // In Strict Mode, a canceled open can finish after the replacement setup
-  // starts; it must not close or pre-type into the replacement session that
-  // shares this terminal id.
+  // StrictMode can finish a cancelled open after replacement setup; it must not close or pre-type into that
+  // session.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the setup PTY, types the command into it, and closes it on cleanup
   useEffect(() => {
     const generation = setupGenerationRef.current + 1;
     setupGenerationRef.current = generation;
@@ -959,8 +972,7 @@ function AgentInstallTerminal({
       setSetupState(wrote._tag === "Success" ? "ready" : "writeFailed");
     });
 
-    // Close the PTY only while this connection still has terminal access;
-    // revocation leaves it running.
+    // Revocation leaves the PTY running; close only while terminal access remains.
     return () => {
       if (activeSetupGenerationRef.current === generation) {
         activeSetupGenerationRef.current = null;
@@ -1039,11 +1051,8 @@ function AgentInstallTerminal({
             providerInstanceId={providerInstanceId}
             advancedTypography={advancedTypography}
             onSessionExited={onClose}
-            focusRequestId={1}
             autoFocus
             visible
-            resizeEpoch={0}
-            drawerHeight={256}
             keybindings={keybindings}
           />
         ) : null}
@@ -1073,11 +1082,9 @@ function ImportStep({
   const writableEnvironments = useEnvironmentsWithScope(scans, AuthOrchestrationOperateScope);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const importThreads = useAtomCommand(agentSessionImport, { reportFailure: false });
-  const projects = useProjects();
   const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string> | null>(null);
   const importWarningRef = useRef("");
   const importedThreadCountRef = useRef(0);
-  const [landingProject, setLandingProject] = useState<ScopedProjectRef | null>(null);
   const importedProjectsRef = useRef(new Map<string, ScopedProjectRef>());
   const projectsWithImportedHistoryRef = useRef(new Map<string, ScopedProjectRef>());
   const lastImportSelectionRef = useRef<ReadonlyArray<string>>([]);
@@ -1086,31 +1093,13 @@ function ImportStep({
   );
   const importGenerationRef = useRef(0);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- bumps the import generation on mount and unmount so in-flight imports drop stale results
   useEffect(() => {
     importGenerationRef.current += 1;
     return () => {
       importGenerationRef.current += 1;
     };
   }, []);
-
-  useEffect(() => {
-    if (
-      landingProject !== null &&
-      projects.some(
-        (project) =>
-          project.id === landingProject.projectId &&
-          project.environmentId === landingProject.environmentId,
-      )
-    ) {
-      // oxlint-disable-next-line react/set-state-in-effect -- The landing project is known only once the projects subscription delivers it.
-      setLandingProject(null);
-      void onDone(landingProject, importWarningRef.current, importedThreadCountRef.current).then(
-        (completed) => {
-          if (!completed) setIsImporting(false);
-        },
-      );
-    }
-  }, [landingProject, onDone, projects, setIsImporting]);
 
   const { available: candidates, recent } = partitionOnboardingProjects(
     scans.flatMap((scan) =>
@@ -1145,7 +1134,23 @@ function ImportStep({
       return;
     }
     setIsImporting(true);
-    setLandingProject(projectRef);
+    const importGeneration = importGenerationRef.current;
+    // waitForProject gives up after its timeout, so a project that never reaches the client
+    // still finishes setup, just without landing in it.
+    void waitForProject(projectRef)
+      .then(
+        () => projectRef,
+        () => undefined,
+      )
+      .then(async (landing) => {
+        if (importGeneration !== importGenerationRef.current) return;
+        const completed = await onDone(
+          landing,
+          importWarningRef.current,
+          importedThreadCountRef.current,
+        );
+        if (!completed) setIsImporting(false);
+      });
   };
 
   const runImport = async (selection: typeof candidates) => {

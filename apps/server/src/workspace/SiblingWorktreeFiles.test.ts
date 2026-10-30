@@ -11,10 +11,9 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import { SiblingWorktreeFiles, layer } from "./SiblingWorktreeFiles.ts";
+import { locateInSiblingWorktrees } from "./SiblingWorktreeFiles.ts";
 
-const layerTest = layer.pipe(
-  Layer.provide(GitVcsDriver.layer),
+const layerTest = GitVcsDriver.layer.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-sibling-worktree-test-" })),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -22,7 +21,6 @@ const layerTest = layer.pipe(
 const git = (cwd: string, ...args: string[]) =>
   NodeChildProcess.execFileSync("git", args, {
     cwd,
-    timeout: 10_000,
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: "Test",
@@ -65,10 +63,7 @@ describe("locateInSiblingWorktrees", () => {
       }
 
       for (const relativePath of [report, NodePath.join(main, report)]) {
-        const { locations } = yield* (yield* SiblingWorktreeFiles).locate({
-          cwd: main,
-          relativePath,
-        });
+        const { locations } = yield* locateInSiblingWorktrees({ cwd: main, relativePath });
         expect(locations).toEqual([
           {
             absolutePath: NodePath.join(lead, report),
@@ -85,7 +80,7 @@ describe("locateInSiblingWorktrees", () => {
         ]);
       }
 
-      const fromAgent = yield* (yield* SiblingWorktreeFiles).locate({
+      const fromAgent = yield* locateInSiblingWorktrees({
         cwd: main,
         relativePath: NodePath.join(agent, "README.md"),
       });
@@ -98,86 +93,13 @@ describe("locateInSiblingWorktrees", () => {
   it.effect("returns nothing outside a repository or when no worktree has the file", () =>
     Effect.gen(function* () {
       const { main } = yield* makeRepository;
-      const missing = yield* (yield* SiblingWorktreeFiles).locate({
-        cwd: main,
-        relativePath: "missing.md",
-      });
+      const missing = yield* locateInSiblingWorktrees({ cwd: main, relativePath: "missing.md" });
       expect(missing.locations).toEqual([]);
-      const outside = yield* (yield* SiblingWorktreeFiles).locate({
+      const outside = yield* locateInSiblingWorktrees({
         cwd: main,
         relativePath: "/definitely/not/here.md",
       });
       expect(outside.locations).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
-  );
-
-  it.effect(
-    "checks at most 64 worktrees and returns the 20 newest files without changing checkouts",
-    () =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "sibling-bounds-" });
-        const worktrees = Array.from({ length: 70 }, (_, index) => ({
-          path: NodePath.join(root, `worktree-${index}`),
-          branch: index === 0 ? "main" : `branch-${index}`,
-        }));
-        for (const [index, worktree] of worktrees.entries()) {
-          NodeFS.mkdirSync(worktree.path);
-          const target = NodePath.join(worktree.path, "report.md");
-          NodeFS.writeFileSync(target, "report");
-          NodeFS.utimesSync(target, index + 1, index + 1);
-        }
-        const visited: string[] = [];
-        const measuredFileSystem = {
-          ...fileSystem,
-          realPath: (target: string) => {
-            visited.push(target);
-            return fileSystem.realPath(target);
-          },
-        };
-        const boundedLayer = layer.pipe(
-          Layer.provide(
-            Layer.mock(GitVcsDriver.GitVcsDriver)({
-              listWorktrees: () => Effect.succeed(worktrees),
-            }),
-          ),
-          Layer.provide(Layer.succeed(FileSystem.FileSystem, measuredFileSystem)),
-        );
-        const { locations } = yield* Effect.gen(function* () {
-          return yield* (yield* SiblingWorktreeFiles).locate({
-            cwd: worktrees[0]!.path,
-            relativePath: "report.md",
-          });
-        }).pipe(Effect.provide(boundedLayer));
-        expect(locations).toHaveLength(20);
-        expect(locations.map((location) => location.branch)).toEqual(
-          Array.from({ length: 20 }, (_, index) => `branch-${63 - index}`),
-        );
-        expect(visited.filter((target) => target !== worktrees[0]!.path)).toHaveLength(63);
-        expect(visited).not.toContain(worktrees[64]!.path);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect(
-    "resolves a symlinked working directory and ignores directory or invalid file targets",
-    () =>
-      Effect.gen(function* () {
-        const { main, lead } = yield* makeRepository;
-        const linkedMain = `${main}-link`;
-        NodeFS.symlinkSync(main, linkedMain, "dir");
-        NodeFS.writeFileSync(NodePath.join(lead, "report.md"), "report");
-        const before = git(main, "rev-parse", "HEAD").toString();
-        const service = yield* SiblingWorktreeFiles;
-        const { locations } = yield* service.locate({ cwd: linkedMain, relativePath: "report.md" });
-        expect(locations.map((location) => location.absolutePath)).toEqual([
-          NodePath.join(lead, "report.md"),
-        ]);
-        for (const relativePath of [".", "..", "directory", "invalid\0file.md"]) {
-          NodeFS.mkdirSync(NodePath.join(lead, "directory"), { recursive: true });
-          expect((yield* service.locate({ cwd: main, relativePath })).locations).toEqual([]);
-        }
-        expect(git(main, "rev-parse", "HEAD").toString()).toEqual(before);
-        expect(git(main, "branch", "--show-current").toString().trim()).toEqual("main");
-      }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 });

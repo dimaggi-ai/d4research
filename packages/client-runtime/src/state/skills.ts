@@ -44,6 +44,7 @@ export const fetchEnvironmentSkillsInventory = Effect.fn(
   );
 });
 
+// @effect-diagnostics-next-line effectFnOpportunity:off -- one-shot command body, not a reusable function
 export function preparedEnvironmentFetchAuthorization(
   prepared: PreparedConnection,
   method: "GET" | "POST",

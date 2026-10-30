@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as Schema from "effect/Schema";
 // @effect-diagnostics nodeBuiltinImport:off - Hash persisted request identity without retaining additional prompt content.
 import * as NodeCrypto from "node:crypto";

@@ -2,12 +2,15 @@
 import * as NodePath from "@effect/platform-node/NodePath";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeOS from "node:os";
+import * as NodeUtil from "node:util";
+
 import { ExternalLauncherBrowserSpawnError } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
-import * as ConfigProvider from "effect/ConfigProvider";
+import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Redactable from "effect/Redactable";
 import * as Path from "effect/Path";
 import * as Tracer from "effect/Tracer";
 import * as HttpClient from "effect/http/HttpClient";
@@ -94,24 +97,6 @@ const layerConfig = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
   ).pipe(Layer.provide(NodePath.layer));
 
 /**
- * The export is asserted after the layer's scope closes, which is where the
- * exporter flushes whatever the interval did not.
- */
-const logThrough = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =>
-  Effect.gen(function* () {
-    const requests: Array<ExportedRequest> = [];
-    yield* Effect.log("server logger under test").pipe(
-      Effect.provide(
-        ServerLogger.layer.pipe(
-          Layer.provide(layerConfig(overrides)),
-          Layer.provide(layerCollector(requests)),
-        ),
-      ),
-    );
-    return requests;
-  });
-
-/**
  * Runs `program` (one log line by default) inside a span so the tracer logger
  * has somewhere to attach an event, then reports both what the collector
  * received and what landed on the span.
@@ -148,27 +133,63 @@ const logInSpanThrough = (
     return { requests, spans };
   });
 
+const printThroughConsole = (fields: object) =>
+  Effect.gen(function* () {
+    const printed: Array<string> = [];
+    const testConsole = {
+      ...globalThis.console,
+      log: (...args: ReadonlyArray<unknown>) => {
+        printed.push(NodeUtil.format(...args));
+      },
+    } satisfies Console.Console;
+    yield* Effect.logWarning("pull request watch check failed", fields).pipe(
+      Effect.provide(
+        ServerLogger.layer.pipe(Layer.provide(layerConfig({})), Layer.provide(layerCollector([]))),
+      ),
+      Effect.provideService(Console.Console, testConsole),
+    );
+    return printed.join("\n");
+  });
+
 describe("ServerLoggerLive", () => {
-  it.effect("ignores legacy external log exporter settings", () =>
+  it.effect("exports the operator's service instance id instead of a generated one", () =>
     Effect.gen(function* () {
-      const requests = yield* logThrough({
+      const { requests } = yield* logInSpanThrough({
         otlpLogsUrl: "https://collector.example.com/v1/logs",
-        otlpLogsExport: {
-          ...DEFAULT_SIGNAL_EXPORT,
-          protocol: "http/protobuf",
-          headers: { "x-scope": "logs" },
+        otelEnvironment: {
+          ...OtelEnvironment.none,
+          resourceAttributes: { "service.instance.id": "pod-7" },
         },
       });
 
-      assert.lengthOf(requests, 0);
+      const body = requests.map((request) => request.body).join("\n");
+      assert.include(body, '"key":"service.instance.id","value":{"stringValue":"pod-7"}');
     }),
   );
 
-  it.effect("stays off the network when no logs endpoint is configured", () =>
+  it.effect("exports a resource that names whether the desktop app launched the server", () =>
     Effect.gen(function* () {
-      const requests = yield* logThrough({});
+      const { requests } = yield* logInSpanThrough({
+        otlpLogsUrl: "https://collector.example.com/v1/logs",
+        mode: "desktop",
+      });
 
-      assert.lengthOf(requests, 0);
+      const body = requests.map((request) => request.body).join("\n");
+      assert.include(body, '"key":"t3code.server.managed_by","value":{"stringValue":"desktop"}');
+      assert.notInclude(body, "service.mode");
+    }),
+  );
+
+  it.effect("prints a cause passed as a log field instead of collapsing it", () =>
+    Effect.gen(function* () {
+      const output = yield* printThroughConsole({
+        threadId: "thread-1",
+        cause: Cause.fail(new Error("gh: HTTP 502 from api.github.com")),
+      });
+
+      assert.include(output, "threadId: 'thread-1'");
+      assert.include(output, "gh: HTTP 502 from api.github.com");
+      assert.notInclude(output, "[Object]");
     }),
   );
 
@@ -243,7 +264,6 @@ describe("ServerLoggerLive", () => {
 
     it.effect("keeps the token out of traces when the browser fails to open", () =>
       Effect.gen(function* () {
-        // A failed launch records its error, which names the target, on its span.
         const failingLaunch = maybeOpenBrowser(pairingUrl).pipe(
           Effect.provide(
             Layer.mergeAll(

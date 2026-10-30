@@ -1,4 +1,4 @@
-import { isWorkspaceImagePreviewPath } from "@d4research/shared/filePreview";
+import { isWorkspaceImagePreviewPath } from "@d4research/shared/mediaPreview";
 import { COMPUTER_USE_TOOL_SOURCE, dynamicToolSurface } from "@d4research/shared/toolActivity";
 import type {
   ToolActivityIcon,

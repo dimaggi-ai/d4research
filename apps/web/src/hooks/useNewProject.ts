@@ -16,6 +16,7 @@ import { projectEnvironment } from "~/state/projects";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useNewThreadHandler } from "./useHandleNewThread";
+import { suggestAppAccessForRemote } from "../components/sourceControlAppAccessToast";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim().length > 0
@@ -64,6 +65,7 @@ export function useNewProject() {
         description: result.value.repository.nameWithOwner,
       }),
     );
+    void suggestAppAccessForRemote(input.environmentId, result.value.remoteUrl);
   };
 
   return async (input: {
@@ -110,8 +112,7 @@ export function useNewProject() {
     }
 
     const projectRef = scopeProjectRef(input.environmentId, projectId);
-    // Drafts key off the project's stored path, so wait for the create event
-    // to reach the store before opening one.
+    // Wait for the stored project path; drafts use it as their key.
     const project = await waitForProject(projectRef).catch((error: unknown) => {
       toastManager.add(
         stackedThreadToast({

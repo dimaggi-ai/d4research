@@ -22,7 +22,7 @@ export const useProjectSlotStore = create<ProjectSlotState>()(
       slots: {},
       assignSlot: (index, projectKey) =>
         set((state) => {
-          if (!Number.isInteger(index) || index < 0 || index >= PROJECT_SLOT_COUNT) return state;
+          if (index < 0 || index >= PROJECT_SLOT_COUNT) return state;
           // A project holds one slot at a time: assigning it again moves it rather than answering
           // to two numbers, which would make the second one impossible to guess.
           const slots = Object.fromEntries(
@@ -38,7 +38,7 @@ export const useProjectSlotStore = create<ProjectSlotState>()(
         }),
     }),
     {
-      name: "d4research:project-slots:v1",
+      name: "t3code:project-slots:v1",
       version: 1,
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),

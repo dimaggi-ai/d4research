@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { JunieSettings, ProviderDriverKind, type ServerProvider } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";

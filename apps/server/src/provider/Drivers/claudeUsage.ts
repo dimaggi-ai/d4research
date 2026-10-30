@@ -1,3 +1,11 @@
+import * as FileSystem from "effect/FileSystem";
+/**
+ * Usage history for Claude Code: the transcript format of its
+ * `<home>/projects/**.jsonl` session files and where each instance keeps them.
+ *
+ * @module provider/Drivers/claudeUsage
+ */
+
 import type { ClaudeSettings } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
@@ -11,6 +19,9 @@ import {
   type UsageRecord,
 } from "@d4research/provider-core/server/usage";
 import * as HostProcess from "@d4research/shared/HostProcess";
+
+// Claude Code uses this model for local placeholders that never reached the API.
+export const CLAUDE_SYNTHETIC_MODEL = "<synthetic>";
 
 /**
  * T3 Code writes one record per assistant *content block*, and every one of those records repeats
@@ -45,7 +56,7 @@ function parseClaudeRecord(parsed: unknown): UsageRecord | null {
   if (timestampMs === null) return null;
 
   const model = typeof messageRecord["model"] === "string" ? messageRecord["model"] : "";
-  if (model.length === 0) return null;
+  if (model.length === 0 || model === CLAUDE_SYNTHETIC_MODEL) return null;
 
   const messageId = typeof messageRecord["id"] === "string" ? messageRecord["id"] : null;
   const requestId = typeof record["requestId"] === "string" ? record["requestId"] : null;
@@ -90,7 +101,10 @@ export const claudeUsageFormat: TranscriptUsageFormat<void> = {
   parseProjected: (projected) => orEmpty(parseClaudeRecord(projected)),
 };
 
-export const claudeUsageReader: ProviderUsageReader<ClaudeSettings, Path.Path> = {
+export const claudeUsageReader: ProviderUsageReader<
+  ClaudeSettings,
+  Path.Path | FileSystem.FileSystem
+> = {
   kind: "transcripts",
   provider: "claude",
   format: claudeUsageFormat,
@@ -98,10 +112,24 @@ export const claudeUsageReader: ProviderUsageReader<ClaudeSettings, Path.Path> =
     if (config === undefined) return [];
     const path = yield* Path.Path;
     const homeDirectory = yield* HostProcess.HomeDirectory;
-    const configured = config.homePath.trim();
-    const home = configured
+    const configured = config.configDir.trim();
+    const processHome = config.homePath.trim()
+      ? expandHomePath(config.homePath.trim(), homeDirectory)
+      : environment.HOME?.trim() || homeDirectory;
+    let home = configured
       ? expandHomePath(configured, homeDirectory)
-      : environment.CLAUDE_CONFIG_DIR?.trim() || path.join(homeDirectory, ".claude");
+      : environment.CLAUDE_CONFIG_DIR?.trim() || path.join(processHome, ".claude");
+    // Older fork builds could bind HOME directly to a Claude configuration folder.
+    if (!configured && !environment.CLAUDE_CONFIG_DIR?.trim() && config.homePath.trim()) {
+      const fs = yield* FileSystem.FileSystem;
+      if (
+        !(yield* fs.exists(path.join(home, "projects")).pipe(Effect.orElseSucceed(() => false))) &&
+        (yield* fs
+          .exists(path.join(processHome, "projects"))
+          .pipe(Effect.orElseSucceed(() => false)))
+      )
+        home = processHome;
+    }
     return [{ dir: path.resolve(home, "projects") }];
   }),
 };

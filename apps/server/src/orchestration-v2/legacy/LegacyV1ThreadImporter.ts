@@ -1,7 +1,7 @@
 import {
   threadPullRequestKeysEqual,
   threadPullRequestsOf,
-} from "@d4research/shared/threadPullRequests";
+} from "../../sourceControl/threadPullRequests.ts";
 import {
   ChatAttachment,
   OrchestrationMessageContext,
@@ -22,6 +22,8 @@ import {
   TurnItemId,
 } from "@d4research/contracts";
 import * as KeyedLock from "@d4research/shared/KeyedLock";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -127,6 +129,7 @@ const decodeLinkedPullRequest = Schema.decodeUnknownOption(ThreadLinkedPullReque
 const decodeStoredThread = Schema.decodeUnknownOption(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
+const decodeMessageContext = Schema.decodeUnknownOption(OrchestrationMessageContext);
 
 function parseJson(json: string): unknown {
   try {
@@ -150,6 +153,11 @@ function modelSelectionFor(row: LegacyThreadRow) {
 function attachmentsFor(row: LegacyMessageRow) {
   if (row.attachments_json === null) return [];
   return Option.getOrElse(decodeAttachments(parseJson(row.attachments_json)), () => []);
+}
+
+function contextFor(row: LegacyMessageRow) {
+  if (!row.context_json) return undefined;
+  return Option.getOrUndefined(decodeMessageContext(parseJson(row.context_json)));
 }
 
 function linkedPullRequestFor(row: LegacyThreadRow) {
@@ -253,6 +261,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
   const createdAt = dateTime(row.created_at);
   const updatedAt = dateTime(row.updated_at);
   const attachments = attachmentsFor(row);
+  const context = contextFor(row);
   const message: OrchestrationV2ConversationMessage = {
     createdBy: row.role === "user" ? "user" : "agent",
     creationSource: "server",
@@ -262,13 +271,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
     nodeId: null,
     role: row.role,
     text: row.text,
-    ...(row.context_json
-      ? {
-          context: Schema.decodeUnknownSync(OrchestrationMessageContext)(
-            parseJson(row.context_json),
-          ),
-        }
-      : {}),
+    ...(context !== undefined ? { context } : {}),
     attachments,
     streaming: false,
     createdAt,
@@ -300,13 +303,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
           messageId,
           inputIntent: "turn_start",
           text: row.text,
-          ...(row.context_json
-            ? {
-                context: Schema.decodeUnknownSync(OrchestrationMessageContext)(
-                  parseJson(row.context_json),
-                ),
-              }
-            : {}),
+          ...(context !== undefined ? { context } : {}),
           attachments,
         }
       : {
@@ -314,13 +311,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
           type: "assistant_message",
           messageId,
           text: row.text,
-          ...(row.context_json
-            ? {
-                context: Schema.decodeUnknownSync(OrchestrationMessageContext)(
-                  parseJson(row.context_json),
-                ),
-              }
-            : {}),
+          ...(context !== undefined ? { context } : {}),
           streaming: false,
         };
   return [
@@ -374,11 +365,12 @@ const make = Effect.gen(function* () {
       WHERE thread_id = ${threadId}
         AND role IN ('user', 'assistant')
       ORDER BY created_at ASC, message_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
 
-  const listShellMessages = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      const latest = yield* sql<LegacyMessageRow>`
+  const listShellMessages = Effect.fn("LegacyV1ThreadImporter.listShellMessages")(function* (
+    threadId: ThreadId,
+  ) {
+    const latest = yield* sql<LegacyMessageRow>`
         SELECT
           message.message_id,
           message.thread_id,
@@ -408,7 +400,7 @@ const make = Effect.gen(function* () {
         ORDER BY message.created_at DESC, message.message_id DESC
         LIMIT 1
       `;
-      const latestUser = yield* sql<LegacyMessageRow>`
+    const latestUser = yield* sql<LegacyMessageRow>`
         SELECT
           message.message_id,
           message.thread_id,
@@ -438,12 +430,12 @@ const make = Effect.gen(function* () {
         ORDER BY message.created_at DESC, message.message_id DESC
         LIMIT 1
       `;
-      return [latestUser[0], latest[0]].filter(
-        (message, index, selected): message is LegacyMessageRow =>
-          message !== undefined &&
-          selected.findIndex((candidate) => candidate?.message_id === message.message_id) === index,
-      );
-    });
+    return [latestUser[0], latest[0]].filter(
+      (message, index, selected): message is LegacyMessageRow =>
+        message !== undefined &&
+        selected.findIndex((candidate) => candidate?.message_id === message.message_id) === index,
+    );
+  });
 
   const reconcileShellsBase = Effect.gen(function* () {
     const now = DateTime.formatIso(yield* DateTime.now);
@@ -685,16 +677,14 @@ const make = Effect.gen(function* () {
       WHERE legacy_import.transcript_imported_at IS NULL
     )
   `.pipe(
+    NodeSqliteClient.readOnly,
     Effect.map((rows) => rows[0]?.count ?? 0),
     Effect.mapError(
       (cause) => new LegacyV1ThreadImportError({ operation: "inspect pending", cause }),
     ),
   );
 
-  // `transcript_imported_at` is never reset to NULL, so a positive answer
-  // stays valid for the process lifetime; ensureTranscript runs on most
-  // thread reads and command dispatches, so skipping the lock + lookup here
-  // keeps that path off the database entirely after first confirmation.
+  // transcript_imported_at never resets; cache confirmed imports for the process lifetime to skip repeated locks and reads.
   const confirmedTranscriptThreadIds = new Set<ThreadId>();
 
   const ensureTranscriptBase = (threadId: ThreadId) =>
@@ -706,7 +696,7 @@ const make = Effect.gen(function* () {
           FROM orchestration_v2_legacy_imports
           WHERE thread_id = ${threadId}
           LIMIT 1
-        `;
+        `.pipe(NodeSqliteClient.readOnly);
         const imported = imports[0];
         if (imported === undefined || imported.transcript_imported_at !== null) {
           if (imported !== undefined) {
@@ -715,14 +705,15 @@ const make = Effect.gen(function* () {
           return { importedThreadCount: 0, importedMessageCount: 0 };
         }
         const messages = yield* listMessages(threadId);
+        // Hint the index to skip V1 events without scanning their payloads.
         const existingRows = yield* sql<{ readonly event_id: string }>`
           SELECT event_id
-          FROM orchestration_events
+          FROM orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
           WHERE application_event_version = 2
             AND aggregate_kind = 'thread'
             AND stream_id = ${threadId}
             AND event_id LIKE ${`${IMPORT_EVENT_PREFIX}:message:%`}
-        `;
+        `.pipe(NodeSqliteClient.readOnly);
         const existing = new Set(existingRows.map((row) => row.event_id));
         const missing = messages.filter(
           (message) => !existing.has(`${IMPORT_EVENT_PREFIX}:message:${message.message_id}`),
@@ -786,29 +777,32 @@ const make = Effect.gen(function* () {
       FROM orchestration_v2_legacy_imports
       WHERE transcript_imported_at IS NULL
       ORDER BY shell_imported_at ASC, thread_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     let importedThreadCount = 0;
     let importedMessageCount = 0;
     for (const row of rows) {
       const result = yield* ensureTranscript(ThreadId.make(row.thread_id)).pipe(
-        Effect.tapError((error) =>
-          Effect.logWarning("Failed to hydrate migrated v1 thread transcript", {
-            threadId: row.thread_id,
-            cause: error,
-          }),
-        ),
-        Effect.catch(() =>
-          sql`
-            UPDATE orchestration_v2_legacy_imports
-            SET last_error = 'Transcript hydration failed; retry on next open.'
-            WHERE thread_id = ${row.thread_id}
-          `.pipe(
-            Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
-            Effect.orElseSucceed(() => ({
-              importedThreadCount: 0,
-              importedMessageCount: 0,
-            })),
-          ),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          (cause) =>
+            Effect.logWarning("Failed to hydrate migrated v1 thread transcript", {
+              threadId: row.thread_id,
+              cause,
+            }).pipe(
+              Effect.andThen(() =>
+                sql`
+                    UPDATE orchestration_v2_legacy_imports
+                    SET last_error = 'Transcript hydration failed; retry on next open.'
+                    WHERE thread_id = ${row.thread_id}
+                  `.pipe(
+                  Effect.catchCauseIf(
+                    (cause) => !Cause.hasInterrupts(cause),
+                    () => Effect.void,
+                  ),
+                ),
+              ),
+              Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
+            ),
         ),
       );
       importedThreadCount += result.importedThreadCount;
@@ -818,9 +812,11 @@ const make = Effect.gen(function* () {
     return { importedThreadCount, importedMessageCount };
   }).pipe(
     Effect.catchCause((cause) =>
-      Effect.logWarning("Legacy v1 transcript background import stopped", { cause }).pipe(
-        Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
-      ),
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+        : Effect.logWarning("Legacy v1 transcript background import stopped", { cause }).pipe(
+            Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
+          ),
     ),
   );
 

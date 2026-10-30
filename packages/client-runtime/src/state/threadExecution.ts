@@ -7,6 +7,7 @@ import {
 import {
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
+  latestProviderTurnForAttempt,
   type ModelSelection,
   type OrchestrationV2NotificationSource,
   type OrchestrationV2PendingBackgroundTask,
@@ -21,10 +22,7 @@ import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
 } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
-import {
-  getProviderOptionCurrentLabel,
-  getProviderOptionDescriptors,
-} from "@d4research/shared/model";
+import { getProviderOptionCurrentLabel, getProviderOptionStatedValue } from "@d4research/shared/model";
 import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 
@@ -32,6 +30,8 @@ import {
   threadRuntimeIsActive,
   type ThreadRunSummary,
   type ThreadRuntimeSummary,
+  type ThreadStructure,
+  type ThreadStructureRuntime,
 } from "./models.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
 
@@ -39,7 +39,7 @@ const ACTIVITY_RUN_STATUSES = new Set(["preparing", "starting", "running", "wait
 const INTERRUPTIBLE_RUN_STATUSES = new Set(["preparing", "starting", "running"]);
 
 function latestMatchingRun(
-  projection: OrchestrationV2ThreadProjection,
+  projection: ThreadStructure,
   predicate: (run: OrchestrationV2ThreadProjection["runs"][number]) => boolean,
 ): OrchestrationV2ThreadProjection["runs"][number] | null {
   return projection.runs.reduce<OrchestrationV2ThreadProjection["runs"][number] | null>(
@@ -52,9 +52,12 @@ function latestMatchingRun(
 }
 
 function summarizeThreadRun(
-  projection: OrchestrationV2ThreadProjection,
+  projection: ThreadStructure,
   run: OrchestrationV2ThreadProjection["runs"][number],
 ): ThreadRunSummary {
+  const turnStatus = ACTIVITY_RUN_STATUSES.has(run.status)
+    ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)?.status
+    : undefined;
   return {
     runId: run.id,
     status: run.status,
@@ -65,12 +68,15 @@ function summarizeThreadRun(
       projection.messages.findLast(
         (message) => message.runId === run.id && message.role === "assistant",
       )?.id ?? null,
+    ...(turnStatus === undefined || turnStatus === "pending" || turnStatus === "running"
+      ? {}
+      : { turnEnded: true }),
     ...(run.sourcePlanRef === undefined ? {} : { sourcePlanRef: run.sourcePlanRef }),
   };
 }
 
 function presentedUsageLimitRun(
-  projection: OrchestrationV2ThreadProjection,
+  projection: ThreadStructure,
 ): OrchestrationV2ThreadProjection["runs"][number] | null {
   const providerSession = projection.providerSessions.findLast(
     (session) => session.providerInstanceId === projection.thread.providerInstanceId,
@@ -83,21 +89,17 @@ function presentedUsageLimitRun(
 }
 
 function presentedLatestRun(
-  projection: OrchestrationV2ThreadProjection,
+  projection: ThreadStructure,
 ): OrchestrationV2ThreadProjection["runs"][number] | null {
   return presentedUsageLimitRun(projection) ?? latestUnheldRun(projection.runs);
 }
 
-export function deriveLatestThreadRun(
-  projection: OrchestrationV2ThreadProjection,
-): ThreadRunSummary | null {
+export function deriveLatestThreadRun(projection: ThreadStructure): ThreadRunSummary | null {
   const run = presentedLatestRun(projection);
   return run === null ? null : summarizeThreadRun(projection, run);
 }
 
-export function deriveThreadActivityRun(
-  projection: OrchestrationV2ThreadProjection,
-): ThreadRunSummary | null {
+export function deriveThreadActivityRun(projection: ThreadStructure): ThreadRunSummary | null {
   const run =
     latestMatchingRun(projection, (candidate) => ACTIVITY_RUN_STATUSES.has(candidate.status)) ??
     presentedLatestRun(projection);
@@ -108,9 +110,7 @@ export function deriveThreadActivityRun(
  * Provider-native subagent threads never get app runs: their work is a runless
  * root turn whose status follows the subagent.
  */
-export function deriveRunlessWorkStartedAt(
-  projection: OrchestrationV2ThreadProjection,
-): string | null {
+export function deriveRunlessWorkStartedAt(projection: ThreadStructure): string | null {
   const status = deriveProviderSubagentStatus(projection);
   return status !== null && isOrchestrationV2WorkActive(status.status) ? status.startedAt : null;
 }
@@ -122,7 +122,7 @@ export interface ProviderSubagentStatus {
 }
 
 export function deriveProviderSubagentStatus(
-  projection: OrchestrationV2ThreadProjection,
+  projection: ThreadStructure,
 ): ProviderSubagentStatus | null {
   if (!isProviderNativeSubagentThread(projection.thread)) return null;
   const node = projection.nodes.findLast(
@@ -136,9 +136,7 @@ export function deriveProviderSubagentStatus(
   };
 }
 
-export function deriveReportedModelSelection(
-  projection: OrchestrationV2ThreadProjection,
-): ModelSelection | null {
+export function deriveReportedModelSelection(projection: ThreadStructure): ModelSelection | null {
   const providerThread = projection.providerThreads.find(
     (candidate) =>
       candidate.id === projection.thread.activeProviderThreadId &&
@@ -147,7 +145,14 @@ export function deriveReportedModelSelection(
   return providerThread?.nativeMetadata?.modelSelection ?? null;
 }
 
-const REASONING_EFFORT_OPTION_IDS = ["reasoningEffort", "effort", "reasoning", "variant"] as const;
+export const REASONING_EFFORT_OPTION_IDS: ReadonlyArray<string> = [
+  "reasoningEffort",
+  "effort",
+  "reasoning",
+  "variant",
+  "reasoning_effort",
+  "thinking_level",
+];
 
 export function formatModelSelectionEffort(
   selection: ModelSelection,
@@ -156,11 +161,18 @@ export function formatModelSelectionEffort(
 ): string | null {
   const caps = models.find((model) => model.slug === selection.model)?.capabilities;
   if (!caps) return null;
-  const descriptors = getProviderOptionDescriptors({ caps, selections: selection.options });
   for (const id of REASONING_EFFORT_OPTION_IDS) {
-    const descriptor = descriptors.find((candidate) => candidate.id === id);
+    const descriptor = caps.optionDescriptors?.find((candidate) => candidate.id === id);
     if (descriptor?.type !== "select") continue;
-    const label = getProviderOptionCurrentLabel(descriptor, selection, reportedSelection);
+    const value = getProviderOptionStatedValue(id, selection, reportedSelection);
+    if (value === undefined && id !== "variant") continue;
+    if (typeof value === "boolean") continue;
+    // Bypass picker normalization so an obsolete choice cannot become a catalog default.
+    const label = getProviderOptionCurrentLabel(
+      { ...descriptor, currentValue: value },
+      selection,
+      reportedSelection,
+    );
     if (label) return label;
   }
   return null;
@@ -198,8 +210,18 @@ export function formatProviderSubagentStatus(
 }
 
 export function deriveThreadRuntime(
-  projection: OrchestrationV2ThreadProjection,
+  projection: ThreadStructure & Pick<OrchestrationV2ThreadProjection, "updatedAt">,
 ): ThreadRuntimeSummary | null {
+  const runtime = deriveThreadStructureRuntime(projection);
+  return runtime === null
+    ? null
+    : { ...runtime, updatedAt: DateTime.formatIso(projection.updatedAt) };
+}
+
+/** The runtime summary a thread's structure determines: all of it but `updatedAt`. */
+export function deriveThreadStructureRuntime(
+  projection: ThreadStructure,
+): ThreadStructureRuntime | null {
   const latestRun = deriveLatestThreadRun(projection);
   const providerSession = projection.providerSessions.findLast(
     (session) => session.providerInstanceId === projection.thread.providerInstanceId,
@@ -218,6 +240,7 @@ export function deriveThreadRuntime(
       activeProviderThreadId: projection.thread.activeProviderThreadId,
       runs: projection.runs,
       pullRequests: projection.thread.pullRequests,
+      peerThreadWatches: projection.thread.peerThreadWatches,
     }),
   );
   // A pull request watch can hold a thread that never ran.
@@ -247,17 +270,18 @@ export function deriveThreadRuntime(
       latestRootProviderFailure(latestRunProjection, projection.turnItems),
       providerSession?.lastError ?? null,
     ),
-    updatedAt: DateTime.formatIso(projection.updatedAt),
   };
 }
 
 /** Presentation only: background work stays pending without implying the model is running. */
 export function resolveThreadWorkPhase(thread: {
+  readonly blockedOnThreadWait?: boolean | undefined;
   readonly runtime: Pick<ThreadRuntimeSummary, "status"> | null;
   readonly pendingBackgroundTasks?: ReadonlyArray<OrchestrationV2PendingBackgroundTask> | undefined;
 }): "working" | "waiting" | null {
   const status = thread.runtime?.status;
   if (status === "failed") return null;
+  if (status === "running" && thread.blockedOnThreadWait === true) return "waiting";
   if (
     status === "preparing" ||
     status === "queued" ||
@@ -271,7 +295,7 @@ export function resolveThreadWorkPhase(thread: {
 }
 
 export function threadRuntimeHasInterruptibleRun(
-  runtime: ThreadRuntimeSummary | null | undefined,
+  runtime: ThreadStructureRuntime | null | undefined,
 ): boolean {
   return (
     threadRuntimeIsActive(runtime) &&

@@ -7,6 +7,6 @@ export const ANDROID_PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=ai.dimaggi.d4research";
 
 export const MARKETING_STATS = {
-  githubStars: "24k+",
+  githubStars: "31k+",
   users: "500,000",
 } as const;

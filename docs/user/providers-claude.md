@@ -232,6 +232,13 @@ CLAUDE_CONFIG_DIR path: ~/.claude_router_home
 Follow the upstream project's README for the router's own install, startup, and configuration
 steps: <https://github.com/musistudio/claude-code-router>.
 
+## Task lists
+
+To show Claude task lists in the web and desktop apps, add
+`CLAUDE_CODE_ENABLE_TODO_TOOLS=1` under **Variables** in the Claude instance's
+**Environment** section in **Settings > Providers**. Each update shows as a Tasks
+row in the thread; open it to see every step.
+
 ## I Want Different Claude Settings, Not A Different Account
 
 Create another Claude provider with the same account if you want a named preset.

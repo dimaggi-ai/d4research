@@ -46,6 +46,8 @@ import {
   type PrimaryEnvironmentTarget,
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
+import { APP_VERSION } from "../branding";
+import { clientPresentationMetadata } from "./clientMetadata";
 import { isHostedStaticApp } from "../hostedPairing";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
@@ -709,6 +711,7 @@ const layerPlatformConnectionSource = Layer.effect(
 const layerEnvironmentOwnedDataCleanup = Layer.succeed(
   Persistence.EnvironmentOwnedDataCleanup,
   Persistence.EnvironmentOwnedDataCleanup.of({
+    // @effect-diagnostics-next-line effectFnOpportunity:off -- capability callback, not a reusable function
     clear: (environmentId) =>
       Effect.sync(() => {
         clearComposerDraftsEnvironment(environmentId);
@@ -719,6 +722,7 @@ const layerEnvironmentOwnedDataCleanup = Layer.succeed(
 const layerRpcRequestObserver = Layer.succeed(
   EnvironmentRpcRequestObserver,
   EnvironmentRpcRequestObserver.of({
+    // @effect-diagnostics-next-line effectFnOpportunity:off -- capability callback, not a reusable function
     observe: ({ environmentId, method }) =>
       Effect.sync(() => {
         nextObservedRpcRequestId += 1;
@@ -753,3 +757,16 @@ export const layer: Layer.Layer<
   layerEnvironmentOwnedDataCleanup,
   layerRpcRequestObserver,
 );
+
+export function currentClientMetadata() {
+  return clientPresentationMetadata({
+    appVersion: APP_VERSION,
+    hosted: isHostedStaticApp(),
+    identity: {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      maxTouchPoints: navigator.maxTouchPoints,
+    },
+    desktopBridge: window.desktopBridge,
+  });
+}

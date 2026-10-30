@@ -1,8 +1,7 @@
-import { type ChangeRequestStateLike } from "@d4research/client-runtime/state/thread-settled";
-import { effectiveSettled } from "@d4research/client-runtime/state/thread-settled";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
-import { scopedThreadKey } from "@d4research/client-runtime/environment";
+import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -17,38 +16,38 @@ import {
 } from "@d4research/contracts";
 import { useRouter } from "@tanstack/react-router";
 
-import { resolveSnoozePresets } from "../components/Sidebar.snooze";
+import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { copyThreadReference } from "../lib/copyThreadReference";
+import { threadChipCopyTarget } from "@d4research/client-runtime/thread-reference";
 import { threadEnvironment } from "../state/threads";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope } from "../state/session";
 import {
+  readEnvironmentServerConfigLoaded,
   readEnvironmentSupportsAutoSettleOptOut,
-  readEnvironmentSupportsPinning,
-  readEnvironmentSupportsSettlement,
-  readEnvironmentSupportsSnooze,
-  readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
   useProjects,
 } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
+import { readThreadAccentColor, setThreadAccentColor } from "../accentColorStore";
 import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
-} from "../logicalProject";
+} from "@d4research/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@d4research/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { useThreadActions } from "./useThreadActions";
+import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -64,11 +63,12 @@ export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
-  /** PR state feeding auto-settle classification, as resolved by the caller. */
-  readonly changeRequestState: ChangeRequestStateLike | null;
+  readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  readonly canShareWithGuest: boolean;
   readonly onExportMarkdown?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, onStartRename, changeRequestState, onExportMarkdown } = input;
+  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest, onExportMarkdown } =
+    input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -84,11 +84,12 @@ export function useThreadActionMenu(input: {
     snoozeThread,
     unsnoozeThread,
     pinThread,
-    confirmAndUnpinThread,
+    unpinThread,
     setThreadAutoSettle,
     archiveThread,
     deleteThread,
     markThreadUnread,
+    turnThreadIntoProject,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -97,7 +98,6 @@ export function useThreadActionMenu(input: {
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
-  const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({ type: "success", title: "Path copied", description: path });
@@ -126,28 +126,23 @@ export function useThreadActionMenu(input: {
       const thread = readThreadShell(threadRef);
       if (!thread) return;
       const now = new Date();
+      const configLoaded = readEnvironmentServerConfigLoaded(threadRef.environmentId);
       const supports = {
-        settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
+        settlement: configLoaded,
         autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
-        snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
-        pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
-        titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+        snooze: configLoaded,
+        pinning: configLoaded,
+        titleRegeneration: configLoaded,
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
-      const snoozePresets = resolveSnoozePresets(now, timestampFormat);
+      const snoozePresets = resolveSnoozePresets(now, timestampFormat, threadRef.environmentId);
       const items = buildThreadActionMenuItems({
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
+        canFind: onFind !== undefined,
         branch: thread.branch ?? null,
         projectFilter: null,
         isPinned: thread.pinnedAt != null,
-        isSettled:
-          supports.settlement &&
-          effectiveSettled(thread, {
-            now: `${now.toISOString().slice(0, 16)}:00.000Z`,
-            autoSettleAfterDays,
-            changeRequestState,
-          }),
-        canExportMarkdown: onExportMarkdown !== undefined,
+        isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
@@ -155,6 +150,10 @@ export function useThreadActionMenu(input: {
         isRunning: !threadRuntimeCanArchive(thread.runtime),
         supports,
         snoozePresets,
+        accentColor: readThreadAccentColor(scopedThreadKey(threadRef)),
+        canShareWithGuest,
+        canExportMarkdown: onExportMarkdown !== undefined,
+        canTurnIntoProject: canTurnThreadIntoProject(threadRef),
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -169,11 +168,21 @@ export function useThreadActionMenu(input: {
         );
         return;
       }
+      if (action.startsWith("color:")) {
+        const choice = action.slice("color:".length);
+        setThreadAccentColor(scopedThreadKey(threadRef), choice === "none" ? null : choice);
+        return;
+      }
       if (action.startsWith("snooze:")) {
         const preset =
           action === "snooze:custom"
             ? await requestCustomSnooze()
-            : snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
+            : pickSnoozePreset(
+                snoozePresets,
+                action.slice("snooze:".length),
+                timestampFormat,
+                threadRef.environmentId,
+              );
         if (!preset) return;
         const result = await snoozeThread(threadRef, preset.snoozedUntil);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -191,6 +200,9 @@ export function useThreadActionMenu(input: {
         }
       };
       switch (action) {
+        case "find":
+          onFind?.(threadRef);
+          return;
         case "project-settings": {
           const project = projects.find(
             (candidate) =>
@@ -232,10 +244,9 @@ export function useThreadActionMenu(input: {
         case "pin":
           await reportFailure("Failed to pin thread", () => pinThread(threadRef));
           return;
-        case "unpin": {
-          await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
+        case "unpin":
+          await reportFailure("Failed to unpin thread", () => unpinThread(threadRef));
           return;
-        }
         case "auto-settle:enabled":
         case "auto-settle:disabled":
           await reportFailure("Failed to update auto-settle", () =>
@@ -257,6 +268,22 @@ export function useThreadActionMenu(input: {
         case "mark-unread":
           markThreadUnread(threadRef);
           return;
+        case "share-guest":
+          openGuestShareDialog(threadRef);
+          return;
+        case "turn-into-project": {
+          const result = await turnThreadIntoProject(threadRef);
+          if (result._tag === "Success") {
+            toastManager.add({
+              type: "success",
+              title: "Project created",
+              description: thread.title,
+            });
+          } else if (!isAtomCommandInterrupted(result)) {
+            failureToast("Could not turn thread into a project", squashAtomCommandFailure(result));
+          }
+          return;
+        }
         case "copy-path": {
           const workspacePath = thread.worktreePath ?? projectCwd;
           if (!workspacePath) {
@@ -276,6 +303,9 @@ export function useThreadActionMenu(input: {
           if (thread.branch) {
             copyBranchToClipboard(thread.branch, { branch: thread.branch });
           }
+          return;
+        case "copy-thread":
+          void copyThreadReference(threadChipCopyTarget(threadRef, thread.title));
           return;
         case "copy-thread-id":
           copyThreadIdToClipboard(thread.id, { threadId: thread.id });
@@ -321,9 +351,7 @@ export function useThreadActionMenu(input: {
           if (
             deleted._tag === "Failure" &&
             !isAtomCommandInterrupted(deleted) &&
-            // A failure with the thread already gone is worktree cleanup
-            // failing after a successful delete — deleteThread has toasted
-            // that itself, and "Failed to delete thread" would be a lie.
+            // A missing thread means cleanup failed after deletion; deleteThread already toasted that failure.
             readThreadShell(threadRef) !== null
           ) {
             failureToast("Failed to delete thread", squashAtomCommandFailure(deleted));

@@ -47,115 +47,114 @@ export const DeepSeekDriver: ProviderDriver<DeepSeekSettings, DeepSeekDriverEnv>
   },
   configSchema: DeepSeekSettings,
   defaultConfig: DeepSeekAdapterV2Driver.defaultConfig,
-  create: (input) =>
-    Effect.gen(function* () {
-      const client = yield* HttpClient.HttpClient;
-      const continuationIdentity = defaultProviderContinuationIdentity({
-        driverKind: DRIVER,
-        instanceId: input.instanceId,
-      });
-      const stamp = withInstanceIdentity({
-        instanceId: input.instanceId,
-        displayName: input.displayName,
-        accentColor: input.accentColor,
-        driverKind: DRIVER,
-        continuationGroupKey: continuationIdentity.continuationKey,
-      });
-      const build = (ready: boolean, checkedAt: string): ServerProvider =>
-        stamp(
-          buildServerProvider({
-            driver: DRIVER,
-            presentation: {
-              displayName: "DeepSeek (local)",
-              badgeLabel: "Text only",
-              showInteractionModeToggle: false,
-              reportsContextWindow: true,
-              supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
-              supportsConversationRollback: false,
-            },
-            enabled: input.enabled,
-            checkedAt,
-            models: [
-              {
-                slug: input.config.model,
-                name: input.config.model,
-                isCustom: false,
-                capabilities: {
-                  optionDescriptors: [
-                    {
-                      id: "taskMode",
-                      label: "Task mode",
-                      type: "select",
-                      currentValue: input.config.taskMode,
-                      options: [
-                        { id: "text", label: "Text" },
-                        { id: "tools", label: "Tools (fallback)" },
-                      ],
-                    },
-                  ],
-                },
+  create: Effect.fn("DeepSeekDriver.create")(function* (input) {
+    const client = yield* HttpClient.HttpClient;
+    const continuationIdentity = defaultProviderContinuationIdentity({
+      driverKind: DRIVER,
+      instanceId: input.instanceId,
+    });
+    const stamp = withInstanceIdentity({
+      instanceId: input.instanceId,
+      displayName: input.displayName,
+      accentColor: input.accentColor,
+      driverKind: DRIVER,
+      continuationGroupKey: continuationIdentity.continuationKey,
+    });
+    const build = (ready: boolean, checkedAt: string): ServerProvider =>
+      stamp(
+        buildServerProvider({
+          driver: DRIVER,
+          presentation: {
+            displayName: "DeepSeek (local)",
+            badgeLabel: "Text only",
+            showInteractionModeToggle: false,
+            reportsContextWindow: true,
+            supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
+            supportsConversationRollback: false,
+          },
+          enabled: input.enabled,
+          checkedAt,
+          models: [
+            {
+              slug: input.config.model,
+              name: input.config.model,
+              isCustom: false,
+              capabilities: {
+                optionDescriptors: [
+                  {
+                    id: "taskMode",
+                    label: "Task mode",
+                    type: "select",
+                    currentValue: input.config.taskMode,
+                    options: [
+                      { id: "text", label: "Text" },
+                      { id: "tools", label: "Tools (fallback)" },
+                    ],
+                  },
+                ],
               },
-            ],
-            probe: {
-              installed: true,
-              version: null,
-              status: ready ? "ready" : "error",
-              auth: { status: "authenticated" },
-              ...(ready
-                ? {}
-                : {
-                    message: "The configured model is unavailable at the local DeepSeek endpoint.",
-                  }),
             },
-          }),
+          ],
+          probe: {
+            installed: true,
+            version: null,
+            status: ready ? "ready" : "error",
+            auth: { status: "authenticated" },
+            ...(ready
+              ? {}
+              : {
+                  message: "The configured model is unavailable at the local DeepSeek endpoint.",
+                }),
+          },
+        }),
+      );
+    const checkedAt = DateTime.formatIso(yield* DateTime.now);
+    const state = yield* Ref.make(build(false, checkedAt));
+    const changes = yield* Effect.acquireRelease(
+      PubSub.unbounded<ServerProvider>(),
+      PubSub.shutdown,
+    );
+    const refresh = Effect.gen(function* () {
+      let ready = false;
+      if (input.enabled && isLoopbackEndpoint(input.config.endpoint)) {
+        ready = yield* probeDeepSeek(input.config).pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
         );
-      const checkedAt = DateTime.formatIso(yield* DateTime.now);
-      const state = yield* Ref.make(build(false, checkedAt));
-      const changes = yield* Effect.acquireRelease(
-        PubSub.unbounded<ServerProvider>(),
-        PubSub.shutdown,
-      );
-      const refresh = Effect.gen(function* () {
-        let ready = false;
-        if (input.enabled && isLoopbackEndpoint(input.config.endpoint)) {
-          ready = yield* probeDeepSeek(input.config).pipe(
-            Effect.provideService(HttpClient.HttpClient, client),
-          );
-        }
-        const snapshot = build(ready, DateTime.formatIso(yield* DateTime.now));
-        yield* Ref.set(state, snapshot);
-        yield* PubSub.publish(changes, snapshot);
-        return snapshot;
-      });
-      yield* refresh;
-      const orchestrationAdapter = yield* DeepSeekAdapterV2Driver.create(input).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER,
-              instanceId: input.instanceId,
-              detail: "Failed to create the local DeepSeek adapter.",
-              cause,
-            }),
-        ),
-      );
-      return {
-        instanceId: input.instanceId,
-        displayName: input.displayName,
-        accentColor: input.accentColor,
-        enabled: input.enabled,
-        driverKind: DRIVER,
-        continuationIdentity,
-        orchestrationAdapter,
-        textGeneration,
-        snapshot: {
-          resolveMaintenance: () =>
-            Effect.succeed({ provider: DRIVER, packageName: null, update: null }),
-          getSnapshot: Ref.get(state),
-          refresh,
-          streamChanges: Stream.fromPubSub(changes),
-          applyUsageLimits: () => Effect.void,
-        },
-      };
-    }),
+      }
+      const snapshot = build(ready, DateTime.formatIso(yield* DateTime.now));
+      yield* Ref.set(state, snapshot);
+      yield* PubSub.publish(changes, snapshot);
+      return snapshot;
+    });
+    yield* refresh;
+    const orchestrationAdapter = yield* DeepSeekAdapterV2Driver.create(input).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER,
+            instanceId: input.instanceId,
+            detail: "Failed to create the local DeepSeek adapter.",
+            cause,
+          }),
+      ),
+    );
+    return {
+      instanceId: input.instanceId,
+      displayName: input.displayName,
+      accentColor: input.accentColor,
+      enabled: input.enabled,
+      driverKind: DRIVER,
+      continuationIdentity,
+      orchestrationAdapter,
+      textGeneration,
+      snapshot: {
+        resolveMaintenance: () =>
+          Effect.succeed({ provider: DRIVER, packageName: null, update: null }),
+        getSnapshot: Ref.get(state),
+        refresh,
+        streamChanges: Stream.fromPubSub(changes),
+        applyUsageLimits: () => Effect.void,
+      },
+    };
+  }),
 };

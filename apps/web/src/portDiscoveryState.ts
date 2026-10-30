@@ -68,6 +68,9 @@ export function useThreadDiscoveredPorts(input: {
 }): ReadonlyArray<DiscoveredLocalServer> {
   const ports = useDiscoveredPorts(input.environmentId);
   return input.threadId
-    ? ports.filter((port) => port.terminal?.threadId === input.threadId)
+    ? ports.filter(
+        (port) =>
+          port.terminal?.threadId === input.threadId || port.agent?.threadId === input.threadId,
+      )
     : EMPTY_PORTS;
 }

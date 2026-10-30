@@ -19,6 +19,7 @@ import { resolveServerInstallation } from "../cli/invocation.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
+import { databaseMigrationHead } from "../persistence/databaseMigrationHead.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
@@ -186,6 +187,8 @@ export const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
+  const hostEnvironment = yield* HostProcess.Environment;
+  const serverBuildId = hostEnvironment.T3CODE_SERVER_BUILD_ID;
   const environmentId = yield* identity.getEnvironmentId;
   const cwdBaseName = path.basename(serverConfig.cwd).trim();
   const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
@@ -196,13 +199,12 @@ export const make = Effect.gen(function* () {
     launcherManaged: launcher.managed,
   });
   const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
-  // Static is correct: the control fd is known at bootstrap, and the desktop
-  // app and its bundled server ship in one artifact, so a present fd means the
-  // app speaks the requestDesktopUpdate protocol.
+  // Desktop and server ship together; a control fd guarantees requestDesktopUpdate support.
 
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
+  const databaseMigration = databaseMigrationHead(serverConfig.dbPath);
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,
     label,
@@ -212,8 +214,14 @@ export const make = Effect.gen(function* () {
       ...(machine === null ? {} : { machine }),
     },
     serverVersion: packageJson.version,
+    ...(serverBuildId !== undefined && /^[0-9a-f]{12,64}$/.test(serverBuildId)
+      ? { serverBuildId }
+      : {}),
     orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+    ...(databaseMigration === undefined ? {} : { databaseMigration }),
     capabilities: {
+      peerThreadMessaging: true,
+      sharedEnvironmentProxy: true,
       repositoryIdentity: true,
       connectionProbe: true,
       attachmentUploads: true,
@@ -234,17 +242,20 @@ export const make = Effect.gen(function* () {
       worktreesDirectory: true,
       threadAutoSettlementScope: true,
       threadRestartContinuation: true,
+      serverUpdateThreadContinuation: true,
       projectSettingsOverrides: true,
       projectProviderInstanceOverrides: true,
       threadSnooze: true,
       environmentThemes: true,
       usageLimitSources: true,
+      providerWorkspaceSnapshotsOnDemand: true,
       usagePriceOverrides: true,
       usageModelAliases: true,
       threadPinning: true,
       threadPinReorder: true,
       threadActiveReorder: true,
       threadAutoSettleOptOut: true,
+      threadProjectFromScratch: true,
       threadTitleRegeneration: true,
       commandOutputStreaming: true,
       threadVisitedTracking: true,
@@ -253,15 +264,22 @@ export const make = Effect.gen(function* () {
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
       serverResolvedCommandContext: true,
+      threadStop: true,
+      ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
       environmentIcon: true,
       projectCloneTracking: true,
+      ignoredFileListing: true,
+      triage: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? { serverSelfUpdateProgress: true }
         : {}),
-      ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
+      ...(desktopAppUpdate ? { desktopAppUpdate: true, desktopAppChannelSwitch: true } : {}),
       serverBrowser: true,
+      peerLinks: true,
+      mcpModeLimitHeader: true,
+      linkFence: true,
     },
   };
 

@@ -7,10 +7,11 @@ import * as Schema from "effect/Schema";
 import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import * as HostProcess from "@d4research/shared/HostProcess";
 
+type ClaudeEnvironmentConfig = Pick<ClaudeSettings, "configDir" | "homePath">;
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
 export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function* (
-  config: Pick<ClaudeSettings, "homePath">,
+  config: ClaudeEnvironmentConfig,
   environment?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<string, never, Path.Path> {
   const path = yield* Path.Path;
@@ -27,31 +28,31 @@ export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function
   return path.resolve(path.join(home, ".claude"));
 });
 
+export const resolveClaudeConfigDir = Effect.fn("resolveClaudeConfigDir")(function* (
+  config: ClaudeEnvironmentConfig,
+): Effect.fn.Return<string | undefined, never, Path.Path> {
+  const configDir = config.configDir.trim();
+  if (configDir.length === 0) return undefined;
+  const path = yield* Path.Path;
+  return path.resolve(expandHomePath(configDir, yield* HostProcess.HomeDirectory));
+});
+
 export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function* (
-  config: Pick<ClaudeSettings, "homePath">,
+  config: ClaudeEnvironmentConfig,
   baseEnv?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
   const resolvedBaseEnv = baseEnv ?? process.env;
   const homePath = config.homePath.trim();
-  if (homePath.length === 0) return resolvedBaseEnv;
-  const resolvedHomePath = yield* resolveClaudeHomePath(config);
+  const configDir = config.configDir.trim();
+  if (homePath.length === 0 && configDir.length === 0) return resolvedBaseEnv;
   return {
     ...resolvedBaseEnv,
-    // Overriding HOME also relocates the macOS login keychain lookup
-    // ($HOME/Library/Keychains), so the spawned CLI can't find its stored
-    // OAuth credentials and reports "Not logged in". CLAUDE_CONFIG_DIR points
-    // Claude Code at its config dir directly while leaving HOME (and the
-    // keychain) intact.
-    CLAUDE_CONFIG_DIR: resolvedHomePath,
+    ...(homePath.length > 0 ? { HOME: yield* resolveClaudeHomePath(config) } : {}),
+    ...(configDir.length > 0 ? { CLAUDE_CONFIG_DIR: yield* resolveClaudeConfigDir(config) } : {}),
   };
 });
 
-/**
- * While it exists Claude refuses `--strict-mcp-config` and exits before
- * initializing, but it already ignores user, project and `--mcp-config` servers
- * on its own, so callers that pass the flag for isolation can drop it. Paths
- * match the ones Claude Code checks.
- */
+/** managed-mcp.json excludes other MCP config and forbids --strict-mcp-config; omit the flag when present. */
 export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const platform = yield* HostProcess.Platform;
@@ -66,29 +67,33 @@ export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(
 
 export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationGroupKey")(
   function* (
-    config: Pick<ClaudeSettings, "homePath">,
+    config: ClaudeEnvironmentConfig,
     environment?: NodeJS.ProcessEnv,
   ): Effect.fn.Return<string, never, Path.Path> {
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
+    const resolvedConfigDir = yield* resolveClaudeConfigDir(config);
+    if (resolvedConfigDir) {
+      return `claude:config:${resolvedConfigDir}:home:${resolvedHomePath}`;
+    }
     return `claude:home:${resolvedHomePath}`;
   },
 );
 
 export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesCacheKey")(
   function* (
-    config: Pick<ClaudeSettings, "binaryPath" | "homePath">,
+    config: Pick<ClaudeSettings, "binaryPath" | "configDir" | "homePath">,
     cwd?: string,
     environment?: NodeJS.ProcessEnv,
   ): Effect.fn.Return<string, never, Path.Path> {
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `${config.binaryPath}\0${resolvedHomePath}\0${cwd ?? ""}`;
+    const resolvedConfigDir = yield* resolveClaudeConfigDir(config);
+    return resolvedConfigDir
+      ? `${config.binaryPath}\0${resolvedHomePath}\0${resolvedConfigDir}\0${cwd ?? ""}`
+      : `${config.binaryPath}\0${resolvedHomePath}\0${cwd ?? ""}`;
   },
 );
 
-/**
- * Describe the spawned CLI's environment separately from the login command so
- * paths remain literal on every shell, including relative inherited values.
- */
+/** Separate spawn env from login commands to preserve literal paths, including relative inherited values. */
 export const claudeSignedOutMessage = (input: {
   readonly configDir: string | undefined;
   readonly cwd: string;

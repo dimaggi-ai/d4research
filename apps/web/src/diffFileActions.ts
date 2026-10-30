@@ -92,7 +92,9 @@ export function openDiffFilePrimaryAction({
   if (!workspaceFilePath) return;
 
   if (threadRef) {
-    useRightPanelStore.getState().openFile(threadRef, workspaceFilePath);
+    // The resolved path, not the raw one: a nested project's diff reports paths relative to the
+    // repository root, which is not the workspace root the file surface opens against.
+    useRightPanelStore.getState().openFile(threadRef, workspaceFilePath, undefined, activeCwd);
     return;
   }
 

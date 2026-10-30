@@ -17,11 +17,7 @@ import { useThreadShells } from "../../state/entities";
 import { useEnvironmentProviders } from "../../state/environments";
 import { serverEnvironment, EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  deriveProviderInstanceEntries,
-  applyProviderInstanceSettings,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
+import { providerInstanceEntriesFor } from "../../providerInstances";
 import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
@@ -72,9 +68,7 @@ function AgentMonitorForm() {
   const selection = agent.modelSelection ?? fallbackSelection;
   const taskSelection = agent.taskModelSelection ?? fallbackSelection;
   // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
-  const allEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-  );
+  const allEntries = providerInstanceEntriesFor(providers, settings, null);
   const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const modelOptions = getCustomModelOptionsByInstance(
     settings,

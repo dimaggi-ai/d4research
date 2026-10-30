@@ -41,6 +41,7 @@ const recordDiagnostic = (diagnostics: Array<string>, line: string): void => {
 };
 
 const makeProbeRuntime = (cwd: string = process.cwd(), diagnostics?: Array<string>) =>
+  // @effect-diagnostics-next-line unnecessaryEffectGen:off -- d4research probe predating this style rule.
   Effect.gen(function* () {
     return yield* makeJunieAcpRuntime({
       junieSettings: { binaryPath: "junie", defaultModel: "" },

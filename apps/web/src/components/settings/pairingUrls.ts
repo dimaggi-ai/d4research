@@ -1,5 +1,5 @@
 import { buildHostedPairingUrl } from "../../hostedPairing";
-import { setPairingTokenOnUrl } from "../../pairingUrl";
+import { setPairingTokenOnUrl } from "@d4research/shared/remote";
 
 export function resolveDesktopPairingUrl(endpointUrl: string, credential: string): string {
   const url = new URL(endpointUrl);

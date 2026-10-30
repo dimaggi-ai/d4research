@@ -1,3 +1,4 @@
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import { ScheduledTaskUpsertInput } from "@d4research/contracts";
@@ -57,6 +58,7 @@ it.effect.each(
     const dependencies = Layer.mergeAll(
       NodeCrypto.layer,
       Scheduler.layer,
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       Layer.mock(EventSink.EventSinkV2)({
         latestSequence: () => Effect.succeed(0),
         stream: () => Stream.fromQueue(events),
@@ -175,6 +177,7 @@ it.effect(
       const dependencies = Layer.mergeAll(
         NodeCrypto.layer,
         Scheduler.layer,
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
         Layer.mock(EventSink.EventSinkV2)({
           latestSequence: () => Effect.succeed(0),
           stream: () => Stream.never,
@@ -218,6 +221,7 @@ it.effect.each(["deleted-task", "settled-before-read-error"] as const)(
       const dependencies = Layer.mergeAll(
         NodeCrypto.layer,
         Scheduler.layer,
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
         Layer.mock(EventSink.EventSinkV2)({
           latestSequence: () => Effect.succeed(0),
           stream: () => Stream.never,

@@ -1,4 +1,5 @@
 import { CommandId, IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "@d4research/contracts";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 import * as Context from "effect/Context";
@@ -149,6 +150,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
     input,
   ) =>
     findReceiptByCommandId(input).pipe(
+      NodeSqliteClient.readOnly,
       Effect.mapError(
         toPersistenceSqlError("OrchestrationCommandReceiptRepository.getByCommandId:query"),
       ),

@@ -1,3 +1,6 @@
+import { FolderPlusIcon } from "lucide-react";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { ProjectMemorySettings } from "./ProjectMemorySettings";
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { AuthOrchestrationOperateScope } from "@d4research/contracts";
@@ -10,14 +13,22 @@ import {
   type AtomCommandResult,
 } from "@d4research/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
+import { planProjectRemoval } from "@d4research/client-runtime/state/projects";
 import { AsyncResult } from "effect/reactivity";
-import { type EnvironmentId, type ProjectIconOverride } from "@d4research/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  type ProjectWorkspace,
+  type EnvironmentId,
+  type ProjectIconOverride,
+} from "@d4research/contracts";
+import { resolveEnvModeLabel } from "../BranchToolbar.logic";
+import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { InfoIcon, Trash2Icon } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useOpenDirectoryCommandPalette } from "../../commandPaletteContext";
+import { cn } from "../../lib/utils";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
 import { readLocalApi } from "../../localApi";
 import {
@@ -28,13 +39,15 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environmen
 import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { useClientSettings } from "../../hooks/useSettings";
 import { linkProjects } from "../../projectLinks";
-import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+function pathIsPrimary(path: string, primaryPath: string): boolean {
+  return path === primaryPath;
+}
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   SettingResetButton,
@@ -49,7 +62,10 @@ import {
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { useAccentColorStore } from "../../accentColorStore";
+import { ACCENT_COLOR_OPTIONS, accentColorLabel, resolveAccentHex } from "../../lib/accentColors";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -58,23 +74,38 @@ const ProjectIconPickerDialog = lazy(() =>
   })),
 );
 
-function memberKey(member: { environmentId: string; id: string }): string {
-  return `${member.environmentId}:${member.id}`;
+export type ProjectSettingsCategory = "general" | "source-control" | "project";
+
+interface ProjectSelection {
+  readonly key: string;
+  readonly environmentId: EnvironmentId | null;
+  readonly checkoutKey: string | null;
+  readonly memberKeys: ReadonlyArray<string>;
 }
 
-export type ProjectSettingsCategory = "general" | "integrations" | "source-control" | "project";
+function sameProjectSelection(a: ProjectSelection | null, b: ProjectSelection): boolean {
+  return (
+    a !== null &&
+    a.key === b.key &&
+    a.environmentId === b.environmentId &&
+    a.checkoutKey === b.checkoutKey &&
+    a.memberKeys.length === b.memberKeys.length &&
+    a.memberKeys.every((key, index) => key === b.memberKeys[index])
+  );
+}
 
 export function ProjectSettingsPanel({
   projectKey,
   environmentId = null,
   checkoutKey = null,
+  unavailable,
 }: {
   projectKey: string;
   environmentId?: EnvironmentId | null;
   checkoutKey?: string | null;
+  unavailable?: ReactNode;
 }) {
   const groups = useSettingsProjectGroups();
-  const navigate = useNavigate({ from: "/settings" });
   const pathname = useLocation({ select: (location) => location.pathname });
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
@@ -85,49 +116,45 @@ export function ProjectSettingsPanel({
         (checkoutKey === null || member.physicalProjectKey === checkoutKey),
     ) ?? [];
 
-  // Remember the members of the last rendered group so a grouping-rule change
-  // (which changes the group key) can follow the project to its new group.
-  const lastSelectionRef = useRef<{
-    key: string;
-    environmentId: EnvironmentId | null;
-    checkoutKey: string | null;
-    memberKeys: string[];
-  } | null>(null);
-  useEffect(() => {
-    if (!selected || members.length === 0) return;
-    lastSelectionRef.current = {
+  // Retain group members so grouping-rule changes can follow the project to its new group.
+  const [lastSelection, setLastSelection] = useState<ProjectSelection | null>(null);
+  if (selected && members.length > 0) {
+    const current: ProjectSelection = {
       key: selected.projectKey,
       environmentId,
       checkoutKey,
       memberKeys: members.map((member) => member.physicalProjectKey),
     };
-  }, [selected, members, environmentId, checkoutKey]);
+    if (!sameProjectSelection(lastSelection, current)) setLastSelection(current);
+  }
 
-  useEffect(() => {
-    if (members.length > 0) return;
-    const last = lastSelectionRef.current;
-    if (
-      last?.key !== projectKey ||
-      last.environmentId !== environmentId ||
-      last.checkoutKey !== checkoutKey
-    )
-      return;
-    const successor = groups.find((group) =>
-      group.memberProjects.some((member) => last.memberKeys.includes(member.physicalProjectKey)),
-    );
-    if (successor) {
-      void navigate({
-        to: pathname,
-        search: () => ({
+  const successor =
+    members.length === 0 &&
+    lastSelection?.key === projectKey &&
+    lastSelection.environmentId === environmentId &&
+    lastSelection.checkoutKey === checkoutKey
+      ? groups.find((group) =>
+          group.memberProjects.some((member) =>
+            lastSelection.memberKeys.includes(member.physicalProjectKey),
+          ),
+        )
+      : undefined;
+  if (successor) {
+    return (
+      <Navigate
+        to={pathname}
+        search={{
           project: successor.projectKey,
           machine: environmentId ?? undefined,
           checkout: checkoutKey ?? undefined,
-        }),
-        replace: true,
-        hashScrollIntoView: false,
-      });
-    }
-  }, [groups, navigate, pathname, projectKey, members.length, environmentId, checkoutKey]);
+        }}
+        replace
+        hashScrollIntoView={false}
+      />
+    );
+  }
+
+  if ((!selected || members.length === 0) && unavailable != null) return unavailable;
 
   if (!selected) {
     return (
@@ -228,6 +255,16 @@ function ProjectDetail({
       ? window.desktopBridge?.pickProjectFavicon
       : undefined;
 
+  // The colour marks every member so a thread in any of them resolves it without knowing the
+  // grouping. It stays on this device: it describes the view, not the project.
+  const projectAccentKeys = group.memberProjects.map(
+    (member) => `${member.environmentId}:${member.id}`,
+  );
+  const setProjectAccentColor = useAccentColorStore((state) => state.setProjectColor);
+  const projectAccentColor = useAccentColorStore(
+    (state) => state.projectColors[`${representative.environmentId}:${representative.id}`] ?? null,
+  );
+
   const reportFailure = (title: string, result: AtomCommandResult<void, unknown>) => {
     if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
     const error = squashAtomCommandFailure(result);
@@ -264,6 +301,7 @@ function ProjectDetail({
       title: string;
       faviconPath: string | null;
       projectIcon: ProjectIconOverride | null;
+      workspaceRoots: ReadonlyArray<ProjectWorkspace>;
     }>,
     failureTitle: string,
   ): Promise<AtomCommandResult<void, unknown>> => {
@@ -338,6 +376,52 @@ function ProjectDetail({
     setIsSavingFavicon(false);
   };
 
+  const workspaceRoots: ReadonlyArray<ProjectWorkspace> = representative.workspaceRoots?.length
+    ? representative.workspaceRoots
+    : [{ path: representative.workspaceRoot }];
+  const [isAddingWorkspaceRoot, setIsAddingWorkspaceRoot] = useState(false);
+  const openDirectoryPicker = useOpenDirectoryCommandPalette();
+  const addWorkspaceRoot = () => {
+    if (isAddingWorkspaceRoot) return;
+    openDirectoryPicker({
+      environmentId: representative.environmentId,
+      initialPath: representative.workspaceRoot,
+      onSelect: async (path) => {
+        const normalizedPath = path.replace(/[\\/]+$/, "") || path;
+        if (workspaceRoots.some((root) => root.path === normalizedPath)) {
+          toastManager.add({ type: "warning", title: "Directory is already in this project" });
+          return;
+        }
+        setIsAddingWorkspaceRoot(true);
+        await updateAllMembers(
+          { workspaceRoots: [...workspaceRoots, { path: normalizedPath }] },
+          "Failed to add project directory",
+        );
+        setIsAddingWorkspaceRoot(false);
+      },
+    });
+  };
+  const removeWorkspaceRoot = (path: string) => {
+    if (workspaceRoots.length <= 1 || path === representative.workspaceRoot) return;
+    void updateAllMembers(
+      { workspaceRoots: workspaceRoots.filter((root) => root.path !== path) },
+      "Failed to remove project directory",
+    );
+  };
+  const setWorkspaceRootMode = (
+    path: string,
+    mode: NonNullable<ProjectWorkspace["defaultThreadEnvMode"]> | null,
+  ) => {
+    void updateAllMembers(
+      {
+        workspaceRoots: workspaceRoots.map((root) =>
+          root.path === path ? { ...root, defaultThreadEnvMode: mode } : root,
+        ),
+      },
+      "Failed to update directory workspace",
+    );
+  };
+
   const hasMultipleCheckouts = group.memberProjects.length > 1;
 
   const removeMembers = async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
@@ -345,40 +429,16 @@ function ProjectDetail({
     const api = readLocalApi();
     if (!api) return;
 
-    const memberKeys = new Set(members.map(memberKey));
-    const projectThreads = threads.filter((thread) =>
-      memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
-    );
-    const isWholeGroup = members.length === group.memberProjects.length;
-    const targetKind = hasOtherMembers || !isWholeGroup ? "checkout" : "project";
-    const singleMember = members.length === 1 ? members[0]! : null;
-    const targetLabel = singleMember?.title ?? group.displayName;
+    const { projectThreads, isWholeGroup, confirmationMessage } = planProjectRemoval({
+      members,
+      groupMemberCount: group.memberProjects.length,
+      hasOtherMembers,
+      displayName: group.displayName,
+      threads,
+      unloadedThreadCount: readUnloadedThreadCount(members, threads),
+    });
     const confirmed = await settlePromise(() =>
-      api.dialogs.confirm(
-        [
-          projectThreads.length > 0
-            ? `Remove ${targetKind} "${targetLabel}" and delete its ${projectThreads.length} thread${projectThreads.length === 1 ? "" : "s"}?`
-            : `Remove ${targetKind} "${targetLabel}"?`,
-          ...(singleMember
-            ? [
-                `Path: ${singleMember.workspaceRoot}`,
-                ...(singleMember.environmentLabel
-                  ? [`Environment: ${singleMember.environmentLabel}`]
-                  : []),
-              ]
-            : [`This removes ${members.length} grouped project entries.`]),
-          ...(projectThreads.length > 0
-            ? [
-                "This permanently clears conversation history for those threads and any archived threads.",
-              ]
-            : ["This permanently clears any archived conversation history."]),
-          isWholeGroup && !hasOtherMembers
-            ? "This removes only the project entries, not the files on disk."
-            : "Other entries in this grouped project are unaffected.",
-          "This action cannot be undone.",
-        ].join("\n"),
-        { variant: "destructive" },
-      ),
+      api.dialogs.confirm(confirmationMessage, { variant: "destructive" }),
     );
     if (confirmed._tag === "Failure" || !confirmed.value) return;
     if (checkProjectAccess(members, "Failed to remove project")) return;
@@ -417,7 +477,11 @@ function ProjectDetail({
     }
 
     if (isWholeGroup && !hasOtherMembers) {
-      void navigate({ to: "/", replace: true });
+      void navigate({
+        to: "/settings/projects",
+        search: ({ machine }) => ({ project: undefined, machine, checkout: undefined }),
+        replace: true,
+      });
     }
   };
 
@@ -549,6 +613,53 @@ function ProjectDetail({
             }
           />
           <SettingsRow
+            title="Project colour"
+            description={
+              accentColorLabel(projectAccentColor) ??
+              "No colour. A colour washes this project's threads from the right while the sidebar shows every project."
+            }
+            resetAction={
+              projectAccentColor !== null ? (
+                <SettingResetButton
+                  label="project colour"
+                  onClick={() => setProjectAccentColor(projectAccentKeys, null)}
+                />
+              ) : null
+            }
+            control={
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {ACCENT_COLOR_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-label={option.label}
+                    aria-pressed={projectAccentColor === option.id}
+                    className={cn(
+                      "size-5 cursor-pointer rounded-full border transition-transform",
+                      projectAccentColor === option.id
+                        ? "border-foreground scale-110"
+                        : "border-border/70 hover:scale-110",
+                    )}
+                    style={{ backgroundColor: option.hex }}
+                    onClick={() => setProjectAccentColor(projectAccentKeys, option.id)}
+                  />
+                ))}
+                <label className="ms-1 inline-flex cursor-pointer items-center gap-1 text-xs text-secondary-label">
+                  <input
+                    type="color"
+                    className="size-5 cursor-pointer rounded-full border border-border/70 bg-transparent p-0"
+                    value={resolveAccentHex(projectAccentColor) ?? "#6b7a8f"}
+                    aria-label="Custom project colour"
+                    onChange={(event) =>
+                      setProjectAccentColor(projectAccentKeys, event.target.value)
+                    }
+                  />
+                  Custom
+                </label>
+              </div>
+            }
+          />
+          <SettingsRow
             title="Project icon"
             description={
               projectIcon?.kind === "lucide"
@@ -600,6 +711,87 @@ function ProjectDetail({
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}
+        <SettingsSection
+          title="Directories"
+          headerAction={
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={isAddingWorkspaceRoot}
+              onClick={addWorkspaceRoot}
+            >
+              <FolderPlusIcon />
+              Add directory
+            </Button>
+          }
+        >
+          <div className="space-y-1 px-3 py-2 sm:px-4">
+            <p className="text-xs text-muted-foreground">
+              Directories share this project context. The primary directory remains the default
+              checkout for existing threads.
+            </p>
+            {workspaceRoots.map((root, index) => (
+              <div
+                key={root.path}
+                className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/30 px-2 py-1.5"
+              >
+                <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium">
+                    {root.label ?? (index === 0 ? "Primary directory" : `Directory ${index + 1}`)}
+                  </div>
+                  <code className="block truncate text-[11px] text-muted-foreground">
+                    {root.path}
+                  </code>
+                </div>
+                <Select
+                  value={root.defaultThreadEnvMode ?? "inherit"}
+                  onValueChange={(value) => {
+                    if (value === "local" || value === "worktree") {
+                      setWorkspaceRootMode(root.path, value);
+                    } else if (value === "inherit") {
+                      setWorkspaceRootMode(root.path, null);
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    className="h-7 w-28 text-[11px]"
+                    aria-label={`Workspace for ${root.path}`}
+                  >
+                    <SelectValue>
+                      {root.defaultThreadEnvMode
+                        ? resolveEnvModeLabel(root.defaultThreadEnvMode)
+                        : "Default"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value="inherit">Default</SelectItem>
+                    <SelectItem value="local">Current checkout</SelectItem>
+                    <SelectItem value="worktree">Worktree</SelectItem>
+                  </SelectPopup>
+                </Select>
+                {pathIsPrimary(root.path, representative.workspaceRoot) ? (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">Primary</span>
+                ) : (
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Remove ${root.path}`}
+                    onClick={() => removeWorkspaceRoot(root.path)}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </SettingsSection>
+        <ProjectMemorySettings
+          environmentId={representative.environmentId}
+          projectId={representative.id}
+        />
         {group.isScratch ? null : (
           <SettingsSection title="Grouping">
             <SettingsRow
@@ -632,7 +824,7 @@ function ProjectDetail({
             {linkedMembers.map((member) => (
               <SettingsRow
                 key={member.physicalProjectKey}
-                title={`Attached on ${member.environmentLabel ?? "Environment"}`}
+                title={`Attached by hand on ${member.environmentLabel ?? "Environment"}`}
                 description={member.workspaceRoot}
                 control={
                   <Button

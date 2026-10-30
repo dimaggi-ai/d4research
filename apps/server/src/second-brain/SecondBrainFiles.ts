@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as HostProcess from "@d4research/shared/HostProcess";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Descriptor-based no-follow traversal and bounded reads are the vault security boundary.
 import * as NodeFS from "node:fs";

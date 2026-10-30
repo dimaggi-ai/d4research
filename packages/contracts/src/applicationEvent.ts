@@ -1,3 +1,4 @@
+import { ProjectWorkspace } from "./project.ts";
 import * as Schema from "effect/Schema";
 
 import {
@@ -37,6 +38,7 @@ export const ApplicationProjectCreatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoots: Schema.optional(Schema.Array(ProjectWorkspace)),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -52,6 +54,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceRoots: Schema.optional(Schema.Array(ProjectWorkspace)),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   // Absent = leave unchanged; null = clear the override.

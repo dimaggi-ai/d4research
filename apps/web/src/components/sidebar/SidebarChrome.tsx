@@ -1,10 +1,16 @@
-import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import { ActivityIcon, ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
-import { memo, type ReactNode } from "react";
+import {
+  ArrowLeftIcon,
+  ActivityIcon,
+  ChartNoAxesColumnIcon,
+  SettingsIcon,
+  LayoutDashboardIcon,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { memo } from "react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
-import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { usePullRequestsSupported } from "../../state/environments";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -22,6 +28,8 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { AccountLimitsHoverCard } from "../usage/AccountLimits";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
@@ -38,7 +46,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const backdropVariant = resolveSidebarStageBackdropVariant(
     stageLabel,
-    environmentIdentificationMode === "artwork",
+    environmentIdentificationMode,
   );
   const pillLabel =
     environmentIdentificationMode === "pill"
@@ -54,8 +62,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       )}
     >
       {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
-      {/* Match the fixed control's inset and border compensation inside the sheet's safe area. */}
-      <div className="relative top-[calc(var(--workspace-fixed-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
+      <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
         <SidebarTrigger
           variant={backdropVariant ? "media-navigation" : "ghost"}
           className="relative top-auto translate-y-0"
@@ -131,121 +138,36 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   );
 }
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
-  const navigate = useNavigate();
-  const { isMobile, setOpenMobile } = useSidebar();
-  const canGoBack = useCanGoBack();
-  const currentFooterPage = useLocation({
-    select: (location) =>
-      location.pathname === "/usage"
-        ? "usage"
-        : location.pathname === "/system"
-          ? "system"
-          : location.pathname === "/pull-requests"
-            ? "pull-requests"
-            : null,
-  });
-  const primaryEnvironment = usePrimaryEnvironment();
-  const pullRequestsSupported =
-    primaryEnvironment?.serverConfig?.environment.capabilities.pullRequests === true;
-  const closeMobileSidebar = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  };
-  const handlePullRequestsClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
-  };
-  const handleSettingsClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings" });
-  };
-
-  const handleUsageClick = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  };
-
-  const handleSystemClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/system" });
-  };
-
-  const handleBackClick = () => {
-    closeMobileSidebar();
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  };
-
+function SidebarUtilityItem({
+  icon,
+  label,
+  onClick,
+  tooltipContent,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  tooltipContent?: ReactNode;
+}) {
   return (
-    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
-      <SidebarThreadUndoNotice />
-      <SidebarProviderUpdatePill />
-      <SidebarUpdatePill />
-      <SidebarMenu>
-        {currentFooterPage === "pull-requests" ? (
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleBackClick}>
-              <ArrowLeftIcon />
-              <span>Back</span>
+    <SidebarMenuItem className="shrink-0">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+              {icon}
             </SidebarMenuButton>
-          </SidebarMenuItem>
-        ) : pullRequestsSupported ? (
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handlePullRequestsClick}>
-              <PullRequestGlyph.pullRequest />
-              <span>Pull Requests</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ) : null}
-        {currentFooterPage === "usage" ? (
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleBackClick}>
-              <ArrowLeftIcon />
-              <span>Back</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ) : (
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleUsageClick}>
-              <ChartNoAxesColumnIcon />
-              <span>Usage</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        )}
-        {currentFooterPage === "system" ? (
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleBackClick}>
-              <ArrowLeftIcon />
-              <span>Back</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ) : (
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleSystemClick}>
-              <ActivityIcon />
-              <span>System Monitor</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        )}
-        <SidebarMenuItem>
-          <SidebarMenuButton onClick={handleSettingsClick}>
-            <SettingsIcon />
-            <span>Settings</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </SidebarFooter>
+          }
+        />
+        <TooltipPopup side="top" className={tooltipContent ? "p-0" : undefined}>
+          {tooltipContent ?? label}
+        </TooltipPopup>
+      </Tooltip>
+    </SidebarMenuItem>
   );
-});
+}
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -277,6 +199,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/usage" });
   };
 
+  const handleSystemClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/system" });
+  };
+
   const handleBackClick = () => {
     closeMobileSidebar();
     void navigateToMainApp();
@@ -293,6 +220,16 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </SidebarMenuItem>
       ) : (
         <>
+          {isMobile ? (
+            <SidebarUtilityItem
+              icon={<LayoutDashboardIcon />}
+              label="Dashboard"
+              onClick={() => {
+                closeMobileSidebar();
+                void navigate({ to: "/dashboard" });
+              }}
+            />
+          ) : null}
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
@@ -301,7 +238,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
-              label="Pull Requests"
+              label="Pull requests"
               onClick={handlePullRequestsClick}
             />
           ) : null}
@@ -309,35 +246,22 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
             onClick={handleUsageClick}
+            tooltipContent={<AccountLimitsHoverCard />}
           />
+          <SidebarUtilityItem icon={<ActivityIcon />} label="System" onClick={handleSystemClick} />
         </>
       )}
+      <SidebarThreadUndoNotice />
       <SidebarUpdatePill />
     </SidebarMenu>
   );
 });
 
-function SidebarUtilityItem({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarMenuItem className="shrink-0">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
-              {icon}
-            </SidebarMenuButton>
-          }
-        />
-        <TooltipPopup side="top">{label}</TooltipPopup>
-      </Tooltip>
-    </SidebarMenuItem>
+    <SidebarFooter>
+      <SidebarProviderUpdatePill />
+      <SidebarUtilityMenu />
+    </SidebarFooter>
   );
-}
+});

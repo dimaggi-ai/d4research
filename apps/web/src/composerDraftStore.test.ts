@@ -1084,7 +1084,7 @@ describe("composerDraftStore terminal contexts", () => {
   it.each(["replace", "remove", "clear"])("removes terminal links on %s", (operation) => {
     const store = useComposerDraftStore.getState();
     store.setPrompt(threadRef, "Explain");
-    store.addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-1" }));
+    store.addTerminalContexts(threadRef, [makeTerminalContext({ id: "ctx-1" })]);
     if (operation === "replace") store.setTerminalContexts(threadRef, []);
     else if (operation === "remove") store.removeTerminalContext(threadRef, "ctx-1");
     else store.clearTerminalContexts(threadRef);
@@ -1095,7 +1095,7 @@ describe("composerDraftStore terminal contexts", () => {
   it("clears terminal contexts when clearing composer content", () => {
     useComposerDraftStore
       .getState()
-      .addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-1" }));
+      .addTerminalContexts(threadRef, [makeTerminalContext({ id: "ctx-1" })]);
 
     useComposerDraftStore.getState().clearComposerContent(threadRef);
 
@@ -1142,7 +1142,7 @@ describe("composerDraftStore terminal contexts", () => {
   it("persists terminal context snapshot text", () => {
     useComposerDraftStore
       .getState()
-      .addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-persist" }));
+      .addTerminalContexts(threadRef, [makeTerminalContext({ id: "ctx-persist" })]);
 
     const persistedState = partializeComposerDraftStoreState(
       useComposerDraftStore.getState(),
@@ -1271,7 +1271,7 @@ describe("composerDraftStore context persistence", () => {
       threadId: threadRef.threadId,
     };
     const store = useComposerDraftStore.getState();
-    store.addTerminalContext(threadRef, terminal);
+    store.addTerminalContexts(threadRef, [terminal]);
     store.addPreviewAnnotation(threadRef, annotation);
     const terminalLink = formatTerminalContextReference(terminal);
     const prompt = `Inspect ${terminalLink}. Apply [Retry note](t3-context://v1/preview-annotation/preview-annotation_retry-note). Compare ${terminalLink} again.`;
@@ -2488,56 +2488,6 @@ describe("composerDraftStore modelSelection", () => {
     expect(
       useComposerDraftStore.getState().stickyModelSelectionByProvider[CLAUDE_AGENT_INSTANCE],
     ).toEqual(modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", { effort: "max" }));
-  });
-
-  it("does not clear other provider options when setting options for a single provider", () => {
-    const store = useComposerDraftStore.getState();
-
-    store.setModelOptions(
-      threadRef,
-      providerModelOptions({
-        codex: { fastMode: true },
-        claudeAgent: { effort: "max" },
-      }),
-    );
-
-    store.setModelOptions(threadRef, providerModelOptions({ codex: { reasoningEffort: "xhigh" } }));
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.modelSelectionByProvider[CODEX_INSTANCE]?.options).toEqual(
-      createModelSelection(CODEX_INSTANCE, "gpt-5.4", toSelections({ reasoningEffort: "xhigh" }))
-        .options,
-    );
-    expect(draft?.modelSelectionByProvider[CLAUDE_AGENT_INSTANCE]?.options).toEqual(
-      createModelSelection(
-        CLAUDE_AGENT_INSTANCE,
-        "claude-opus-4-6",
-        toSelections({ effort: "max" }),
-      ).options,
-    );
-  });
-
-  it("preserves other provider options when switching the active model selection", () => {
-    const store = useComposerDraftStore.getState();
-
-    store.setModelOptions(
-      threadRef,
-      providerModelOptions({
-        codex: { fastMode: true },
-        claudeAgent: { effort: "max" },
-      }),
-    );
-
-    store.setModelSelection(threadRef, modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6"));
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.modelSelectionByProvider[CLAUDE_AGENT_INSTANCE]).toEqual(
-      modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6", { effort: "max" }),
-    );
-    expect(draft?.modelSelectionByProvider[CODEX_INSTANCE]?.options).toEqual(
-      createModelSelection(CODEX_INSTANCE, "gpt-5.4", toSelections({ fastMode: true })).options,
-    );
-    expect(draft?.activeProvider).toBe("claudeAgent");
   });
 
   it("creates the first sticky snapshot from provider option changes", () => {

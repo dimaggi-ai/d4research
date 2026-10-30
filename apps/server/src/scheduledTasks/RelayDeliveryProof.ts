@@ -20,6 +20,7 @@ export class RelayDeliveryProof extends Context.Service<
 export const layer = Layer.succeed(
   RelayDeliveryProof,
   RelayDeliveryProof.of({
+    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
     verify: () => Effect.succeed(Option.none()),
   }),
 );

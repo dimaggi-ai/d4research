@@ -6,6 +6,7 @@ import type {
   FileItem,
   FileFinder as FileFinderType,
   GrepCursor,
+  GrepMatch,
   MixedItem,
   MixedSearchResult,
   Result,
@@ -23,14 +24,13 @@ import type {
   ProjectListEntriesResult,
   ProjectSearchContentsInput,
   ProjectSearchContentsResult,
+  ProjectSearchCodeInput,
+  ProjectSearchCodeResult,
   ProjectSearchEntriesResult,
 } from "@d4research/contracts";
 import { isProjectFaviconPath } from "@d4research/shared/projectFavicon";
 
-// fff-node stays external to the CLI bundle because it dlopens a native
-// library. A static `import` of an external package is a hard error inside a
-// Node single-executable (only built-ins resolve there), so load it through
-// `require`, which reads from the real filesystem in every runtime.
+// fff-node's native library stays external; single-executables require disk packages instead of importing them.
 const requireForFff = NodeModule.createRequire(import.meta.url);
 const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
 
@@ -120,6 +120,9 @@ export class WorkspaceSearchIndex extends Context.Service<
     readonly searchContents: (
       input: Omit<ProjectSearchContentsInput, "cwd">,
     ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceSearchIndexSearchFailed>;
+    readonly searchCode: (
+      input: Omit<ProjectSearchCodeInput, "cwd">,
+    ) => Effect.Effect<ProjectSearchCodeResult, WorkspaceSearchIndexSearchFailed>;
     readonly refresh: () => Effect.Effect<
       void,
       WorkspaceSearchIndexRefreshFailed | WorkspaceSearchIndexScanTimedOut
@@ -257,11 +260,7 @@ function mapContentMatchRanges(
   }));
 }
 
-/**
- * Whole-word filtering happens after the grep rather than by wrapping the pattern in boundary
- * regex: consuming boundaries such as `(?:^|\W)` swallow the separator between adjacent matches
- * and widen the reported ranges, and `\b` cannot match punctuation-edged queries at all.
- */
+// Post-filter whole words: consuming boundary regexes swallow adjacent separators and widen ranges; \b misses punctuation edges.
 function isWholeWordRange(
   line: string,
   range: { readonly start: number; readonly end: number },
@@ -303,9 +302,7 @@ const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
       FileFinder.create({
         basePath: cwd,
         disableMmapCache: true,
-        // Content indexing costs scan CPU and memory, so only the on-demand
-        // content-search index pays for it; path-only consumers (file tree,
-        // composer path search, file picker) keep the lightweight index.
+        // Content indexing costs CPU/memory; path-only consumers use the lightweight index.
         disableContentIndexing: variant !== "content",
         aiMode: false,
         enableFsRootScanning: true,
@@ -490,8 +487,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
   )(function* (input) {
     const { searchQuery, regexMode } = buildContentSearchQuery(input);
     const deadline = performance.now() + CONTENT_SEARCH_TIME_BUDGET_MS;
-    // Grep cursors advance by file, so whole-word post-filtering needs enough
-    // raw candidates from the current file before moving to the next one.
+    // Grep cursors advance per file; whole-word filtering needs enough raw candidates before advancing.
     const rawPageSize = input.wholeWord
       ? Math.max(input.limit, CONTENT_SEARCH_MAX_MATCHES_PER_FILE)
       : input.limit;
@@ -535,7 +531,32 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     };
   });
 
-  return WorkspaceSearchIndex.of({ list, refresh, search, searchContents });
+  const searchCode: WorkspaceSearchIndex["Service"]["searchCode"] = Effect.fn(
+    "WorkspaceSearchIndex.searchCode",
+  )(function* (input) {
+    const result = yield* runSearch(input.query, Math.max(input.limit + 1, 100), "grep", () =>
+      finder.grep(input.query, {
+        mode: "plain",
+        pageSize: Math.max(input.limit + 1, 100),
+        maxMatchesPerFile: 40,
+        timeBudgetMs: 1_500,
+      }),
+    );
+    const matches = result.items.map((match: GrepMatch) => ({
+      path: toPosixPath(match.relativePath),
+      lineNumber: match.lineNumber,
+      column: Math.max(0, match.col),
+      snippet: match.lineContent.trimEnd().slice(0, 1_000),
+      isDefinition: false,
+      kind: "text" as const,
+    }));
+    return {
+      matches: matches.slice(0, input.limit),
+      truncated: result.nextCursor !== null || matches.length > input.limit,
+    };
+  });
+
+  return WorkspaceSearchIndex.of({ list, refresh, search, searchContents, searchCode });
 });
 
 export const WORKSPACE_SEARCH_INDEX_VARIANTS = ["paths", "content"] as const;
@@ -555,9 +576,7 @@ function parseWorkspaceSearchIndexKey(key: string): {
   };
 }
 
-/**
- * @public Service construction is part of the canonical Effect module API.
- */
+/** @public */
 export const layer = (key: string) => {
   const { cwd, variant } = parseWorkspaceSearchIndexKey(key);
   return Layer.effect(WorkspaceSearchIndex, make(cwd, variant));

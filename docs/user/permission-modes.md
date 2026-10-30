@@ -2,7 +2,7 @@
 
 A permission mode controls how much the agent acts independently and when it pauses to ask for input.
 
-Set the default for new threads in **Settings → General → New threads → Permissions**.
+Set the default for new threads in **Settings → Threads → New threads → Permissions**.
 Projects can override the environment default. New threads use this setting rather than the
 mode of the thread you were viewing. The initial default is **Full access**; existing threads
 and modes you choose in a draft keep their permissions.
@@ -18,12 +18,15 @@ without prompting, while commands and anything else still stop for approval.
 **Full access**: allow commands and edits without approval prompts.
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
-**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+**Auto** uses automatic review on Codex, Claude, Cursor, Grok, and fx; providers without an equivalent,
 including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
-to you for approval.
+to you for approval. On fx, prompts it still sends also come to you.
 
 Muse Code offers only **Supervised** and **Full access**. A Muse thread already set to another mode
 runs in **Supervised**.
+
+T3 Code offers no **Auto-accept edits** or **Full access** for fx. An fx thread already set to either runs in
+**Supervised**.
 
 Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
 file-change approvals offer **Allow all edits this session**. Its command approvals have no

@@ -1,36 +1,16 @@
-import { ProviderDriverKind } from "@d4research/contracts";
-import {
-  AntigravityIcon,
-  ClaudeAI,
-  CursorIcon,
-  GrokIcon,
-  Icon,
-  JunieIcon,
-  MuseIcon,
-  OpenAI,
-  OpenCodeIcon,
-} from "../Icons";
+import type { ProviderDriverKind } from "@d4research/contracts";
+import { resolveModelShortName } from "@d4research/client-runtime/provider-clients";
 
-export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
-  [ProviderDriverKind.make("codex")]: OpenAI,
-  [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
-  [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
-  [ProviderDriverKind.make("cursor")]: CursorIcon,
-  [ProviderDriverKind.make("grok")]: GrokIcon,
-  [ProviderDriverKind.make("agy")]: AntigravityIcon,
-  [ProviderDriverKind.make("junie")]: JunieIcon,
-  [ProviderDriverKind.make("muse")]: MuseIcon,
-};
 export type ModelEsque = {
   slug: string;
   name: string;
   shortName?: string | undefined;
   subProvider?: string | undefined;
+  aliases?: ReadonlyArray<string> | undefined;
+  isDefault?: boolean | undefined;
+  badge?: "new" | undefined;
   isLegacy?: boolean | undefined;
   isUnavailable?: boolean | undefined;
-  isDefault?: boolean | undefined;
-  aliases?: ReadonlyArray<string> | undefined;
-  badge?: "new" | undefined;
 };
 
 function escapeRegExp(value: string): string {
@@ -70,10 +50,17 @@ export function getProviderRowLabel(
   return `${providerDisplayName} · ${sub}`;
 }
 
-export function getTriggerDisplayModelName(model: ModelEsque): string {
-  return getDisplayModelName(model, { preferShortName: true });
+export function getTriggerDisplayModelName(
+  model: ModelEsque,
+  driverKind: ProviderDriverKind | null | undefined,
+): string {
+  const shortName = resolveModelShortName(model, driverKind);
+  return getDisplayModelName({ ...model, shortName }, { preferShortName: true });
 }
 
-export function getTriggerDisplayModelLabel(model: ModelEsque): string {
-  return getTriggerDisplayModelName(model);
+export function getTriggerDisplayModelLabel(
+  model: ModelEsque,
+  driverKind: ProviderDriverKind | null = null,
+): string {
+  return getTriggerDisplayModelName(model, driverKind);
 }

@@ -10,6 +10,7 @@ import * as HandoffMemory from "./handoffMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerConfig from "./config.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- MCP byte verification uses synchronous Node SHA-256 at the SDK boundary.
 import * as NodeCrypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -283,7 +284,7 @@ effectIt.effect(
     });
     const dependencies = Layer.mergeAll(
       ServerSettings.layerTest({ handoff: { memoryBackend: "meko", meko: config } }),
-      ProjectionStore.layerMemory,
+      ProjectionStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
       Path.layer,
       FetchHttpClient.layer,
       ServerConfig.layerTest(process.cwd(), { prefix: "meko-service-test-" }).pipe(

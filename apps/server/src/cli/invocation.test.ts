@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -7,103 +7,10 @@ import * as Path from "effect/Path";
 
 import packageJson from "../../package.json" with { type: "json" };
 import {
-  formatCliCommand,
   resolveHostCliCommand,
   resolveRootCliCommand,
   resolveServerInstallation,
 } from "./invocation.ts";
-
-it("formats package runner commands from their cache entry paths", () => {
-  for (const [entryPath, expected] of [
-    ["/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs", "npx d4research serve"],
-    [
-      "C:\\Users\\theo\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\d4research\\dist\\bin.mjs",
-      "npx d4research serve",
-    ],
-    [
-      "/home/theo/.cache/pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs",
-      "pnpm dlx d4research serve",
-    ],
-    [
-      "/home/theo/.local/share/pnpm/.pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs",
-      "pnpm dlx d4research serve",
-    ],
-    [
-      "C:\\Users\\theo\\AppData\\Local\\pnpm-cache\\dlx\\abc\\node_modules\\d4research\\dist\\bin.mjs",
-      "pnpm dlx d4research serve",
-    ],
-    ["/home/theo/.bun/install/cache/d4research@0.0.31/dist/bin.mjs", "bunx d4research serve"],
-    [
-      "/tmp/bunx-1000-d4research@latest/node_modules/d4research/dist/bin.mjs",
-      "bunx d4research serve",
-    ],
-    [
-      "C:\\Users\\theo\\AppData\\Local\\Temp\\bunx-0-d4research@latest\\node_modules\\d4research\\dist\\bin.mjs",
-      "bunx d4research serve",
-    ],
-  ] as const) {
-    assert.equal(formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }), expected);
-  }
-});
-
-it("treats stable installs as direct invocations", () => {
-  for (const entryPath of [
-    "/usr/local/lib/node_modules/d4research/dist/bin.mjs",
-    "/home/theo/Code/work/t3code/apps/server/dist/bin.mjs",
-    "/home/theo/.t3/runtime/0.0.31/node_modules/d4research/dist/bin.mjs",
-    "",
-  ]) {
-    assert.equal(
-      formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }),
-      "d4research serve",
-    );
-  }
-});
-
-it("re-suggests the prerelease channel only for prerelease builds", () => {
-  for (const [version, expected] of [
-    ["0.0.31-nightly.20260729", "npx d4research@nightly serve"],
-    ["0.0.31-preview.20260729.1", "npx d4research@preview serve"],
-    ["0.0.31-foo-preview.20260729.1", "npx d4research serve"],
-    ["0.0.31", "npx d4research serve"],
-  ] as const) {
-    assert.equal(
-      formatCliCommand({
-        subcommand: "serve",
-        entryPath: "/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs",
-        version,
-      }),
-      expected,
-    );
-  }
-});
-
-it("formats serve suggestions to match the launching command", () => {
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      entryPath: "/home/theo/.npm/_npx/abc/node_modules/d4research/dist/bin.mjs",
-      version: "0.0.31-nightly.20260729",
-    }),
-    "npx d4research@nightly serve",
-  );
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      entryPath: "/tmp/bunx-1000-d4research@latest/node_modules/d4research/dist/bin.mjs",
-      version: "0.0.31",
-    }),
-    "bunx d4research serve",
-  );
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      entryPath: "/usr/local/lib/node_modules/d4research/dist/bin.mjs",
-      version: "0.0.31-nightly.20260729",
-    }),
-    "d4research serve",
-  );
-});
 
 it.layer(NodeServices.layer)("root CLI commands", (it) => {
   const rootCommand = (input: {
@@ -136,7 +43,6 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
         "sudo npx d4research browser setup",
       );
-      // nvm, fnm, and tarball installs are dropped by sudo's PATH reset.
       expect(
         yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
       ).toBe('sudo env "PATH=$PATH" npx d4research browser setup');
@@ -207,8 +113,6 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.Platform, platform),
           Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
         );
-      // The desktop shim is called through `&`, and each argument is quoted
-      // the PowerShell way: no POSIX single quotes anywhere.
       expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
         `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
       );
@@ -216,7 +120,6 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       expect((yield* hostCommand("win32", {})).command).toBe(
         'd4research doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
       );
-      // Typographic quotes also delimit PowerShell strings; doubling keeps them.
       expect(
         (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
           Effect.provideService(HostProcess.Platform, "win32"),

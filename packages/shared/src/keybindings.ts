@@ -5,10 +5,10 @@ import {
   MAX_KEYBINDINGS_COUNT,
   MAX_WHEN_EXPRESSION_DEPTH,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
-  type ResolvedKeybindingRule,
-  type ResolvedKeybindingsConfig,
   PROJECT_ASSIGN_KEYBINDING_COMMANDS,
   PROJECT_JUMP_KEYBINDING_COMMANDS,
+  type ResolvedKeybindingRule,
+  type ResolvedKeybindingsConfig,
 } from "@d4research/contracts";
 
 export interface ShortcutEventLike {
@@ -54,6 +54,31 @@ export const EVENT_CODE_SHORTCUT_KEYS: Readonly<Record<string, string>> = {
   Slash: "/",
 };
 
+const MAC_SECTION_SIGN_CODES = new Set(["Backquote", "IntlBackslash"]);
+export const US_SHIFTED_TO_UNSHIFTED_KEYS: ReadonlyMap<string, string> = new Map([
+  ["!", "1"],
+  ["@", "2"],
+  ["#", "3"],
+  ["$", "4"],
+  ["%", "5"],
+  ["^", "6"],
+  ["&", "7"],
+  ["*", "8"],
+  ["(", "9"],
+  [")", "0"],
+  ["~", "`"],
+  ["_", "-"],
+  ["+", "="],
+  ["{", "["],
+  ["}", "]"],
+  ["|", "\\"],
+  [":", ";"],
+  ['"', "'"],
+  ["<", ","],
+  [">", "."],
+  ["?", "/"],
+]);
+
 export function isMacPlatform(platform: string): boolean {
   return /mac|iphone|ipad|ipod/i.test(platform);
 }
@@ -74,6 +99,20 @@ export function shortcutKeyFromEvent(event: Pick<ShortcutEventLike, "key" | "cod
 export function resolveEventKeys(event: ShortcutEventLike): Set<string> {
   const layoutKey = normalizeEventKey(event.key);
   const keys = new Set([layoutKey]);
+  // The dedicated macOS ISO key is labelled `§` and produces `±` with Shift. Electron has
+  // reported the shifted key as `±`, `§`, and `Unidentified` across releases. Preserve the
+  // physical pair so a binding recorded by Settings continues to work after an Electron update.
+  if (layoutKey === "±") {
+    keys.add("§");
+  }
+  if (event.shiftKey && layoutKey === "§") {
+    keys.add("±");
+  }
+  if (event.code && MAC_SECTION_SIGN_CODES.has(event.code)) {
+    keys.add("§");
+    keys.add(event.shiftKey ? "±" : "§");
+  }
+
   const letterCode = event.code?.match(/^Key([A-Z])$/)?.[1];
   if (letterCode && !/^[a-z]$/.test(layoutKey)) {
     keys.add(letterCode.toLowerCase());
@@ -109,7 +148,22 @@ export function matchesKeybindingShortcut(
     !/^[a-z0-9]$/i.test(event.key)
   )
     return false;
-  if (!matchesKeybindingShortcutModifiers(event, shortcut, platform)) return false;
+  // On some macOS keyboard layouts the dedicated section-sign key arrives with Option asserted.
+  // Settings intentionally records that physical key as plain `§`, so runtime matching must make
+  // the same normalization or the composer wins before the configured command can run.
+  const layoutKey = normalizeEventKey(event.key);
+  const isSectionSignPhysicalKey =
+    layoutKey === "§" ||
+    layoutKey === "±" ||
+    (event.code !== undefined && MAC_SECTION_SIGN_CODES.has(event.code));
+  const modifierEvent =
+    !shortcut.altKey && (shortcut.key === "§" || shortcut.key === "±") && isSectionSignPhysicalKey
+      ? { ...event, altKey: false, shiftKey: event.shiftKey || layoutKey === "±" }
+      : event;
+  // A saved literal `±` also represents the shifted ISO key, even if an older recorder
+  // omitted Shift. New recordings use `shift+§` and must match the same event.
+  const modifierShortcut = shortcut.key === "±" ? { ...shortcut, shiftKey: true } : shortcut;
+  if (!matchesKeybindingShortcutModifiers(modifierEvent, modifierShortcut, platform)) return false;
   return resolveEventKeys(event).has(shortcut.key);
 }
 
@@ -123,10 +177,16 @@ type WhenToken =
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+b", command: "sidebar.toggle" },
+  { key: "f6", command: "workspace.focusNext" },
+  { key: "shift+f6", command: "workspace.focusPrevious" },
+  // Some browsers keep plain F6 for their own toolbars; mod+F6 reaches the page in all of them.
+  { key: "mod+f6", command: "workspace.focusNext" },
+  { key: "mod+shift+f6", command: "workspace.focusPrevious" },
   { key: "mod+[", command: "navigation.back", when: "!terminalFocus" },
   { key: "mod+]", command: "navigation.forward", when: "!terminalFocus" },
   { key: "mod+j", command: "terminal.toggle" },
   { key: "mod+alt+b", command: "rightPanel.toggle" },
+  { key: "mod+alt+m", command: "rightPanel.toggleMaximized" },
   { key: "mod+shift+b", command: "threadPanel.toggle", when: "!terminalFocus" },
   { key: "mod+t", command: "rightPanel.new", when: "rightPanelOpen && !terminalFocus" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
@@ -185,8 +245,17 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
   { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
   { key: "mod+o", command: "editor.openFavorite" },
+  // Editor back/forward. `ctrl+left`/`ctrl+right` is the requested pair, but macOS binds those to
+  // Mission Control spaces by default, so `mod+[`/`mod+]` ships alongside as the reliable one.
+  { key: "ctrl+left", command: "editor.navigateBack", when: "!terminalFocus" },
+  { key: "ctrl+right", command: "editor.navigateForward", when: "!terminalFocus" },
+  { key: "mod+[", command: "editor.navigateBack", when: "!terminalFocus" },
+  { key: "mod+]", command: "editor.navigateForward", when: "!terminalFocus" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
+  // Upstream's manual settle toggle does not conflict with the fork's project
+  // slots. Keep it so auto-settlement can stay off without losing a quick
+  // explicit action.
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
   { key: "mod+shift+p", command: "thread.pin", when: "!terminalFocus" },
@@ -205,6 +274,13 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command,
     when: "modelPickerOpen && isDesktop",
   })),
+  // Surface toggles. These come last so they win over the jump bindings above for any overlapping
+  // key (the resolver is last-match-wins). The file structure moved off mod+1 when the project
+  // slots took it, since a shadowed slot is worse than a longer chord.
+  { key: "f1", command: "editor.toggle" },
+  { key: "f2", command: "preview.toggle" },
+  { key: "f3", command: "terminal.toggle" },
+  { key: "mod+shift+1", command: "structure.open" },
   { key: "c", command: "usage.cost", when: "usagePageOpen" },
   { key: "t", command: "usage.tokens", when: "usagePageOpen" },
   { key: "l", command: "usage.limits", when: "usagePageOpen" },

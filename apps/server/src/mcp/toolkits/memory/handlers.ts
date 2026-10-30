@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as HandoffMemory from "../../../handoffMemory.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Effect from "effect/Effect";

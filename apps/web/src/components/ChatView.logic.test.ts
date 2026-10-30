@@ -1,6 +1,5 @@
 import {
   shouldRetargetThreadPullRequestPanel,
-  findRecordedWorktreeSetup,
   isThreadWokeUnseen,
   mergeDirectPreviewAnnotation,
   resolveVisibleWorktreeSetup,
@@ -2056,16 +2055,6 @@ describe("worktree setup visibility", () => {
       ).toEqual({ snapshot, isPreparingWorktree: false });
     },
   );
-
-  it("reads the settled snapshot back from the thread's activities", () => {
-    const activities = [
-      { kind: "setup-script.started", payload: {} },
-      { kind: "worktree-setup", payload: settledDone },
-      { kind: "worktree-setup", payload: { not: "a snapshot" } },
-    ];
-    expect(findRecordedWorktreeSetup(activities, threadId)).toEqual(settledDone);
-    expect(findRecordedWorktreeSetup(activities, ThreadId.make("other"))).toBeNull();
-  });
 
   it("shows a running setup and drops a clean one once the turn started", () => {
     const visible = (snapshot: WorktreeSetupSnapshot | null, turnStarted: boolean) =>

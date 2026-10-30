@@ -69,6 +69,7 @@ import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as Projections from "../orchestration-v2/ProjectionStore.ts";
 import * as Projects from "../project/ProjectService.ts";
 import * as Monitor from "../orchestration-v2/AgentMonitorReactor.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 
 const targetId = ThreadId.make("target");
 const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "chosen" };
@@ -276,6 +277,7 @@ const fixture = (
     const layer = Agent.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
+          Layer.succeed(DocumentText.DocumentText, { ensure: () => Effect.succeed(undefined) }),
           Layer.succeed(
             Store.D4AgentStore,
             store ?? {

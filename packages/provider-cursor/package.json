@@ -53,11 +53,11 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.35",
+    "@cursor/sdk": "1.0.38",
     "@d4research/contracts": "workspace:*",
     "@d4research/provider-core": "workspace:*",
     "@d4research/shared": "workspace:*",

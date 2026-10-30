@@ -69,7 +69,7 @@ function resolveClientKind(): ClientActivityReportInput["clientKind"] {
   return window.desktopBridge ? "desktop-renderer" : "web";
 }
 
-export function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number): boolean {
+function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number): boolean {
   return (
     lastInteractionAtMs <= observedAtMs &&
     observedAtMs - lastInteractionAtMs <= RECENT_INTERACTION_WINDOW_MS
@@ -199,7 +199,9 @@ export const layer = Layer.effectDiscard(
                 createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
               ),
             )
-            .pipe(Effect.ignore),
+            // Not `ignore`: tearing down an environment mid-request interrupts its report,
+            // and an interrupt leaking out here would end the reporting loop for good.
+            .pipe(Effect.ignoreCause),
         { concurrency: "unbounded", discard: true },
       );
     }).pipe(Effect.withSpan("web.backgroundActivity.report"));

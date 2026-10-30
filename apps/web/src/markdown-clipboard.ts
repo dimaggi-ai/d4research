@@ -28,10 +28,7 @@ function wrapInlineMarker(content: string, marker: string): string {
   return `${match?.[1] ?? ""}${marker}${core}${marker}${match?.[3] ?? ""}`;
 }
 
-/**
- * A code element whose pre wrapper fell outside the copied range is still block
- * code, recognizable by its highlighter line spans or embedded newlines.
- */
+// Highlighter spans or newlines identify block code even when its pre wrapper was not copied.
 function isBlockCodeElement(element: Element, content: string): boolean {
   if (content.includes("\n")) return true;
   for (const child of element.childNodes) {
@@ -68,10 +65,14 @@ function resolveCodeBlockLanguage(pre: Element): string | null {
   return declared && declared !== "text" ? declared : null;
 }
 
-function serializeCodeBlock(pre: Element): string {
-  const code = (pre.textContent ?? "").replace(/\n$/, "");
+export function serializeCodeBlockToMarkdown(source: string, language: string | null): string {
+  const code = source.replace(/\n$/, "");
   const fence = codeFenceFor(code);
-  return `${fence}${resolveCodeBlockLanguage(pre) ?? ""}\n${code}\n${fence}\n\n`;
+  return `${fence}${language ?? ""}\n${code}\n${fence}\n\n`;
+}
+
+function serializeCodeBlock(pre: Element): string {
+  return serializeCodeBlockToMarkdown(pre.textContent ?? "", resolveCodeBlockLanguage(pre));
 }
 
 function serializeTableCell(cell: Element): string {
@@ -93,7 +94,9 @@ function serializeTable(table: Element): string {
   if (rows.length === 0) return "";
   const lines: string[] = [];
   let emittedSeparator = false;
-  for (const row of rows) {
+  for (const row of table.querySelectorAll(
+    ":scope > thead > tr, :scope > tbody > tr, :scope > tr",
+  )) {
     const cells = [...row.children].filter(
       (cell) => cell.tagName === "TH" || cell.tagName === "TD",
     );
@@ -112,14 +115,16 @@ function serializeListItem(item: Element, ordered: boolean, index: number): stri
     ':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]',
   );
   const task = checkbox ? `[${(checkbox as HTMLInputElement).checked ? "x" : " "}] ` : "";
-  const marker = ordered ? `${index}. ${task}` : `- ${task}`;
+  const bullet = ordered ? `${index}. ` : "- ";
+  const marker = `${bullet}${task}`;
   let content = serializeChildren(item)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   if (!item.querySelector(":scope > p")) {
     content = content.replace(/\n{2,}/g, "\n");
   }
-  const continuationIndent = " ".repeat(marker.length);
+  // Continuations align after the bullet; task boxes belong to the item text.
+  const continuationIndent = " ".repeat(bullet.length);
   const [first = "", ...rest] = content.split("\n");
   return [
     `${marker}${first}`,
@@ -258,9 +263,7 @@ function scanForSoleCodeBlock(node: Node, scan: SoleCodeBlockScan): void {
     }
     if (child.nodeType !== Node.ELEMENT_NODE) continue;
     const element = child as Element;
-    // Mirrors serializeNode's order: an element carrying markdown of its own
-    // still contributes it even when its tag is otherwise skipped, as a file
-    // chip rendered as a button does.
+    // Explicit markdown still counts on skipped tags such as file-chip buttons.
     if (element.hasAttribute("data-markdown-details")) {
       scan.other = true;
       continue;
@@ -290,11 +293,7 @@ function scanForSoleCodeBlock(node: Node, scan: SoleCodeBlockScan): void {
   }
 }
 
-/**
- * A drag that ends on a block's final newline pulls the closing `pre` into the
- * range, so the fragment holds the whole block even though the user only
- * highlighted code.
- */
+// Selecting a block's final newline pulls in its closing pre even when only code was highlighted.
 function soleCodeBlock(container: Node): Element | null {
   const scan: SoleCodeBlockScan = { pre: null, other: false };
   scanForSoleCodeBlock(container, scan);
@@ -321,25 +320,105 @@ export function serializeTableElementToMarkdown(table: Element): string {
   return serializeTable(table).trim();
 }
 
+function tableRows(table: Element): string[][] {
+  return [...table.querySelectorAll(":scope > thead > tr, :scope > tbody > tr, :scope > tr")]
+    .map((row) =>
+      [...row.children]
+        .filter((cell) => cell.tagName === "TH" || cell.tagName === "TD")
+        .map((cell) => csvCellText(cell).replace(/\s+/g, " ").trim()),
+    )
+    .filter((cells) => cells.length > 0);
+}
+
+/**
+ * Slack has no native Markdown table syntax. A box-drawn table inside a code
+ * block is both legible and retained as a table when it is pasted and sent.
+ */
+export function serializeTableElementToSlack(table: Element): string {
+  const rows = tableRows(table);
+  if (rows.length === 0) return "";
+  const columnCount = Math.max(...rows.map((row) => row.length));
+  const widths = Array.from({ length: columnCount }, (_, columnIndex) =>
+    Math.max(...rows.map((row) => [...(row[columnIndex] ?? "")].length)),
+  );
+  const horizontal = (left: string, middle: string, right: string) =>
+    `${left}${widths.map((width) => "─".repeat(width + 2)).join(middle)}${right}`;
+  const renderRow = (row: string[]) =>
+    `│${widths
+      .map((width, columnIndex) => ` ${(row[columnIndex] ?? "").padEnd(width)} `)
+      .join("│")}│`;
+  const [header, ...body] = rows;
+  if (!header) return "";
+  const lines = [horizontal("┌", "┬", "┐"), renderRow(header)];
+  if (rows.length > 1) {
+    lines.push(horizontal("├", "┼", "┤"), ...body.map(renderRow));
+  }
+  lines.push(horizontal("└", "┴", "┘"));
+  return `\`\`\`\n${lines.join("\n")}\n\`\`\``;
+}
+
+// The wrapper MarkdownMath puts on every formula it renders. The sanitizer drops
+// the attribute from authored HTML.
+const MATH_SELECTOR = "[data-markdown-math]";
+
+export function mathWrapperOf(element: Element | null): Element | null {
+  return element?.closest(MATH_SELECTOR) ?? null;
+}
+
+/** A cell's text, with each formula as its TeX. */
+function csvCellText(cell: Element): string {
+  if (!cell.querySelector(MATH_SELECTOR)) return cell.textContent ?? "";
+  const copy = cell.cloneNode(true) as Element;
+  for (const wrapper of copy.querySelectorAll(MATH_SELECTOR)) {
+    wrapper.replaceWith(wrapper.getAttribute("data-markdown-copy")?.trim() ?? "");
+  }
+  return copy.textContent ?? "";
+}
+
 function csvCell(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return /[",\n]/.test(normalized) ? `"${normalized.replaceAll('"', '""')}"` : normalized;
 }
 
 export function serializeTableElementToCsv(table: Element): string {
-  const rows = [...table.querySelectorAll(":scope > thead > tr, :scope > tbody > tr, :scope > tr")];
   const lines: string[] = [];
-  for (const row of rows) {
+  for (const row of table.querySelectorAll(
+    ":scope > thead > tr, :scope > tbody > tr, :scope > tr",
+  )) {
     const cells = [...row.children].filter(
       (cell) => cell.tagName === "TH" || cell.tagName === "TD",
     );
     if (cells.length === 0) continue;
-    lines.push(cells.map((cell) => csvCell(cell.textContent ?? "")).join(","));
+    lines.push(cells.map((cell) => csvCell(csvCellText(cell))).join(","));
   }
   return lines.join("\n");
 }
 
+function mermaidSourceHtml(source: string) {
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  code.textContent = source.trim();
+  pre.appendChild(code);
+  return pre;
+}
+
+function mathSourceElement(wrapper: Element): Element {
+  const code = document.createElement("code");
+  code.textContent = wrapper.getAttribute("data-markdown-copy")?.trim() ?? "";
+  if (wrapper.getAttribute("data-markdown-math") !== "display") return code;
+  const pre = document.createElement("pre");
+  pre.append(code);
+  return pre;
+}
+
 function sanitizedHtmlFrom(container: Element): string {
+  for (const diagram of container.querySelectorAll("[data-markdown-mermaid]")) {
+    const source = diagram.getAttribute("data-markdown-copy");
+    if (source !== null) diagram.replaceChildren(mermaidSourceHtml(source));
+  }
+  for (const wrapper of container.querySelectorAll(MATH_SELECTOR)) {
+    wrapper.replaceWith(mathSourceElement(wrapper));
+  }
   for (const node of container.querySelectorAll(SANITIZED_HTML_SELECTOR)) {
     if (
       node.classList.contains("chat-markdown-file-link") ||
@@ -365,16 +444,42 @@ export function chatMarkdownClipboardPayload(
     if (range.collapsed) continue;
     const container = document.createElement("div");
     container.appendChild(range.cloneContents());
+    // A selection inside a code block copies verbatim. Running it through the markdown serializer
+    // would wrap a partial selection in fences it never had.
     const ancestor = range.commonAncestorContainer;
     const ancestorElement =
       ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as Element) : ancestor.parentElement;
+    const diagramSource = ancestorElement
+      ?.closest("[data-markdown-mermaid]")
+      ?.getAttribute("data-markdown-copy");
+    if (diagramSource != null) {
+      const text = diagramSource.trim();
+      if (!text) continue;
+      texts.push(text);
+      container.replaceChildren(mermaidSourceHtml(diagramSource));
+      htmls.push(sanitizedHtmlFrom(container));
+      continue;
+    }
+    // A range inside a formula would clone only KaTeX's glyphs, not the wrapper holding the TeX.
+    const math = mathWrapperOf(ancestorElement);
+    if (math) {
+      texts.push(math.getAttribute("data-markdown-copy")?.trim() ?? "");
+      htmls.push(`<meta charset="utf-8">${mathSourceElement(math).outerHTML}`);
+      continue;
+    }
     if (ancestorElement?.closest("pre")) {
-      const text = range.toString();
-      if (text) {
-        texts.push(text);
+      const codeText = range.toString();
+      if (codeText) {
+        texts.push(codeText);
         htmls.push(sanitizedHtmlFrom(container));
       }
       continue;
+    }
+    // Slack ignores Markdown tables. Replace each selected rendered table with
+    // a code-block table before the normal rich-copy serializer runs, so a
+    // regular Cmd/Ctrl+C produces the same usable format as “Copy for Slack”.
+    for (const table of container.querySelectorAll("table")) {
+      table.replaceWith(document.createTextNode(`\n\n${serializeTableElementToSlack(table)}\n\n`));
     }
     const text = serializeRenderedMarkdownFragment(container);
     if (!text) continue;

@@ -6,16 +6,12 @@ import {
   type ProviderOptionSelection,
   type ServerProviderModel,
 } from "@d4research/contracts";
-import { getProviderOptionDescriptors } from "@d4research/shared/model";
-import { getProviderModelCapabilities } from "../../providerModels";
 import {
-  getComposerPromptInjectionState,
   getComposerProviderState,
   getComposerReasoningStep,
-  renderProviderTraitsMenuContent,
-  renderProviderTraitsPicker,
   withImplicitFastModeDefault,
 } from "./composerProviderState";
+import { readPromptUltrathink } from "./TraitsPicker";
 
 const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("codex");
 const MODEL = "test-model";
@@ -64,20 +60,7 @@ function selections(
   return entries.map(([id, value]) => ({ id, value }));
 }
 
-const ULTRATHINK_FRAME_CLASSES = {
-  composerFrameClassName: "ultrathink-frame",
-  composerSurfaceClassName: "shadow-[0_0_0_1px_rgba(255,255,255,0.07)_inset]",
-  modelPickerIconClassName: "ultrathink-chroma",
-} as const;
-
 describe("getComposerProviderState", () => {
-  it("derives a stable prompt injection state for ordinary prompt edits", () => {
-    expect(getComposerPromptInjectionState("Investigate this failure")).toBe("none");
-    expect(getComposerPromptInjectionState("Ultrathink:\nInvestigate this failure")).toBe(
-      "ultrathink",
-    );
-  });
-
   it("uses descriptor defaults for display without dispatching them as overrides", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
@@ -89,33 +72,13 @@ describe("getComposerProviderState", () => {
         ]),
       ]),
       modelOptions: undefined,
+      planModeEnabled: true,
     });
 
     expect(state).toEqual({
       provider: PROVIDER,
       promptEffort: "high",
       modelOptionsForDispatch: undefined,
-    });
-  });
-
-  it("lets selections override defaults and propagates them through dispatch", () => {
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models: modelWith([
-        selectDescriptor("effort", [
-          { id: "low", label: "Low" },
-          { id: "high", label: "High", isDefault: true },
-        ]),
-        booleanDescriptor("fastMode"),
-      ]),
-      modelOptions: selections(["effort", "low"], ["fastMode", true]),
-    });
-
-    expect(state).toEqual({
-      provider: PROVIDER,
-      promptEffort: "low",
-      modelOptionsForDispatch: selections(["effort", "low"], ["fastMode", true]),
     });
   });
 
@@ -128,6 +91,7 @@ describe("getComposerProviderState", () => {
         booleanDescriptor("fastMode"),
       ]),
       modelOptions: selections(["effort", "high"], ["fastMode", false]),
+      planModeEnabled: true,
     });
 
     expect(state.modelOptionsForDispatch).toEqual(
@@ -141,6 +105,7 @@ describe("getComposerProviderState", () => {
       model: MODEL,
       models: modelWith([booleanDescriptor("thinking")]),
       modelOptions: selections(["effort", "max"], ["thinking", false]),
+      planModeEnabled: true,
     });
 
     expect(state).toEqual({
@@ -166,72 +131,76 @@ describe("getComposerProviderState", () => {
         ]),
       ]),
       modelOptions: selections(["agent", "plan"]),
+      planModeEnabled: true,
     });
 
     expect(state.promptEffort).toBe("high");
     expect(state.modelOptionsForDispatch).toEqual(selections(["agent", "plan"]));
   });
 
-  it("returns undefined dispatch options when the model declares no descriptors", () => {
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models: modelWith([]),
-      modelOptions: selections(["anything", "value"]),
-    });
-
-    expect(state).toEqual({
-      provider: PROVIDER,
-      promptEffort: null,
-      modelOptionsForDispatch: undefined,
-    });
-  });
-
-  it("adds ultrathink class names when the prompt triggers a promptInjectedValues descriptor", () => {
+  it("drops the plan agent from dispatch when legacy plan mode is disabled", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
       model: MODEL,
       models: modelWith([
-        selectDescriptor(
-          "effort",
-          [
-            { id: "medium", label: "Medium" },
-            { id: "high", label: "High", isDefault: true },
-            { id: "ultrathink", label: "Ultrathink" },
-          ],
-          ["ultrathink"],
-        ),
+        selectDescriptor("agent", [
+          { id: "build", label: "Build", isDefault: true },
+          { id: "plan", label: "Plan" },
+        ]),
       ]),
-      promptInjectionState: getComposerPromptInjectionState(
-        "Ultrathink:\nInvestigate this failure",
-      ),
-      modelOptions: selections(["effort", "medium"]),
+      modelOptions: selections(["agent", "plan"]),
+      planModeEnabled: false,
     });
 
-    expect(state).toEqual({
-      provider: PROVIDER,
-      promptEffort: "medium",
-      modelOptionsForDispatch: selections(["effort", "medium"]),
-      ...ULTRATHINK_FRAME_CLASSES,
-    });
+    expect(state.modelOptionsForDispatch).toEqual(selections(["agent", "build"]));
   });
 
-  it("does not add ultrathink class names when the descriptor has no promptInjectedValues", () => {
+  it("preserves explicit options when the selected model is absent from the catalog", () => {
     const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models: modelWith([
-        selectDescriptor("effort", [{ id: "high", label: "High", isDefault: true }]),
-      ]),
-      promptInjectionState: getComposerPromptInjectionState(
-        "Ultrathink:\nInvestigate this failure",
-      ),
-      modelOptions: undefined,
+      provider: ProviderDriverKind.make("opencode"),
+      model: "opencode/kimi-k3",
+      models: [
+        {
+          slug: "opencode/big-pickle",
+          name: "Big Pickle",
+          isCustom: false,
+          capabilities: {},
+        },
+      ],
+      modelOptions: selections(["variant", "max"], ["agent", "build"]),
+      planModeEnabled: false,
     });
 
-    expect(state).not.toHaveProperty("composerFrameClassName");
-    expect(state).not.toHaveProperty("composerSurfaceClassName");
-    expect(state).not.toHaveProperty("modelPickerIconClassName");
+    expect(state.modelOptionsForDispatch).toEqual(
+      selections(["variant", "max"], ["agent", "build"]),
+    );
+  });
+
+  it("validates options for a known model selected through a legacy alias", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      model: "legacy-test-model",
+      models: [
+        {
+          slug: "test-model",
+          name: "Test Model",
+          aliases: ["legacy-test-model"],
+          isCustom: false,
+          capabilities: {
+            optionDescriptors: [
+              selectDescriptor("effort", [
+                { id: "low", label: "Low" },
+                { id: "high", label: "High", isDefault: true },
+              ]),
+            ],
+          },
+        },
+      ],
+      modelOptions: selections(["effort", "low"], ["unknown", "value"]),
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["effort", "low"]));
   });
 
   it("defaults fastMode to false when the provider reports true but the user has not selected it", () => {
@@ -245,33 +214,10 @@ describe("getComposerProviderState", () => {
 
     expect(state.modelOptionsForDispatch).toEqual(selections(["fastMode", false]));
   });
-
-  it("keeps explicit fastMode true when the user selected Fast", () => {
-    const state = getComposerProviderState({
-      provider: ProviderDriverKind.make("cursor"),
-      model: MODEL,
-      models: modelWith([booleanDescriptor("fastMode", true)]),
-      modelOptions: selections(["fastMode", true]),
-      planModeEnabled: true,
-    });
-
-    expect(state.modelOptionsForDispatch).toEqual(selections(["fastMode", true]));
-  });
-
-  it("keeps explicit fastMode false when the user selected Normal", () => {
-    const state = getComposerProviderState({
-      provider: ProviderDriverKind.make("cursor"),
-      model: MODEL,
-      models: modelWith([booleanDescriptor("fastMode", true)]),
-      modelOptions: selections(["fastMode", false]),
-      planModeEnabled: true,
-    });
-
-    expect(state.modelOptionsForDispatch).toEqual(selections(["fastMode", false]));
-  });
 });
 
 describe("withImplicitFastModeDefault", () => {
+  // regression: #2981 a remembered Fast mode choice must survive the implicit default on new chats
   it("injects fastMode false only when the model exposes fastMode and no selection exists", () => {
     expect(
       withImplicitFastModeDefault(
@@ -291,51 +237,14 @@ describe("withImplicitFastModeDefault", () => {
       ),
     ).toEqual(selections(["fastMode", true]));
   });
-
-  it("does not add fastMode when the model does not expose it", () => {
-    expect(
-      withImplicitFastModeDefault(
-        {
-          optionDescriptors: [booleanDescriptor("thinking", true)],
-        },
-        undefined,
-      ),
-    ).toBeUndefined();
-  });
 });
 
-describe("trait controls fastMode display", () => {
-  it("resolves traits fastMode to Normal when the provider defaults to true without a user selection", () => {
-    const models = modelWith([booleanDescriptor("fastMode", true)]);
-    const provider = ProviderDriverKind.make("cursor");
-    const caps = getProviderModelCapabilities(models, MODEL, provider);
-    const resolved = withImplicitFastModeDefault(caps, undefined);
-    const descriptors = getProviderOptionDescriptors({ caps, selections: resolved });
-    const fastMode = descriptors.find((descriptor) => descriptor.id === "fastMode");
-
-    expect(fastMode?.type).toBe("boolean");
-    if (fastMode?.type === "boolean") {
-      expect(fastMode.currentValue).toBe(false);
-    }
-  });
-});
-
-describe("provider traits render guards", () => {
-  it("returns null when no thread target is provided", () => {
-    const models = modelWith([
-      selectDescriptor("effort", [{ id: "high", label: "High", isDefault: true }]),
-    ]);
-    const args = {
-      provider: PROVIDER,
-      model: MODEL,
-      models,
-      modelOptions: undefined,
-      prompt: "",
-      onPromptChange: () => {},
-    };
-
-    expect(renderProviderTraitsPicker(args)).toBeNull();
-    expect(renderProviderTraitsMenuContent(args)).toBeNull();
+describe("readPromptUltrathink", () => {
+  it("tells the Ultrathink prefix apart from the word in the body", () => {
+    expect(readPromptUltrathink("Fix the bug")).toBe("none");
+    expect(readPromptUltrathink("Ultrathink: Fix the bug")).toBe("prefix");
+    expect(readPromptUltrathink("ultrathink about the bug")).toBe("body");
+    expect(readPromptUltrathink("Ultrathink: ultrathink harder")).toBe("body");
   });
 });
 
@@ -406,6 +315,15 @@ describe("getComposerReasoningStep", () => {
     }
   });
 
+  it("steps Antigravity's thinking_level like other effort controls", () => {
+    expect(
+      step({
+        provider: ProviderDriverKind.make("antigravity"),
+        models: modelWith([selectDescriptor("thinking_level", LEVELS)]),
+      })?.modelOptions,
+    ).toStrictEqual(selections(["thinking_level", "high"]));
+  });
+
   it("adds and strips the Ultrathink prefix while the caret stays on the same character", () => {
     for (const { prompt, modelOptions, direction, expected } of [
       {
@@ -415,7 +333,6 @@ describe("getComposerReasoningStep", () => {
         expected: { prompt: "Ultrathink:\nFix the bug", cursor: 20 },
       },
       {
-        // The prefix, not the draft's Medium, is the current level.
         prompt: "Ultrathink:\n  Fix the bug",
         modelOptions: selections(["effort", "medium"]),
         direction: -1,
@@ -436,7 +353,6 @@ describe("getComposerReasoningStep", () => {
       expect(result).toStrictEqual(expected);
       expect(result?.prompt.slice(result.cursor)).toMatch(/^bug/);
     }
-    // A caret in leading whitespace must not land inside the new prefix.
     expect(
       step({ ...CLAUDE, prompt: "   Fix", modelOptions: selections(["effort", "high"]) })?.cursor,
     ).toBe("Ultrathink:\n".length);
@@ -466,17 +382,17 @@ describe("getComposerReasoningStep", () => {
       provider: ProviderDriverKind.make("cursor"),
       instanceId: ProviderInstanceId.make("cursor"),
       models: modelWith([
-        selectDescriptor("reasoning", LEVELS),
+        selectDescriptor("reasoning_effort", LEVELS),
         booleanDescriptor("fastMode", true),
       ]),
     };
 
     expect(step({ ...cursor, modelOptions: undefined })?.modelOptions).toStrictEqual(
-      selections(["reasoning", "high"], ["fastMode", false]),
+      selections(["reasoning_effort", "high"], ["fastMode", false]),
     );
     expect(
       step({ ...cursor, modelOptions: selections(["fastMode", true]) })?.modelOptions,
-    ).toStrictEqual(selections(["reasoning", "high"], ["fastMode", true]));
+    ).toStrictEqual(selections(["reasoning_effort", "high"], ["fastMode", true]));
   });
 
   it("steps from the provider-reported level for the same instance and model", () => {

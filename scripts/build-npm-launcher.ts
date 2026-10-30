@@ -26,7 +26,7 @@ import * as HostProcess from "@d4research/shared/HostProcess";
 import { fromJsonStringPretty } from "@d4research/shared/schemaJson";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
-import { windowsSystemTar } from "./build-cli-archive.ts";
+import { windowsSystemTar } from "./lib/windows-tar.ts";
 
 export const NPM_LAUNCHER_PACKAGE_NAME = "d4research";
 
@@ -41,8 +41,8 @@ export class NpmLauncherCommandFailedError extends Schema.TaggedError<NpmLaunche
   }
 }
 
-/** package.json for the launcher. `engines` asks for `import.meta.dirname` and `fetch`. */
-export function npmLauncherPackageManifest(version: string) {
+/** engines requires import.meta.dirname and fetch. `t3code` is read back by npmReleaseDatabaseMigration. */
+export function npmLauncherPackageManifest(version: string, databaseMigration: number) {
   return {
     name: NPM_LAUNCHER_PACKAGE_NAME,
     version,
@@ -53,8 +53,24 @@ export function npmLauncherPackageManifest(version: string) {
     bin: { d4research: "./bin/d4research.mjs" },
     files: ["bin", "dist"],
     engines: { node: ">=20.11" },
+    t3code: { databaseMigration },
   };
 }
+
+// Fork registrations deliberately retain ids that differ from upstream filenames.
+const latestServerMigrationId = Effect.fn("latestServerMigrationId")(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const registryPath = yield* path.fromFileUrl(
+    new URL("../apps/server/src/persistence/Migrations.ts", import.meta.url),
+  );
+  const source = yield* fs.readFileString(registryPath);
+  const ids = [...source.matchAll(/^\s*\[(\d+), "\w+", Migration\w+\],/gm)].map((match) =>
+    Number(match[1]),
+  );
+  if (ids.length === 0) return yield* Effect.die("No registered server migrations found.");
+  return Math.max(...ids);
+});
 
 export const buildNpmLauncher = Effect.fn("buildNpmLauncher")(function* (input: {
   readonly version: string;
@@ -75,7 +91,9 @@ export const buildNpmLauncher = Effect.fn("buildNpmLauncher")(function* (input: 
   yield* fs.makeDirectory(path.join(stageDir, "dist"));
   yield* fs.writeFileString(
     path.join(stageDir, "package.json"),
-    `${yield* encodePackageJson(npmLauncherPackageManifest(input.version))}\n`,
+    `${yield* encodePackageJson(
+      npmLauncherPackageManifest(input.version, yield* latestServerMigrationId()),
+    )}\n`,
   );
   yield* fs.copyFile(
     path.join(sourceDir, "d4research.mjs"),

@@ -30,7 +30,7 @@ import {
   makeGrokAdapterV2,
 } from "@d4research/provider-grok/testing";
 
-const DEFAULT_GROK_SETTINGS = Schema.decodeUnknownSync(GrokSettings)({});
+const DEFAULT_GROK_SETTINGS = Schema.decodeSync(GrokSettings)({});
 
 function layerGrokProviderAdapterRegistryReplay(
   transcript: AcpReplayTranscript,

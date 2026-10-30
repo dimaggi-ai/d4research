@@ -5,7 +5,7 @@ import {
   EnvironmentId,
 } from "@d4research/contracts";
 import * as Context from "effect/Context";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";

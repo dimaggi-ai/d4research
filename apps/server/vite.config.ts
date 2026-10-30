@@ -65,6 +65,8 @@ const { projects: _rootTestProjects, ...baseTestConfig } = baseConfig.test ?? {}
 // Workspace cache configuration is invalid on a package config.
 const { run: _rootRunConfig, ...basePackageConfig } = baseConfig;
 
+const isExecutableInlinedDependency = (id: string) => id === "zod" || id.startsWith("zod/");
+
 export default mergeConfig(
   { ...basePackageConfig, test: baseTestConfig },
   defineConfig({
@@ -102,8 +104,11 @@ export default mergeConfig(
         // A single executable cannot resolve ESM imports of file-backed packages, so it inlines zod
         // for the server's own MCP client; Cursor still requires its shipped copy at runtime.
         alwaysBundle: packExecutable
-          ? (id: string) => id === "zod" || id.startsWith("zod/") || shouldBundleCliDependency(id)
+          ? (id: string) => isExecutableInlinedDependency(id) || shouldBundleCliDependency(id)
           : shouldBundleCliDependency,
+        // alwaysBundle=false has no opinion; neverBundle keeps native loaders external.
+        neverBundle: (id: string) =>
+          isExternalCliDependency(id) && !(packExecutable && isExecutableInlinedDependency(id)),
         onlyBundle: false,
       },
       banner: {

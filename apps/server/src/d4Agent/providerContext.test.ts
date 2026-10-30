@@ -6,7 +6,7 @@ import { providerDecisionContext } from "./providerContext.ts";
 const now = Date.parse("2026-10-28T12:00:00Z");
 const provider: ServerProvider = {
   instanceId: ProviderInstanceId.make("new-local-instance"),
-  driver: ProviderDriverKind.make("opencode"),
+  driver: ProviderDriverKind.make("cursor"),
   enabled: true,
   installed: true,
   version: null,

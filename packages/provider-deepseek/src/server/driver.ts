@@ -9,6 +9,7 @@ import * as Stream from "effect/Stream";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as HttpClient from "effect/http/HttpClient";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -22,7 +23,7 @@ import { DeepSeekAdapterV2Driver } from "./adapter.ts";
 import { probeDeepSeek } from "./health.ts";
 
 const DRIVER = ProviderDriverKind.make("deepseek");
-export type DeepSeekDriverEnv = HttpClient.HttpClient;
+export type DeepSeekDriverEnv = HttpClient.HttpClient | ProviderHost.ProviderHost;
 
 const unavailableText = () =>
   Effect.fail(

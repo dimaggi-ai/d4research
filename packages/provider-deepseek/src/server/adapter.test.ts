@@ -8,6 +8,10 @@ import { requestCompletion } from "./http.ts";
 import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
+import * as Layer from "effect/Layer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -34,6 +38,7 @@ import { D4_AGENT_PREFIX } from "@d4research/provider-core/server/d4AgentPolicy"
 import { historicalMessage } from "@d4research/provider-core/server/handoffBudget";
 import { DeepSeekSettings, isLoopbackEndpoint } from "../settings.ts";
 import { DeepSeekAdapterV2Driver } from "./adapter.ts";
+import { makeNiaJournal } from "./niaJournal.ts";
 import { probeDeepSeek } from "./health.ts";
 
 const config = Schema.decodeSync(DeepSeekSettings)({});
@@ -62,16 +67,21 @@ const open = (
     config?: typeof config;
     appContext?: ReadonlyArray<{ key: string; text: string }>;
     existingProviderThread?: OrchestrationV2ProviderThread;
+    /** Reuse a host to simulate a restart that keeps the server state directory. */
+    host?: Context.Context<ProviderHost.ProviderHost>;
   } = {},
 ) =>
   Effect.gen(function* () {
+    const host =
+      options.host ??
+      (yield* Layer.build(TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer))));
     const adapter = yield* DeepSeekAdapterV2Driver.create({
       instanceId,
       displayName: undefined,
       environment: [],
       enabled: true,
       config: options.config ?? config,
-    });
+    }).pipe(Effect.provide(host));
     const runtime = yield* adapter.openSession({
       threadId,
       providerSessionId: ProviderSessionId.make("deepseek-session"),
@@ -164,7 +174,7 @@ const open = (
           ProviderTurnId.make(`deepseek:${instanceId}:attempt-${nextOrdinal}`),
         );
       });
-    return { runtime, providerThread, start, takeTurn, expectNoLateTerminal };
+    return { runtime, providerThread, start, takeTurn, expectNoLateTerminal, host };
   }).pipe(Effect.provideService(HttpClient.HttpClient, client));
 
 describe("local DeepSeek adapter", () => {
@@ -399,6 +409,7 @@ describe("local DeepSeek adapter", () => {
             HttpClient.HttpClient,
             HttpClient.make(() => Effect.die("Unexpected network request")),
           ),
+          Effect.provide(TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer))),
         );
         const capabilities = yield* adapter.getCapabilities();
         assert.equal(capabilities.tools.supportsMcpTools, false);
@@ -668,6 +679,57 @@ describe("Nia DeepSeek adapter", () => {
       assert.ok(failed?.type === "provider_turn.updated");
       assert.equal(failed.providerTurn.tokenUsage?.usedTokens, 13);
       assert.equal(failed.providerTurn.tokenUsage?.maxTokens, config.contextWindowTokens);
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("restores a tool call from the journal when the server dies before events commit", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<ReadonlyArray<{ role: string }> | undefined>();
+      let journalAtToolCall:
+        | (() => Promise<ReadonlyArray<{ role: string }> | undefined>)
+        | undefined;
+      mockNiaFetch({
+        stallTool: () => {
+          void journalAtToolCall?.().then((history) =>
+            Deferred.doneUnsafe(started, Effect.succeed(history)),
+          );
+          return new Promise<Response>(() => {});
+        },
+      });
+      const crashed = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      const journal = makeNiaJournal(
+        Context.get(crashed.host, ProviderHost.ProviderHost).paths.stateDir,
+      );
+      journalAtToolCall = () => journal.read(crashed.providerThread.id);
+      yield* crashed.start(1);
+      // The tool runs only after its call is on disk.
+      const atToolCall = yield* Deferred.await(started);
+      assert.deepStrictEqual(
+        atToolCall?.map((message) => message.role),
+        ["user", "assistant", "tool"],
+      );
+      // Restart from the thread as stored before any of the turn's events were committed.
+      const server = mockNiaFetch();
+      const restarted = yield* open(reply(completion("unused")), {
+        policy: niaPolicy,
+        existingProviderThread: crashed.providerThread,
+        host: crashed.host,
+      });
+      yield* restarted.runtime.injectHistory!({
+        providerThread: restarted.providerThread,
+        context: "EXCLUDED",
+        messages: [],
+      });
+      yield* restarted.start(2, "After crash");
+      yield* restarted.takeTurn;
+      const resumed = server.modelRequests[0]?.messages as { role: string }[] | undefined;
+      assert.deepStrictEqual(
+        resumed?.map((message) => message.role),
+        ["system", "user", "assistant", "tool", "user"],
+      );
     }).pipe(
       Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
       Effect.scoped,

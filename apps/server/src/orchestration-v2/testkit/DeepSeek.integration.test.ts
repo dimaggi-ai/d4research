@@ -1,3 +1,5 @@
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { assert, it } from "@effect/vitest";
 import {
@@ -91,7 +93,10 @@ it.live(
           environment: [],
           enabled: true,
           config,
-        }).pipe(Effect.provideService(HttpClient.HttpClient, client));
+        }).pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
+          Effect.provide(TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer))),
+        );
         yield* Effect.gen(function* () {
           const orchestrator = yield* Orchestrator.OrchestratorV2;
           const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;

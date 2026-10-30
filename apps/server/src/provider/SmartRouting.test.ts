@@ -1,3 +1,5 @@
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   ProjectId,
@@ -129,7 +131,7 @@ function testLayer(
         enabled: true,
         environment: [],
         config,
-      });
+      }).pipe(Effect.provide(TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer))));
       const localCapabilities = yield* local.getCapabilities();
       const fallback = {
         ...local,

@@ -28,11 +28,13 @@ import {
 } from "../settings.ts";
 import { deepSeekCapabilities, niaDeepSeekCapabilities } from "./capabilities.ts";
 import { runNiaTurn, type NiaMessage, type NiaToolEvent } from "./nia.ts";
+import { makeNiaJournal, preferJournal } from "./niaJournal.ts";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import { DeepSeekRequestError, requestCompletion, type ChatMessage } from "./http.ts";
 
 const DRIVER = ProviderDriverKind.make("deepseek");
 const isDeepSeekRequestError = Schema.is(DeepSeekRequestError);
-export type DeepSeekAdapterV2DriverEnv = HttpClient.HttpClient;
+export type DeepSeekAdapterV2DriverEnv = HttpClient.HttpClient | ProviderHost.ProviderHost;
 const unsupported = (detail: string) =>
   Effect.fail(new Adapter.ProviderAdapterProtocolError({ driver: DRIVER, detail }));
 
@@ -56,6 +58,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
   create: ({ instanceId, enabled, config }) =>
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient;
+      const journal = makeNiaJournal((yield* ProviderHost.ProviderHost).paths.stateDir);
       const mcpSessions = Option.getOrUndefined(
         yield* Effect.serviceOption(McpProviderSessions.McpProviderSessions),
       );
@@ -201,6 +204,17 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                       runId: input.runId,
                     });
                   }
+                  if (isNia) {
+                    const journaled = yield* Effect.tryPromise(() =>
+                      journal.read(input.providerThread.id),
+                    ).pipe(Effect.orElseSucceed(() => undefined));
+                    const committed = niaHistory.get(input.providerThread.id);
+                    if (journaled && (committed || input.nativeThreadHasTurns))
+                      niaHistory.set(
+                        input.providerThread.id,
+                        preferJournal(committed ?? [], journaled),
+                      );
+                  }
                   // Resume without authoritative history must fail rather than silently lose the conversation.
                   if (
                     (input.nativeThreadHasTurns || input.providerThread.lastRunOrdinal !== null) &&
@@ -241,7 +255,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                       message.role === "system" ? [] : [{ ...message, role: message.role }],
                     );
                     const serialized = JSON.stringify(deepSeekNiaHistory);
-                    if (serialized === lastPersisted) return;
+                    if (serialized === lastPersisted) return Promise.resolve();
                     lastPersisted = serialized;
                     const currentThread =
                       threads.get(input.providerThread.id) ?? input.providerThread;
@@ -256,8 +270,20 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                       driver: DRIVER,
                       providerThread,
                     });
+                    return journal.write(input.providerThread.id, deepSeekNiaHistory);
                   };
-                  if (isNia) persistNiaHistory();
+                  if (isNia)
+                    yield* Effect.tryPromise(persistNiaHistory).pipe(
+                      Effect.mapError(
+                        () =>
+                          new Adapter.ProviderAdapterTurnStartError({
+                            driver: DRIVER,
+                            threadId: input.threadId,
+                            providerThreadId: input.providerThread.id,
+                            runId: input.runId,
+                          }),
+                      ),
+                    );
                   let nextItemOrdinal = 1;
                   const toolStates = new Map<
                     string,
@@ -299,7 +325,8 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         };
                       }
                     }
-                    persistNiaHistory();
+                    // The loop awaits this before calling the tool, so the intent is on disk first.
+                    const saved = persistNiaHistory();
                     const time = DateTime.nowUnsafe();
                     const existing = toolStates.get(event.callId);
                     const state = {
@@ -363,6 +390,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         ...(event.result === undefined ? {} : { output: event.result }),
                       },
                     });
+                    return saved;
                   };
                   const context = [
                     contexts.get(input.providerThread.id),
@@ -401,9 +429,9 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                               isError: true,
                             },
                             true,
-                          );
+                          )?.catch(() => {});
                       }
-                      if (isNia) persistNiaHistory();
+                      if (isNia) yield* Effect.promise(() => persistNiaHistory().catch(() => {}));
                       turn = { ...turn, status, completedAt };
                       turns.set(input.providerThread.id, [
                         ...(turns.get(input.providerThread.id) ?? []),
@@ -470,7 +498,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                                   workingNiaHistory = nextHistory.filter(
                                     (message) => message.role !== "system",
                                   );
-                                  persistNiaHistory();
+                                  return persistNiaHistory();
                                 }
                               },
                               (usage) => {

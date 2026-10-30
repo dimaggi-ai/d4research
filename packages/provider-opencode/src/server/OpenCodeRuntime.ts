@@ -1,4 +1,5 @@
 import * as NodeURL from "node:url";
+import type { OpenCodeSettings } from "../settings.ts";
 
 import type { ChatAttachment, ProviderApprovalDecision, RuntimeMode } from "@d4research/contracts";
 import {
@@ -61,6 +62,38 @@ export function resolveOpenCodeConfigContent(
     inheritedEnvironment.OPENCODE_CONFIG_CONTENT ??
     OPENCODE_EMPTY_CONFIG_CONTENT
   );
+}
+
+export function withOpenCodeConfigEnvironment(
+  environment: NodeJS.ProcessEnv,
+  config: OpenCodeSettings["config"],
+  generation: "v1" | "v2" = "v1",
+): NodeJS.ProcessEnv {
+  if (Object.keys(config.provider).length === 0) return environment;
+  const inherited: unknown = JSON.parse(resolveOpenCodeConfigContent(environment, {}));
+  if (!P.isObject(inherited)) throw new TypeError("OPENCODE_CONFIG_CONTENT");
+  const key = generation === "v1" ? "provider" : "providers";
+  const providers =
+    generation === "v1"
+      ? config.provider
+      : Object.fromEntries(
+          Object.entries(config.provider).map(([id, provider]) => [
+            id,
+            {
+              ...(provider.name === undefined ? {} : { name: provider.name }),
+              package: "@opencode/ai/providers/openai-compatible",
+              settings: { ...provider.options, provider: id },
+              models: provider.models,
+            },
+          ]),
+        );
+  return {
+    ...environment,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      ...inherited,
+      [key]: { ...(P.isObject(inherited[key]) ? inherited[key] : {}), ...providers },
+    }),
+  };
 }
 
 export function resolveOpenCodeServerPassword(
@@ -699,6 +732,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           ChildProcess.make(spawnCommand.command, spawnCommand.args, {
             detached: hostPlatform !== "win32",
             shell: spawnCommand.shell,
+            // Startup must not discover configuration in the parent server's workspace.
+            cwd: input.directory,
             env: {
               ...input.environment,
               ...(serverPassword !== undefined ? { OPENCODE_SERVER_PASSWORD: serverPassword } : {}),

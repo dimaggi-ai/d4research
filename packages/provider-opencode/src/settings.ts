@@ -7,13 +7,37 @@ import {
   makeBinaryPathSetting,
   makeProviderSettingsSchema,
   secretSetting,
+  TrimmedNonEmptyString,
   TrimmedString,
 } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+const OpenCodeModelLimit = Schema.Int.check(Schema.isGreaterThan(0));
+export const OpenCodeConfig = Schema.Struct({
+  provider: Schema.Record(
+    TrimmedNonEmptyString,
+    Schema.Struct({
+      npm: Schema.Literal("@ai-sdk/openai-compatible"),
+      name: Schema.optionalKey(TrimmedNonEmptyString),
+      options: Schema.Struct({ baseURL: TrimmedNonEmptyString }),
+      models: Schema.Record(
+        TrimmedNonEmptyString,
+        Schema.Struct({
+          name: Schema.optionalKey(TrimmedNonEmptyString),
+          limit: Schema.Struct({ context: OpenCodeModelLimit, output: OpenCodeModelLimit }),
+        }),
+      ),
+    }),
+  ),
+});
+
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
+    config: OpenCodeConfig.pipe(
+      Schema.withDecodingDefault(Effect.succeed({ provider: {} })),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),

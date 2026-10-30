@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { OpencodeClient, ToolPart } from "@opencode-ai/sdk/v2";
 import {
   CheckpointId,
+  EnvironmentId,
   NodeId,
   ProjectId,
   ProviderInstanceId,
@@ -18,6 +19,7 @@ import {
 } from "@d4research/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -37,12 +39,14 @@ import type * as ProviderEventLoggers from "@d4research/provider-core/server/Pro
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import { D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 
 import {
   advanceOpenCodePromptAdmission,
   cancelOpenCodePromptAdmission,
   openCodeBoundaryAfterProviderTurn,
   openCodeChildPermissionRules,
+  openCodeContextUsage,
   openCodePermissionRules,
   openCodePermissionRequestKind,
   openCodeToolProjectionKind,
@@ -105,6 +109,18 @@ function asyncEventStream() {
 }
 
 const OPENCODE_TEST_SETTINGS = Schema.decodeUnknownSync(OpenCodeSettings)({});
+const CONTEXT_TEST_SETTINGS: OpenCodeSettings = {
+  ...OPEN_CODE_TEST_SETTINGS,
+  config: {
+    provider: {
+      anthropic: {
+        npm: "@ai-sdk/openai-compatible",
+        options: { baseURL: "http://test.invalid/v1" },
+        models: { "claude-sonnet": { limit: { context: 250_000, output: 8_192 } } },
+      },
+    },
+  },
+};
 
 function runtimePolicy(
   runtimeMode: ProviderAdapter.ProviderAdapterV2RuntimePolicy["runtimeMode"],
@@ -148,6 +164,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
   suffix: string,
   nativeSessionId: string,
   client: object,
+  settings: OpenCodeSettings = OPEN_CODE_TEST_SETTINGS,
 ) {
   const instanceId = ProviderInstanceId.make(`opencode-${suffix}`);
   const threadId = ThreadId.make(`thread-opencode-${suffix}`);
@@ -159,7 +176,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
   const policy = runtimePolicy("full-access", { cwd: "/workspace" });
   const adapter = yield* makeOpenCodeAdapterV2({
     instanceId,
-    settings: OPEN_CODE_TEST_SETTINGS,
+    settings,
     environment: {},
   }).pipe(
     Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
@@ -241,24 +258,194 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
 });
 
 describe("OpenCodeAdapterV2", () => {
+  it("reports the current step context with configured limits and an unknown-model fallback", () => {
+    const step = {
+      id: "latest",
+      tokens: { input: 100, output: 20, reasoning: 7, cache: { read: 30, write: 40 } },
+    };
+    const updatedAt = "2026-10-29T00:00:00.000Z";
+    assert.deepEqual(
+      openCodeContextUsage(step, CONTEXT_TEST_SETTINGS, "anthropic/claude-sonnet", updatedAt),
+      {
+        usedTokens: 190,
+        maxTokens: 250_000,
+        inputTokens: 170,
+        cachedInputTokens: 30,
+        outputTokens: 20,
+        reasoningOutputTokens: 7,
+        updatedAt,
+      },
+    );
+    assert.isNull(
+      openCodeContextUsage(step, CONTEXT_TEST_SETTINGS, "unknown/model", updatedAt).maxTokens,
+    );
+    assert.isNull(
+      openCodeContextUsage(step, CONTEXT_TEST_SETTINGS, "invalid", updatedAt).maxTokens,
+    );
+  });
+
+  it.each(["approval-required", "auto-accept-edits", "full-access"] as const)(
+    "keeps Nia tool isolation under %s and plan/child grants",
+    (mode) => {
+      const policy = runtimePolicy(mode, {
+        toolPolicy: "d4-agent",
+        interactionMode: "plan",
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "dangerFullAccess" },
+      });
+      const expected = [
+        { permission: "*", pattern: "*", action: "deny" },
+        ...D4_AGENT_TOOLS.map((name) => ({
+          permission: `t3-code_${name}`,
+          pattern: "*",
+          action: "allow",
+        })),
+      ];
+      const rules = openCodePermissionRules(policy);
+      const child = openCodeChildPermissionRules(policy, [
+        { permission: "*", pattern: "*", action: "allow" },
+        { permission: "bash", pattern: "*", action: "allow" },
+        { permission: "t3-code_pipeline_list", pattern: "*", action: "allow" },
+      ]);
+      assert.deepEqual(rules, expected);
+      assert.deepEqual(child, expected);
+      for (const permission of [
+        "read",
+        "edit",
+        "bash",
+        "task",
+        "question",
+        "webfetch",
+        "t3-code_pipeline_list",
+        "unknown_plugin_tool",
+      ]) {
+        assert.equal(permissionAction(rules, permission), "deny");
+        assert.equal(permissionAction(child, permission), "deny");
+      }
+    },
+  );
+
+  it.effect.each([
+    "external",
+    "version",
+    "missing",
+    "auth",
+    "registration",
+    "disconnected",
+  ] as const)("fails closed when Nia MCP setup is %s", (failure) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const scratch = `${process.cwd()}/.plans`;
+      yield* fs.makeDirectory(scratch, { recursive: true });
+      const stateDir = yield* fs.makeTempDirectoryScoped({
+        directory: scratch,
+        prefix: "opencode-nia-adapter-",
+      });
+      const threadId = ThreadId.make(`nia-${failure}`);
+      const instanceId = ProviderInstanceId.make("nia-test");
+      const sessions = yield* McpProviderSessions.McpProviderSessions;
+      if (failure !== "missing")
+        yield* sessions.set({
+          environmentId: EnvironmentId.make("nia-test"),
+          threadId,
+          providerSessionId: "nia-session",
+          providerInstanceId: instanceId,
+          endpoint: "http://test.invalid/mcp",
+          authorizationHeader: failure === "auth" ? "" : "Bearer test-token",
+          browserToolsAvailable: false,
+        });
+      const calls: string[] = [];
+      const adapter = yield* makeOpenCodeAdapterV2({
+        instanceId,
+        settings: {
+          ...OPENCODE_TEST_SETTINGS,
+          serverUrl: failure === "external" ? "http://test.invalid" : "",
+        },
+        environment: {},
+      }).pipe(
+        Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
+          connectToOpenCodeServer: () => {
+            calls.push("connect");
+            return Effect.succeed({
+              url: "http://test.invalid",
+              external: false,
+              version: failure === "version" ? "1.19.2" : "1.19.3",
+            });
+          },
+          createOpenCodeSdkClient: () => ({
+            mcp: {
+              add: async () => {
+                calls.push("add");
+                if (failure === "registration") throw new Error("registration rejected");
+                return { data: { "t3-code": { status: "disconnected" } } };
+              },
+            },
+          }),
+        } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
+        Effect.provideService(ProviderHost.ProviderHost, {
+          paths: { cwd: "/workspace", stateDir },
+          resolveAttachmentPath: () => null,
+        } as unknown as ProviderHost.ProviderHost["Service"]),
+      );
+      const error = yield* adapter
+        .openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("nia-session"),
+          modelSelection: { instanceId, model: "local/model", options: [] },
+          runtimePolicy: runtimePolicy("full-access", { toolPolicy: "d4-agent" }),
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(error.cause, OpenCodeRuntime.OpenCodeRuntimeError);
+      const cause = error.cause as OpenCodeRuntime.OpenCodeRuntimeError;
+      assert.equal(
+        cause.detail,
+        failure === "external"
+          ? "NIA_EXTERNAL_SERVER_DENIED"
+          : failure === "version"
+            ? "NIA_OPENCODE_VERSION_UNVERIFIED"
+            : failure === "registration"
+              ? "registration rejected"
+              : "NIA_MCP_UNAVAILABLE",
+      );
+      assert.deepEqual(
+        calls,
+        failure === "external"
+          ? []
+          : failure === "missing" || failure === "auth" || failure === "version"
+            ? ["connect"]
+            : failure === "registration"
+              ? ["connect", "add"]
+              : ["connect", "add"],
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide([NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer]),
+    ),
+  );
+
   it.effect.each(["completed", "failed", "unresolved", "unavailable", "reconnect"] as const)(
     "normalizes OpenCode step usage for %s turns",
     (ending) =>
       Effect.gen(function* () {
         const nativeEvents = asyncEventStream();
         let promptId = "";
-        const harness = yield* makeOpenCodeRuntimeHarness(`usage-${ending}`, "root", {
-          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
-          session: {
-            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
-            promptAsync: async (input: { messageID: string }) => {
-              promptId = input.messageID;
-              return { data: true };
+        const harness = yield* makeOpenCodeRuntimeHarness(
+          `usage-${ending}`,
+          "root",
+          {
+            event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+            session: {
+              create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+              promptAsync: async (input: { messageID: string }) => {
+                promptId = input.messageID;
+                return { data: true };
+              },
+              abort: async () => ({ data: true }),
+              children: async () => ({ data: [] }),
             },
-            abort: async () => ({ data: true }),
-            children: async () => ({ data: [] }),
           },
-        });
+          CONTEXT_TEST_SETTINGS,
+        );
         yield* harness.startTurn();
         const received = yield* harness.runtime.events.pipe(
           Stream.takeUntil((event) => event.type === "turn.terminal"),
@@ -284,7 +471,10 @@ describe("OpenCodeAdapterV2", () => {
               messageID,
               reason: "stop",
               cost: 0.01,
-              tokens: { input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 4 } },
+              tokens:
+                id === "two"
+                  ? { input: 20, output: 7, reasoning: 3, cache: { read: 5, write: 6 } }
+                  : { input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 4 } },
             },
           },
         });
@@ -364,6 +554,19 @@ describe("OpenCodeAdapterV2", () => {
         }
         const events = yield* Fiber.join(received);
         const completed = events.findLast((event) => event.type === "provider_turn.updated");
+        if (ending === "unavailable") {
+          assert.isUndefined(completed?.providerTurn.tokenUsage);
+        } else {
+          assert.deepEqual(completed?.providerTurn.tokenUsage, {
+            usedTokens: 38,
+            maxTokens: 250_000,
+            inputTokens: 31,
+            cachedInputTokens: 5,
+            outputTokens: 7,
+            reasoningOutputTokens: 3,
+            updatedAt: DateTime.formatIso(yield* DateTime.now),
+          });
+        }
         assert.deepEqual(
           completed?.providerTurn.turnTokenUsage,
           ending === "unavailable"
@@ -371,11 +574,11 @@ describe("OpenCodeAdapterV2", () => {
             : {
                 usageStatus: ending === "completed" ? "complete" : "partial",
                 usageScope: "main_agent",
-                inputTokens: 34,
-                cachedInputTokens: 6,
-                cacheCreationTokens: 8,
-                outputTokens: 14,
-                reasoningTokens: 4,
+                inputTokens: 48,
+                cachedInputTokens: 8,
+                cacheCreationTokens: 10,
+                outputTokens: 17,
+                reasoningTokens: 5,
                 hasSubagents: false,
               },
         );

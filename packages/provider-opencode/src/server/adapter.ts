@@ -1,3 +1,5 @@
+import { D4_AGENT_PREFIX } from "@d4research/provider-core/server/d4AgentPolicy";
+import { niaPermissions, prepareNiaRuntime, requireNiaMcp } from "./nia.ts";
 import type {
   Event as OpenCodeEvent,
   Message as OpenCodeMessage,
@@ -233,6 +235,7 @@ interface OpenCodeTurnTokenUsageAccumulator {
   reasoningTokens: number;
   hasSubagents: boolean;
   complete: boolean;
+  lastStep?: OpenCodeStepUsage;
 }
 
 function makeOpenCodeTurnTokenUsageAccumulator(): OpenCodeTurnTokenUsageAccumulator {
@@ -257,11 +260,35 @@ function accumulateOpenCodeStepUsage(
 ): void {
   if (accumulator.partIds.has(part.id)) return;
   accumulator.partIds.add(part.id);
+  accumulator.lastStep = part;
   accumulator.inputTokens += part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
   accumulator.cachedInputTokens += part.tokens.cache.read;
   accumulator.cacheCreationTokens += part.tokens.cache.write;
   accumulator.outputTokens += part.tokens.output + part.tokens.reasoning;
   accumulator.reasoningTokens += part.tokens.reasoning;
+}
+
+export function openCodeContextUsage(
+  part: OpenCodeStepUsage,
+  settings: OpenCodeSettings,
+  model: string,
+  updatedAt: string,
+) {
+  const parsed = OpenCodeRuntime.parseOpenCodeModelSlug(model);
+  const window =
+    parsed === null
+      ? undefined
+      : settings.config.provider[parsed.providerID]?.models[parsed.modelID]?.limit.context;
+  const inputTokens = part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
+  return {
+    usedTokens: inputTokens + part.tokens.output,
+    maxTokens: window ?? null,
+    inputTokens,
+    cachedInputTokens: part.tokens.cache.read,
+    outputTokens: part.tokens.output,
+    reasoningOutputTokens: part.tokens.reasoning,
+    updatedAt,
+  };
 }
 
 interface ActiveOpenCodeTurn {
@@ -606,6 +633,7 @@ const OPENCODE_RESTRICTED_PERMISSIONS = [
 export function openCodePermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionRuleset {
+  if (runtimePolicy.toolPolicy === "d4-agent") return niaPermissions();
   const sandboxPolicy = recordValue(runtimePolicy, "sandboxPolicy");
   const sandboxType = recordString(sandboxPolicy, "type");
   const rawApprovalPolicy = runtimePolicy.approvalPolicy;
@@ -716,6 +744,7 @@ export function openCodeChildPermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
   nativeChildRules: PermissionRuleset,
 ): PermissionRuleset {
+  if (runtimePolicy.toolPolicy === "d4-agent") return niaPermissions();
   const parentRules = openCodePermissionRules(runtimePolicy);
   const inheritedRules = parentRules.filter(
     (rule) => rule.permission === "external_directory" || rule.action === "deny",
@@ -942,13 +971,45 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
     openSession: Effect.fn("OpenCodeAdapterV2.openSession")(
       function* (input: ProviderAdapter.ProviderAdapterV2OpenSessionInput) {
         const scope = yield* Effect.scope;
-        const cwd = input.runtimePolicy.cwd ?? host.paths.cwd;
+        const nia = input.runtimePolicy.toolPolicy === "d4-agent";
+        if (nia && options.settings.serverUrl.trim()) {
+          return yield* Effect.fail(
+            new OpenCodeRuntime.OpenCodeRuntimeError({
+              operation: "nia",
+              detail: "NIA_EXTERNAL_SERVER_DENIED",
+            }),
+          );
+        }
+        const isolated = nia
+          ? yield* Effect.tryPromise(() =>
+              prepareNiaRuntime({
+                stateDir: host.paths.stateDir,
+                threadId: input.threadId,
+                settings: options.settings,
+                path: options.environment.PATH,
+              }),
+            )
+          : undefined;
+        const cwd = isolated?.directory ?? input.runtimePolicy.cwd ?? host.paths.cwd;
         const connection = yield* runtime.connectToOpenCodeServer({
           binaryPath: options.settings.binaryPath,
           directory: cwd,
           serverUrl: options.settings.serverUrl,
-          environment: options.environment,
+          environment:
+            isolated?.environment ??
+            OpenCodeRuntime.withOpenCodeConfigEnvironment(
+              options.environment,
+              options.settings.config,
+            ),
         });
+        if (nia && connection.version !== "1.19.3") {
+          return yield* Effect.fail(
+            new OpenCodeRuntime.OpenCodeRuntimeError({
+              operation: "nia",
+              detail: "NIA_OPENCODE_VERSION_UNVERIFIED",
+            }),
+          );
+        }
         const client = runtime.createOpenCodeSdkClient({
           baseUrl: connection.url,
           directory: cwd,
@@ -959,8 +1020,16 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 
         const mcpSession = yield* mcpSessions.read(input.threadId);
         const hasT3Mcp = mcpSession !== undefined && !connection.external;
+        if (nia && (!hasT3Mcp || !mcpSession.authorizationHeader)) {
+          return yield* Effect.fail(
+            new OpenCodeRuntime.OpenCodeRuntimeError({
+              operation: "nia",
+              detail: "NIA_MCP_UNAVAILABLE",
+            }),
+          );
+        }
         const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(hasT3Mcp);
-        if (hasT3Mcp) {
+        if (hasT3Mcp && !nia) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
               name: "t3-code",
@@ -974,6 +1043,35 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           );
         }
 
+        const checkNiaMcp = () =>
+          Effect.gen(function* () {
+            const current = yield* mcpSessions.read(input.threadId);
+            if (!current?.authorizationHeader) {
+              return yield* Effect.fail(
+                new OpenCodeRuntime.OpenCodeRuntimeError({
+                  operation: "nia",
+                  detail: "NIA_MCP_UNAVAILABLE",
+                }),
+              );
+            }
+            // Reconnect before each turn so stale connected status cannot conceal revoked auth.
+            yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", async (signal) => {
+              const response = await client.mcp.add(
+                {
+                  name: "t3-code",
+                  config: {
+                    type: "remote",
+                    url: current.endpoint,
+                    headers: { Authorization: current.authorizationHeader },
+                    oauth: false,
+                  },
+                },
+                { signal, throwOnError: true },
+              );
+              requireNiaMcp(response.data);
+            });
+          });
+        if (nia) yield* checkNiaMcp();
         const now = yield* DateTime.now;
         let sessionEntity: OrchestrationV2ProviderSession = {
           id: input.providerSessionId,
@@ -1142,6 +1240,16 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 : providerRef(turn.nativeUserMessageId, "weak"),
             status,
             completedAt,
+            ...(completedAt === null || turn.usage.lastStep === undefined
+              ? {}
+              : {
+                  tokenUsage: openCodeContextUsage(
+                    turn.usage.lastStep,
+                    options.settings,
+                    turn.modelSelection.model,
+                    DateTime.formatIso(completedAt),
+                  ),
+                }),
             ...(completedAt === null
               ? {}
               : {
@@ -2914,7 +3022,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             .map((part) => part.text)
             .join("\n")
             .trim();
-          const match = text?.match(/^\/([^\s/]+)(?:\s+([\s\S]*))?$/);
+          const match = nia ? undefined : text?.match(/^\/([^\s/]+)(?:\s+([\s\S]*))?$/);
           const command = match
             ? (yield* OpenCodeRuntime.loadOpenCodeCommands(client).pipe(
                 Effect.timeout("10 seconds"),
@@ -3081,6 +3189,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             }),
           startTurn: (turnInput) =>
             Effect.gen(function* () {
+              if ((turnInput.runtimePolicy.toolPolicy === "d4-agent") !== nia) {
+                return yield* protocolError("NIA_POLICY_TRANSITION_DENIED");
+              }
+              if (nia) yield* checkNiaMcp();
               if (nativeStreamFailure !== null) {
                 return yield* protocolError(
                   "OpenCode event stream has ended; reconnect the provider session before starting another turn.",
@@ -3096,6 +3208,17 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   `OpenCode provider thread ${turnInput.providerThread.id} already has an active turn`,
                 );
               }
+              if (nia) {
+                yield* OpenCodeRuntime.runOpenCodeSdk("session.update", (signal) =>
+                  client.session.update(
+                    {
+                      sessionID: sessionId,
+                      permission: niaPermissions(),
+                    },
+                    { signal, throwOnError: true },
+                  ),
+                );
+              }
               const parsedModel = OpenCodeRuntime.parseOpenCodeModelSlug(
                 turnInput.modelSelection.model,
               );
@@ -3107,7 +3230,14 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const isCompaction =
                 turnInput.message.text.trim() === "/compact" &&
                 turnInput.message.attachments.length === 0;
-              const parts = isCompaction ? [] : resolvePromptParts(turnInput);
+              if (nia && (isCompaction || turnInput.message.attachments.length > 0)) {
+                return yield* protocolError("NIA_NATIVE_INPUT_DENIED");
+              }
+              const parts = nia
+                ? [{ type: "text" as const, text: turnInput.message.text }]
+                : isCompaction
+                  ? []
+                  : resolvePromptParts(turnInput);
               const startedAt = yield* DateTime.now;
               const syntheticNativeTurnId = `${sessionId}:attempt:${turnInput.attemptId}`;
               const providerTurnId = idAllocator.derive.providerTurn({
@@ -3216,18 +3346,21 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 );
                 return;
               }
-              const systemPrompt = [
-                orchestrationSystemPrompt,
-                buildRuntimeInstructions({
-                  harness: "OpenCode",
-                  model: turnInput.modelSelection.model,
-                }),
-              ]
-                .filter(Boolean)
-                .join("\n\n");
-              const agent =
-                getModelSelectionStringOptionValue(turnInput.modelSelection, "agent") ??
-                (turnInput.runtimePolicy.interactionMode === "plan" ? "plan" : undefined);
+              const systemPrompt = nia
+                ? D4_AGENT_PREFIX
+                : [
+                    orchestrationSystemPrompt,
+                    buildRuntimeInstructions({
+                      harness: "OpenCode",
+                      model: turnInput.modelSelection.model,
+                    }),
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n");
+              const agent = nia
+                ? "nia"
+                : (getModelSelectionStringOptionValue(turnInput.modelSelection, "agent") ??
+                  (turnInput.runtimePolicy.interactionMode === "plan" ? "plan" : undefined));
               const variant = getModelSelectionStringOptionValue(
                 turnInput.modelSelection,
                 "variant",
@@ -3307,6 +3440,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   `OpenCode model '${turn.modelSelection.model}' must use provider/model format`,
                 );
               }
+              if (nia) {
+                if (steerInput.message.attachments.length > 0)
+                  return yield* protocolError("NIA_NATIVE_INPUT_DENIED");
+                yield* checkNiaMcp();
+              }
               const text = providerMessageTextWithAttachmentPaths({
                 text: steerInput.message.text,
                 attachments: steerInput.message.attachments,
@@ -3342,6 +3480,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   sessionID: sessionId,
                   messageID: turn.admissionMessageId,
                   model: parsedModel,
+                  ...(nia ? { agent: "nia", system: D4_AGENT_PREFIX } : {}),
                   parts,
                 },
                 admissionAbortController!,

@@ -2935,6 +2935,14 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       state: ThreadState,
       turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
     ) {
+      if (turnInput.runtimePolicy.toolPolicy === "d4-agent") {
+        return yield* Effect.fail(
+          new OpenCodeRuntime.OpenCodeRuntimeError({
+            operation: "nia",
+            detail: "NIA_OPENCODE_2_UNSUPPORTED",
+          }),
+        );
+      }
       const mcpSession = yield* mcpSessions.read(turnInput.threadId);
       const directory = turnInput.runtimePolicy.cwd ?? host.paths.cwd;
       const name = yield* mcpServerNameFor(turnInput.threadId);
@@ -3930,6 +3938,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     // spawned server is not idle-stopped under a long tool call.
     openSession: (input) =>
       Effect.gen(function* () {
+        // The 2.x runtime shares plugins and instruction sources across locations.
+        if (input.runtimePolicy.toolPolicy === "d4-agent") {
+          return yield* Effect.fail(
+            new OpenCodeRuntime.OpenCodeRuntimeError({
+              operation: "nia",
+              detail: "NIA_OPENCODE_2_UNSUPPORTED",
+            }),
+          );
+        }
         const scope = yield* Scope.make();
         yield* Effect.addFinalizer((exit) => Scope.close(scope, exit));
         const connection = yield* borrow.pipe(Effect.provideService(Scope.Scope, scope));

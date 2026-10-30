@@ -1,9 +1,4 @@
-import {
-  DEFAULT_D4_AGENT_LOOP_ITERATIONS,
-  type D4AgentAction,
-  type D4AgentLaunchPreview,
-  type D4AgentTaskMode,
-} from "@d4research/contracts";
+import type { D4AgentAction, D4AgentLaunchPreview, D4AgentTaskMode } from "@d4research/contracts";
 
 type StartAction = Extract<D4AgentAction, { type: "start" }>;
 
@@ -33,11 +28,14 @@ export function composeStartPrompt(action: StartAction): string {
 ---
 Single task. Do the work, then verify the result against the requested outcome with concrete evidence such as commands run, tests and changed files. ${OUTCOME_LINE} Nia reads this result, and the thread settles automatically after a verified completion.`;
   }
-  const iterations = action.maxIterations ?? DEFAULT_D4_AGENT_LOOP_ITERATIONS;
+  const budget =
+    action.maxIterations === undefined
+      ? ""
+      : ` The user set a budget of ${action.maxIterations} iterations; if it runs out first, stop with \`Outcome: needs-input\` and list the criteria still unmet.`;
   return `${action.text}
 
 ---
-Loop task. Work in iterations: choose the next step, do it, then check every completion criterion below with concrete evidence. Continue while a criterion is unmet and progress is possible, for at most ${iterations} iterations. Stop early and report if you are blocked, a step failed and cannot be recovered, or you need the user's input.
+Loop task. Work in iterations: choose the next step, do it, then check every completion criterion below with concrete evidence. Keep going until every criterion holds. Stop only to report when the work is complete, you are blocked, a step failed and cannot be recovered, or you need the user's input.${budget}
 
 Completion criteria:
 ${action.completionCriteria ?? ""}

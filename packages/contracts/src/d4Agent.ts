@@ -193,8 +193,6 @@ export type D4AgentRoutine = typeof D4AgentRoutine.Type;
 
 export const D4AgentTaskMode = Schema.Literals(["single", "loop"]);
 export type D4AgentTaskMode = typeof D4AgentTaskMode.Type;
-export const MAX_D4_AGENT_LOOP_ITERATIONS = 20;
-export const DEFAULT_D4_AGENT_LOOP_ITERATIONS = 5;
 // What an approved task launch will run, fixed when the card is drafted and rechecked before it
 // runs, so the approval covers the exact folder, runtime, model and prompt.
 export const D4AgentLaunchPreview = Schema.Struct({
@@ -279,14 +277,13 @@ export const D4AgentAction = Schema.Union([
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
     modelSelection: ModelSelection,
     // single runs once, verifies and reports, then settles when it reports completion. loop
-    // keeps working and evaluating until completionCriteria hold or maxIterations is reached.
+    // keeps working until completionCriteria hold, it is blocked, needs input or is interrupted.
+    // maxIterations is an optional budget the user chose; loops have no default cap.
     mode: Schema.optionalKey(D4AgentTaskMode),
     completionCriteria: Schema.optionalKey(
       Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
     ),
-    maxIterations: Schema.optionalKey(
-      Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_D4_AGENT_LOOP_ITERATIONS })),
-    ),
+    maxIterations: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
   }),
   // One shell command on the host's desktop session; Tool Guard sees it as text.
   Schema.Struct({

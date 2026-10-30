@@ -38,19 +38,25 @@ describe("start task modes", () => {
     assert.include(startActionProblem(start({ maxIterations: 3 })) ?? "", "loop");
   });
 
-  it("bounds a loop by its criteria and iteration limit and keeps it open", () => {
+  it("runs a loop until its criteria hold, with no iteration cap, and keeps it open", () => {
     const prompt = composeStartPrompt(
-      start({
-        mode: "loop",
-        completionCriteria: "All login tests pass 20 times.",
-        maxIterations: 4,
-      }),
+      start({ mode: "loop", completionCriteria: "All login tests pass 20 times." }),
     );
     assert.include(prompt, "Loop task.");
-    assert.include(prompt, "for at most 4 iterations");
+    assert.include(prompt, "Keep going until every criterion holds.");
+    assert.notInclude(prompt, "budget");
+    assert.notInclude(prompt, "at most");
     assert.include(prompt, "All login tests pass 20 times.");
     assert.include(prompt, "This thread stays open after it reports.");
     assert.include(prompt, "you need the user's input");
+  });
+
+  it("stops a loop at a budget only when the user chose one", () => {
+    const prompt = composeStartPrompt(
+      start({ mode: "loop", completionCriteria: "Done.", maxIterations: 40 }),
+    );
+    assert.include(prompt, "The user set a budget of 40 iterations");
+    assert.include(prompt, "`Outcome: needs-input`");
   });
 });
 

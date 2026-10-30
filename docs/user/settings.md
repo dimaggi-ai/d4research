@@ -105,8 +105,8 @@ A new task runs in one of two modes:
   and you can reopen it. A task that reports itself blocked, failed, or waiting for your input stays
   in Working.
 - **Loop** keeps working and checking its progress until the completion criteria on the card
-  are met, up to the iteration limit shown there. It stops early to report a blocker or ask
-  for your input. The thread stays open.
+  are met. It has no iteration limit unless you ask Nia for one. It stops early to report a
+  blocker or ask for your input, and it stops when you interrupt it. The thread stays open.
 
 The approval card for a new task shows its mode, the folder it runs in, its runtime mode, its
 model, and the exact prompt the task will receive. If any of these change before the task

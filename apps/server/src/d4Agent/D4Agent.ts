@@ -438,6 +438,12 @@ const cachedHealth = (
 const REFERENCE_SCAN_LIMIT = 5000;
 // Characters of a finished task's answer shown in its completion line and given to Nia.
 const TASK_RESULT_EXCERPT = 600;
+const REPORTED_RUN_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "interrupted",
+  "cancelled",
+  "failed",
+]);
 const TASK_RESULT_FOLLOWUP = 4000;
 const REFERENCE_EVENT_TYPES = [
   "thread.created",
@@ -3843,7 +3849,8 @@ export const layer = Layer.effect(
                 .pipe(Effect.mapError(threadError));
               const completedRun = projection.runs.find((run) => run.id === shell.latestRunId);
               if (
-                completedRun?.status === "completed" &&
+                completedRun !== undefined &&
+                REPORTED_RUN_STATUSES.has(completedRun.status) &&
                 completedRun.completedAt !== null &&
                 (entry.reportedAt === null ||
                   DateTime.toEpochMillis(completedRun.completedAt) > Date.parse(entry.reportedAt))
@@ -3858,19 +3865,25 @@ export const layer = Layer.effect(
                   result.length > TASK_RESULT_EXCERPT
                     ? `${result.slice(0, TASK_RESULT_EXCERPT).trimEnd()}…`
                     : result;
-                // The worker's own verdict decides the label; a finished run alone is not success.
-                const outcome = parseTaskOutcome(result);
+                // The worker's own verdict decides the label; a finished run alone is not success,
+                // and a stopped run is labeled by how it ended whatever its last message says.
+                const runEnded = completedRun.status === "completed";
+                const outcome = runEnded ? parseTaskOutcome(result) : null;
                 const settleSingleTask = entry.mode === "single" && outcome === "completed";
                 const headline = `${
-                  outcome === "completed" || (outcome === null && entry.mode === undefined)
-                    ? "Completed"
-                    : outcome === "blocked"
-                      ? "Blocked"
-                      : outcome === "failed"
-                        ? "Failed"
-                        : outcome === "needs-input"
-                          ? "Needs input"
-                          : "Finished without a reported outcome"
+                  !runEnded
+                    ? completedRun.status === "failed"
+                      ? "Run failed"
+                      : "Interrupted"
+                    : outcome === "completed" || (outcome === null && entry.mode === undefined)
+                      ? "Completed"
+                      : outcome === "blocked"
+                        ? "Blocked"
+                        : outcome === "failed"
+                          ? "Failed"
+                          : outcome === "needs-input"
+                            ? "Needs input"
+                            : "Finished without a reported outcome"
                 }${settleSingleTask ? " and settled" : ""}: ${shell.title}.`;
                 const text = excerpt === "" ? headline : `${headline}\n${excerpt}`;
                 yield* store.update((value) => ({
@@ -3895,9 +3908,10 @@ export const layer = Layer.effect(
                   agentThreads: (value.agentThreads ?? []).map((record) =>
                     record.threadId === entry.threadId ? { ...record, reportedAt: at } : record,
                   ),
-                  // Nia judges the result on the next tick: report it or suggest repeating it.
+                  // Nia judges the result on the next tick: report it or suggest repeating it. A
+                  // stopped run is the user's or the runtime's call, so it gets no suggestion.
                   taskFollowups:
-                    result === ""
+                    result === "" || !runEnded
                       ? (value.taskFollowups ?? [])
                       : [
                           ...(value.taskFollowups ?? []).filter(

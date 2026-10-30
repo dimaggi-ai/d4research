@@ -2814,7 +2814,10 @@ const finishedTask = (
     return { f, threadId, archivedAt };
   });
 
-const singleTaskWithResult = (resultText: string) =>
+const singleTaskWithResult = (
+  resultText: string,
+  runStatus: "completed" | "interrupted" | "failed" = "completed",
+) =>
   Effect.gen(function* () {
     // Default settings: automatic archival is off.
     const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
@@ -2834,7 +2837,7 @@ const singleTaskWithResult = (resultText: string) =>
     yield* Ref.update(f.projection, (value) => ({
       ...value,
       thread: { ...task, lastVisitedAt: task.lastVisitedAt ?? null },
-      runs: [{ id: runId, status: "completed", completedAt: now }] as unknown as typeof value.runs,
+      runs: [{ id: runId, status: runStatus, completedAt: now }] as unknown as typeof value.runs,
       messages: [
         { id: "result", role: "assistant", runId, text: resultText, createdAt: now },
       ] as unknown as typeof value.messages,
@@ -2859,7 +2862,8 @@ const singleTaskWithResult = (resultText: string) =>
       line.links.some((link) => link.threadId === threadId),
     );
     const shell = (yield* Ref.get(f.shells)).find((entry) => entry.id === threadId)!;
-    return { dispatches: yield* Ref.get(f.dispatches), lines, shell };
+    const followups = (yield* Ref.get(f.state)).taskFollowups ?? [];
+    return { dispatches: yield* Ref.get(f.dispatches), lines, shell, followups };
   });
 
 it.effect("a single task settles after a verified completion and is not archived", () =>
@@ -2884,6 +2888,21 @@ it.effect("a single task without a verified completion stays in Working", () =>
     assert.isTrue(
       silent.lines[0]?.text.startsWith("Finished without a reported outcome: Fix the flaky test."),
     );
+  }),
+);
+
+it.effect("a stopped task run is reported by how it ended, never as its claimed outcome", () =>
+  Effect.gen(function* () {
+    const interrupted = yield* singleTaskWithResult(
+      "Halfway there.\nOutcome: completed",
+      "interrupted",
+    );
+    assert.notInclude(interrupted.dispatches, "thread.settle");
+    assert.isTrue(interrupted.lines[0]?.text.startsWith("Interrupted: Fix the flaky test."));
+    assert.deepEqual(interrupted.followups, []);
+    const failed = yield* singleTaskWithResult("Provider crashed.", "failed");
+    assert.notInclude(failed.dispatches, "thread.settle");
+    assert.isTrue(failed.lines[0]?.text.startsWith("Run failed: Fix the flaky test."));
   }),
 );
 

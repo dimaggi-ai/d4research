@@ -1,5 +1,4 @@
 import { d4ActionFailureMessage } from "@d4research/client-runtime/d4-agent-action-feedback";
-import { DEFAULT_D4_AGENT_LOOP_ITERATIONS } from "@d4research/contracts";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
@@ -651,10 +650,9 @@ function AgentActionRecord({
               <p className="text-xs text-muted-foreground">
                 Mode ·{" "}
                 {detail.data.launch.mode === "loop"
-                  ? `Loop until the completion criteria hold, at most ${
-                      (launchAction.type === "start" ? launchAction.maxIterations : undefined) ??
-                      DEFAULT_D4_AGENT_LOOP_ITERATIONS
-                    } iterations`
+                  ? launchAction.type === "start" && launchAction.maxIterations !== undefined
+                    ? `Loop until the completion criteria hold, within your budget of ${launchAction.maxIterations} iterations`
+                    : "Loop until the completion criteria hold"
                   : "Single task, settles after a verified completion"}
               </p>
               <p className="text-xs text-muted-foreground">

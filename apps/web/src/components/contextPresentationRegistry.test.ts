@@ -1,4 +1,4 @@
-import { COMPOSER_CONTEXT_KINDS } from "@t3tools/contracts";
+import { COMPOSER_CONTEXT_KINDS } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

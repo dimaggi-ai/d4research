@@ -1,4 +1,4 @@
-import type { ChatAttachment, EnvironmentId } from "@t3tools/contracts";
+import type { ChatAttachment, EnvironmentId } from "@d4research/contracts";
 import { Image } from "expo-image";
 import { Pressable, ScrollView, View } from "react-native";
 

@@ -4,11 +4,11 @@ import type {
   ProviderDriverKind,
   ProviderInteractionMode,
   RuntimeMode,
-} from "@t3tools/contracts";
-import { modelSelectionsEqual } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { modelSelectionsEqual } from "@d4research/shared/model";
 
-import type { ProviderContinuationIdentity } from "@t3tools/provider-core/server/driver";
-import type { ProviderSelectionTransitionPlan } from "@t3tools/provider-core/server/selectionTransition";
+import type { ProviderContinuationIdentity } from "@d4research/provider-core/server/driver";
+import type { ProviderSelectionTransitionPlan } from "@d4research/provider-core/server/selectionTransition";
 
 export type ProviderSessionTransition =
   | { readonly type: "reuse" }

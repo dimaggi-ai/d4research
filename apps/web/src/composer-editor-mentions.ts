@@ -1,10 +1,10 @@
-import type { AssistantCitation } from "@t3tools/contracts";
-import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import type { AssistantCitation } from "@d4research/contracts";
+import { collectAssistantCitations } from "@d4research/shared/assistantCitations";
+import { collectComposerContextReferences } from "@d4research/shared/composerContextReferences";
 import {
   collectComposerInlineTokens,
   type ComposerInlineToken,
-} from "@t3tools/shared/composerInlineTokens";
+} from "@d4research/shared/composerInlineTokens";
 
 export type ComposerPromptSegment =
   | {

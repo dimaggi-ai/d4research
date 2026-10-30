@@ -1,4 +1,4 @@
-import { EMPTY_V2_ITEM_SUPPORT } from "@t3tools/client-runtime/state/item-support";
+import { EMPTY_V2_ITEM_SUPPORT } from "@d4research/client-runtime/state/item-support";
 import {
   CheckpointId,
   CheckpointScopeId,
@@ -10,7 +10,7 @@ import {
   TurnItemId,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 

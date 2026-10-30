@@ -2,7 +2,7 @@
 // OSCrypt key derivation Chromium uses; Effect has no equivalent.
 import * as NodeCrypto from "node:crypto";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";

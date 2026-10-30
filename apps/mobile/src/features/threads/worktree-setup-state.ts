@@ -1,4 +1,4 @@
-import type { ThreadId, WorktreeSetupSnapshot } from "@t3tools/contracts";
+import type { ThreadId, WorktreeSetupSnapshot } from "@d4research/contracts";
 
 /** A subscription can close or replay an older value during the setup handoff. */
 export function resolveWorktreeSetupSnapshot(

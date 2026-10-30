@@ -1,8 +1,8 @@
-import { fileBasename } from "@t3tools/shared/path";
-import type { ThreadId } from "@t3tools/contracts";
+import { fileBasename } from "@d4research/shared/path";
+import type { ThreadId } from "@d4research/contracts";
 import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
 import type { MarkdownFileContextMenu } from "../../native/SelectableMarkdownText.types";
-import { hostPreviewMimeTypeFromExtension } from "@t3tools/shared/filePreview";
+import { hostPreviewMimeTypeFromExtension } from "@d4research/shared/filePreview";
 
 import {
   isAbsolutePath,

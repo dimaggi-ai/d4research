@@ -9,8 +9,8 @@ import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { sweepStalePendingAttachments } from "./attachmentStore.ts";
-import { DEFAULT_SIGNAL_EXPORT, type SignalExport } from "@t3tools/shared/observability";
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+import { DEFAULT_SIGNAL_EXPORT, type SignalExport } from "@d4research/shared/observability";
+import * as OtelEnvironment from "@d4research/shared/otelEnvironment";
 import packageJson from "../package.json" with { type: "json" };
 
 export const DEFAULT_PORT = 3773;

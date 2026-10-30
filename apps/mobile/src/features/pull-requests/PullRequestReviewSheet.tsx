@@ -1,8 +1,8 @@
 import { useAtomRefresh } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { PullRequestReviewVerdict } from "@t3tools/contracts";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { PullRequestReviewVerdict } from "@d4research/contracts";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Platform, Pressable, View } from "react-native";

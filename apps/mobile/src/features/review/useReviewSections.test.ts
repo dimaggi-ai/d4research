@@ -1,4 +1,4 @@
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+import type { ThreadCheckpointSummary } from "@d4research/client-runtime/state/thread-checkpoints";
 import {
   AuthFilesystemReadScope,
   CheckpointRef,
@@ -7,7 +7,7 @@ import {
   ThreadId,
   RunId,
   type AuthSessionState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
   checkpoints: [] as ReadonlyArray<ThreadCheckpointSummary>,
 }));
 
-vi.mock("@t3tools/client-runtime/state/thread-checkpoints", () => ({
+vi.mock("@d4research/client-runtime/state/thread-checkpoints", () => ({
   deriveThreadCheckpointSummaries: () => state.checkpoints,
 }));
 vi.mock("react", () => ({

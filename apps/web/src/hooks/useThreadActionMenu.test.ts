@@ -3,7 +3,7 @@ import {
   EnvironmentId,
   ThreadId,
   type ContextMenuItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 

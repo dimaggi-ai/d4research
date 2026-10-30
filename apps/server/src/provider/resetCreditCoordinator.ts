@@ -3,7 +3,7 @@
  * directory holding a provider's login share the credit, so their redemptions
  * must serialise on that directory, not the instance.
  */
-import type { ProviderConsumeResetCreditOutcome } from "@t3tools/contracts";
+import type { ProviderConsumeResetCreditOutcome } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

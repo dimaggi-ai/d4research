@@ -7,7 +7,7 @@ import {
 export {
   splitPullRequestBody,
   type PullRequestBodySegment,
-} from "@t3tools/client-runtime/pull-request-markdown";
+} from "@d4research/client-runtime/pull-request-markdown";
 
 const AUTOLINK_CANDIDATE_PATTERN = /#[1-9]\d*|[0-9a-f]{40}/giu;
 const AUTOLINK_WORD_CHARACTER_PATTERN = /[A-Za-z0-9_]/u;

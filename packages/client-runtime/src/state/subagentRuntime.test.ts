@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationV2Subagent, OrchestrationV2SubagentWorkflow } from "@t3tools/contracts";
+import type { OrchestrationV2Subagent, OrchestrationV2SubagentWorkflow } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { deriveWorkflowGroups, projectedSubagentsToRuntime } from "./subagentRuntime.ts";

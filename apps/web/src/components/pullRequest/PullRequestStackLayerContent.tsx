@@ -1,4 +1,4 @@
-import type { PullRequestStack } from "@t3tools/contracts";
+import type { PullRequestStack } from "@d4research/contracts";
 import { cn } from "~/lib/utils";
 import { resolvePullRequestState } from "./pullRequestPresentation";
 

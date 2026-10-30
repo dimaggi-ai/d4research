@@ -6,7 +6,7 @@ import {
   ProjectId,
   ThreadId,
   VcsProcessSpawnError,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

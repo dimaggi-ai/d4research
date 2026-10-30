@@ -46,7 +46,7 @@ export class PreviewPasskeys extends Context.Service<
     readonly installSessionHandlers: (session: Session) => void;
     readonly attachGuest: (guest: WebContents) => () => void;
   }
->()("@t3tools/desktop/preview/Passkeys/PreviewPasskeys") {}
+>()("@d4research/desktop/preview/Passkeys/PreviewPasskeys") {}
 
 const notAllowed: PasskeyCeremonyResult = { success: false, error: "NotAllowedError" };
 

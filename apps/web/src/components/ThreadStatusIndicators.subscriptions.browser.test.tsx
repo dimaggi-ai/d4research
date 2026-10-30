@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, type VcsStatusResult } from "@t3tools/contracts";
+import { ProjectId, ThreadId, type VcsStatusResult } from "@d4research/contracts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vite-plus/test";
@@ -51,7 +51,7 @@ vi.mock(import("../state/vcs"), async (original) => {
 vi.mock(import("../state/pullRequests"), async (importOriginal) => {
   const original = await importOriginal();
   const { AsyncResult, Atom } = await import("effect/reactivity");
-  const { ProjectId } = await import("@t3tools/contracts");
+  const { ProjectId } = await import("@d4research/contracts");
   const summaries = Atom.family((number: number) =>
     Atom.make(() => {
       state.queries.push(`pr:${number}`);

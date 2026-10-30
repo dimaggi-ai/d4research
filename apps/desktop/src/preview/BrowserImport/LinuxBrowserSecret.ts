@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 
 export const LinuxBrowserSecretPath = Context.Reference<string | undefined>(
-  "@t3tools/desktop/preview/BrowserImport/LinuxBrowserSecretPath",
+  "@d4research/desktop/preview/BrowserImport/LinuxBrowserSecretPath",
   { defaultValue: () => undefined },
 );
 

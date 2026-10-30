@@ -1,5 +1,5 @@
-import type { DeviceHubAccess } from "@t3tools/client-runtime/device/hub-access";
-import type { DevicePlatform } from "@t3tools/contracts";
+import type { DeviceHubAccess } from "@d4research/client-runtime/device/hub-access";
+import type { DevicePlatform } from "@d4research/contracts";
 
 export interface DeviceStreamConfiguration {
   readonly access: DeviceHubAccess;

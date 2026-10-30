@@ -5,7 +5,7 @@ import {
   type ProviderAuthState,
   type ProviderInstallState,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { userEvent } from "vite-plus/test/browser";

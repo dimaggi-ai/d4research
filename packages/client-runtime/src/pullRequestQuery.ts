@@ -1,4 +1,4 @@
-import type { PullRequestListFilters } from "@t3tools/contracts";
+import type { PullRequestListFilters } from "@d4research/contracts";
 
 const REVIEW_VALUES: Record<string, PullRequestListFilters["review"]> = {
   approved: "approved",

@@ -2,7 +2,7 @@ import {
   AuthOrchestrationOperateScope,
   EnvironmentId,
   type AuthSessionState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -19,7 +19,7 @@ vi.mock("@effect/atom-react", async () => {
   };
 });
 vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: {} }));
-vi.mock("@t3tools/client-runtime/state/session", () => ({
+vi.mock("@d4research/client-runtime/state/session", () => ({
   createEnvironmentSessionAtoms: () => ({
     sessionStateAtom: Atom.family((_id: EnvironmentId) =>
       Atom.make(AsyncResult.initial<AuthSessionState, Error>()).pipe(Atom.keepAlive),

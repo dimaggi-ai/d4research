@@ -1,4 +1,4 @@
-import { ORCHESTRATION_V2_WS_METHODS, type ThreadId } from "@t3tools/contracts";
+import { ORCHESTRATION_V2_WS_METHODS, type ThreadId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";

@@ -1,4 +1,4 @@
-import { listLoginShellCandidates, setWindowsPath } from "@t3tools/shared/shell";
+import { listLoginShellCandidates, setWindowsPath } from "@d4research/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -67,7 +67,7 @@ export class DesktopShellEnvironment extends Context.Service<
     // Reuses the installation result; false leaves server hydration enabled.
     readonly installIntoProcess: Effect.Effect<boolean>;
   }
->()("@t3tools/desktop/shell/DesktopShellEnvironment") {}
+>()("@d4research/desktop/shell/DesktopShellEnvironment") {}
 
 const LOGIN_SHELL_ENV_NAMES = [
   "PATH",

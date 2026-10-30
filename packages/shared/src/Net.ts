@@ -39,7 +39,7 @@ export interface NetServiceShape {
 }
 
 export class NetService extends Context.Service<NetService, NetServiceShape>()(
-  "@t3tools/shared/Net/NetService",
+  "@d4research/shared/Net/NetService",
 ) {}
 
 /** @public Service construction is part of the canonical Effect module API. */

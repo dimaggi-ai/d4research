@@ -1,6 +1,6 @@
 import { act, useEffect, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vite-plus/test";
 
 const accessStore = {

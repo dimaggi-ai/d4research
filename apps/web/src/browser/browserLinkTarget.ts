@@ -1,4 +1,4 @@
-import type { BrowserLinkTarget, ScopedThreadRef } from "@t3tools/contracts";
+import type { BrowserLinkTarget, ScopedThreadRef } from "@d4research/contracts";
 
 import { ensureClientSettingsHydrated, getClientSettings } from "~/hooks/useSettings";
 import { isPreviewAvailableFor } from "./previewRuntime";

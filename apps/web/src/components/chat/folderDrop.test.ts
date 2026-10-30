@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 
 const environmentId = EnvironmentId.make("environment-1");

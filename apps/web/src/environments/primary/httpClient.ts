@@ -1,4 +1,4 @@
-import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
+import { makeEnvironmentHttpApiClient } from "@d4research/client-runtime/rpc";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -16,7 +16,7 @@ export interface PrimaryEnvironmentHttpClient {
 export const PrimaryEnvironmentHttpClient: Context.Service<
   PrimaryEnvironmentHttpClient,
   PrimaryEnvironmentHttpApiClient
-> = Context.Service("@t3tools/web/environments/primary/httpClient/PrimaryEnvironmentHttpClient");
+> = Context.Service("@d4research/web/environments/primary/httpClient/PrimaryEnvironmentHttpClient");
 
 const make = Effect.suspend(() =>
   makeEnvironmentHttpApiClient(resolvePrimaryEnvironmentHttpUrl("/")),

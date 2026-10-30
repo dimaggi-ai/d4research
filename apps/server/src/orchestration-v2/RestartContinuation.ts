@@ -1,5 +1,5 @@
-import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import {
   CommandId,
   latestProviderTurnForAttempt,
@@ -7,7 +7,7 @@ import {
   type OrchestrationV2Run,
   type RunId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";

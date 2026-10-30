@@ -2,7 +2,7 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   type DesktopCaptureConfigPreview,
   type DesktopSnapShotState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { userEvent } from "vite-plus/test/browser";

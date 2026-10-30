@@ -1,8 +1,8 @@
-import type { ComposerContextRecord } from "@t3tools/contracts";
+import type { ComposerContextRecord } from "@d4research/contracts";
 import { contextChipPresentation } from "./composerChipPresentation";
 import type { MarkdownFileIcon } from "./markdownLinks";
 import type { SelectableMarkdownSkill } from "../native/SelectableMarkdownText.types";
-import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
+import { parseComposerContextHref } from "@d4research/shared/composerContextReferences";
 
 const CONTEXT_ICONS: Readonly<Record<string, MarkdownFileIcon>> = {
   photo: "image",

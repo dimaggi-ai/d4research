@@ -113,9 +113,9 @@ A provider lives in its own `packages/provider-<name>` package, with
   `./server` exports the `ProviderDriver` and its adapter driver. `./testing` exposes internals
   the server's replay testkits drive; testkits that need the orchestrator stay in the server.
   Settings live in `providerInstances`; new providers are off by default.
-- **Package boundaries.** Server code imports only `@t3tools/provider-core/server/*`, contracts,
+- **Package boundaries.** Server code imports only `@d4research/provider-core/server/*`, contracts,
   and shared. It reaches the server through `ProviderHost` (paths, settings, background demand,
-  attachments, stored credentials), never through `apps/server`. Tests use `@t3tools/provider-testing`.
+  attachments, stored credentials), never through `apps/server`. Tests use `@d4research/provider-testing`.
 - **Server registration:** the driver's entry in
   [`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts) and the adapter driver's in
   [`builtInProviderAdapterDrivers.ts`](../../apps/server/src/orchestration-v2/builtInProviderAdapterDrivers.ts).

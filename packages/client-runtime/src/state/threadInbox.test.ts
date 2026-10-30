@@ -1,4 +1,4 @@
-import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createInboxReturnTracker, sortWorkingThreadsBySend } from "./threadInbox.ts";

@@ -1,5 +1,5 @@
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { truncate } from "@t3tools/shared/String";
+import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
+import { truncate } from "@d4research/shared/String";
 
 export interface ThreadTitleSeedInput {
   readonly text: string;

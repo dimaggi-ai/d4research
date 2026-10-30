@@ -1,8 +1,8 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestAction } from "@t3tools/contracts";
+import { executeAtomQuery, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { EnvironmentId, PullRequestAction } from "@d4research/contracts";
 import * as Clipboard from "expo-clipboard";
 import { Atom } from "effect/reactivity";
 import { use, useCallback, useMemo, useRef, useState } from "react";

@@ -57,7 +57,7 @@ export class CursorSdk extends Context.Service<
     readonly createAgentPlatform: typeof createAgentPlatform;
     readonly SqliteLocalAgentStore: typeof SqliteLocalAgentStore;
   }
->()("@t3tools/provider-cursor/server/CursorSdk") {}
+>()("@d4research/provider-cursor/server/CursorSdk") {}
 
 /** Provide once per process: a second guard would defer to the first and swallow real rejections. */
 export const layer = Layer.effect(

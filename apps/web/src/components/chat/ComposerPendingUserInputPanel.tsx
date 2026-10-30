@@ -1,4 +1,4 @@
-import { type RuntimeRequestId, type ScopedThreadRef } from "@t3tools/contracts";
+import { type RuntimeRequestId, type ScopedThreadRef } from "@d4research/contracts";
 import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { type PendingUserInput } from "../../session-logic";

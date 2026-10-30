@@ -1,5 +1,5 @@
 import * as Dialog from "./ui/Dialog";
-import type { ComposerContextRecord, EnvironmentId } from "@t3tools/contracts";
+import type { ComposerContextRecord, EnvironmentId } from "@d4research/contracts";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { useEffect, useId, useMemo, useState } from "react";

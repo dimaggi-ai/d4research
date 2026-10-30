@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-import { PullRequestReviewGuide, ThreadPullRequestKey } from "@t3tools/contracts";
+import { PullRequestReviewGuide, ThreadPullRequestKey } from "@d4research/contracts";
 
 import {
   PersistenceDecodeError,

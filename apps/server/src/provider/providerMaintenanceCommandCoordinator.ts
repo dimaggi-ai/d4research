@@ -1,4 +1,4 @@
-import * as KeyedLock from "@t3tools/shared/KeyedLock";
+import * as KeyedLock from "@d4research/shared/KeyedLock";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 

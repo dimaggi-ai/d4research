@@ -1,6 +1,6 @@
-import { findThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
+import { findThreadSearchOccurrences } from "@d4research/shared/threadSearch";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { THREAD_FIND_BLOCK_TAGS } from "@t3tools/shared/threadFindText";
+import { THREAD_FIND_BLOCK_TAGS } from "@d4research/shared/threadFindText";
 
 const THREAD_FIND_HIGHLIGHT_NAME = "t3-thread-find";
 const THREAD_FIND_ACTIVE_HIGHLIGHT_NAME = "t3-thread-find-active";

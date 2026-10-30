@@ -15,7 +15,7 @@ import {
   type DevicePlatform,
   type DeviceSettings,
   type DeviceTextSize,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

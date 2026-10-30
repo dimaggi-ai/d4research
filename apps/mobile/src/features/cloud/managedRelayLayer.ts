@@ -1,5 +1,5 @@
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
-import { RelayMobileClientId } from "@t3tools/contracts/relay";
+import { ManagedRelay } from "@d4research/client-runtime/relay";
+import { RelayMobileClientId } from "@d4research/contracts/relay";
 import * as Cache from "effect/Cache";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";

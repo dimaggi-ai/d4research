@@ -1,6 +1,6 @@
-import type { ArchivedSnapshotEntry } from "@t3tools/client-runtime/state/threads";
-import type { OrchestrationProjectShell, OrchestrationV2ThreadShell } from "@t3tools/contracts";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ArchivedSnapshotEntry } from "@d4research/client-runtime/state/threads";
+import type { OrchestrationProjectShell, OrchestrationV2ThreadShell } from "@d4research/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as DateTime from "effect/DateTime";
 

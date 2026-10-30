@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import { ProviderInstanceId, type ModelSelection } from "@d4research/contracts";
 
 import { compileClaudeModelSelection } from "./claudeModelOptions.ts";
 

@@ -1,4 +1,4 @@
-import type { DeviceServiceState } from "@t3tools/contracts";
+import type { DeviceServiceState } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { deviceHubReadiness, platformSetupStatus } from "./DeviceSetup";

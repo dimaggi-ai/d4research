@@ -6,14 +6,14 @@ import type {
   ScheduledTask,
   ScheduledTaskUpsertSchedule,
   ScheduledTaskWebhookSignature,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
-import { parseMaxDeliveryAge } from "@t3tools/client-runtime/scheduled-task-webhook";
+import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
+import { parseMaxDeliveryAge } from "@d4research/client-runtime/scheduled-task-webhook";
 import {
   resolveProjectSettings,
   type LegacyProjectSettingsFields,
-} from "@t3tools/shared/projectSettings";
+} from "@d4research/shared/projectSettings";
 import {
   buildModelOptions,
   resolveDefaultableModelSelection,

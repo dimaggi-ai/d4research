@@ -1,11 +1,11 @@
 import {
   downscalableImageMimeType,
   fitImageAttachmentSize,
-} from "@t3tools/client-runtime/image-attachment-size";
+} from "@d4research/client-runtime/image-attachment-size";
 import {
   IMAGE_DIMENSIONS_HEADER_BYTES,
   readImageDimensions,
-} from "@t3tools/shared/imageDimensions";
+} from "@d4research/shared/imageDimensions";
 
 const PHOTO_JPEG_QUALITY = 0.85;
 

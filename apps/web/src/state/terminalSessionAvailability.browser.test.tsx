@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId, type TerminalSummary } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type TerminalSummary } from "@d4research/contracts";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";

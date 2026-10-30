@@ -1,5 +1,5 @@
-import { pullRequestHostOf, type RepositoryIdentity } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { pullRequestHostOf, type RepositoryIdentity } from "@d4research/contracts";
+import { parseChangeRequestUrl } from "@d4research/shared/changeRequestUrl";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 

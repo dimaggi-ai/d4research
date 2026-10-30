@@ -4,7 +4,7 @@ import {
   type DesktopAppActivationFailure,
   type DesktopAppActivationRequest,
   type DesktopAppActivationResponse,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 interface PendingActivation {
   readonly request: DesktopAppActivationRequest;

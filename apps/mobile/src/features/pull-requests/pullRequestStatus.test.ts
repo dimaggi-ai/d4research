@@ -1,4 +1,4 @@
-import type { PullRequestActivity, PullRequestCheck, PullRequestComment } from "@t3tools/contracts";
+import type { PullRequestActivity, PullRequestCheck, PullRequestComment } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   pullRequestChecksSummary,

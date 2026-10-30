@@ -4,9 +4,9 @@ import * as NodeURL from "node:url";
 
 const RESTRICTED_IMPORT_PATHS = [
   {
-    name: "@t3tools/client-runtime",
+    name: "@d4research/client-runtime",
     message:
-      "Import from an explicit @t3tools/client-runtime/* subpath. The package has no root export.",
+      "Import from an explicit @d4research/client-runtime/* subpath. The package has no root export.",
   },
   {
     name: "@pierre/diffs/react",

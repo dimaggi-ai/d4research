@@ -5,7 +5,7 @@ import {
   ProjectMonogramText,
   type ProjectIconColor,
   type ProjectIconOverride,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { createElement, useEffect, useRef, useState } from "react";
 import {
   filterProjectIconNames,

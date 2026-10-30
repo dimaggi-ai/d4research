@@ -1,4 +1,4 @@
-import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
+import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@d4research/contracts";
 
 export type PullRequestAgentTask = "ask" | "explain" | "feedback" | "conflicts" | "watch";
 

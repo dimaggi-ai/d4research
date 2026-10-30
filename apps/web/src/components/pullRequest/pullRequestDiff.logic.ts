@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { PullRequestDiffSide } from "@t3tools/contracts";
+import type { PullRequestDiffSide } from "@d4research/contracts";
 
 /**
  * A thread naming a file is not the same as a thread the diff can show: its line may have moved

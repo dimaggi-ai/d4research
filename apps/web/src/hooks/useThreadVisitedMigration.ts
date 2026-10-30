@@ -1,6 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { scopeThreadRef, scopedThreadKey } from "@d4research/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import { useContext, useEffect, useEffectEvent } from "react";
 
 import { environmentThreadShells, threadEnvironment } from "../state/threads";

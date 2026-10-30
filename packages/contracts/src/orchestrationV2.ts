@@ -3080,7 +3080,7 @@ export type OrchestrationV2SubscribeCommandOutputInput =
  * fell behind); `append` extends it. Text is terminal output, not display
  * text: `replace` carries the cleaned tail plus the cursor and style escapes
  * needed to resume, and `append` carries raw chunks. Clients must feed both
- * through `appendTerminalOutput` from `@t3tools/shared/terminalOutput`.
+ * through `appendTerminalOutput` from `@d4research/shared/terminalOutput`.
  * The stream ends after a frame with `running: false`.
  */
 export const OrchestrationV2CommandOutputFrame = Schema.Struct({

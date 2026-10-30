@@ -18,7 +18,7 @@ export const DesktopBackendBootstrap = Schema.Struct({
   // Present when the desktop rotates the renderer's bootstrap token: the
   // backend derives the accepted tokens from this secret instead of trusting
   // `desktopBootstrapToken` for its whole run. See
-  // `@t3tools/shared/desktopBootstrapToken`.
+  // `@d4research/shared/desktopBootstrapToken`.
   desktopBootstrapSecret: Schema.optionalKey(Schema.String),
   // Set only when the desktop already merged the user's shell environment into
   // the environment it hands this backend. Absent means the backend hydrates

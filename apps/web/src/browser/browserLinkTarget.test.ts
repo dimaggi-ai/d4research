@@ -1,4 +1,4 @@
-import type { BrowserLinkTarget } from "@t3tools/contracts";
+import type { BrowserLinkTarget } from "@d4research/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { ensureClientSettingsHydrated } from "~/hooks/useSettings";

@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeTty from "node:tty";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 /**
  * Whether this process is the desktop app's `t3.cmd` running the CLI in a

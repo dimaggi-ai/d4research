@@ -1,6 +1,6 @@
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { collectComposerContextReferences } from "@d4research/shared/composerContextReferences";
 import { terminalContextRecord } from "./composerContextRecords";
 
 import {

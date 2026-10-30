@@ -1,4 +1,4 @@
-import { type ProjectMutation } from "@t3tools/contracts";
+import { type ProjectMutation } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 
 import { type ProjectService } from "./ProjectService.ts";

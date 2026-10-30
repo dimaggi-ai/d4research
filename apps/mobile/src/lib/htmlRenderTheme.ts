@@ -1,4 +1,4 @@
-import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@t3tools/shared/htmlRender";
+import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@d4research/shared/htmlRender";
 
 import {
   DEFAULT_MOBILE_THEME_ID,

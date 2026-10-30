@@ -4,7 +4,7 @@ import type {
   PullRequestComment,
   PullRequestDetail,
   ThreadPullRequestWatch,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /**
  * Wakes in a row that bring only comments. Check, conflict, or push news resets the count, so

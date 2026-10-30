@@ -1,10 +1,10 @@
-import { createAttachmentEnvironmentAtoms } from "@t3tools/client-runtime/state/attachments";
-import type { AtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { createAttachmentEnvironmentAtoms } from "@d4research/client-runtime/state/attachments";
+import type { AtomCommand } from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   EnvironmentAuthorizationError,
   type EnvironmentId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 

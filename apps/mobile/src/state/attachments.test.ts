@@ -2,8 +2,8 @@ import {
   AuthOrchestrationOperateScope,
   EnvironmentAuthorizationError,
   EnvironmentId,
-} from "@t3tools/contracts";
-import { runAttachmentUploadCycle } from "@t3tools/client-runtime/state/attachments";
+} from "@d4research/contracts";
+import { runAttachmentUploadCycle } from "@d4research/client-runtime/state/attachments";
 import * as Cause from "effect/Cause";
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -18,8 +18,8 @@ vi.mock("./session", () => ({
   readEnvironmentScope: (environmentId: string, scope: string) =>
     scope === AuthOrchestrationOperateScope && state.grantedEnvironments.has(environmentId),
 }));
-vi.mock("@t3tools/client-runtime/state/attachments", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/attachments")>()),
+vi.mock("@d4research/client-runtime/state/attachments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@d4research/client-runtime/state/attachments")>()),
   createAttachmentEnvironmentAtoms: () => ({
     createUploadUrl: { label: "create", run: state.create },
     remove: { label: "remove", run: state.remove },

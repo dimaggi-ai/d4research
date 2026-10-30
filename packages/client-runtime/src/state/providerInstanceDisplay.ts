@@ -3,7 +3,7 @@ import {
   PROVIDER_DISPLAY_NAMES,
   type ProviderDriverKind,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 function humanizeSlug(slug: string): string {
   return slug

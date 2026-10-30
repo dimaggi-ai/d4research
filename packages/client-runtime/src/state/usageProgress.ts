@@ -1,4 +1,4 @@
-import type { UsageProviderKind, UsageSummary } from "@t3tools/contracts";
+import type { UsageProviderKind, UsageSummary } from "@d4research/contracts";
 
 interface UsageProgressEnvironment {
   readonly label: string;

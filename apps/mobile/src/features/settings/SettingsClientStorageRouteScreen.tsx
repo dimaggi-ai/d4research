@@ -2,7 +2,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { type EnvironmentMachineKind, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { type EnvironmentMachineKind, resolveEnvironmentMachineKind } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";

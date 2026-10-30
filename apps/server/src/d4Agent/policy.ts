@@ -1,3 +1,4 @@
+import { D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 import * as DateTime from "effect/DateTime";
 import {
   canStartProviderTurn,
@@ -13,8 +14,7 @@ import {
 } from "@d4research/contracts";
 import type { ThreadLaunchWorkspaceStrategy } from "../orchestration-v2/ThreadLaunchService.ts";
 
-import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
-export { D4_AGENT_PREFIX, D4_AGENT_TOOLS };
+export { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 
 export function modelAvailability(
   settings: D4AgentSettings,

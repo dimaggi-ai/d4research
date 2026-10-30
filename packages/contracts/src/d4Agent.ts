@@ -17,11 +17,13 @@ export const D4AgentPermissionMode = Schema.Literals(["read-only", "ask", "act"]
 export const D4_BRAIN_CONTEXTS = ["Global", "Personal", "YB", "Dimaggi"] as const;
 export const D4BrainContext = Schema.Literals(D4_BRAIN_CONTEXTS);
 export type D4BrainContext = typeof D4BrainContext.Type;
-// These adapters enforce Nia's MCP-only tool boundary. OpenCode fails closed outside its verified Linux 1.19.3 runtime.
+// These adapters enforce Nia's MCP-only tool boundary and disable built-in tools. OpenCode fails
+// closed outside its verified Linux 1.19.3 runtime.
 export const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = [
   "codex",
   "claudeAgent",
   "opencode",
+  "deepseek",
 ];
 // A fresh install has no local model, so Nia starts on the bundled Claude instance.
 export const DEFAULT_D4_AGENT_MODEL_SELECTION = {

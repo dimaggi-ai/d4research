@@ -23,6 +23,10 @@
       "types": "./src/server/collectStreamText.ts",
       "import": "./src/server/collectStreamText.ts"
     },
+    "./server/d4AgentPolicy": {
+      "types": "./src/server/d4AgentPolicy.ts",
+      "import": "./src/server/d4AgentPolicy.ts"
+    },
     "./server/driver": {
       "types": "./src/server/driver.ts",
       "import": "./src/server/driver.ts"
@@ -182,10 +186,6 @@
     "./server/usageLimits": {
       "types": "./src/server/usageLimits.ts",
       "import": "./src/server/usageLimits.ts"
-    },
-    "./server/d4AgentPolicy": {
-      "types": "./src/server/d4AgentPolicy.ts",
-      "import": "./src/server/d4AgentPolicy.ts"
     }
   },
   "scripts": {

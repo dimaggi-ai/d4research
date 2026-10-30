@@ -1619,7 +1619,7 @@ it.effect(
             instanceId: ProviderInstanceId.make("deepseek"),
             driver: ProviderDriverKind.make("deepseek"),
             available: true,
-            canRunD4Agent: false,
+            canRunD4Agent: true,
             models: [
               {
                 slug: "deepseek-local",

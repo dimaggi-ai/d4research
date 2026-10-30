@@ -151,17 +151,16 @@ describe("d4 Agent policies", () => {
     );
   });
   it("refuses providers whose native tool isolation is unsupported", () => {
-    for (const driver of ["cursor", "grok", "antigravity", "agy", "deepseek"])
+    for (const driver of ["cursor", "grok", "antigravity", "agy"])
       assert.equal(
         modelAvailability(settings, [{ ...provider, driver: ProviderDriverKind.make(driver) }]),
         "sandbox-unavailable",
       );
-    for (const driver of ["claudeAgent", "opencode"]) {
+    for (const driver of ["claudeAgent", "opencode", "deepseek"])
       assert.equal(
         modelAvailability(settings, [{ ...provider, driver: ProviderDriverKind.make(driver) }]),
         null,
       );
-    }
   });
   it("digest excludes titles, content, and its own conversation", () => {
     const report = {

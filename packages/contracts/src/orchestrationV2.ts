@@ -835,6 +835,24 @@ export const OrchestrationV2PendingBackgroundTask = kindUnionWithFallback(
 export type OrchestrationV2PendingBackgroundTask = typeof OrchestrationV2PendingBackgroundTask.Type;
 
 export const OrchestrationV2ProviderThreadNativeMetadata = Schema.Struct({
+  deepSeekNiaHistory: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        role: Schema.Literals(["user", "assistant", "tool"]),
+        content: Schema.NullOr(Schema.String),
+        tool_call_id: Schema.optional(Schema.String),
+        tool_calls: Schema.optional(
+          Schema.Array(
+            Schema.Struct({
+              id: Schema.String,
+              type: Schema.Literal("function"),
+              function: Schema.Struct({ name: Schema.String, arguments: Schema.String }),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
   modelSelection: Schema.optional(ModelSelection),
   title: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   updatedAt: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),

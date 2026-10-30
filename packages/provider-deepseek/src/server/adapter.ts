@@ -74,6 +74,11 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                 driver: DRIVER,
                 providerSessionId: sessionInput.providerSessionId,
               });
+            // MCP credential IDs and orchestration session IDs belong to separate namespaces.
+            // Bind this runtime to the credential prepared before openSession, not a later replacement.
+            const sessionRegistration = mcpSessions
+              ? yield* mcpSessions.read(sessionInput.threadId)
+              : undefined;
             const scope = yield* Effect.scope;
             const queue = yield* Effect.acquireRelease(
               Queue.unbounded<Adapter.ProviderAdapterV2Event>(),
@@ -478,7 +483,13 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                             if (
                               !registration ||
                               registration.providerInstanceId !== instanceId ||
-                              registration.providerSessionId !== sessionInput.providerSessionId
+                              registration.threadId !== sessionInput.threadId ||
+                              input.threadId !== sessionInput.threadId ||
+                              input.providerThread.providerInstanceId !== instanceId ||
+                              input.providerThread.providerSessionId !==
+                                sessionInput.providerSessionId ||
+                              registration.providerSessionId !==
+                                sessionRegistration?.providerSessionId
                             )
                               throw new DeepSeekRequestError({ category: "configuration" });
                             return runNiaTurn(

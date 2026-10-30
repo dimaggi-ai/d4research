@@ -45,6 +45,9 @@ import { probeDeepSeek } from "./health.ts";
 const config = Schema.decodeSync(DeepSeekSettings)({});
 const instanceId = ProviderInstanceId.make("deepseek-test");
 const threadId = ThreadId.make("deepseek-thread");
+const providerSessionId = ProviderSessionId.make(
+  `provider-session:${instanceId}:thread:${threadId}:9a731222-c053-4b87-a108-658f7f0292d8`,
+);
 const selection = { instanceId, model: config.model };
 const policy = {
   runtimeMode: "approval-required" as const,
@@ -85,7 +88,7 @@ const open = (
     }).pipe(Effect.provide(host));
     const runtime = yield* adapter.openSession({
       threadId,
-      providerSessionId: ProviderSessionId.make("deepseek-session"),
+      providerSessionId,
       modelSelection: selection,
       runtimePolicy: options.policy ?? policy,
     });
@@ -121,12 +124,12 @@ const open = (
       lastVisitedAt: null,
       deletedAt: null,
     };
-    const start = (ordinal: number, text = "Hello") =>
+    const start = (ordinal: number, text = "Hello", turnProviderThread = providerThread) =>
       runtime.startTurn({
         ...(options.appContext ? { appContext: options.appContext } : {}),
         appThread,
         threadId,
-        providerThread,
+        providerThread: turnProviderThread,
         runId: RunId.make(`run-${ordinal}`),
         runOrdinal: ordinal,
         providerTurnOrdinal: ordinal,
@@ -462,7 +465,7 @@ const niaRegistration = {
   environmentId: EnvironmentId.make("test-env"),
   threadId,
   providerInstanceId: instanceId,
-  providerSessionId: "deepseek-session",
+  providerSessionId: "ab43911a-d9fa-4a61-b62e-f923a80ca132",
   endpoint: mcpEndpoint,
   authorizationHeader: "Bearer test-secret",
   browserToolsAvailable: false,
@@ -627,6 +630,68 @@ describe("Nia DeepSeek adapter", () => {
         Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
         Effect.scoped,
       ),
+  );
+
+  it.effect.each(["session", "instance"] as const)(
+    "rejects a provider thread belonging to another orchestration %s",
+    (binding) =>
+      Effect.gen(function* () {
+        const server = mockNiaFetch();
+        const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+        yield* test.start(1, "Hello", {
+          ...test.providerThread,
+          ...(binding === "session"
+            ? {
+                providerSessionId: ProviderSessionId.make(
+                  `provider-session:${instanceId}:thread:${threadId}:67bab0bc-8b50-488f-b0ef-249953cab281`,
+                ),
+              }
+            : { providerInstanceId: ProviderInstanceId.make("another-instance") }),
+        });
+        const events = yield* test.takeTurn;
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "failed");
+        assert.equal(
+          events.find((event) => event.type === "turn.terminal")?.failure?.code,
+          "configuration",
+        );
+        assert.equal(server.modelRequests.length, 0);
+        assert.equal(server.toolCalls.length, 0);
+      }).pipe(
+        Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect.each(["instance", "thread", "credential"] as const)(
+    "rejects a registered MCP %s replacement after opening a Nia session",
+    (replacement) =>
+      Effect.gen(function* () {
+        const fetch = vi.fn(() => Promise.reject(new Error("Unexpected request")));
+        vi.stubGlobal("fetch", fetch);
+        let current = niaRegistration;
+        const test = yield* open(reply(completion("unused")), { policy: niaPolicy }).pipe(
+          Effect.provideService(McpProviderSessions.McpProviderSessions, {
+            ...mcpService(),
+            read: () => Effect.sync(() => current),
+          }),
+        );
+        current = {
+          ...niaRegistration,
+          ...(replacement === "instance"
+            ? { providerInstanceId: ProviderInstanceId.make("another-instance") }
+            : replacement === "thread"
+              ? { threadId: ThreadId.make("another-thread") }
+              : { providerSessionId: "6d3977c9-3945-481c-8c9b-7118d7fbff31" }),
+        };
+        yield* test.start(1);
+        const events = yield* test.takeTurn;
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "failed");
+        assert.equal(
+          events.find((event) => event.type === "turn.terminal")?.failure?.code,
+          "configuration",
+        );
+        assert.equal(fetch.mock.calls.length, 0);
+      }).pipe(Effect.scoped),
   );
 
   it.effect.each([false, true])(

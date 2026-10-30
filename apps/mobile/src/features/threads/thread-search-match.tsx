@@ -1,5 +1,5 @@
-import { findSearchTokenRanges, splitSearchText } from "@t3tools/shared/paletteSearch";
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
+import { findSearchTokenRanges, splitSearchText } from "@d4research/shared/paletteSearch";
+import type { EnvironmentThreadSearchMatch } from "@d4research/client-runtime/state/thread-search";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";

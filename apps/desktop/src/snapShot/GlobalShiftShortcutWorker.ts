@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off -- A plain Node child; the poll runs outside any Effect fiber.
-import { SNAP_SHOT_MODIFIERS, type SnapShotModifier } from "@t3tools/contracts";
+import { SNAP_SHOT_MODIFIERS, type SnapShotModifier } from "@d4research/contracts";
 
 import { loadWindowsForegroundApi } from "../electron/WindowsForeground.ts";
 import { WINDOWS_MODIFIER_PAIR_VIRTUAL_KEYS } from "./snapShot.ts";

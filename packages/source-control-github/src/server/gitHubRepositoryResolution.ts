@@ -1,6 +1,6 @@
-import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
-import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
+import { normalizeGitRemoteUrl } from "@d4research/shared/git";
+import { isSshRemoteUrl } from "@d4research/shared/sourceControl";
+import { parseGitRemoteHost } from "@d4research/source-control-core/shared/definition";
 import { definition } from "../shared/definition.ts";
 import { isGitHubHost } from "./GitHubCredentials.ts";
 

@@ -1,5 +1,5 @@
 import { Button } from "../../components/ui/Button";
-import deviceStreamScript from "@t3tools/mobile-device-stream";
+import deviceStreamScript from "@d4research/mobile-device-stream";
 import {
   useEffectEvent,
   useImperativeHandle,
@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
-import type { DeviceStreamStatus } from "@t3tools/client-runtime/device/stream";
+import type { DeviceStreamStatus } from "@d4research/client-runtime/device/stream";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";

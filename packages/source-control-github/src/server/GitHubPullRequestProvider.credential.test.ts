@@ -4,8 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
+import * as TestSourceControlHost from "@d4research/source-control-testing/TestSourceControlHost";
 
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubPullRequestApi from "./GitHubPullRequestApi.ts";

@@ -1,13 +1,13 @@
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Struct from "effect/Struct";
-import { ProjectSearchCodeError } from "@t3tools/contracts";
+import { ProjectSearchCodeError } from "@d4research/contracts";
 import * as ProjectMemory from "./project/ProjectMemory.ts";
 import { ResumableSessionDiscovery } from "./sessions/ResumableSessionDiscovery.ts";
 import * as AccountLimitsService from "./usage/AccountLimitsService.ts";
 import { UsageLimitHistory } from "./usage/UsageLimitHistory.ts";
-import { ProjectDeleteEntryError } from "@t3tools/contracts";
+import { ProjectDeleteEntryError } from "@d4research/contracts";
 import * as ThreadWorkspaces from "./workspace/ThreadWorkspaces.ts";
-import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import { OrchestrationDispatchCommandError } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
@@ -108,7 +108,7 @@ import {
   type PullRequestRef,
   WS_METHODS,
   WsRpcGroup,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   HttpRouter,
   HttpServerRequest,
@@ -129,7 +129,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
@@ -172,18 +172,18 @@ import {
   projectDomainEventForWire,
   projectThreadProjectionForWire,
 } from "./orchestration-v2/WireProjection.ts";
-import { dedupeSnapshotBodies } from "@t3tools/shared/orchestrationV2DedupedBodies";
+import { dedupeSnapshotBodies } from "@d4research/shared/orchestrationV2DedupedBodies";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
-import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
-import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
+import * as AcpRegistrySupport from "@d4research/provider-acp-registry/server/AcpRegistrySupport";
+import * as AcpRegistryRuntimeCoordinator from "@d4research/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ModelManifest from "./provider/ModelManifest.ts";
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import { latestProviderVersionCacheKeys } from "@t3tools/provider-core/server/maintenanceResolver";
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import { latestProviderVersionCacheKeys } from "@d4research/provider-core/server/maintenanceResolver";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
@@ -271,12 +271,12 @@ import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 
-import * as RelayClient from "@t3tools/shared/relayClient";
-import { isTelemetryIdHash } from "@t3tools/shared/telemetryId";
+import * as RelayClient from "@d4research/shared/relayClient";
+import { isTelemetryIdHash } from "@d4research/shared/telemetryId";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";

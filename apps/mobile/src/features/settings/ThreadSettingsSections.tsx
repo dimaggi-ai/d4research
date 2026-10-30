@@ -1,5 +1,5 @@
 import { Button } from "../../components/ui/Button";
-import { AuthSettingsWriteScope, type ServerSettingsPatch } from "@t3tools/contracts";
+import { AuthSettingsWriteScope, type ServerSettingsPatch } from "@d4research/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -8,8 +8,8 @@ import { AsyncResult } from "effect/reactivity";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
-import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
+import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
+import { supportsSharedSettingsSync } from "@d4research/client-runtime/state/shared-settings";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useEnvironments } from "../../state/environments";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";

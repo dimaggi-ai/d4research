@@ -1,4 +1,4 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
+import { normalizeHost } from "@d4research/source-control-core/server/pullRequestUtils";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -9,9 +9,9 @@ import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
+import { readSourceControlHostSettings } from "@d4research/source-control-core/shared/definition";
 
 import * as GitCafeClient from "../shared/definition.ts";
 
@@ -65,7 +65,7 @@ export class GitCafeCredentials extends Context.Service<
     readonly invalidate: (host: string) => Effect.Effect<void>;
     readonly cliEnv: (host: string) => Effect.Effect<Readonly<Record<string, string>>>;
   }
->()("@t3tools/source-control-gitcafe/server/GitCafeCredentials") {}
+>()("@d4research/source-control-gitcafe/server/GitCafeCredentials") {}
 
 const DEFAULT_HOST = "git.cafe";
 

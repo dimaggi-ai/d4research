@@ -16,10 +16,10 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { EDITORS } from "@t3tools/contracts";
-import { resolveEditorCommand } from "@t3tools/shared/editor";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import { EDITORS } from "@d4research/contracts";
+import { resolveEditorCommand } from "@d4research/shared/editor";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { SpawnExecutableResolution } from "@d4research/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 
 // Windows drive letters break mocked POSIX PATH splitting; these tests also require /bin/sh stubs.

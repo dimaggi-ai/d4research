@@ -8,8 +8,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
-import { hashTelemetryId } from "@t3tools/shared/telemetryId";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
+import { hashTelemetryId } from "@d4research/shared/telemetryId";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CLOUD_LINKED_USER_ID } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";

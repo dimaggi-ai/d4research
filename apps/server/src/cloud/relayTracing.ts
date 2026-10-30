@@ -1,8 +1,8 @@
 import {
   nodeProcessRuntimeAttributes,
   processServiceInstanceId,
-} from "@t3tools/shared/observability";
-import * as RelayTracing from "@t3tools/shared/relayTracing";
+} from "@d4research/shared/observability";
+import * as RelayTracing from "@d4research/shared/relayTracing";
 // Runtime credentials cannot enable network tracing in this fork.
 const relayLayer = (resource: Omit<RelayTracing.RelayClientTracingResource, "serviceInstanceId">) =>
   RelayTracing.layer(null, { ...resource, serviceInstanceId: processServiceInstanceId() });

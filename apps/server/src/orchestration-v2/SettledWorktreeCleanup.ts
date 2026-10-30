@@ -1,4 +1,4 @@
-import type { OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadShell } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementService.ts";
 

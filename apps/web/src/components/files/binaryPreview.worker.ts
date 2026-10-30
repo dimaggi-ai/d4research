@@ -1,6 +1,6 @@
 import type { Database } from "sql.js";
 
-import { boundedZip } from "@t3tools/client-runtime/zip/bounded-zip";
+import { boundedZip } from "@d4research/client-runtime/zip/bounded-zip";
 import {
   ARCHIVE_ENTRY_MAX_BYTES,
   ARCHIVE_MAX_ENTRIES,

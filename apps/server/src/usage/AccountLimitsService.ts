@@ -9,7 +9,7 @@ import {
   type ProviderInstanceConfigMap,
   ProviderInstanceId,
   type UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -20,13 +20,13 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
-import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
 import { ServerConfig } from "../config.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   accountWindowsFromProviderUpdate,

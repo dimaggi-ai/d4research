@@ -111,7 +111,7 @@ function resolveSpawnExecutableWithNode(
 }
 
 export const SpawnExecutableResolution = Context.Reference<SpawnExecutableResolver>(
-  "@t3tools/shared/shell/SpawnExecutableResolution",
+  "@d4research/shared/shell/SpawnExecutableResolution",
   {
     defaultValue: () => resolveSpawnExecutableWithNode,
   },
@@ -322,14 +322,14 @@ export type WindowsShellEnvironmentReader = (
 ) => Effect.Effect<Partial<Record<string, string>>>;
 
 export const WindowsShellEnvironment = Context.Reference<WindowsShellEnvironmentReader>(
-  "@t3tools/shared/shell/WindowsShellEnvironment",
+  "@d4research/shared/shell/WindowsShellEnvironment",
   {
     defaultValue: () => readEnvironmentFromWindowsShell,
   },
 );
 
 export const CommandAvailability = Context.Reference<CommandAvailabilityChecker>(
-  "@t3tools/shared/shell/CommandAvailability",
+  "@d4research/shared/shell/CommandAvailability",
   {
     defaultValue: () => isCommandAvailable,
   },
@@ -498,7 +498,7 @@ interface CommandResolutionCacheEntry {
 }
 
 export const CommandResolutionCache = Context.Reference<Map<string, CommandResolutionCacheEntry>>(
-  "@t3tools/shared/shell/CommandResolutionCache",
+  "@d4research/shared/shell/CommandResolutionCache",
   {
     defaultValue: () => new Map(),
   },
@@ -531,7 +531,7 @@ const listPathDirectory = Effect.fnUntraced(function* (
 
 const PathDirectoryListings = Context.Reference<
   Cache.Cache<string, PathDirectoryListing, never, FileSystem.FileSystem> | undefined
->("@t3tools/shared/shell/PathDirectoryListings", { defaultValue: () => undefined });
+>("@d4research/shared/shell/PathDirectoryListings", { defaultValue: () => undefined });
 
 export const withPathDirectoryListings =
   /* Directory reads are cached inside one shell operation; a span for each lookup adds noise. */
@@ -765,7 +765,7 @@ function locateXcodeGitWithXcrun(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 export const XcodeGitLocation = Context.Reference<XcodeGitLocator>(
-  "@t3tools/shared/shell/XcodeGitLocation",
+  "@d4research/shared/shell/XcodeGitLocation",
   { defaultValue: () => locateXcodeGitWithXcrun },
 );
 

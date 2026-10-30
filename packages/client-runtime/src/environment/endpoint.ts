@@ -1,5 +1,5 @@
-import { environmentGatewayPath } from "@t3tools/shared/environmentGateway";
-export * from "@t3tools/shared/advertisedEndpoint";
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
+export * from "@d4research/shared/advertisedEndpoint";
 
 export const environmentEndpointUrl = (httpBaseUrl: string, pathname: string): string => {
   const url = new URL(httpBaseUrl);

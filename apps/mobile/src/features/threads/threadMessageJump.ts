@@ -1,4 +1,4 @@
-import type { MessageId } from "@t3tools/contracts";
+import type { MessageId } from "@d4research/contracts";
 
 // A palette message result opens its thread at that message. The thread
 // screen reads the request while it shows that thread, and finishes it once

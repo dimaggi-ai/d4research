@@ -1,4 +1,4 @@
-import { threadPullRequestTerminalAt } from "@t3tools/shared/threadPullRequests";
+import { threadPullRequestTerminalAt } from "@d4research/shared/threadPullRequests";
 import {
   CommandId,
   isOrchestrationV2WorkActive,
@@ -9,8 +9,8 @@ import {
   type ThreadPullRequestLink,
   type ThreadPullRequestSnapshot,
   type ThreadPullRequestStack,
-} from "@t3tools/contracts";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+} from "@d4research/contracts";
+import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
 import {
   threadPullRequestKeyOf,
   normalizeThreadPullRequestKey,
@@ -32,7 +32,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as GitManager from "../git/GitManager.ts";
-import { PullRequestProviderError } from "@t3tools/source-control-core/server/PullRequestProvider";
+import { PullRequestProviderError } from "@d4research/source-control-core/server/PullRequestProvider";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as Orchestrator from "./Orchestrator.ts";

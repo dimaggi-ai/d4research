@@ -78,7 +78,7 @@ export class ElectronUpdater extends Context.Service<
       listener: (...args: Args) => void,
     ) => Effect.Effect<void, never, Scope.Scope>;
   }
->()("@t3tools/desktop/electron/ElectronUpdater") {}
+>()("@d4research/desktop/electron/ElectronUpdater") {}
 
 /** @public */
 export const make = ElectronUpdater.of({

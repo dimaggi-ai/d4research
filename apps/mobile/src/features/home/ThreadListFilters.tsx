@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import { Pressable, ScrollView } from "react-native";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { SymbolView } from "../../components/ui/AppSymbol";

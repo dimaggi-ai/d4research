@@ -1,4 +1,4 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import { Platform, Share } from "react-native";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 

@@ -10,7 +10,7 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2TurnItem,
   type OrchestrationV2ConversationMessage,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import { v2Projection, v2Now } from "./orchestrationV2TestFixtures.ts";
 import {

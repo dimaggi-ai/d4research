@@ -3,9 +3,9 @@ import {
   linkableMachines,
   linkedEnvironmentNames,
   offersLinkedEnvironments,
-} from "@t3tools/client-runtime/link-request";
-import { createPeerLinkEnvironmentAtoms } from "@t3tools/client-runtime/state/peerLinks";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/link-request";
+import { createPeerLinkEnvironmentAtoms } from "@d4research/client-runtime/state/peerLinks";
+import { AuthAccessReadScope, type EnvironmentId } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect, useEffectEvent } from "react";
 

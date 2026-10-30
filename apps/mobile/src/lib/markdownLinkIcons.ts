@@ -1,7 +1,7 @@
 import {
   isMonochromeSourceControlIcon,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/client-runtime/source-control-clients";
 import type { ImageSourcePropType } from "react-native";
 
 import { SOURCE_CONTROL_LINK_ICON_SOURCES } from "./markdownLinkIcons.generated";

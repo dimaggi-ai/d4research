@@ -24,7 +24,7 @@ import {
   type RunId,
   RuntimeMode,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";

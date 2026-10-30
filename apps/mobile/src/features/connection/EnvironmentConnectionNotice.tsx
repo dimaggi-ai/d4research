@@ -4,7 +4,7 @@ import { ConnectionTraceId } from "./ConnectionTraceId";
 import {
   type EnvironmentConnectionPhase,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
+} from "@d4research/client-runtime/connection";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { View } from "react-native";
 

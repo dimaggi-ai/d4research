@@ -12,9 +12,9 @@ import {
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   type ThreadGuestMessage,
-} from "@t3tools/contracts";
-import { applyOrchestrationV2ProjectionEvent } from "@t3tools/client-runtime/state/orchestration-v2-projection";
-import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
+} from "@d4research/contracts";
+import { applyOrchestrationV2ProjectionEvent } from "@d4research/client-runtime/state/orchestration-v2-projection";
+import { boundedSnapshotProjection } from "@d4research/shared/orchestrationV2BoundedSnapshot";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

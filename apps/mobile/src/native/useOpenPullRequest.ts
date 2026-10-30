@@ -2,7 +2,7 @@ import { useNavigation, useRoute, StackActions } from "@react-navigation/native"
 import { nativePullRequestDestination } from "../lib/pullRequestNavigation";
 import { Platform } from "react-native";
 import { useSelectWorkspaceDetail } from "../features/workspace/useSelectWorkspaceDetail";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@d4research/contracts";
 import { useProjects, useThreadShell } from "../state/entities";
 import { tryOpenExternalUrl } from "../lib/openExternalUrl";
 import { appAtomRegistry } from "../state/atom-registry";

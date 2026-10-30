@@ -1,6 +1,6 @@
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { type MessageId, type RunId } from "@t3tools/contracts";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
+import { type MessageId, type RunId } from "@d4research/contracts";
+import { CHAT_LIST_ANCHOR_OFFSET } from "@d4research/shared/chatList";
 import { Debouncer } from "@tanstack/react-pacer";
 import {
   type SetStateAction,
@@ -35,9 +35,9 @@ import {
   shouldReleaseTimelineAnchorForToolActivity,
 } from "../ChatView.logic";
 import type { Dispatch, RefObject } from "react";
-import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
-import type { deriveThreadActivityRun } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
+import type { ThreadStructure } from "@d4research/client-runtime/state/shell";
+import type { deriveThreadActivityRun } from "@d4research/client-runtime/state/thread-execution";
+import type { EnvironmentThreadStatus } from "@d4research/client-runtime/state/threads";
 import type { TimelineEntry } from "../../session-logic";
 
 const TIMELINE_SCROLL_CANCEL_SENTINEL = Object.freeze({});

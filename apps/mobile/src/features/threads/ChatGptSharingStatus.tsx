@@ -1,6 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
-import type { ServerProvider } from "@t3tools/contracts";
-import { CHATGPT_USAGE_URL, usesChatGptSharing } from "@t3tools/shared/usageLimits";
+import type { ServerProvider } from "@d4research/contracts";
+import { CHATGPT_USAGE_URL, usesChatGptSharing } from "@d4research/shared/usageLimits";
 import { Linking, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";

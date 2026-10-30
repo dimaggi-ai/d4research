@@ -1,10 +1,10 @@
-import type { ThreadPullRequestLink } from "@t3tools/contracts";
+import type { ThreadPullRequestLink } from "@d4research/contracts";
 import {
   normalizeThreadPullRequestKey,
   pullRequestListLines,
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
-} from "@t3tools/client-runtime/thread-pull-requests";
+} from "@d4research/client-runtime/thread-pull-requests";
 
 export function threadPullRequestsOverview(input: readonly ThreadPullRequestLink[]) {
   const unique = new Map<string, ThreadPullRequestLink>();

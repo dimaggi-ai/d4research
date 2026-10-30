@@ -1,12 +1,12 @@
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
-import { readPairingAppLink, resolveRemotePairingTarget } from "@t3tools/shared/remote";
+} from "@d4research/client-runtime/state/runtime";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { promptLinkAppPath } from "@d4research/shared/promptLinks";
+import { readPairingAppLink, resolveRemotePairingTarget } from "@d4research/shared/remote";
 import { useRouter } from "@tanstack/react-router";
 import * as Effect from "effect/Effect";
 import { AtomRegistry } from "effect/reactivity";

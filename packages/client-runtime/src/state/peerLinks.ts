@@ -1,4 +1,4 @@
-import { type PeerLinkSummary, WS_METHODS } from "@t3tools/contracts";
+import { type PeerLinkSummary, WS_METHODS } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

@@ -1,6 +1,6 @@
 /* oxlint-disable react/no-array-index-key -- Captured table cells have stable positions and may contain identical values. */
 import { ScrollView, View } from "react-native";
-import type { parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
+import type { parseDelimitedPreview } from "@d4research/shared/delimitedPreview";
 import { AppText as Text } from "../../components/ui/AppText";
 import { FilePreviewNotice } from "./FilePreviewFeedback";
 

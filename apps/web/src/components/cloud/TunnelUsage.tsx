@@ -1,4 +1,4 @@
-import { T3CHAT_PLAN_TUNNEL_LIMITS } from "@t3tools/contracts/relay";
+import { T3CHAT_PLAN_TUNNEL_LIMITS } from "@d4research/contracts/relay";
 import { TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 

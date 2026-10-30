@@ -1,6 +1,6 @@
 import { PrimaryConnectionRegistration } from "./catalog.ts";
 import { PrimaryConnectionTarget } from "./model.ts";
-import { SHARED_ENVIRONMENT_PROXY_PREFIX, type SharedEnvironmentCatalog } from "@t3tools/contracts";
+import { SHARED_ENVIRONMENT_PROXY_PREFIX, type SharedEnvironmentCatalog } from "@d4research/contracts";
 
 export function sharedEnvironmentRegistrations(
   primary: PrimaryConnectionTarget,

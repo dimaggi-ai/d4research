@@ -3,7 +3,7 @@ import {
   type McpUsageLimitsSnapshot,
   type ServerProvider,
   type UsageLimitSourceSnapshots,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export function usageMcpSnapshot(
   providers: ReadonlyArray<ServerProvider>,

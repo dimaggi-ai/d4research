@@ -1,6 +1,6 @@
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
-import type { PullRequestActor } from "@t3tools/contracts";
+import type { ChangeRequestTerminology } from "@d4research/client-runtime/source-control-clients";
+import type { PullRequestActor } from "@d4research/contracts";
 import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
 import { Image } from "expo-image";
 import { View } from "react-native";

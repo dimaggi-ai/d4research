@@ -1,13 +1,13 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
-import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
+import { resolveThreadCurrentPullRequestLink } from "@d4research/client-runtime/thread-pull-requests";
 import { useRightPanelStore } from "../rightPanelStore";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -15,7 +15,7 @@ import {
   type EnvironmentId,
   type VcsRef,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { GitBranchIcon } from "lucide-react";
 import {
   useCallback,
@@ -40,13 +40,13 @@ import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "../state/threads";
-import { threadHasWorkspaceBoundWork } from "@t3tools/shared/threadWorkspaces";
+import { threadHasWorkspaceBoundWork } from "@d4research/shared/threadWorkspaces";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
 import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./chat/threadDetailsPanelStyles";
 import { ThreadDetailsPrRows } from "./chat/ThreadDetailsPrRows";
-import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
+import { parsePullRequestReference } from "@d4research/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {

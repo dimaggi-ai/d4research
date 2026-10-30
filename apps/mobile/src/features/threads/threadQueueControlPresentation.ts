@@ -1,5 +1,5 @@
-import type { EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import type { EnvironmentId, RunId, ThreadId } from "@d4research/contracts";
+import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
 
 export const REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL = "Remove queued message";
 

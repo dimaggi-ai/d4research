@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import { FetchHttpClient } from "effect/http";
 import { vi } from "vite-plus/test";
 
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import { withRelayClientTracing } from "@d4research/shared/relayTracing";
 
 import { layerHeadlessRelayClient, layerServerRelayBroker } from "./relayTracing.ts";
 

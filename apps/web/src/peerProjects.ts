@@ -1,4 +1,4 @@
-import type { EnvironmentId, PeerProject, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, PeerProject, ProjectId } from "@d4research/contracts";
 
 import { getClientSettings } from "./hooks/useSettings";
 import {

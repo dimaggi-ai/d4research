@@ -6,22 +6,22 @@ import type {
   ServerProvider,
   ThreadId,
   ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   type ComposerEnvironmentCandidate,
   matchComposerEnvironmentItems,
   matchComposerThreadItems,
-} from "@t3tools/client-runtime/composerThreadItems";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+} from "@d4research/client-runtime/composerThreadItems";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/models";
 
 const EMPTY_THREAD_SHELLS: ReadonlyArray<EnvironmentThreadShell> = [];
 const EMPTY_ENVIRONMENTS: ReadonlyArray<ComposerEnvironmentCandidate> = [];
 const NO_LINKED_ENVIRONMENTS: ReadonlyMap<EnvironmentId, string> = new Map();
-import { COMPOSER_CONTEXT_MAX_RECORDS } from "@t3tools/contracts";
+import { COMPOSER_CONTEXT_MAX_RECORDS } from "@d4research/contracts";
 import {
   formatComposerContextReference,
   threadContextRecord,
-} from "@t3tools/shared/composerContextReferences";
+} from "@d4research/shared/composerContextReferences";
 import { environmentComposerContext, pullRequestComposerContext } from "../../lib/composerContext";
 import { uuidv4 } from "../../lib/uuid";
 import {
@@ -29,18 +29,18 @@ import {
   setComposerDraftContext,
   useComposerDraftSelection,
 } from "../../state/use-composer-drafts";
-import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import { USAGE_LIMITS_COMMAND } from "@d4research/shared/usageLimits";
 import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
   type ComposerTrigger,
-} from "@t3tools/shared/composerTrigger";
+} from "@d4research/shared/composerTrigger";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
   scoreQueryMatch,
-} from "@t3tools/shared/searchRanking";
+} from "@d4research/shared/searchRanking";
 import {
   createProviderWorkspaceSnapshotRefreshAtomFamily,
   dedupeProviderSkillsByName,
@@ -49,7 +49,7 @@ import {
   isProviderSkillUserInvocable,
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@d4research/client-runtime/providerSkills";
 import { useAtomRefresh } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";

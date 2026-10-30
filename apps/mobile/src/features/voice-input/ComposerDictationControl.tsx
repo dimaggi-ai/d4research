@@ -1,4 +1,4 @@
-import type { VoiceInputPhase, VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import type { VoiceInputPhase, VoiceInputState } from "@d4research/client-runtime/voice-input";
 import { memo, useState, type ReactNode } from "react";
 import { Linking, Pressable, Text as SystemText, View, type LayoutChangeEvent } from "react-native";
 import Animated, {

@@ -8,8 +8,8 @@ import {
   type SearchMatchHint,
   type SearchRange,
   type ThreadSearchSubject,
-} from "@t3tools/shared/paletteSearch";
-import { threadSearchSubject } from "@t3tools/client-runtime/state/thread-search";
+} from "@d4research/shared/paletteSearch";
+import { threadSearchSubject } from "@d4research/client-runtime/state/thread-search";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
   addProjectRemoteSourceLabel,
@@ -17,7 +17,7 @@ import {
   buildAddProjectRemoteSourceReadiness,
   type AddProjectRemoteSource,
   type AddProjectRemoteSourceReadiness,
-} from "@t3tools/client-runtime/operations/projects";
+} from "@d4research/client-runtime/operations/projects";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -26,8 +26,8 @@ import {
   type SourceControlDiscoveryResult,
   type SourceControlRepositoryInfo,
   THREAD_JUMP_KEYBINDING_COMMANDS,
-} from "@t3tools/contracts";
-import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
+} from "@d4research/contracts";
+import { filterFilesystemBrowseEntries } from "@d4research/client-runtime/state/filesystem";
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";

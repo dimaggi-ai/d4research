@@ -1,4 +1,4 @@
-import type { VoiceRecorder } from "@t3tools/client-runtime/voice-input";
+import type { VoiceRecorder } from "@d4research/client-runtime/voice-input";
 
 type Subscription = { remove(): void };
 

@@ -5,9 +5,9 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { AuthStandardClientScopes, ORCHESTRATION_PROTOCOL_VERSION } from "@t3tools/contracts";
-import * as NetService from "@t3tools/shared/Net";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { AuthStandardClientScopes, ORCHESTRATION_PROTOCOL_VERSION } from "@d4research/contracts";
+import * as NetService from "@d4research/shared/Net";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -35,7 +35,7 @@ import {
 import { DevServerNotProxiableError, resolveTailscaleLocalTarget } from "./pair.ts";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { buildPairingAppLink } from "@t3tools/shared/remote";
+import { buildPairingAppLink } from "@d4research/shared/remote";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 

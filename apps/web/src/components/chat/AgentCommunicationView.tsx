@@ -9,7 +9,7 @@ import {
   type ThreadCommunication,
   type CommunicationSelection,
   type CommunicationParticipant,
-} from "@t3tools/client-runtime/state/thread-communication";
+} from "@d4research/client-runtime/state/thread-communication";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";

@@ -8,10 +8,10 @@ import {
   type ConnectionCatalogEntry,
   type PreparedConnection,
   type PrimaryConnectionRegistration,
-} from "@t3tools/client-runtime/connection";
-import { environmentEndpointUrl } from "@t3tools/client-runtime/environment";
-import { SharedEnvironmentCatalog, type EnvironmentId } from "@t3tools/contracts";
-import { environmentGatewayPath } from "@t3tools/shared/environmentGateway";
+} from "@d4research/client-runtime/connection";
+import { environmentEndpointUrl } from "@d4research/client-runtime/environment";
+import { SharedEnvironmentCatalog, type EnvironmentId } from "@d4research/contracts";
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";

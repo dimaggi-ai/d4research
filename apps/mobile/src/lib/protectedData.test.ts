@@ -54,7 +54,7 @@ vi.mock("../features/cloud/publicConfig", () => ({
 vi.mock("../features/observability/tracing", async () => ({
   layer: (await import("effect/Layer")).empty,
 }));
-vi.mock("@t3tools/client-runtime/rpc", async () => {
+vi.mock("@d4research/client-runtime/rpc", async () => {
   const Layer = await import("effect/Layer");
   return { layerRemoteHttpClient: () => Layer.empty };
 });

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/models";
 import {
   isListedSettledThread,
   settledShelfFrontier,
@@ -7,8 +7,8 @@ import {
   wantedOlderSettledPages,
   type OlderSettled,
   type OlderSettledScope,
-} from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/threads";
+import type { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 

@@ -1,8 +1,8 @@
 import {
   type ConnectionCatalogEntry,
   type PreparedConnection,
-} from "@t3tools/client-runtime/connection";
-import { type PublishSharedEnvironmentsInput } from "@t3tools/contracts";
+} from "@d4research/client-runtime/connection";
+import { type PublishSharedEnvironmentsInput } from "@d4research/contracts";
 
 export interface SharedHostConnection {
   readonly entry: ConnectionCatalogEntry;

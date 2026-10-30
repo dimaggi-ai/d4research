@@ -1,11 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as AcpSchema from "effect-acp/compat";
-import type { AcpToolCallState } from "@t3tools/provider-acp/server/runtimeModel";
+import type { AcpToolCallState } from "@d4research/provider-acp/server/runtimeModel";
 import type {
   AcpAdapterV2ExtensionContext,
   AcpAdapterV2SubagentUpdate,
-} from "@t3tools/provider-acp/server/adapter";
+} from "@d4research/provider-acp/server/adapter";
 
 // The opt-in raw feed identifies each chunk by the preceding assistant.*_delta task call id.
 

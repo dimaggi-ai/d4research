@@ -1,15 +1,15 @@
 import { LayoutDashboardIcon } from "lucide-react";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { type Project } from "../types";
-import { isHostPrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
-import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
+import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
+import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
 
 import {
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@d4research/client-runtime/environment";
 import {
   canCreateProjectInEnvironment,
   getCloneDestinationBrowsePath,
@@ -27,21 +27,21 @@ import {
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
   type AddProjectRemoteSourceReadiness,
-} from "@t3tools/client-runtime/operations/projects";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
+} from "@d4research/client-runtime/operations/projects";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { connectionStatusText } from "@d4research/client-runtime/connection";
+import { resolveThreadReferenceCopyTarget } from "@d4research/client-runtime/thread-reference";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
-} from "@t3tools/client-runtime/state/filesystem";
+} from "@d4research/client-runtime/state/filesystem";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -52,7 +52,7 @@ import {
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
@@ -141,7 +141,7 @@ import {
   isScratchProject,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
-} from "@t3tools/client-runtime/state/projects";
+} from "@d4research/client-runtime/state/projects";
 import {
   dispatchCommandPalette,
   getCommandPaletteReturnFocus,
@@ -149,7 +149,7 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
+import { getLatestThreadForProject, sortThreads } from "@d4research/client-runtime/state/thread-sort";
 import {
   cn,
   getLocalFileManagerName,
@@ -250,7 +250,7 @@ import {
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { threadRecentUse } from "@t3tools/shared/paletteSearch";
+import { threadRecentUse } from "@d4research/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const ADD_PROJECT_ENTRY_GROUP = "add-project";

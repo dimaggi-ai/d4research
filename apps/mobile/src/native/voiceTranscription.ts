@@ -1,4 +1,4 @@
-import type { VoiceTranscriber } from "@t3tools/client-runtime/voice-input";
+import type { VoiceTranscriber } from "@d4research/client-runtime/voice-input";
 
 export function getLocalVoiceTranscriber(): VoiceTranscriber | null {
   return null;

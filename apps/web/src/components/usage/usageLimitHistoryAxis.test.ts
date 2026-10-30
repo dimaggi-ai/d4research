@@ -1,4 +1,4 @@
-import type { UsageLimitHistoryPoint } from "@t3tools/contracts";
+import type { UsageLimitHistoryPoint } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { historyAxisTicks, historyPointsByDay, nearestHistoryPoint } from "./usageLimitHistoryAxis";

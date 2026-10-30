@@ -1,5 +1,5 @@
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { request, subscribe } from "@t3tools/client-runtime/rpc";
+import { EnvironmentRegistry } from "@d4research/client-runtime/connection";
+import { request, subscribe } from "@d4research/client-runtime/rpc";
 import { readPeerUsageLimits } from "./peerUsageLimits";
 import {
   type EnvironmentId,
@@ -9,7 +9,7 @@ import {
   type PeerRelayReply,
   type ProjectId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@d4research/shared/video";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Hash from "effect/Hash";

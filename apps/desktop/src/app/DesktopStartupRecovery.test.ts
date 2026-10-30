@@ -1,4 +1,4 @@
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopUpdateState } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createInitialDesktopUpdateState } from "../updates/updateMachine.ts";

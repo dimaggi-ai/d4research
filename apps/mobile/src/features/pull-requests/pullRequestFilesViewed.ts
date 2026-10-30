@@ -1,4 +1,4 @@
-import type { PullRequestFilesViewedResult } from "@t3tools/contracts";
+import type { PullRequestFilesViewedResult } from "@d4research/contracts";
 
 export type FilesViewedRead = PullRequestFilesViewedResult | null;
 

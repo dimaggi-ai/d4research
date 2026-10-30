@@ -6,11 +6,11 @@ import {
   MessageSquareIcon,
 } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { CHAT_MARKDOWN_REMARK_PLUGINS } from "@t3tools/shared/markdownPipeline";
+import { CHAT_MARKDOWN_REMARK_PLUGINS } from "@d4research/shared/markdownPipeline";
 import {
   communicationStatusTone,
   type CommunicationMessage,
-} from "@t3tools/client-runtime/state/thread-communication";
+} from "@d4research/client-runtime/state/thread-communication";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { communicationStatusClasses } from "./agentCommunicationStyles";

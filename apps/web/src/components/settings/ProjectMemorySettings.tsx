@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { useState } from "react";
 import { projectMemory } from "../../state/projectMemory";
 import { useEnvironmentQuery } from "../../state/query";

@@ -1,1 +1,1 @@
-export { providerClients } from "@t3tools/client-runtime/provider-clients";
+export { providerClients } from "@d4research/client-runtime/provider-clients";

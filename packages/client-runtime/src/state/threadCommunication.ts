@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import type { EnvironmentThread } from "./models.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";

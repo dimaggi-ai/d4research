@@ -1,8 +1,8 @@
 import type {
   AuthClientPresentationMetadata,
   ExecutionEnvironmentDescriptor,
-} from "@t3tools/contracts";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+} from "@d4research/contracts";
+import { withRelayClientTracing } from "@d4research/shared/relayTracing";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,7 +10,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
-import { environmentGatewayPath } from "@t3tools/shared/environmentGateway";
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
 
 import {
   appendClientConnectionParams,
@@ -72,7 +72,7 @@ export class ConnectionResolver extends Context.Service<
       ConnectionAttemptError
     >;
   }
->()("@t3tools/client-runtime/connection/resolver/ConnectionResolver") {}
+>()("@d4research/client-runtime/connection/resolver/ConnectionResolver") {}
 
 const isBearerProfile = Schema.is(BearerConnectionProfile);
 const isSshProfile = Schema.is(SshConnectionProfile);

@@ -8,7 +8,7 @@ import {
   type TerminalWriteInput,
   type ThreadId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";

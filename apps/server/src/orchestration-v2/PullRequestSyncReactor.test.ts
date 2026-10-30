@@ -1,6 +1,6 @@
 import * as NodeV8 from "node:v8";
 
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import * as Stream from "effect/Stream";
 import {
   EventId,
@@ -21,7 +21,7 @@ import {
   type ThreadPullRequestKey,
   type ThreadPullRequestLink,
   type ThreadPullRequestSnapshot,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";

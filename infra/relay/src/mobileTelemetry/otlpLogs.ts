@@ -1,4 +1,4 @@
-import { mobileSourceMapKey, type MobilePlatform } from "@t3tools/shared/mobileSourceMaps";
+import { mobileSourceMapKey, type MobilePlatform } from "@d4research/shared/mobileSourceMaps";
 
 import { stripBundlePaths, symbolicateStack, type CompactSourceMap } from "./sourceMap.ts";
 

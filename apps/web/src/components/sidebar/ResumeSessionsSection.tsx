@@ -3,9 +3,9 @@ import {
   type EnvironmentId,
   type ResumableSession,
   type ScopedProjectRef,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+} from "@d4research/contracts";
+import { createModelSelection } from "@d4research/shared/model";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import { ChevronRight, History, LoaderCircle, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { useNowMinute } from "../../hooks/useNowMinute";

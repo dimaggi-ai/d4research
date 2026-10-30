@@ -1,12 +1,12 @@
-import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
   settleProjectScript,
   setupProjectScript,
-} from "@t3tools/shared/projectScripts";
+} from "@d4research/shared/projectScripts";
 
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";

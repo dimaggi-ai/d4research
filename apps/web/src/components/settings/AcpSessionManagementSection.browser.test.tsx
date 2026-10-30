@@ -5,7 +5,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../../test/render";

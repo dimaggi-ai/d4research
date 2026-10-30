@@ -28,7 +28,7 @@ import {
   t3SystemAppend,
   withDevices,
 } from "./run.ts";
-import { DeviceOperationError, LOCAL_DEVICE_HOST_ID } from "@t3tools/contracts";
+import { DeviceOperationError, LOCAL_DEVICE_HOST_ID } from "@d4research/contracts";
 
 const MAC = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const IPHONE = "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB";

@@ -1,4 +1,4 @@
-import type { OrchestrationMessageContext, ServerProviderSkill } from "@t3tools/contracts";
+import type { OrchestrationMessageContext, ServerProviderSkill } from "@d4research/contracts";
 import type { Ref } from "react";
 import type { StyleProp, TextStyle, ViewStyle } from "react-native";
 

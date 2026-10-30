@@ -1,5 +1,5 @@
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
-import type { ProjectCodeSearchMatch } from "@t3tools/contracts";
+import type { ProjectCodeSearchMatch } from "@d4research/contracts";
 import { Braces, FileCode2, Search } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 

@@ -1,7 +1,7 @@
 import { act, render } from "../../../test/render";
 import { useState } from "react";
 import { describe, expect, it } from "vite-plus/test";
-import { AuthGrantScope, type AuthEnvironmentScope } from "@t3tools/contracts";
+import { AuthGrantScope, type AuthEnvironmentScope } from "@d4research/contracts";
 import { ClientScopesDialog } from "./ClientScopesDialog";
 
 function button(label: string) {

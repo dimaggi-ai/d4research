@@ -6,7 +6,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest";
-import type { TranscriptUsageFormat } from "@t3tools/provider-core/server/usage";
+import type { TranscriptUsageFormat } from "@d4research/provider-core/server/usage";
 import * as Schema from "effect/Schema";
 
 import { TEST_FORMATS } from "./usageTestFormats.ts";

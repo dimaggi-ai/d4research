@@ -1,6 +1,6 @@
-import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
-import type { TimestampFormat } from "@t3tools/contracts/settings";
-import { limitsNotice } from "@t3tools/shared/usageLimits";
+import type { EnvironmentId, UsageLimitsReport } from "@d4research/contracts";
+import type { TimestampFormat } from "@d4research/contracts/settings";
+import { limitsNotice } from "@d4research/shared/usageLimits";
 import { GaugeIcon } from "lucide-react";
 
 import { ensureLocalApi } from "../../localApi";

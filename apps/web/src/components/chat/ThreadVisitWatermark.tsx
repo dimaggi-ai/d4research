@@ -1,7 +1,7 @@
 import { useAtomMount } from "@effect/atom-react";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
+import { createThreadVisitTracker } from "@d4research/client-runtime/state/thread-visits";
+import { type ScopedThreadRef } from "@d4research/contracts";
 
 import { useUiStateStore } from "../../uiStateStore";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";

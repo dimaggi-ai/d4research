@@ -43,7 +43,7 @@ export class CursorKeychain extends Context.Service<
       CursorKeychainTimeoutError | CursorKeychainReadError
     >;
   }
->()("@t3tools/provider-cursor/server/CursorKeychain") {}
+>()("@d4research/provider-cursor/server/CursorKeychain") {}
 
 const readKeychainEntry = Effect.tryPromise({
   try: async () => {

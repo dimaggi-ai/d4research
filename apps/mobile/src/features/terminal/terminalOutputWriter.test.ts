@@ -3,7 +3,7 @@ import {
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
   EMPTY_TERMINAL_BUFFER_STATE,
   terminalOutputText,
-} from "@t3tools/client-runtime/state/terminal";
+} from "@d4research/client-runtime/state/terminal";
 import { expect, it, vi } from "vite-plus/test";
 
 import { createTerminalOutputWriter } from "./terminalOutputWriter";

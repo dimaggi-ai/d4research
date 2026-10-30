@@ -11,17 +11,17 @@ import {
   type OrchestrationV2ThreadProjection,
   type ThreadGuestMessage,
   type ThreadGuestMessageStatus,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { formatAttachmentSize } from "@d4research/client-runtime/state/attachments";
 import {
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveThreadStructureRuntime,
-} from "@t3tools/client-runtime/state/thread-execution";
-import { createQuestionHistoryProjector } from "@t3tools/client-runtime/state/thread-requests";
+} from "@d4research/client-runtime/state/thread-execution";
+import { createQuestionHistoryProjector } from "@d4research/client-runtime/state/thread-requests";
 import { ArrowUpIcon, PaperclipIcon, XIcon } from "lucide-react";
 import {
   useEffect,

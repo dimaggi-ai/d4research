@@ -3,7 +3,7 @@ import type {
   GuestThreadModel,
   OrchestrationV2AppThread,
   ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /** The thread's model as the owner's composer labels it, from the configured providers. */
 export function guestThreadModel(

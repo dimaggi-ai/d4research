@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@d4research/contracts";
 import { ChevronRightIcon, FolderClosedIcon, FolderOpenIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

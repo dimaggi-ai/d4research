@@ -1,10 +1,10 @@
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId } from "@d4research/contracts";
 import { supportsSharedSettingsSync, splitSharedServerPatch } from "./sharedSettings.ts";
 import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { filterSharedServerPatch } from "./sharedSettings.ts";

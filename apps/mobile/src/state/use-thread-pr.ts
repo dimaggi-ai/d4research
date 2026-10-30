@@ -1,10 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import {
   createLinkedPullRequestSummaryAtomFamily,
   pullRequestDetailToVcsStatus,
-} from "@t3tools/client-runtime/state/pull-requests";
-import type { EnvironmentId, PullRequestSummary } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/pull-requests";
+import type { EnvironmentId, PullRequestSummary } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import { Atom } from "effect/reactivity";
 import { useMemo } from "react";

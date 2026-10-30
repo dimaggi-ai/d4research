@@ -1,7 +1,7 @@
 import type {
   OrchestrationV2ProjectedTurnItem,
   OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { restoreSnapshotBodies } from "./orchestrationV2DedupedBodies.ts";
 

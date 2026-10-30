@@ -5,7 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { describe, expect, it } from "vite-plus/test";
 import { bundledRuntimeActivationScript, bundledRuntimeUploadScript } from "./bundledRuntime.ts";
 import { buildRemoteLaunchScript } from "./tunnel.ts";

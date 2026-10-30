@@ -1,4 +1,4 @@
-import type { ProjectWorkspace, ProjectWorkspaceColor } from "@t3tools/contracts";
+import type { ProjectWorkspace, ProjectWorkspaceColor } from "@d4research/contracts";
 
 import { cn } from "~/lib/utils";
 

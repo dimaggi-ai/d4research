@@ -1,4 +1,4 @@
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@d4research/shared/video";
 import { Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

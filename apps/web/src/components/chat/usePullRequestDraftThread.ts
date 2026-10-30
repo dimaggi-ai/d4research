@@ -1,15 +1,15 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { UnifiedSettings } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import type { UnifiedSettings } from "@d4research/contracts";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 import { DEFAULT_INTERACTION_MODE } from "../../types";
 import { newDraftId, newThreadId } from "~/lib/utils";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 import { buildDraftThreadRouteParams } from "../../threadRoutes";
 import { type DraftThreadEnvMode, useComposerDraftStore, DraftId } from "../../composerDraftStore";
 import { openPullRequestThreadDialog } from "./ChatOverlayHosts";

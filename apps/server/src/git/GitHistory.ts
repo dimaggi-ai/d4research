@@ -1,4 +1,4 @@
-import type { GitCommitFile, GitHistoryCommit, GitHistoryResult } from "@t3tools/contracts";
+import type { GitCommitFile, GitHistoryCommit, GitHistoryResult } from "@d4research/contracts";
 
 const RECORD_SEPARATOR = "\u001e";
 const FIELD_SEPARATOR = "\u001f";

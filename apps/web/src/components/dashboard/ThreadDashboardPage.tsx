@@ -16,7 +16,7 @@ import {
   SearchIcon,
   Settings2Icon,
 } from "lucide-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useNowMinute } from "../../hooks/useNowMinute";

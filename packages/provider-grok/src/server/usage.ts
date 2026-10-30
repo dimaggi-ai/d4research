@@ -1,18 +1,18 @@
-import type { UsageTokenTotals } from "@t3tools/contracts";
+import type { UsageTokenTotals } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import {
   tokenCount,
   totalTokens,
   type ProviderUsageReader,
   type TranscriptUsageFormat,
   type UsageRecord,
-} from "@t3tools/provider-core/server/usage";
+} from "@d4research/provider-core/server/usage";
 
 import type { GrokSettings } from "../settings.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 export const GROK_COST_USD_TICKS_PER_DOLLAR = 10_000_000_000;
 

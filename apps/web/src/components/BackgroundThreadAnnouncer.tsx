@@ -1,5 +1,5 @@
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { scopeThreadRef, scopedThreadKey } from "@d4research/client-runtime/environment";
+import { effectiveSnoozed } from "@d4research/client-runtime/state/thread-settled";
 import type { AnyRouter } from "@tanstack/react-router";
 import type { AtomRegistry } from "effect/reactivity";
 

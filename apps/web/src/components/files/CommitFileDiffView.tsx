@@ -1,4 +1,4 @@
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
 import { LoaderCircle } from "lucide-react";
 import { useMemo } from "react";
 

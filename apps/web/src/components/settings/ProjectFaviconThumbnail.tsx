@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import { type ReactNode, useState } from "react";
 
 import { useAssetUrlState } from "~/assets/assetUrls";

@@ -19,7 +19,7 @@ import {
   type ServerSettingsPatch,
   globalIdleCompaction,
   withIdleCompaction,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -27,7 +27,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -41,17 +41,17 @@ import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
-import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
-import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
+import { resolveSymlinkTarget } from "@d4research/shared/symlink";
 import * as ServerConfig from "./config.ts";
-import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
-import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
+import { type DeepPartial, deepMerge } from "@d4research/shared/Struct";
+import { fromJsonStringPretty, fromLenientJson } from "@d4research/shared/schemaJson";
 import {
   applyServerSettingsPatch,
   deriveLegacyProjectOverrides,
   fallbackTextGenerationModelSelection,
   isModelSelectionProviderEnabled,
-} from "@t3tools/shared/serverSettings";
+} from "@d4research/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import {
   readSecretFieldValues,
@@ -63,7 +63,7 @@ import { mapSettingsSecrets, SECRET_REDACTED, type SettingsSecret } from "./sett
 export {
   resolveReviewGuideModelSelection,
   resolveSourceControlWriterModelSelection,
-} from "@t3tools/shared/serverSettings";
+} from "@d4research/shared/serverSettings";
 
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
 const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));

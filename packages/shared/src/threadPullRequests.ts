@@ -2,7 +2,7 @@ import type {
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
   ThreadPullRequestSnapshot,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /** Host close/merge time, or the first observed terminal state for hosts without it. */
 export function threadPullRequestTerminalAt(

@@ -1,14 +1,14 @@
 import {
   resolveThreadWorkspaces,
   type SelectedProjectWorkspace,
-} from "@t3tools/shared/threadWorkspaces";
+} from "@d4research/shared/threadWorkspaces";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import type { ProjectWorkspace, ScopedThreadRef, VcsRef } from "@t3tools/contracts";
+import type { ProjectWorkspace, ScopedThreadRef, VcsRef } from "@d4research/contracts";
 import type { AppBarMenu } from "../../components/ui/AppBar.types";
-import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
-import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
-import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
+import { formatFilePathForClipboard } from "@d4research/client-runtime/media-actions";
+import { resolvePathLinkTarget } from "@d4research/shared/fileLinks";
+import { resolveFilesystemReadAccess } from "@d4research/client-runtime/state/filesystem";
 import { environmentSession } from "../../state/session";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -17,20 +17,20 @@ import { Alert, Platform, View } from "react-native";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import { EnvironmentId, type ProjectReadFileResult, ThreadId } from "@t3tools/contracts";
-import { videoMimeType } from "@t3tools/shared/video";
+import { EnvironmentId, type ProjectReadFileResult, ThreadId } from "@d4research/contracts";
+import { videoMimeType } from "@d4research/shared/video";
 import {
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
   mediaMimeTypeFromExtension,
-} from "@t3tools/shared/filePreview";
-import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
+} from "@d4research/shared/filePreview";
+import { mediaFileReference } from "@d4research/client-runtime/media-reference";
 
 import { ScreenContent } from "../../components/ui/ScreenContent";
-import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
+import { filePreviewDelimiter, parseDelimitedPreview } from "@d4research/shared/delimitedPreview";
 import { DelimitedFilePreview } from "./DelimitedFilePreview";
 import { AudioFilePreview } from "./AudioFilePreview";
 import { EmptyState } from "../../components/ui/EmptyState";

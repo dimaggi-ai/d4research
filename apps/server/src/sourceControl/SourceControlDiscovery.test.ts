@@ -1,16 +1,16 @@
-import { SourceControlProviderKind, VcsProcessSpawnError } from "@t3tools/contracts";
+import { SourceControlProviderKind, VcsProcessSpawnError } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { providerAuth } from "@t3tools/source-control-core/server/discovery";
-import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import { providerAuth } from "@d4research/source-control-core/server/discovery";
+import type * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
 import {
   fakeDiscovery,
   fakeSourceControlProvider,
-} from "@t3tools/source-control-testing/fakeSourceControlDriver";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+} from "@d4research/source-control-testing/fakeSourceControlDriver";
+import * as TestSourceControlHost from "@d4research/source-control-testing/TestSourceControlHost";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";

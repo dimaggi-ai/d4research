@@ -12,7 +12,7 @@ import {
   type ServerUpsertKeybindingInput,
   type ServerConfigIssue,
   THREAD_JUMP_KEYBINDING_COMMANDS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Array from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -35,15 +35,15 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "./config.ts";
-import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
-import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
+import { fromJsonStringPretty, fromLenientJson } from "@d4research/shared/schemaJson";
 import {
   DEFAULT_KEYBINDINGS,
   mergeWithDefaultKeybindings,
   compileResolvedKeybindingRule,
   compileResolvedKeybindingsConfig,
   parseKeybindingShortcut,
-} from "@t3tools/shared/keybindings";
+} from "@d4research/shared/keybindings";
 
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
   Schema.decodeTo(

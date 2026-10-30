@@ -1,7 +1,7 @@
 import { selectSelectedRightPanelSurface } from "./rightPanelStore";
 import { selectThreadRightPanelMaximized } from "./rightPanelStore";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { type EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { type EnvironmentId, RunId, ThreadId } from "@d4research/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { useClosedViewStore } from "./closedViewStore";

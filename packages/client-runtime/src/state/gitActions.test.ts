@@ -1,4 +1,4 @@
-import { SourceControlProviderKind, type VcsStatusResult } from "@t3tools/contracts";
+import { SourceControlProviderKind, type VcsStatusResult } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { sourceControlClients } from "../sourceControlClients.ts";

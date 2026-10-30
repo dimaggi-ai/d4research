@@ -1,9 +1,9 @@
-import type { DpopFailureReason } from "@t3tools/contracts";
+import type { DpopFailureReason } from "@d4research/contracts";
 import {
   T3CHAT_PLAN_TUNNEL_LIMITS,
   type RelayEnvironmentStatusResponse,
   type RelayProtectedError,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 
 export const DPOP_CLOCK_HINT =
   "Hint: Check that automatic date and time is enabled on both devices, then try again.";

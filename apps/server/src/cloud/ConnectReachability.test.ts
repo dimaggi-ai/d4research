@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - reads the user guide to check its anchors.
 import * as NodeFS from "node:fs";
 
-import { T3_CONNECT_TROUBLESHOOTING_SECTIONS } from "@t3tools/contracts";
+import { T3_CONNECT_TROUBLESHOOTING_SECTIONS } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { classifyReachability, type ReachabilityFacts } from "./ConnectReachability.ts";

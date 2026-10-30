@@ -9,8 +9,8 @@ import * as NodeSqlite from "node:sqlite";
 import { assert, describe, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { mergeUsage } from "@t3tools/shared/usageMerge";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { mergeUsage } from "@d4research/shared/usageMerge";
 import {
   EnvironmentId,
   ProviderDriverKind,
@@ -19,7 +19,7 @@ import {
   type UsageSource,
   type UsageSummary,
   type UsageSummaryInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -39,17 +39,17 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as CodexUsageHistory from "./CodexUsageHistory.ts";
-import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
-import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
-import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
+import * as CursorAccountReader from "@d4research/provider-cursor/server/CursorAccountReader";
+import * as CursorKeychain from "@d4research/provider-cursor/server/CursorKeychain";
+import * as CursorUsageAccounts from "@d4research/provider-cursor/server/CursorUsageAccounts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityUsage from "../provider/Drivers/AntigravityUsage.ts";
 import * as ProviderHostLive from "../provider/ProviderHostLive.ts";
-import { totalTokens, type UsageRecord } from "@t3tools/provider-core/server/usage";
+import { totalTokens, type UsageRecord } from "@d4research/provider-core/server/usage";
 import * as UsageService from "./UsageService.ts";
 import * as MuseSdk from "../../../../packages/provider-muse/src/server/sdk.ts";
-import { MuseUsageHome } from "@t3tools/provider-muse/server";
+import { MuseUsageHome } from "@d4research/provider-muse/server";
 import { makeScanCacheWriter, SCAN_CACHE_FILE_NAME } from "./usageScanCache.ts";
 
 vi.mock("node:fs/promises", { spy: true });

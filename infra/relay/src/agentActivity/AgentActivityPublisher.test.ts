@@ -1,5 +1,5 @@
 import { makeAggregateState } from "./agentActivityAggregate.ts";
-import type { RelayAgentActivityState, RelayDeliveryResult } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityState, RelayDeliveryResult } from "@d4research/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

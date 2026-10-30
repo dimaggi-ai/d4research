@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Pure synchronous hashing keeps page matching bounded without a runtime dependency.
 import * as NodeCrypto from "node:crypto";
-import type { ThreadId } from "@t3tools/contracts";
-import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
+import type { ThreadId } from "@d4research/contracts";
+import type { HtmlRenderReference } from "@d4research/shared/htmlRender";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -45,7 +45,7 @@ export class McpProviderSessions extends Context.Service<
       reported?: HtmlRenderReference,
     ) => Effect.Effect<HtmlRenderReference | undefined>;
   }
->()("@t3tools/provider-core/server/McpProviderSessions") {}
+>()("@d4research/provider-core/server/McpProviderSessions") {}
 
 const matchingPageIndex = (
   kept: ReadonlyArray<KeptHtmlRender>,

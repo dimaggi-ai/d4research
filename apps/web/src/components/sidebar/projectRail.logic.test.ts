@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { EnvironmentId, ProjectId, ThreadId } from "@d4research/contracts";
+import { scopeThreadRef, scopedThreadKey } from "@d4research/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 
 import { projectRailStatuses } from "./projectRail.logic";
 

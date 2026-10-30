@@ -1,8 +1,8 @@
-import { isHostPrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
 import { sshServerUpdateTarget } from "~/state/bundledServerUpdate.logic";
 import { useBundledServerRuntime } from "~/state/desktopUpdate";
 import { useAtomValue } from "@effect/atom-react";
-import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import { PROVIDER_DISPLAY_NAMES } from "@d4research/contracts";
 
 import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";

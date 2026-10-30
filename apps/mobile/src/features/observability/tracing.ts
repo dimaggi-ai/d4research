@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
-import { type ReleaseChannel, releaseResourceAttributes } from "@t3tools/shared/releaseResource";
-import * as RelayTracing from "@t3tools/shared/relayTracing";
+import { type ReleaseChannel, releaseResourceAttributes } from "@d4research/shared/releaseResource";
+import * as RelayTracing from "@d4research/shared/relayTracing";
 
 export interface TracingConfig {
   readonly tracesUrl: string;

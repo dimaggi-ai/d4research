@@ -130,7 +130,7 @@ const NOTICE_TEXT_EXTENSIONS = new Set([
   ".txt",
   ".unlicense",
 ]);
-const FIRST_PARTY_PACKAGE_PREFIX = "@t3tools/";
+const FIRST_PARTY_PACKAGE_PREFIX = "@d4research/";
 
 function isNoticeTextFile(fileName: string): boolean {
   return (

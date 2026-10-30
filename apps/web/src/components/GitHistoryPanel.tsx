@@ -1,6 +1,6 @@
 import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 import type { CodeViewDiffItem } from "@pierre/diffs";
-import type { EnvironmentId, GitHistoryCommit, ProjectWorkspace } from "@t3tools/contracts";
+import type { EnvironmentId, GitHistoryCommit, ProjectWorkspace } from "@d4research/contracts";
 import {
   ChevronDownIcon,
   CircleDotIcon,

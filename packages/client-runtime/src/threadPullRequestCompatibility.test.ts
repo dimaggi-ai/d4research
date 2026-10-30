@@ -1,5 +1,5 @@
-import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
-import { ThreadId } from "@t3tools/contracts";
+import type { ExecutionEnvironmentCapabilities } from "@d4research/contracts";
+import { ThreadId } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   planThreadPullRequestMutation,

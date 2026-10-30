@@ -5,8 +5,8 @@ import {
   ProviderInstanceId,
   UsageLimitSourceId,
   type ServerProvider,
-} from "@t3tools/contracts";
-import type { LimitPresentations } from "@t3tools/shared/usageLimits";
+} from "@d4research/contracts";
+import type { LimitPresentations } from "@d4research/shared/usageLimits";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 

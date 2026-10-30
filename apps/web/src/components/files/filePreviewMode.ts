@@ -1,12 +1,12 @@
-import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
+import { mediaFileReference } from "@d4research/client-runtime/media-reference";
 import { resolveMarkdownFileLinkTarget } from "~/markdown-links";
 import type {
   AssetResource,
   ProjectFileLocation,
   ProjectReadFileError,
   ScopedThreadRef,
-} from "@t3tools/contracts";
-import { isAbsolutePath, isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
+} from "@d4research/contracts";
+import { isAbsolutePath, isHostPath, workspaceRelativeFilePath } from "@d4research/shared/path";
 
 export function resolveFilePreviewPath(path: string | null, cwd: string): string | null {
   if (path === null) return null;

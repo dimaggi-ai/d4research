@@ -1,9 +1,9 @@
-import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import { projectScriptMenuLabel } from "@d4research/shared/projectScripts";
 import { projectScriptIdFromCommand } from "./projectScripts";
 import { buildProjectScript } from "./projectScripts";
 import { shortcutLabelForCommand } from "./keybindings";
 import { describe, expect, it } from "vite-plus/test";
-import { settleProjectScript, setupProjectScript } from "@t3tools/shared/projectScripts";
+import { settleProjectScript, setupProjectScript } from "@d4research/shared/projectScripts";
 
 import {
   commandForProjectScript,

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { SidebarProjectSortOrder } from "@t3tools/contracts";
+import type { SidebarProjectSortOrder } from "@d4research/contracts";
 
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../../logicalProject";
 import {

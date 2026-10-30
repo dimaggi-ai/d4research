@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, type ModelCapabilities } from "@t3tools/contracts";
+import { ProviderDriverKind, type ModelCapabilities } from "@d4research/contracts";
 
 import {
   DESCRIPTOR_PRESETS_BY_KIND,

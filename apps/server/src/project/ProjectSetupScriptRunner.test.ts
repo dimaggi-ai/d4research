@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, type TerminalEvent, type TerminalSessionSnapshot } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ProjectId, type TerminalEvent, type TerminalSessionSnapshot } from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

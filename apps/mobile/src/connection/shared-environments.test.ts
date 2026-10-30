@@ -7,9 +7,9 @@ import {
   type ConnectionCatalogEntry,
   type PlatformConnectionRegistration,
   type PreparedConnection,
-} from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
-import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
+} from "@d4research/client-runtime/connection";
+import { EnvironmentId } from "@d4research/contracts";
+import { layerRemoteHttpClient } from "@d4research/client-runtime/rpc";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";

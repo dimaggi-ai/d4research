@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsRow, SettingResetButton, SettingsSection } from "./settingsLayout";

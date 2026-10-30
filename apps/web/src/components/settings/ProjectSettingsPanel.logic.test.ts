@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+import { EnvironmentId, ProjectId } from "@d4research/contracts";
+import { planProjectRemoval } from "@d4research/client-runtime/state/projects";
 
 describe("project removal confirmation", () => {
   const local = {

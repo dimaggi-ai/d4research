@@ -4,7 +4,7 @@ import {
   applySidebarThreadOrder,
   planLegacySidebarOrderMigration,
 } from "./sidebarThreadOrderStore";
-import { sortActiveThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
+import { sortActiveThreadsByOrderKey } from "@d4research/client-runtime/state/thread-sort";
 
 const ids = (items: readonly { id: string }[]) => items.map((item) => item.id);
 const items = (...values: string[]) => values.map((id) => ({ id }));

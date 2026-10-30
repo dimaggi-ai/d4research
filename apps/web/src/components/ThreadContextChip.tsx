@@ -1,5 +1,5 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import type { ThreadContextRecord } from "@t3tools/contracts";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import type { ThreadContextRecord } from "@d4research/contracts";
 import { Link } from "@tanstack/react-router";
 import { MessagesSquareIcon } from "lucide-react";
 

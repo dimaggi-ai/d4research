@@ -1,5 +1,5 @@
-import { type OrchestrationV2UserInputQuestion, TrimmedNonEmptyString } from "@t3tools/contracts";
-import type { AcpAdapterV2Flavor } from "@t3tools/provider-acp/server/adapter";
+import { type OrchestrationV2UserInputQuestion, TrimmedNonEmptyString } from "@d4research/contracts";
+import type { AcpAdapterV2Flavor } from "@d4research/provider-acp/server/adapter";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 

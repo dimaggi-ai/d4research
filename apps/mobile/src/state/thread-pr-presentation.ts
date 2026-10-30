@@ -1,14 +1,14 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { ThreadPullRequestLink, VcsStatusResult } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import type { ThreadPullRequestLink, VcsStatusResult } from "@d4research/contracts";
 import {
   sourceControlClients,
   type ChangeRequestTerminology,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/client-runtime/source-control-clients";
 
 import {
   resolveThreadCurrentPullRequestLink,
   resolveThreadPullRequestBadge,
-} from "@t3tools/client-runtime/thread-pull-requests";
+} from "@d4research/client-runtime/thread-pull-requests";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 

@@ -2,7 +2,7 @@ import {
   applyTerminalAttachStreamEvent,
   EMPTY_TERMINAL_BUFFER_STATE,
   terminalOutputText,
-} from "@t3tools/client-runtime/state/terminal";
+} from "@d4research/client-runtime/state/terminal";
 import { act, useImperativeHandle, useLayoutEffect, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { NativeSyntheticEvent } from "react-native";

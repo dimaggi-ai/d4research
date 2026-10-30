@@ -1,7 +1,7 @@
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "./atom-registry";
-import { threadHasCaughtUpTo } from "@t3tools/client-runtime/state/threads";
+import { threadHasCaughtUpTo } from "@d4research/client-runtime/state/threads";
 import type { AcknowledgedThreadMessage, QueuedThreadMessage } from "./thread-outbox-model";
 import { environmentThreadDetails } from "./threads";
 

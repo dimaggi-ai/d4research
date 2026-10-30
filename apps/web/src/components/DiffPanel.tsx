@@ -1,16 +1,16 @@
-import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
+import { isTestChangedFile } from "@d4research/shared/changedFileKind";
 import { useHideTestFiles } from "./diffs/useHideTestFiles";
 import { toolCallDiff } from "../lib/toolCallDiff";
-import type { ReviewDiffPreviewInput } from "@t3tools/contracts";
+import type { ReviewDiffPreviewInput } from "@d4research/contracts";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import type { ScopedThreadRef, RunId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
+import type { ScopedThreadRef, RunId } from "@d4research/contracts";
 import {
   ArrowRightIcon,
   CheckIcon,

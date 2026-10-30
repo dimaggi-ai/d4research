@@ -6,11 +6,11 @@ import {
   AuthTokenExchangeGrantType,
   EnvironmentHttpApi,
   EnvironmentId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   RelayEnvironmentLinkProofPayload,
   type RelayLinkProofRequest,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -22,7 +22,7 @@ import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as NetAddress from "effect/net/NetAddress";
 import { decodeJwt, importSPKI, jwtVerify } from "jose";
-import { RELAY_LINK_PROOF_TYP } from "@t3tools/shared/relayJwt";
+import { RELAY_LINK_PROOF_TYP } from "@d4research/shared/relayJwt";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as AuthHttp from "../auth/http.ts";

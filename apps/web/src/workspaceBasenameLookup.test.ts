@@ -1,11 +1,11 @@
-import { needsWorkspaceBasenameLookup } from "@t3tools/client-runtime/workspace-basename-lookup";
+import { needsWorkspaceBasenameLookup } from "@d4research/client-runtime/workspace-basename-lookup";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   claimWorkspaceBasenameLookup,
   pickWorkspaceBasenameMatch,
   pickWorkspacePathMatch,
-} from "@t3tools/client-runtime/workspace-basename-lookup";
+} from "@d4research/client-runtime/workspace-basename-lookup";
 
 describe("pickWorkspacePathMatch", () => {
   const entries = [

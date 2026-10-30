@@ -6,7 +6,7 @@ import {
   type VoiceInputControllerDependencies,
   type VoiceInputPhase,
   type VoiceInputState,
-} from "@t3tools/client-runtime/voice-input";
+} from "@d4research/client-runtime/voice-input";
 
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 

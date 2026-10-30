@@ -1,4 +1,4 @@
-import type { ThreadLinkedPullRequest, ThreadPullRequestKey } from "@t3tools/contracts";
+import type { ThreadLinkedPullRequest, ThreadPullRequestKey } from "@d4research/contracts";
 
 /**
  * Frozen for migrations 050 and 064: the change request URL parsing and key normalization they

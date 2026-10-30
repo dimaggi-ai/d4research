@@ -3,7 +3,7 @@ import {
   RelayClientAuth,
   RelayClientPrincipal,
   type RelayClientDeviceRecord,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import * as EnvironmentLinker from "../environments/EnvironmentLinker.ts";
 import * as RelayTokens from "../auth/RelayTokens.ts";
 import * as Devices from "../agentActivity/Devices.ts";
@@ -33,16 +33,16 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 import {
   RelayEnvironmentAuth,
   RelayEnvironmentPrincipal,
   RelayApi,
   RelayEnvironmentLinkUnavailableError,
   RelayEnvironmentLinkRequest,
-} from "@t3tools/contracts/relay";
-import { relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
-import { RELAY_MANAGED_TUNNEL_RECOVERY_TYP, signRelayJwt } from "@t3tools/shared/relayJwt";
+} from "@d4research/contracts/relay";
+import { relayProtectedErrorMessage } from "@d4research/client-runtime/relay";
+import { RELAY_MANAGED_TUNNEL_RECOVERY_TYP, signRelayJwt } from "@d4research/shared/relayJwt";
 
 import {
   RELAY_HTTP_ROUTER_CONFIG,

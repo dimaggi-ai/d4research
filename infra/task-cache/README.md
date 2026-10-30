@@ -45,8 +45,8 @@ Our repository’s CI explicitly installs the Vite+ hook. Same-repository PRs ta
 
 ```sh
 node infra/task-cache/scripts/smoke.ts
-vp run --filter @t3tools/task-cache test
-vp run --filter @t3tools/task-cache typecheck
+vp run --filter @d4research/task-cache test
+vp run --filter @d4research/task-cache typecheck
 ```
 
 The smoke check uploads a unique fixture, restores its output into a cold second directory, changes its input, and confirms recomputation. It also checks that anonymous reads and uploads are rejected. Cacheable commands must run through `vp run`; direct `vp test` or `vp check` invocations do not use this cache.

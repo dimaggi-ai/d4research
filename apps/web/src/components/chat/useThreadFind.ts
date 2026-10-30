@@ -1,6 +1,6 @@
-import type { InlineSkill } from "@t3tools/shared/inlineSkills";
-import type { OrchestrationV2SearchThreadResult, ScopedThreadRef } from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { InlineSkill } from "@d4research/shared/inlineSkills";
+import type { OrchestrationV2SearchThreadResult, ScopedThreadRef } from "@d4research/contracts";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { useThreadProjection } from "~/state/entities";

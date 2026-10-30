@@ -1,5 +1,5 @@
-import type { UsageLimitHistory, UsageLimitHistoryPoint } from "@t3tools/contracts";
-import { formatAgo, formatResetAt } from "@t3tools/shared/limitsFormat";
+import type { UsageLimitHistory, UsageLimitHistoryPoint } from "@d4research/contracts";
+import { formatAgo, formatResetAt } from "@d4research/shared/limitsFormat";
 import {
   useMemo,
   useState,

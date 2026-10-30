@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import { MISSING_FILE_ACCESS_MESSAGE } from "@d4research/client-runtime/state/assets";
+import type { AssetResource, EnvironmentId } from "@d4research/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom } from "effect/reactivity";

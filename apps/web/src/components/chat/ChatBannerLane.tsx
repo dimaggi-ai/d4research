@@ -3,7 +3,7 @@ import type {
   ProviderInstanceId,
   ServerProvider,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { Dispatch, SetStateAction } from "react";
 import { ProviderStatusBanner } from "./ProviderStatusBanner";
 import { dismissThreadErrorBannerForSession, ThreadErrorBanner } from "./ThreadErrorBanner";

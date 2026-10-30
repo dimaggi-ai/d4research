@@ -2,7 +2,7 @@ import type {
   OrchestrationV2ThreadShell,
   ProjectWorkspace,
   ThreadWorkspaceSelection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export const PRIMARY_WORKSPACE_BUSY_MESSAGE =
   "The primary checkout cannot change while this thread has active or background work. Wait for it to finish or press Stop first.";

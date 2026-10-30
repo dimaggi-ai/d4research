@@ -2,7 +2,7 @@ import {
   type AcpRegistryAcceptUrlAuthInput,
   type AcpRegistryUrlAuthAction,
   type ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
@@ -93,7 +93,7 @@ export class AcpRegistryRuntimeCoordinator extends Context.Service<
       onUpdate: (action: AcpRegistryUrlAuthAction | null) => Effect.Effect<void>,
     ) => Effect.Effect<void>;
   }
->()("@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator") {}
+>()("@d4research/provider-acp-registry/server/AcpRegistryRuntimeCoordinator") {}
 
 const make = Effect.gen(function* () {
   const foregroundStarts = yield* PubSub.unbounded<string>();

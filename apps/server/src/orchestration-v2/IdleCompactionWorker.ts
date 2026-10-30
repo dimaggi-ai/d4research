@@ -1,5 +1,5 @@
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { CommandId, IDLE_COMPACTION_TEXT, MessageId } from "@t3tools/contracts";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
+import { CommandId, IDLE_COMPACTION_TEXT, MessageId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Scheduler from "../scheduling/Scheduler.ts";

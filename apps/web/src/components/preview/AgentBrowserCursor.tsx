@@ -1,4 +1,4 @@
-import type { DesktopPreviewPointerEvent } from "@t3tools/contracts";
+import type { DesktopPreviewPointerEvent } from "@d4research/contracts";
 import { MousePointer2 } from "lucide-react";
 import { useEffect, useState } from "react";
 

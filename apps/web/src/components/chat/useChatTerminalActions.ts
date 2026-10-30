@@ -1,13 +1,13 @@
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@d4research/client-runtime/state/shell";
 import type { Dispatch } from "react";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { selectThreadTerminalUiState } from "../../terminalUiStateStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import { getTerminalLabel } from "@d4research/shared/terminalLabels";
 import {
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -15,13 +15,13 @@ import {
   type ProjectScript,
   type ScopedThreadRef,
   type ThreadId,
-} from "@t3tools/contracts";
-import { projectScriptTerminalInput } from "@t3tools/shared/projectScripts";
+} from "@d4research/contracts";
+import { projectScriptTerminalInput } from "@d4research/shared/projectScripts";
 import { type SetStateAction } from "react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { MAX_TERMINALS_PER_GROUP } from "../../types";
 import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import { isPreviewSupportedInRuntime } from "../../previewStateStore";

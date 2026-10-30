@@ -2,7 +2,7 @@ import type {
   EnvironmentContextRecord,
   PreviewAnnotationPayload,
   ThreadContextRecord,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useEffect, useState } from "react";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";

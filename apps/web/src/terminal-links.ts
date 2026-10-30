@@ -1,4 +1,4 @@
-import { formatFilePathPosition, splitFilePathPosition } from "@t3tools/shared/fileLinks";
+import { formatFilePathPosition, splitFilePathPosition } from "@d4research/shared/fileLinks";
 
 import { isMacPlatform } from "./lib/utils";
 

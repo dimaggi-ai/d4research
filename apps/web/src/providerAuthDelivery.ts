@@ -1,5 +1,5 @@
-import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
-import { readCodexAuthDelivery } from "@t3tools/shared/codexAuthHandoff";
+import { runAtomCommand } from "@d4research/client-runtime/state/runtime";
+import { readCodexAuthDelivery } from "@d4research/shared/codexAuthHandoff";
 
 import { toastManager } from "./components/ui/toast";
 import { appAtomRegistry } from "./rpc/atomRegistry";

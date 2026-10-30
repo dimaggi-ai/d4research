@@ -1,5 +1,5 @@
-import type { ConnectionCatalogEntry } from "@t3tools/client-runtime/connection";
-import type { BundledServerRuntime, ServerConfig } from "@t3tools/contracts";
+import type { ConnectionCatalogEntry } from "@d4research/client-runtime/connection";
+import type { BundledServerRuntime, ServerConfig } from "@d4research/contracts";
 import * as Option from "effect/Option";
 
 export function sshServerUpdateTarget(entry: ConnectionCatalogEntry) {

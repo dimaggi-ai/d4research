@@ -23,7 +23,7 @@ vi.mock("node:tty", async () => {
     },
   };
 });
-vi.mock("@t3tools/shared/HostProcess", () => ({ Platform: { defaultValue: io.platform } }));
+vi.mock("@d4research/shared/HostProcess", () => ({ Platform: { defaultValue: io.platform } }));
 
 const originalStdin = Object.getOwnPropertyDescriptor(process, "stdin")!;
 

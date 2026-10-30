@@ -4,7 +4,7 @@ import {
   WS_METHODS,
   sessionGrantsScope,
   type SessionGrantInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 
 import type {

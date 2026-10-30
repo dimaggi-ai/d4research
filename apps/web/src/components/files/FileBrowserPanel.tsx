@@ -1,7 +1,7 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { joinHostPath } from "./filePath";
-import type { EnvironmentId, GitFileChange, ProjectEntry } from "@t3tools/contracts";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import type { EnvironmentId, GitFileChange, ProjectEntry } from "@d4research/contracts";
+import { serializeComposerFileLink } from "@d4research/shared/composerTrigger";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, Trash2Icon, XIcon } from "lucide-react";
 import {
   useCallback,

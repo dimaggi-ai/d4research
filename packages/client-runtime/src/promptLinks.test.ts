@@ -6,7 +6,7 @@ import {
   ThreadId,
   type PullRequestLinkedThreadsResult,
   type RepositoryIdentity,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 

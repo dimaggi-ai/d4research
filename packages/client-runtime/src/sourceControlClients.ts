@@ -1,12 +1,12 @@
-import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
+import { builtInSourceControlDefinitions } from "@d4research/source-control-definitions/registry";
 import {
   HostCredentialSettings,
   readSourceControlHostSettings,
   type SourceControlAppSignIn,
   type SourceControlDefinition,
-} from "@t3tools/source-control-core/shared/definition";
-import type { ServerSettings, SourceControlAppAccessInput } from "@t3tools/contracts";
-import { parseGitRemoteRepository } from "@t3tools/shared/git";
+} from "@d4research/source-control-core/shared/definition";
+import type { ServerSettings, SourceControlAppAccessInput } from "@d4research/contracts";
+import { parseGitRemoteRepository } from "@d4research/shared/git";
 
 export {
   isMonochromeSourceControlIcon,
@@ -21,7 +21,7 @@ export {
   type SourceControlDefinition,
   type SourceControlHostCredentials,
   type SourceControlIcon,
-} from "@t3tools/source-control-core/shared/definition";
+} from "@d4research/source-control-core/shared/definition";
 
 export const sourceControlClients = builtInSourceControlDefinitions;
 

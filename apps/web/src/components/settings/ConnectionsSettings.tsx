@@ -1,9 +1,9 @@
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
+import { connectionStatusText } from "@d4research/client-runtime/connection";
 import { EnvironmentRow } from "./EnvironmentRow";
 import {
   isHostPrimaryConnectionTarget,
   isSharedHostConnectionTarget,
-} from "@t3tools/client-runtime/connection";
+} from "@d4research/client-runtime/connection";
 import { SessionPermissions } from "./SessionPermissions";
 
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
@@ -23,12 +23,12 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";

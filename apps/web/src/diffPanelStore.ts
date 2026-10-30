@@ -1,7 +1,7 @@
-import type { ThreadStructureVisibleTurnItem } from "@t3tools/client-runtime/state/shell";
-import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { RunId, ScopedThreadRef, ThreadId, TurnItemId } from "@t3tools/contracts";
+import type { ThreadStructureVisibleTurnItem } from "@d4research/client-runtime/state/shell";
+import { turnItemDetailRevision } from "@d4research/client-runtime/work-log/item-detail";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
+import type { RunId, ScopedThreadRef, ThreadId, TurnItemId } from "@d4research/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 

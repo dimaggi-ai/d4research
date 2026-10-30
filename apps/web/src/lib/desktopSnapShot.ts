@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@t3tools/contracts";
+import type { DesktopBridge } from "@d4research/contracts";
 
 const SNAP_SHOT_FOCUS_EVENT = "t3code:focus-composer";
 

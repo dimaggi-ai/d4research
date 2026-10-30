@@ -2,7 +2,7 @@ import { AsyncResult } from "effect/reactivity";
 import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, onTestFinished, vi } from "vite-plus/test";
-import type { ServerConfig } from "@t3tools/contracts";
+import type { ServerConfig } from "@d4research/contracts";
 
 import type { ZipTreeRow } from "./zipTree";
 

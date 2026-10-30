@@ -1,5 +1,5 @@
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { DesktopAppActivationRequest } from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { DesktopAppActivationRequest } from "@d4research/contracts";
 import { useEffect, useEffectEvent, useRef } from "react";
 
 import { handleDesktopAppActivationRequest } from "../../desktopAppActivation";
@@ -7,7 +7,7 @@ import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import {
   findProjectByPath,
   inferProjectTitleFromPath,
-} from "@t3tools/client-runtime/state/projects";
+} from "@d4research/client-runtime/state/projects";
 import { newProjectId } from "../../lib/utils";
 import { readProjects, waitForProject } from "../../state/entities";
 import { usePrimaryEnvironment } from "../../state/environments";

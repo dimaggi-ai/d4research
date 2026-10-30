@@ -1,7 +1,7 @@
 import * as Option from "effect/Option";
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
-import { EnvironmentAuthenticatedAuth } from "@t3tools/contracts";
-import { AuthSessionId } from "@t3tools/contracts";
+import { RelayClientTracer } from "@d4research/shared/relayTracing";
+import { EnvironmentAuthenticatedAuth } from "@d4research/contracts";
+import { AuthSessionId } from "@d4research/contracts";
 import { HttpServerRequest } from "effect/http";
 import * as Tracer from "effect/Tracer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -10,7 +10,7 @@ import {
   AuthEnvironmentBootstrapTokenType,
   AuthAccessTokenType,
   EnvironmentHttpApi,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";

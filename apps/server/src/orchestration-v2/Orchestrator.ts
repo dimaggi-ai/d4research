@@ -1,4 +1,4 @@
-import { threadPullRequestTerminalAt } from "@t3tools/shared/threadPullRequests";
+import { threadPullRequestTerminalAt } from "@d4research/shared/threadPullRequests";
 import * as IdleCompaction from "./IdleCompaction.ts";
 import type {
   PeerThreadWatch,
@@ -6,14 +6,14 @@ import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
   OrchestrationV2ThreadHistoryPage,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   latestExecutedRun,
   latestRootProviderFailure,
   runRanAfter,
   usageLimitBlockedRun,
-} from "@t3tools/shared/orchestrationV2ThreadError";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
+} from "@d4research/shared/orchestrationV2ThreadError";
+import { canonicalizeGitCafePullRequestUrl } from "@d4research/source-control-definitions/registry";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -73,13 +73,13 @@ import {
   ThreadId,
   TurnItemId,
   TrimmedNonEmptyString,
-} from "@t3tools/contracts";
-import { modelSelectionsEqual } from "@t3tools/shared/model";
-import { recordThreadOpen } from "@t3tools/shared/paletteSearch";
+} from "@d4research/contracts";
+import { modelSelectionsEqual } from "@d4research/shared/model";
+import { recordThreadOpen } from "@d4research/shared/paletteSearch";
 import {
   derivePendingBackgroundWork,
   pendingBackgroundTurnItems,
-} from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+} from "@d4research/shared/orchestrationV2PendingBackgroundWork";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -107,7 +107,7 @@ import {
 } from "./CommandPolicy.ts";
 import { CommandReceiptStoreV2 } from "./CommandReceiptStore.ts";
 import { ContextHandoffServiceV2 } from "./ContextHandoffService.ts";
-import { notificationTurnItem } from "@t3tools/provider-core/server/notification";
+import { notificationTurnItem } from "@d4research/provider-core/server/notification";
 import {
   cancelledBeforeStart,
   isRestartContinuationSource,
@@ -129,7 +129,7 @@ import {
 import * as EffectOutbox from "./EffectOutbox.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import {
@@ -149,8 +149,8 @@ import {
   type ShellSnapshotOptions,
 } from "./ProjectionStore.ts";
 import { ProviderAdapterRegistryV2 } from "./ProviderAdapterRegistry.ts";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import * as ProviderContinuationRequests from "@d4research/provider-core/server/ProviderContinuationRequests";
+import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
@@ -163,7 +163,7 @@ import {
   subagentResultForRun,
   delegatedTaskProgress,
   subagentThreadTitle,
-} from "@t3tools/provider-core/server/subagentProjection";
+} from "@d4research/provider-core/server/subagentProjection";
 import {
   forkableSourceRunStatusError,
   isForkableSourceRunStatus,
@@ -173,8 +173,8 @@ import { planThreadDeletion } from "./ThreadDeletion.ts";
 import {
   PRIMARY_WORKSPACE_BUSY_MESSAGE,
   threadHasWorkspaceBoundWork,
-} from "@t3tools/shared/threadWorkspaces";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@d4research/shared/threadWorkspaces";
+import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
 const isMessageQuestionAnswer = Schema.is(
@@ -4549,7 +4549,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly messageId: OrchestrationV2ConversationMessage["id"];
     readonly text: string;
     readonly attachments: ReadonlyArray<ChatAttachment>;
-    readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
+    readonly context?: import("@d4research/contracts").OrchestrationMessageContext | undefined;
     readonly createdBy: OrchestrationV2ConversationMessage["createdBy"];
     readonly creationSource: OrchestrationV2ConversationMessage["creationSource"];
     readonly scheduledTaskId?: OrchestrationV2ConversationMessage["scheduledTaskId"];

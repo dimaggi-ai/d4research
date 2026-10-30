@@ -11,7 +11,7 @@ import {
   MIN_CHAT_MESSAGE_FONT_SIZE,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PROMPT_FONT_SIZE,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export const DEFAULT_SANS_FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif';

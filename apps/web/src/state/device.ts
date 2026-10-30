@@ -1,19 +1,19 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createDeviceEnvironmentAtoms } from "@t3tools/client-runtime/state/device";
+import { createDeviceEnvironmentAtoms } from "@d4research/client-runtime/state/device";
 import {
   type DeviceHubAccess,
   resolveDeviceHubAccess,
-} from "@t3tools/client-runtime/state/deviceHubAccess";
+} from "@d4research/client-runtime/state/deviceHubAccess";
 import {
   createEnvironmentRpcQueryAtomFamily,
   runAtomCommand,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   type DeviceDetail,
   type DeviceServiceState,
   type EnvironmentId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";

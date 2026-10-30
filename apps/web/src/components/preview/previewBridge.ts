@@ -1,4 +1,4 @@
-import { PreviewCaptureFailure, type PreviewCaptureFailureEncoded } from "@t3tools/contracts";
+import { PreviewCaptureFailure, type PreviewCaptureFailureEncoded } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

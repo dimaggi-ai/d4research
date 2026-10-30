@@ -1,7 +1,7 @@
 import {
   matchComposerEnvironmentItems,
   matchComposerThreadItems,
-} from "@t3tools/client-runtime/composerThreadItems";
+} from "@d4research/client-runtime/composerThreadItems";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import type {
@@ -12,13 +12,13 @@ import type {
   ServerProvider,
   ThreadId,
   ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   composerPullRequestsFromLinks,
   filterComposerPullRequestMatches,
   withLinkedComposerPullRequestsFirst,
-} from "@t3tools/shared/composerPullRequestMatches";
-import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+} from "@d4research/shared/composerPullRequestMatches";
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 
 import type { ComposerTrigger } from "../../composer-logic";
 import type { DraftId } from "../../composerDraftStore";
@@ -26,7 +26,7 @@ import { basenameOfPath } from "../../pierre-icons";
 import {
   getProviderSkillsForSlashMenu,
   getProviderSlashCommandsForSlashMenu,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@d4research/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useThreadShells } from "~/state/entities";
 import { useEnvironmentIdentities, useEnvironmentMachines } from "~/state/environments";

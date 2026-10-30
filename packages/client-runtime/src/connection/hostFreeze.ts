@@ -1,4 +1,4 @@
-import type { ServerEventLoopStall } from "@t3tools/contracts";
+import type { ServerEventLoopStall } from "@d4research/contracts";
 
 export interface HostFreezeNotice {
   readonly title: string;

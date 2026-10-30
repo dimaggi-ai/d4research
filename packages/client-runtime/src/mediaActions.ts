@@ -1,4 +1,4 @@
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+import { isWindowsAbsolutePath } from "@d4research/shared/path";
 
 // The file host can use a different path style from the client.
 export function formatFilePathForClipboard(path: string, hostPath = path): string {

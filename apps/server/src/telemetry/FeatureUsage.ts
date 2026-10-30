@@ -1,4 +1,4 @@
-import { type OrchestrationV2Command, WS_METHODS } from "@t3tools/contracts";
+import { type OrchestrationV2Command, WS_METHODS } from "@d4research/contracts";
 
 export interface FeatureUsage {
   readonly feature: string;

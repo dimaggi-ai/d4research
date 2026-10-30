@@ -1,11 +1,11 @@
 import { act, render, stubGlobal } from "../../../test/render";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@d4research/contracts";
 import type {
   CommunicationSelection,
   ThreadCommunication,
-} from "@t3tools/client-runtime/state/thread-communication";
+} from "@d4research/client-runtime/state/thread-communication";
 import { AgentCommunicationDialog } from "./AgentCommunicationDialog";
 import { AgentCommunicationView } from "./AgentCommunicationView";
 

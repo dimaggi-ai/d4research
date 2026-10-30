@@ -1,4 +1,4 @@
-import { environmentGatewayPath } from "@t3tools/shared/environmentGateway";
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
 import {
   EnvironmentHttpApi,
   EnvironmentHttpCommonError,
@@ -8,8 +8,8 @@ import {
   type EnvironmentRequestInvalidError,
   type EnvironmentResourceNotFoundError,
   type EnvironmentScopeRequiredError,
-} from "@t3tools/contracts";
-import * as HttpObservability from "@t3tools/shared/httpObservability";
+} from "@d4research/contracts";
+import * as HttpObservability from "@d4research/shared/httpObservability";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

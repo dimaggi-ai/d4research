@@ -1,9 +1,9 @@
-import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
+import type { ReferenceAutolink } from "@d4research/client-runtime/source-control-clients";
 
 export {
   splitPullRequestBody,
   type PullRequestBodySegment,
-} from "@t3tools/client-runtime/pull-request-markdown";
+} from "@d4research/client-runtime/pull-request-markdown";
 
 type MarkdownNode = {
   type: string;

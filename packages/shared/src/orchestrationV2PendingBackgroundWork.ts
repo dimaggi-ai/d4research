@@ -6,8 +6,8 @@ import type {
   ThreadId,
   ThreadPullRequestLink,
   PeerThreadWatch,
-} from "@t3tools/contracts";
-import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { isOrchestrationV2WorkActive } from "@d4research/contracts";
 import * as Predicate from "effect/Predicate";
 
 import { resolveT3McpToolId } from "./t3McpToolPresentation.ts";

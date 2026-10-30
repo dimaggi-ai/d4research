@@ -4,13 +4,13 @@ import {
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
   type ProjectScript,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
-} from "@t3tools/shared/projectScripts";
+} from "@d4research/shared/projectScripts";
 
 import { uuidv4 } from "../../lib/uuid";
 import { readEnvironmentScope } from "../../state/session";

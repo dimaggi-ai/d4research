@@ -1,4 +1,4 @@
-import type { PullRequestUpdateMethod } from "@t3tools/contracts";
+import type { PullRequestUpdateMethod } from "@d4research/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 

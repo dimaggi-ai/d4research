@@ -25,7 +25,7 @@ export class ProviderLatestVersions extends Context.Service<
     ) => Effect.Effect<string | null, E, R>;
     readonly invalidate: (key: string) => Effect.Effect<void>;
   }
->()("@t3tools/provider-core/server/ProviderLatestVersions") {}
+>()("@d4research/provider-core/server/ProviderLatestVersions") {}
 
 export const make = Effect.fn("ProviderLatestVersions.make")(function* (
   seed: Iterable<readonly [key: string, version: string | null]> = [],

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/models";
+import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
+import { EnvironmentId } from "@d4research/contracts";
 import { pullRequestFallbackEnvironment } from "./pullRequestEnvironmentFallback";
 
 const project = (environmentId: string, id: string, canonicalKey: string) =>

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   resolveThreadWorkspaces,
   threadWorkspaceInstructions,
-} from "@t3tools/shared/threadWorkspaces";
+} from "@d4research/shared/threadWorkspaces";
 import { resolveFilePreviewRoots, resolveFileWorktreeOptions } from "./filePreviewRoots";
 
 describe("resolveFilePreviewRoots", () => {

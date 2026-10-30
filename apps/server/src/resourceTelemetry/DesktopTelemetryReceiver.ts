@@ -11,8 +11,8 @@ import {
   type DesktopUpdateChannel,
   type DesktopUpdateStatusReport,
   type ResourceTelemetrySourceStatus,
-} from "@t3tools/contracts";
-import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+} from "@d4research/contracts";
+import { resolveServerBackgroundActivitySettings } from "@d4research/shared/backgroundActivitySettings";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";

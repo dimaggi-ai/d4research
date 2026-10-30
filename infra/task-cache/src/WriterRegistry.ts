@@ -43,7 +43,7 @@ export class WriterRegistry extends Context.Service<
       PlatformError.PlatformError | Schema.SchemaError | ManagementError
     >;
   }
->()("@t3tools/task-cache/WriterRegistry") {}
+>()("@d4research/task-cache/WriterRegistry") {}
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

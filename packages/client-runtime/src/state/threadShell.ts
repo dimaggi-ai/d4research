@@ -5,8 +5,8 @@ import type {
   ScopedProjectRef,
   ScopedThreadRef,
   ThreadId,
-} from "@t3tools/contracts";
-import { isProviderNativeSubagentThread, OrchestrationV2ThreadShell } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { isProviderNativeSubagentThread, OrchestrationV2ThreadShell } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 

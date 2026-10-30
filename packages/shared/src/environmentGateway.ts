@@ -1,4 +1,4 @@
-import { SHARED_ENVIRONMENT_PROXY_PREFIX } from "@t3tools/contracts";
+import { SHARED_ENVIRONMENT_PROXY_PREFIX } from "@d4research/contracts";
 
 /** Only our same-origin gateway may carry an API path prefix. Ordinary hosts retain root routing. */
 export function environmentGatewayPath(baseUrl: string): string {

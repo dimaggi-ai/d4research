@@ -27,12 +27,12 @@ import type {
   ProjectSearchCodeResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
-import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { isExplicitRelativePath, isWindowsAbsolutePath } from "@d4research/shared/path";
+import { normalizeSearchQuery } from "@d4research/shared/searchRanking";
 
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";

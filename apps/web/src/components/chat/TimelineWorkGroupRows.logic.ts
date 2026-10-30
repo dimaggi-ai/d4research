@@ -1,4 +1,4 @@
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
 
 function formatWorkingTimer(startIso: string, endIso: string): string | null {
   const startedAtMs = Date.parse(startIso);

@@ -1,8 +1,8 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import {
   readHostCredentialSettings,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/client-runtime/source-control-clients";
 import { ExternalLinkIcon } from "lucide-react";
 
 import { useEnvironmentSettings } from "../hooks/useSettings";

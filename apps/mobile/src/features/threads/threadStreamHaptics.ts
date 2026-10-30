@@ -1,7 +1,7 @@
 // @effect-diagnostics globalDate:off - The tracker runs in an atom subscription, outside an Effect runtime.
-import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
-import type { EnvironmentThread } from "@t3tools/client-runtime/state/shell";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { parseThreadKey, threadKey } from "@d4research/client-runtime/state/entities";
+import type { EnvironmentThread } from "@d4research/client-runtime/state/shell";
+import type { ScopedThreadRef } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
 

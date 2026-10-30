@@ -11,7 +11,7 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   SHARED_ENVIRONMENT_PROXY_PREFIX,
   type ExecutionEnvironmentDescriptor,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@d4research/contracts";
 
 /** Only merge reachable, expanded levels; stale children cannot resurrect a deleted folder. */
 export function mergeDirectoryListings(

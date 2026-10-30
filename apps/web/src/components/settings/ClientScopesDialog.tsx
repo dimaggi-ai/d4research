@@ -8,8 +8,8 @@ import {
   AuthTerminalReadScope,
   AuthStandardClientScopes,
   type AuthEnvironmentScope,
-} from "@t3tools/contracts";
-import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+} from "@d4research/contracts";
+import { AUTH_SCOPE_OPTIONS } from "@d4research/shared/authScopeOptions";
 import { togglePairingScopeSelection } from "./ConnectionsSettings.logic";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";

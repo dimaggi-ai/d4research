@@ -1,10 +1,10 @@
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
-import { resolveMergeBackTargetThreadId } from "@t3tools/client-runtime/state/thread-relationships";
-import { resolveLatestMergeBackRun } from "@t3tools/client-runtime/state/thread-workflows";
+import { resolveMergeBackTargetThreadId } from "@d4research/client-runtime/state/thread-relationships";
+import { resolveLatestMergeBackRun } from "@d4research/client-runtime/state/thread-workflows";
 import {
   AuthOrchestrationOperateScope,
   type OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useRef } from "react";
 
 import { useEnvironmentScope } from "../../state/session";

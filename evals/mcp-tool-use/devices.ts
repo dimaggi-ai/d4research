@@ -18,8 +18,8 @@ import {
   LOCAL_DEVICE_HOST_LABEL,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -537,7 +537,7 @@ const decodeDeviceError = Schema.decodeUnknownOption(DeviceError);
 export const deviceFailure = (mock: unknown) => Option.getOrUndefined(decodeDeviceError(mock));
 
 const Injected = Context.Reference<DeviceError | undefined>(
-  "@t3tools/evals/mcp-tool-use/devices/Injected",
+  "@d4research/evals/mcp-tool-use/devices/Injected",
   { defaultValue: () => undefined },
 );
 const failing = <A, R>(effect: Effect.Effect<A, DeviceError, R>) =>

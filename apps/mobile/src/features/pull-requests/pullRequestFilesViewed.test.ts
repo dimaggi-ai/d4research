@@ -1,4 +1,4 @@
-import type { PullRequestFilesViewedResult } from "@t3tools/contracts";
+import type { PullRequestFilesViewedResult } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { viewedOverlay } from "./pullRequestFilesViewed";
 

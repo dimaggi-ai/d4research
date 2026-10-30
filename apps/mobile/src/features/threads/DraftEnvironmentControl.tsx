@@ -1,6 +1,6 @@
 import { Pressable } from "react-native";
-import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentMachineKind } from "@d4research/contracts";
+import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";

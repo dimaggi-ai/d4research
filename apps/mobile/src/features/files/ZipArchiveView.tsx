@@ -1,16 +1,16 @@
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { formatAttachmentSize } from "@d4research/client-runtime/state/attachments";
 import {
   ARCHIVE_ENTRY_MAX_BYTES,
   ARCHIVE_MAX_BYTES,
   boundedZip,
-} from "@t3tools/client-runtime/zip/bounded-zip";
-import type { EnvironmentId } from "@t3tools/contracts";
-import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
+} from "@d4research/client-runtime/zip/bounded-zip";
+import type { EnvironmentId } from "@d4research/contracts";
+import { filePreviewDelimiter, parseDelimitedPreview } from "@d4research/shared/delimitedPreview";
 import {
   decodeFilePreviewText,
   filePreviewKind,
   hostPreviewMimeTypeFromExtension,
-} from "@t3tools/shared/filePreview";
+} from "@d4research/shared/filePreview";
 import { LegendList } from "@legendapp/list/react-native";
 import { fetch } from "expo/fetch";
 import { File } from "expo-file-system";

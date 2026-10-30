@@ -2,7 +2,7 @@ import * as Option from "effect/Option";
 import { useSelectedThreadDetailState } from "../../../state/use-thread-detail";
 import { useThreadMergeBack } from "../useThreadMergeBack";
 import { useThreadProjectTools } from "../../terminal/useThreadProjectTools";
-import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import { projectScriptMenuLabel } from "@d4research/shared/projectScripts";
 import { ThreadColorPicker } from "../ThreadColorPicker";
 import { useEnvironmentScope } from "../../../state/session";
 import * as Dialog from "../../../components/ui/Dialog";
@@ -13,14 +13,14 @@ import {
   buildMenuItems,
   getGitActionDisabledReason,
   requiresDefaultBranchConfirmation,
-} from "@t3tools/client-runtime/state/vcs";
+} from "@d4research/client-runtime/state/vcs";
 import {
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
   EnvironmentId,
   ThreadId,
-} from "@t3tools/contracts";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/contracts";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import {
   CommonActions,
   StackActions,

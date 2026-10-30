@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
-import type { PhoneViewer } from "@t3tools/client-runtime/device/phone-viewer";
+import type { PhoneViewer } from "@d4research/client-runtime/device/phone-viewer";
 import type {
   DeviceAccessorySource,
   DeviceModelSource,
-} from "@t3tools/client-runtime/device/model";
-import type { DeviceShapeProfile } from "@t3tools/client-runtime/device/shape-profile";
-import type { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-interaction";
-import type { DeviceScreenSize, DeviceStreamClient } from "@t3tools/client-runtime/device/stream";
+} from "@d4research/client-runtime/device/model";
+import type { DeviceShapeProfile } from "@d4research/client-runtime/device/shape-profile";
+import type { createPhoneInteraction } from "@d4research/client-runtime/device/phone-interaction";
+import type { DeviceScreenSize, DeviceStreamClient } from "@d4research/client-runtime/device/stream";
 import { mountDeviceViewer } from "./mountDeviceViewer";
 
-const loadPhoneViewer = () => import("@t3tools/client-runtime/device/phone-viewer");
+const loadPhoneViewer = () => import("@d4research/client-runtime/device/phone-viewer");
 
 export function DevicePhoneViewport(props: {
   readonly profile: DeviceShapeProfile;

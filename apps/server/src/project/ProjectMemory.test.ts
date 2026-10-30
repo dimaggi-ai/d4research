@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ProjectId, ProjectMemorySaveInput, ThreadId, MessageId } from "@t3tools/contracts";
+import { ProjectId, ProjectMemorySaveInput, ThreadId, MessageId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";

@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { SqlClient } from "effect/sql";
-import type { UsageLimitHistoryPoint } from "@t3tools/contracts";
+import type { UsageLimitHistoryPoint } from "@d4research/contracts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { UsageLimitHistory, layer } from "./UsageLimitHistory.ts";
 

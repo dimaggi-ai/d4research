@@ -1,6 +1,6 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { presentPendingBackgroundWork } from "@t3tools/client-runtime/state/thread-execution";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import { scopeThreadRef, scopedThreadKey } from "@d4research/client-runtime/environment";
+import { presentPendingBackgroundWork } from "@d4research/client-runtime/state/thread-execution";
 import { resolveSidebarThreadStatus, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 

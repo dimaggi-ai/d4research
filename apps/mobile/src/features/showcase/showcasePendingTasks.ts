@@ -1,4 +1,4 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -6,7 +6,7 @@ import {
   MessageId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 

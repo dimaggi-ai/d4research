@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MAX_CHAT_CUSTOM_WIDTH_PX, MIN_CHAT_CUSTOM_WIDTH_PX } from "@t3tools/contracts/settings";
+import { MAX_CHAT_CUSTOM_WIDTH_PX, MIN_CHAT_CUSTOM_WIDTH_PX } from "@d4research/contracts/settings";
 import {
   NumberField,
   NumberFieldDecrement,

@@ -1,4 +1,4 @@
-import type { PullRequestCheck } from "@t3tools/contracts";
+import type { PullRequestCheck } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 

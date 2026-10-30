@@ -3,13 +3,13 @@ import {
   type AtomCommand,
   runAtomCommand,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   GitCommitStagedResult,
   GitDetailedStatusResult,
   GitFileDiffResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";

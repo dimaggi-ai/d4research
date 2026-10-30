@@ -1,21 +1,21 @@
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
-} from "@t3tools/client-runtime/state/thread-requests";
-import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
-import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
-import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
-import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
+} from "@d4research/client-runtime/state/thread-requests";
+import { turnItemIsWorkspacePreparation } from "@d4research/client-runtime/state/turn-item-presentation";
+import type { ThreadCheckpointSummary } from "@d4research/client-runtime/state/thread-checkpoints";
+import { formatSubagentDisplayTitle } from "@d4research/client-runtime/state/subagent-display";
+import { isLiveSubagentTurnItem } from "@d4research/client-runtime/state/subagentRuntime";
+import { extractToolActivityPresentation } from "@d4research/client-runtime/work-log/tool-presentation";
 import {
   turnItemDetailRevision,
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
-} from "@t3tools/client-runtime/work-log/item-detail";
+} from "@d4research/client-runtime/work-log/item-detail";
 import {
   commandDisplayText,
   commandProgramName,
-} from "@t3tools/client-runtime/work-log/command-label";
+} from "@d4research/client-runtime/work-log/command-label";
 import {
   contextCompactionLabel,
   liveThoughtLine,
@@ -29,13 +29,13 @@ import {
   type ToolGroupSummaryKind,
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
-} from "@t3tools/client-runtime/work-log/presentation";
+} from "@d4research/client-runtime/work-log/presentation";
 import {
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
   type T3McpToolLogo,
   type T3McpToolPresentation,
-} from "@t3tools/shared/t3McpToolPresentation";
+} from "@d4research/shared/t3McpToolPresentation";
 import type {
   ChatAttachment,
   MessageId,
@@ -51,8 +51,8 @@ import type {
   RunAttemptId,
   ScheduledTaskId,
   TurnItemId,
-} from "@t3tools/contracts";
-import { idleCompactionOf, isCompactionCommandMessage, RunId, ThreadId } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { idleCompactionOf, isCompactionCommandMessage, RunId, ThreadId } from "@d4research/contracts";
 import {
   classifyToolActivity,
   collectToolFilePaths,
@@ -60,22 +60,22 @@ import {
   isJavaScriptReplTool,
   formatReadToolLabel,
   formatSearchToolLabel,
-} from "@t3tools/shared/toolActivity";
-import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import { truncate } from "@t3tools/shared/String";
-import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
-import type { McpAppReference } from "@t3tools/shared/mcpApp";
+} from "@d4research/shared/toolActivity";
+import { claudeResumeCompactionAge } from "@d4research/shared/claudeCompaction";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
+import { truncate } from "@d4research/shared/String";
+import type { HtmlRenderReference } from "@d4research/shared/htmlRender";
+import type { McpAppReference } from "@d4research/shared/mcpApp";
 import {
   compactDynamicToolOutput,
   htmlRenderFromToolItem,
   mcpAppFromToolItem,
-} from "@t3tools/shared/toolOutput";
+} from "@d4research/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 import {
   IDLE_COMPACTION_TITLES,
   IDLE_COMPACTING_LABELS,
-} from "@t3tools/client-runtime/user-message";
+} from "@d4research/client-runtime/user-message";
 
 export type PendingApproval = ThreadPendingApproval;
 export type PendingUserInput = ThreadPendingUserInput;
@@ -124,7 +124,7 @@ export interface ThreadFeedActivity {
 }
 
 export interface ThreadFeedMessage {
-  readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
+  readonly context?: import("@d4research/contracts").OrchestrationMessageContext | undefined;
   readonly id: MessageId;
   readonly role: "user" | "assistant";
   readonly text: string;
@@ -136,7 +136,7 @@ export interface ThreadFeedMessage {
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
-  readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
+  readonly idleCompaction?: import("@d4research/contracts").OrchestrationV2IdleCompaction;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
   readonly sourceThreadId: ThreadId;
   readonly createdAt: string;

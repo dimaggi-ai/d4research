@@ -1,5 +1,5 @@
-import { createReviewEnvironmentAtoms } from "@t3tools/client-runtime/state/review";
-import type { EnvironmentId, ReviewDiffPreviewSource } from "@t3tools/contracts";
+import { createReviewEnvironmentAtoms } from "@d4research/client-runtime/state/review";
+import type { EnvironmentId, ReviewDiffPreviewSource } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import { Atom } from "effect/reactivity";
 

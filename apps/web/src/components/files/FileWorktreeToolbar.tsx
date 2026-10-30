@@ -1,9 +1,9 @@
-import type { EnvironmentId, ScopedThreadRef, VcsRef } from "@t3tools/contracts";
-import type { SelectedProjectWorkspace } from "@t3tools/shared/threadWorkspaces";
+import type { EnvironmentId, ScopedThreadRef, VcsRef } from "@d4research/contracts";
+import type { SelectedProjectWorkspace } from "@d4research/shared/threadWorkspaces";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, FolderGit2, RefreshCw } from "lucide-react";
 import { threadEnvironment } from "~/state/threads";

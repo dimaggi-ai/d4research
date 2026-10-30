@@ -1,8 +1,8 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { findScopedProject } from "./pullRequestList.logic";
-import { pullRequestFilterProjects } from "@t3tools/client-runtime/pull-request-project-filter";
+import { pullRequestFilterProjects } from "@d4research/client-runtime/pull-request-project-filter";
 
 const cups = EnvironmentId.make("env-cups");
 const nucbox = EnvironmentId.make("env-nucbox");

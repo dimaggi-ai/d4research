@@ -13,7 +13,7 @@ import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";

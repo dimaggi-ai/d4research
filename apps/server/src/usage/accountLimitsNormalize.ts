@@ -20,7 +20,7 @@
  *
  * @module accountLimitsNormalize
  */
-import type { AccountLimitsWindow } from "@t3tools/contracts";
+import type { AccountLimitsWindow } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
 const FIVE_HOUR_MINUTES = 5 * 60;

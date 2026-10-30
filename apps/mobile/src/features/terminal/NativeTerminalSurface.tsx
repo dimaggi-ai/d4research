@@ -1,4 +1,4 @@
-import type { TerminalGrid, TerminalOutputState } from "@t3tools/client-runtime/state/terminal";
+import type { TerminalGrid, TerminalOutputState } from "@d4research/client-runtime/state/terminal";
 import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   Pressable,

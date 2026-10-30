@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@d4research/contracts";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   communicationDetailRefs,
   communicationStatusLabel,
@@ -12,7 +12,7 @@ import {
   type ThreadCommunication,
   selectCommunicationMessages,
   type CommunicationSelection,
-} from "@t3tools/client-runtime/state/thread-communication";
+} from "@d4research/client-runtime/state/thread-communication";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { Atom } from "effect/reactivity";
 import { useEffect, useMemo, useState } from "react";

@@ -1,4 +1,4 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import { describe, expect, it } from "vite-plus/test";
 import {
   allowedMergeMethods,
@@ -10,7 +10,7 @@ import {
 const GITHUB = sourceControlClients.get("github").changeRequest;
 const GITLAB = sourceControlClients.get("gitlab").changeRequest;
 
-import type { PullRequestAction } from "@t3tools/contracts";
+import type { PullRequestAction } from "@d4research/contracts";
 
 const ALL_PR_ACTIONS: readonly PullRequestAction[] = [
   "merge",

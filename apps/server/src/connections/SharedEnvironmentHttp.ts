@@ -4,7 +4,7 @@ import {
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
   SHARED_ENVIRONMENT_PROXY_PREFIX,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";

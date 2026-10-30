@@ -2,7 +2,7 @@ import {
   ORCHESTRATION_V2_WS_METHODS,
   OrchestrationV2Command,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 

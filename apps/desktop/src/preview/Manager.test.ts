@@ -4,9 +4,9 @@ import type {
   DesktopPreviewRecordingInputEvent,
   PreviewAnnotationPayload,
   PreviewAnnotationRect,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { parseKeybindingShortcut } from "@d4research/shared/keybindings";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

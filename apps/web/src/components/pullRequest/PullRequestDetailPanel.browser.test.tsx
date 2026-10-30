@@ -8,7 +8,7 @@ import {
   type PullRequestDetailView,
   type ScopedThreadRef,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";

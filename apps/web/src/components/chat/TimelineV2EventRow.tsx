@@ -1,11 +1,11 @@
 import { WorkLogBlock } from "./WorkLog";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
 import {
   subagentGroupSummary,
   summarizeSubagentStatuses,
-} from "@t3tools/client-runtime/state/subagent-display";
+} from "@d4research/client-runtime/state/subagent-display";
 import { memo, use, useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { cn } from "~/lib/utils";

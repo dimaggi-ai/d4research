@@ -7,12 +7,12 @@ import {
   ThreadWorkspaceCreateInput,
   ThreadWorkspaceResult,
   type VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   PRIMARY_WORKSPACE_BUSY_MESSAGE,
   resolveThreadWorkspaces,
   threadHasWorkspaceBoundWork,
-} from "@t3tools/shared/threadWorkspaces";
+} from "@d4research/shared/threadWorkspaces";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -24,7 +24,7 @@ import * as Semaphore from "effect/Semaphore";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 
 // MCP supplies its session id so a replaced agent cannot attach a prepared checkout.
 type Guard = { readonly providerSessionId?: string };

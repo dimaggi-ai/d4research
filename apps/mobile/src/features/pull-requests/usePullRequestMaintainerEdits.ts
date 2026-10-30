@@ -2,9 +2,9 @@ import { useAtomRefresh } from "@effect/atom-react";
 import {
   maintainerEditsChoiceInForce,
   type MaintainerEditsChoice,
-} from "@t3tools/client-runtime/pull-request-editing";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { PullRequestDetail } from "@t3tools/contracts";
+} from "@d4research/client-runtime/pull-request-editing";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { PullRequestDetail } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import * as Dialog from "../../components/ui/Dialog";

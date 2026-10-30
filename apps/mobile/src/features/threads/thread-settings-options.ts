@@ -1,4 +1,4 @@
-import type { RuntimeMode } from "@t3tools/contracts";
+import type { RuntimeMode } from "@d4research/contracts";
 
 export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   readonly mode: RuntimeMode;
@@ -44,4 +44,4 @@ export function compatibleRuntimeModeForChoices(
     : (choices[0]?.mode ?? runtimeMode);
 }
 
-export { selectableProviderOptionChoices as selectableChoices } from "@t3tools/client-runtime/model-traits";
+export { selectableProviderOptionChoices as selectableChoices } from "@d4research/client-runtime/model-traits";

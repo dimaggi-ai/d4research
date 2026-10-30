@@ -9,7 +9,7 @@ import {
   PROJECT_JUMP_KEYBINDING_COMMANDS,
   type ResolvedKeybindingRule,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export interface ShortcutEventLike {
   getModifierState?: (key: "AltGraph") => boolean;

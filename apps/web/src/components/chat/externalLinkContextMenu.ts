@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem } from "@d4research/contracts";
 
 type ExternalLinkContextMenuAction =
   | "open-in-preview"

@@ -4,7 +4,7 @@ import {
   EnvironmentId,
   ThreadId,
   type AuthSessionState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
@@ -44,8 +44,8 @@ vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: {} }));
 vi.mock("../connection/catalog", () => ({
   environmentCatalog: { sessionGenerationAtom: () => null },
 }));
-vi.mock("@t3tools/client-runtime/state/assets", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/assets")>()),
+vi.mock("@d4research/client-runtime/state/assets", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@d4research/client-runtime/state/assets")>()),
   createAssetEnvironmentAtoms: () => ({ createUrl: state.assetQuery }),
 }));
 vi.mock("./use-atom-query-runner", () => ({ useAtomQueryRunner: () => state.mint }));

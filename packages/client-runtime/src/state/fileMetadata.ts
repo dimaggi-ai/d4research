@@ -6,8 +6,8 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   WS_METHODS,
-} from "@t3tools/contracts";
-import { normalizeProjectPathForComparison, resolveWorkspaceFilePath } from "@t3tools/shared/path";
+} from "@d4research/contracts";
+import { normalizeProjectPathForComparison, resolveWorkspaceFilePath } from "@d4research/shared/path";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

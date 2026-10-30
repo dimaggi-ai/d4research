@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import type { PullRequestDiffResult } from "@t3tools/contracts";
+import type { PullRequestDiffResult } from "@d4research/contracts";
 import type { ReviewParsedDiff } from "../review/reviewModel";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import * as reviewModel from "../review/reviewModel";
 import {
   combinePullRequestDiffPages,

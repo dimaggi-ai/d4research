@@ -6,12 +6,12 @@ import {
   type ClientActivityReportInput,
   type HostPowerSnapshot,
   type RpcClientId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   getBackgroundActivityPresetSettings,
   resolveServerBackgroundActivitySettings,
   type ResolvedBackgroundActivitySettings,
-} from "@t3tools/shared/backgroundActivitySettings";
+} from "@d4research/shared/backgroundActivitySettings";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

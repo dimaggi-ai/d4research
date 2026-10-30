@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 
 it.layer(NodeSqliteClient.layerMemory())("message context upgrade with fork data", (it) => {
   it.effect("preserves fork memories and usage history when adding message context", () =>

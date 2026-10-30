@@ -16,7 +16,7 @@ import {
   type CommunicationParticipant,
   type CommunicationSelection,
   type ThreadCommunication,
-} from "@t3tools/client-runtime/state/thread-communication";
+} from "@d4research/client-runtime/state/thread-communication";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { communicationStatusClasses } from "./agentCommunicationStyles";

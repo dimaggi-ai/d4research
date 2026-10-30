@@ -1,5 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { ACCENT_COLOR_OPTIONS, resolveAccentHex } from "@t3tools/shared/accentColors";
+import { ACCENT_COLOR_OPTIONS, resolveAccentHex } from "@d4research/shared/accentColors";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { Modal, Pressable, View } from "react-native";
 

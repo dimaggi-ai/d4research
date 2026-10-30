@@ -9,16 +9,16 @@ import {
   type ServerLifecycleWelcomePayload,
   type ServerProvider,
   type ServerSettings,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   AVAILABLE_CONNECTION_STATE,
   presentConnectionState,
   type EnvironmentPresentation,
-} from "@t3tools/client-runtime/connection";
-import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
-import { createOutdatedServerUpdateCommand } from "@t3tools/client-runtime/state/outdatedServerUpdate";
-import { createEnvironmentServerConfigsAtom } from "@t3tools/client-runtime/state/shell";
-import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
+} from "@d4research/client-runtime/connection";
+import { createServerEnvironmentAtoms } from "@d4research/client-runtime/state/server";
+import { createOutdatedServerUpdateCommand } from "@d4research/client-runtime/state/outdatedServerUpdate";
+import { createEnvironmentServerConfigsAtom } from "@d4research/client-runtime/state/shell";
+import { mergeWithDefaultKeybindings } from "@d4research/shared/keybindings";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 

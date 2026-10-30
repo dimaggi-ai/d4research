@@ -14,7 +14,7 @@ import { inlineFilePreviewKind, isPdfFile } from "./filePreview";
 import { ThreadInlineFilePreview } from "../features/threads/ThreadInlineFilePreview";
 import { AudioFilePreview } from "../features/files/AudioFilePreview";
 import { MediaVideoPlayer } from "../components/MediaVideoPlayer";
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@d4research/contracts";
 import { acquireAudioSession, activateAudioSession, releaseAudioSession } from "./audioSession";
 import { ThreadFeed } from "../features/threads/ThreadFeed";
 import type { ThreadFeedEntry } from "./threadActivity";
@@ -154,8 +154,8 @@ vi.mock("../features/threads/ThreadMarkdownVideo", async (importOriginal) => {
   };
 });
 
-vi.mock("@t3tools/client-runtime/state/runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/runtime")>()),
+vi.mock("@d4research/client-runtime/state/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@d4research/client-runtime/state/runtime")>()),
   executeAtomQuery: (...args: unknown[]) => audio.query(...args),
 }));
 vi.mock("../state/projects", () => ({

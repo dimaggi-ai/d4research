@@ -1,5 +1,5 @@
-import type { DesktopBridge, DesktopUpdateChannel, DesktopUpdateState } from "@t3tools/contracts";
-import { acceptsTrackSwitchRelease } from "@t3tools/shared/cliRelease";
+import type { DesktopBridge, DesktopUpdateChannel, DesktopUpdateState } from "@d4research/contracts";
+import { acceptsTrackSwitchRelease } from "@d4research/shared/cliRelease";
 
 type TrackSwitchBridge = Pick<DesktopBridge, "setUpdateChannel">;
 

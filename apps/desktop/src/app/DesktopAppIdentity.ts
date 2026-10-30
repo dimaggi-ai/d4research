@@ -29,7 +29,7 @@ export class DesktopAppIdentity extends Context.Service<
     >;
     readonly configure: Effect.Effect<void>;
   }
->()("@t3tools/desktop/app/DesktopAppIdentity") {}
+>()("@d4research/desktop/app/DesktopAppIdentity") {}
 
 const normalizeCommitHash = (value: string): Option.Option<string> => {
   const trimmed = value.trim();

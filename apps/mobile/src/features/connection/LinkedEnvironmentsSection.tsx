@@ -1,7 +1,7 @@
-import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
-import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
+import { offersLinkedEnvironments } from "@d4research/client-runtime/link-request";
+import { peerLinkHealth } from "@d4research/client-runtime/state/peerLinks";
 import { useFocusEffect } from "@react-navigation/native";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthAccessReadScope, type EnvironmentId } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import { useCallback, useState } from "react";
 import { AppState, View } from "react-native";

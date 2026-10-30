@@ -1,4 +1,4 @@
-import type { PullRequestRef, PullRequestStack, ThreadPullRequestLink } from "@t3tools/contracts";
+import type { PullRequestRef, PullRequestStack, ThreadPullRequestLink } from "@d4research/contracts";
 
 /** Saved membership supports navigation, never action head SHAs. */
 export function savedPullRequestStack(

@@ -1,6 +1,6 @@
-import { type DesktopBridge } from "@t3tools/contracts";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
-import { type ConfirmDialogOptions, type ContextMenuItem } from "@t3tools/contracts";
+import { type DesktopBridge } from "@d4research/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@d4research/contracts";
+import { type ConfirmDialogOptions, type ContextMenuItem } from "@d4research/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const showContextMenuFallbackMock =

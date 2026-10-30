@@ -5,7 +5,7 @@ import {
   type ProjectMemory,
   type ProjectMemorySaveInput,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";

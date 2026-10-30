@@ -29,7 +29,7 @@ const nativeInstalls = (dataset: string) =>
     `['${dataset}']`,
     `| where name == 'TaskCache.task'`,
     `| extend a = ['attributes.custom']`,
-    `| where tostring(a['task.package']) == '@t3tools/mobile' and tostring(a['task.name']) startswith 'native-client'`,
+    `| where tostring(a['task.package']) == '@d4research/mobile' and tostring(a['task.name']) startswith 'native-client'`,
     `| extend event_id = tostring(a['cache.event_id']), task = tostring(a['task.name']), source = tostring(a['cache.source']), saved_ms = tolong(a['cache.saved_ms']), host = tostring(['attributes.host.name']), developer = tostring(a['developer.id'])`,
     `| summarize arg_max(_time, task, source, saved_ms, host, developer) by event_id`,
   ].join("\n");

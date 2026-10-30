@@ -1,10 +1,10 @@
-import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-request-checks";
+import { resolvePullRequestDetailChecks } from "@d4research/client-runtime/pull-request-checks";
 import {
   AuthSourceControlWriteScope,
   type EnvironmentId,
   type PullRequestListEntry,
   type PullRequestRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useState } from "react";
 
 import { usePullRequestChecksRefresh } from "~/hooks/usePullRequestChecksRefresh";

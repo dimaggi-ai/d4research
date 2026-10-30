@@ -1,4 +1,4 @@
-import { secretSettingsFields } from "@t3tools/contracts";
+import { secretSettingsFields } from "@d4research/contracts";
 
 import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 

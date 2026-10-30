@@ -1,4 +1,4 @@
-import { createMcpAppEnvironmentAtoms } from "@t3tools/client-runtime/state/mcp-apps";
+import { createMcpAppEnvironmentAtoms } from "@d4research/client-runtime/state/mcp-apps";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 

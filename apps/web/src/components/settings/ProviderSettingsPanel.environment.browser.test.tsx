@@ -7,7 +7,7 @@ import {
   type ProviderAuthState,
   type ServerProvider,
   type UnifiedSettings,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";

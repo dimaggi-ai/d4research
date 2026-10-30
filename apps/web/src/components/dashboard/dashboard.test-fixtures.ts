@@ -1,11 +1,11 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@d4research/contracts";
 import type {
   EnvironmentThreadShell,
   EnvironmentProject,
-} from "@t3tools/client-runtime/state/shell";
+} from "@d4research/client-runtime/state/shell";
 import { makeThreadFixture } from "../../test-fixtures";
 import { buildSidebarProjectSnapshots } from "../../sidebarProjectGrouping";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_CLIENT_SETTINGS } from "@d4research/contracts/settings";
 import { selectProjectGroupingSettings } from "../../logicalProject";
 
 export const DASHBOARD_NOW = "2026-10-24T21:00:00.000Z";

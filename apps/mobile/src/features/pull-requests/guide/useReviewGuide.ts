@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect } from "@react-navigation/native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { usePullRequestConnected } from "../usePullRequestConnected";

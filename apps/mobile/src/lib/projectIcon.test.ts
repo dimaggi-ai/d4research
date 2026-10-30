@@ -1,4 +1,4 @@
-import type { ProjectIconOverride } from "@t3tools/contracts";
+import type { ProjectIconOverride } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { projectAutoMonogram, resolveProjectChipIcon } from "./projectIcon";

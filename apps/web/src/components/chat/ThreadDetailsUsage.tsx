@@ -3,7 +3,7 @@ import type {
   ServerProvider,
   ServerProviderUsageWindow,
   UsageLimitSourceSnapshots,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   collectProviderUsageLimits,
   formatDuration,
@@ -11,7 +11,7 @@ import {
   limitsNotice,
   paceOf,
   remainingPercent,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import type { ReactNode } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";

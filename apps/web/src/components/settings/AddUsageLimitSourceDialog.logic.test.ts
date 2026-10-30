@@ -1,5 +1,5 @@
-import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@d4research/contracts";
+import { applyServerSettingsPatch } from "@d4research/shared/serverSettings";
 import { describe, expect, it } from "vite-plus/test";
 
 import { sourceIdFromUrl } from "./AddUsageLimitSourceDialog.logic";

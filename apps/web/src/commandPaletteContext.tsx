@@ -1,5 +1,5 @@
 import { createContext, use, type ReactNode } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 
 export interface OpenDirectoryCommandPaletteOptions {
   readonly environmentId: EnvironmentId;

@@ -1,4 +1,4 @@
-import { T3CHAT_PLAN_TUNNEL_LIMITS, type RelayT3ChatLink } from "@t3tools/contracts/relay";
+import { T3CHAT_PLAN_TUNNEL_LIMITS, type RelayT3ChatLink } from "@d4research/contracts/relay";
 import { MessageSquareIcon } from "lucide-react";
 import type { ReactNode } from "react";
 

@@ -6,11 +6,11 @@ import {
   MessageId,
   ProviderDriverKind,
   type ProviderReplayEntry,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 
 import { ClaudeOrchestratorReplayHarness } from "../Adapters/ClaudeAdapterV2.testkit.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as Orchestrator from "../Orchestrator.ts";
 import { userFacingDispatchErrorMessage } from "../UserFacingErrors.ts";
 import { provideDeterministicTestRuntime } from "./DeterministicRuntime.ts";
@@ -29,7 +29,7 @@ import {
   runReplayFixture,
   type ReplayFixtureCase,
 } from "./ProviderReplayFixtures.ts";
-import { readProviderReplayTranscript } from "@t3tools/provider-testing/replayTranscript";
+import { readProviderReplayTranscript } from "@d4research/provider-testing/replayTranscript";
 
 const readTranscript = Effect.fn("readClaudeReplayFixture")(function* (file: URL) {
   return yield* readProviderReplayTranscript(file);

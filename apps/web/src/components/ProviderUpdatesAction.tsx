@@ -1,5 +1,5 @@
-import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { PROVIDER_DISPLAY_NAMES } from "@d4research/contracts";
+import { settlePromise } from "@d4research/client-runtime/state/runtime";
 import { useRef, useState } from "react";
 
 import { useEnvironmentProviders, useEnvironments } from "~/state/environments";

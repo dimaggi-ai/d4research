@@ -10,7 +10,7 @@ import {
   type ServerSelfUpdateResult,
   shouldRecommendDatabaseCompaction,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";

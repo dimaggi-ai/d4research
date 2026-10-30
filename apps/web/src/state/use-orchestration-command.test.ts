@@ -1,9 +1,9 @@
-import type { AtomCommand } from "@t3tools/client-runtime/state/runtime";
+import type { AtomCommand } from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   EnvironmentAuthorizationError,
   EnvironmentId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { assert, beforeEach, expect, it, vi } from "vite-plus/test";

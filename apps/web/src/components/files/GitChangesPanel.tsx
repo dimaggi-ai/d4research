@@ -8,12 +8,12 @@ import {
   type ModelSelection,
   type ProviderInstanceId,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/client-runtime/state/runtime";
+import { createModelSelection } from "@d4research/shared/model";
 import {
   Check,
   PanelLeft,

@@ -13,10 +13,10 @@ import type {
   ProjectReadFileResult,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
-} from "@t3tools/contracts";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isNetworkPath } from "@t3tools/shared/path";
+} from "@d4research/contracts";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { isNetworkPath } from "@d4research/shared/path";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

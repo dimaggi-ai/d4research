@@ -1,4 +1,4 @@
-import { isHostPrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
 /**
  * Multi-environment account-limits state.
  *
@@ -25,7 +25,7 @@ import {
   type EnvironmentId,
   type ServerProvider,
   type UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback, useMemo } from "react";

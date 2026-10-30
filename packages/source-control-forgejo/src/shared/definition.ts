@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import {
   changeRequestUrlBelow,
   type ChangeRequestHostIdentity,
@@ -10,7 +10,7 @@ import {
   parseChangeRequestPath,
   projectChangeRequestHost,
   remoteWebOrigin,
-} from "@t3tools/source-control-core/shared/definition";
+} from "@d4research/source-control-core/shared/definition";
 import { icon } from "./icon.ts";
 
 const CHECKOUT_COMMAND = /^tea\s+(?:pr|pulls)\s+checkout\s+(.+)$/i;

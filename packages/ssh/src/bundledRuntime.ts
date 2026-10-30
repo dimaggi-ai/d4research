@@ -1,4 +1,4 @@
-import type { BundledServerRuntime } from "@t3tools/contracts";
+import type { BundledServerRuntime } from "@d4research/contracts";
 
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 

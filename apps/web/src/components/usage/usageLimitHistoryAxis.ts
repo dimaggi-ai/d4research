@@ -1,4 +1,4 @@
-import type { UsageLimitHistoryPoint } from "@t3tools/contracts";
+import type { UsageLimitHistoryPoint } from "@d4research/contracts";
 
 export interface HistoryAxisTick {
   /** Milliseconds since the epoch, always inside the chart's range. */

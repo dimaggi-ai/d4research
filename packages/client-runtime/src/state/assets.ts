@@ -1,4 +1,4 @@
-import { environmentResourceUrl } from "@t3tools/shared/environmentGateway";
+import { environmentResourceUrl } from "@d4research/shared/environmentGateway";
 import {
   type AssetCreateUrlInput,
   type AssetCreateUrlResult,
@@ -7,13 +7,13 @@ import {
   EnvironmentId,
   type ProjectCloneSnapshot,
   WS_METHODS,
-} from "@t3tools/contracts";
-import { mediaMimeTypeFromExtension } from "@t3tools/shared/mediaPreview";
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+} from "@d4research/contracts";
+import { mediaMimeTypeFromExtension } from "@d4research/shared/mediaPreview";
+import { isWindowsAbsolutePath } from "@d4research/shared/path";
 import {
   getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
-} from "@t3tools/shared/projectFavicon";
+} from "@d4research/shared/projectFavicon";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

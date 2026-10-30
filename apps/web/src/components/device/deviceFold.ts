@@ -1,5 +1,5 @@
-import type { DeviceHubAccess } from "@t3tools/client-runtime/state/deviceHubAccess";
-import { withDeviceHubQuery } from "@t3tools/client-runtime/state/deviceHubAccess";
+import type { DeviceHubAccess } from "@d4research/client-runtime/state/deviceHubAccess";
+import { withDeviceHubQuery } from "@d4research/client-runtime/state/deviceHubAccess";
 
 export type AndroidFoldPosture = "closed" | "opened";
 

@@ -5,7 +5,7 @@ import {
   RunId,
   ThreadId,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import { isSettledWorktreeExpired } from "./SettledWorktreeCleanup.ts";
 const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");

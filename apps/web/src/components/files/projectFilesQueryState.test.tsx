@@ -4,7 +4,7 @@ import {
   type AuthSessionState,
   ProjectReadFileError,
   type ProjectReadFileResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -949,6 +949,6 @@ describe("project query refresh", () => {
 
 function projectEntries(
   paths: readonly string[],
-): import("@t3tools/contracts").ProjectListEntriesResult {
+): import("@d4research/contracts").ProjectListEntriesResult {
   return { entries: paths.map((path) => ({ path, kind: "file" })), truncated: false };
 }

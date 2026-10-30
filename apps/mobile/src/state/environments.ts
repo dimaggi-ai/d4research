@@ -3,9 +3,9 @@ import {
   connectionCatalogDisplayUrl,
   hasRelayRoute,
   type EnvironmentPresentation as BaseEnvironmentPresentation,
-} from "@t3tools/client-runtime/connection";
-import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
-import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+} from "@d4research/client-runtime/connection";
+import type { ComposerEnvironmentCandidate } from "@d4research/client-runtime/composerThreadItems";
+import { type EnvironmentId, resolveEnvironmentMachineKind } from "@d4research/contracts";
 
 import { environmentCatalog } from "../connection/catalog";
 import { environmentPresentations } from "./presentation";

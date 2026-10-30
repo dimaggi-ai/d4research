@@ -3,14 +3,14 @@ import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   type ChatAttachment,
   type ScopedThreadRef,
   type ThreadGuestMessage,
   type ThreadGuestShare,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";

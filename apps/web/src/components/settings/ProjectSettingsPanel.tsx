@@ -3,7 +3,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { ProjectMemorySettings } from "./ProjectMemorySettings";
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope } from "@d4research/contracts";
 import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
 import {
   isAtomCommandInterrupted,
@@ -11,15 +11,15 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+} from "@d4research/client-runtime/state/runtime";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
+import { planProjectRemoval } from "@d4research/client-runtime/state/projects";
 import { AsyncResult } from "effect/reactivity";
 import {
   type ProjectWorkspace,
   type EnvironmentId,
   type ProjectIconOverride,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
 import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";

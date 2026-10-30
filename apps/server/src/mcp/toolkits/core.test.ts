@@ -1,5 +1,5 @@
-import { resolveT3McpToolPresentation } from "@t3tools/shared/t3McpToolPresentation";
-import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
+import { resolveT3McpToolPresentation } from "@d4research/shared/t3McpToolPresentation";
+import { resolveT3McpToolDefinition } from "@d4research/shared/t3McpToolPresentation";
 import { Tool } from "effect/ai";
 import { HtmlToolkit } from "./html/tools.ts";
 import { PullRequestsToolkit } from "./pullRequests/tools.ts";
@@ -27,8 +27,8 @@ import {
   TurnItemId,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+} from "@d4research/contracts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -84,7 +84,7 @@ const declaredFailure = (result: McpSchema.CallToolResult) => {
   const text = result.content[0];
   return result.isError === true && text?.type === "text" ? JSON.parse(text.text) : undefined;
 };
-import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+import { htmlRenderFromToolItem } from "@d4research/shared/toolOutput";
 
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 const decodeThreadReadResult = Schema.decodeUnknownEffect(OrchestratorMcpThreadReadResult);

@@ -3,7 +3,7 @@ import {
   ProviderSetupError,
   type ProviderAuthState,
   type ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -19,7 +19,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { Cursor, InMemoryCredentialStore } from "./sdk.ts";
-import type { ProviderAuthController } from "@t3tools/provider-core/server/auth";
+import type { ProviderAuthController } from "@d4research/provider-core/server/auth";
 
 const AUTH_TIMEOUT_MS = 300_000;
 

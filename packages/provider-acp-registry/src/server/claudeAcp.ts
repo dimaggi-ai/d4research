@@ -1,11 +1,11 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as AcpSchema from "effect-acp/compat";
-import type { AcpToolCallState } from "@t3tools/provider-acp/server/runtimeModel";
+import type { AcpToolCallState } from "@d4research/provider-acp/server/runtimeModel";
 import type {
   AcpAdapterV2SubagentUpdate,
   AcpSubagentSessionEvent,
-} from "@t3tools/provider-acp/server/adapter";
+} from "@d4research/provider-acp/server/adapter";
 
 const decodeAgentInput = Schema.decodeUnknownOption(
   Schema.Struct({

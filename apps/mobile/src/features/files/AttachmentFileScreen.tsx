@@ -3,11 +3,11 @@ import * as Dialog from "../../components/ui/Dialog";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { MenuAction } from "@react-native-menu/menu";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@d4research/contracts";
 import {
   clampFileAttachmentUploadBytes,
   formatAttachmentSize,
-} from "@t3tools/client-runtime/state/attachments";
+} from "@d4research/client-runtime/state/attachments";
 import { useRef, useState } from "react";
 import { Platform, View } from "react-native";
 

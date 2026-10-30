@@ -1,9 +1,9 @@
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { SettingsIcon } from "lucide-react";
 import { useState } from "react";
-import { type BackgroundActivityProfile } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
-import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { type BackgroundActivityProfile } from "@d4research/contracts";
+import { DEFAULT_UNIFIED_SETTINGS } from "@d4research/contracts/settings";
+import { resolveServerBackgroundActivitySettings } from "@d4research/shared/backgroundActivitySettings";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import {

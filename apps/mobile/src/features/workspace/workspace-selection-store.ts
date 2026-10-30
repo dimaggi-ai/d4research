@@ -1,5 +1,5 @@
 import type { NavigationState } from "@react-navigation/native";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import * as Linking from "expo-linking";
 import { AppState, Dimensions, Platform } from "react-native";
 

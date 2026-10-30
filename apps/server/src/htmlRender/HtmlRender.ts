@@ -1,6 +1,6 @@
-import type { ThreadId } from "@t3tools/contracts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import type { ThreadId } from "@d4research/contracts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   clampHtmlRenderHeight,
   HTML_RENDER_COLUMN_WIDTH,
@@ -11,12 +11,12 @@ import {
   htmlRenderThemeFragment,
   injectHtmlRenderBootstrap,
   type HtmlRenderReference,
-} from "@t3tools/shared/htmlRender";
+} from "@d4research/shared/htmlRender";
 import {
   T3_CODE_DARK_THEME_COLORS,
   T3_CODE_LIGHT_THEME_COLORS,
   type ThemeAppearance,
-} from "@t3tools/shared/themePalettes";
+} from "@d4research/shared/themePalettes";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

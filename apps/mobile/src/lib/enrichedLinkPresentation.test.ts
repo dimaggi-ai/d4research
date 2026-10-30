@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ComposerContextId, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { ComposerContextId, EnvironmentId, ThreadId } from "@d4research/contracts";
 import {
   enrichedLinkVariantPattern,
   enrichedSkillLinkRegex,

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { deadlineStore, minuteTick } from "@t3tools/client-runtime/clock";
+import { deadlineStore, minuteTick } from "@d4research/client-runtime/clock";
 import { Atom } from "effect/reactivity";
 
 import {

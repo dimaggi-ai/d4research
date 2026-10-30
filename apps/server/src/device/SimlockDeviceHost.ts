@@ -12,7 +12,7 @@ import {
   type DevicePlatform,
   type DevicePlatformAvailability,
   type SimlockDeviceHostConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -25,8 +25,8 @@ import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import type { NodeRuntimeUnavailableError } from "@d4research/shared/nodeRuntime";
 
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";

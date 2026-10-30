@@ -1,4 +1,4 @@
-import type { SecretProviderConfig, SecretProviderId } from "@t3tools/contracts";
+import type { SecretProviderConfig, SecretProviderId } from "@d4research/contracts";
 import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 

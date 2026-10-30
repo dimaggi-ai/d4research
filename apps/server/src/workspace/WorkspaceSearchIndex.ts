@@ -27,8 +27,8 @@ import type {
   ProjectSearchCodeInput,
   ProjectSearchCodeResult,
   ProjectSearchEntriesResult,
-} from "@t3tools/contracts";
-import { isProjectFaviconPath } from "@t3tools/shared/projectFavicon";
+} from "@d4research/contracts";
+import { isProjectFaviconPath } from "@d4research/shared/projectFavicon";
 
 // fff-node's native library stays external; single-executables require disk packages instead of importing them.
 const requireForFff = NodeModule.createRequire(import.meta.url);

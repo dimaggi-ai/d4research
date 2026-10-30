@@ -1,5 +1,5 @@
-import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { type ServerLifecycleWelcomePayload } from "@d4research/contracts";
+import { scopedProjectKey, scopeProjectRef } from "@d4research/client-runtime/environment";
 import {
   Outlet,
   Link,
@@ -45,7 +45,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKeyFromPath,
   selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 import { useUiStateStore } from "../uiStateStore";
 
 import { RightPanelShortcuts } from "../components/RightPanelShortcuts";

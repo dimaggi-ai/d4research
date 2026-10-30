@@ -19,7 +19,7 @@ import {
 } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { ChevronDownIcon, LayersIcon, LayoutDashboardIcon, EllipsisIcon } from "lucide-react";
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem } from "@d4research/contracts";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";

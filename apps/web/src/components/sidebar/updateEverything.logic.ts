@@ -1,14 +1,14 @@
 import { supportsServerUpdateThreadContinuation } from "../../versionSkew";
-import type { BundledServerRuntime, DesktopSshEnvironmentTarget } from "@t3tools/contracts";
-import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { BundledServerRuntime, DesktopSshEnvironmentTarget } from "@d4research/contracts";
+import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 import type {
   DesktopUpdateChannel,
   EnvironmentId,
   ServerConfig,
   ServerSelfUpdateCapability,
-} from "@t3tools/contracts";
-import { cliReleaseChannelOf, desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+} from "@d4research/contracts";
+import { cliReleaseChannelOf, desktopUpdateChannelOf } from "@d4research/shared/cliRelease";
+import { compareSemverVersions } from "@d4research/shared/semver";
 
 import {
   resolveServerSelfUpdateCapability,

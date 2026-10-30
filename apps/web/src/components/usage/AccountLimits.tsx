@@ -19,7 +19,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
  *
  * @module AccountLimits
  */
-import type { AccountLimitsSnapshot, AccountLimitsWindow } from "@t3tools/contracts";
+import type { AccountLimitsSnapshot, AccountLimitsWindow } from "@d4research/contracts";
 import { useEffect, useState } from "react";
 
 import { resolveEnvironmentOptionLabel } from "../BranchToolbar.logic";
@@ -29,7 +29,7 @@ import {
   legacyInstanceIdFor,
   useAccountLimits,
 } from "../../state/accountLimits";
-import { formatAgo, formatResetAt } from "@t3tools/shared/limitsFormat";
+import { formatAgo, formatResetAt } from "@d4research/shared/limitsFormat";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION } from "./usageProviders";
 
 /** Age past which a snapshot stops being "current" and earns a caption. */

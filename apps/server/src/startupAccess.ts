@@ -1,9 +1,9 @@
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
-import { isPrivateNetworkHost, isSharedAddressSpaceHost } from "@t3tools/shared/hostClassification";
-import { QrCode } from "@t3tools/shared/qrCode";
-import { buildPairingAppLink } from "@t3tools/shared/remote";
+import { isPrivateNetworkHost, isSharedAddressSpaceHost } from "@d4research/shared/hostClassification";
+import { QrCode } from "@d4research/shared/qrCode";
+import { buildPairingAppLink } from "@d4research/shared/remote";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";

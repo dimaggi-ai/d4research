@@ -1,4 +1,4 @@
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
@@ -6,7 +6,7 @@ import { type MouseEvent } from "react";
 import {
   resolveChangeRequestLinkTarget,
   resolvePullRequestPreviewTarget,
-} from "@t3tools/client-runtime/change-request-links";
+} from "@d4research/client-runtime/change-request-links";
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";

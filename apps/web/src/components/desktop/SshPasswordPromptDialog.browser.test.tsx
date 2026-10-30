@@ -1,4 +1,4 @@
-import type { DesktopSshPasswordPromptRequest } from "@t3tools/contracts";
+import type { DesktopSshPasswordPromptRequest } from "@d4research/contracts";
 import { expect, it } from "vite-plus/test";
 
 import { render, stubGlobal } from "../../../test/render";

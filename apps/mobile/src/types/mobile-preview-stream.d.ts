@@ -1,4 +1,4 @@
-declare module "@t3tools/mobile-preview-stream" {
+declare module "@d4research/mobile-preview-stream" {
   const script: string;
   export default script;
 }

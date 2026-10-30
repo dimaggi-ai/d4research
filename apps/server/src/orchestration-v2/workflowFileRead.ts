@@ -3,9 +3,9 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import { OrchestrationWorkflowFileError } from "@t3tools/contracts";
+import { OrchestrationWorkflowFileError } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 export interface WorkflowFileIdentity {
   readonly dev: number;

@@ -10,8 +10,8 @@ vi.mock("expo-sqlite", () => ({ openDatabaseAsync }));
 import * as MobileDatabase from "./mobile-database";
 
 describe("offline pull request cache", () => {
-  const environmentId = "cached-environment" as import("@t3tools/contracts").EnvironmentId;
-  const otherEnvironment = "other-environment" as import("@t3tools/contracts").EnvironmentId;
+  const environmentId = "cached-environment" as import("@d4research/contracts").EnvironmentId;
+  const otherEnvironment = "other-environment" as import("@d4research/contracts").EnvironmentId;
 
   async function sqliteDatabase() {
     const { DatabaseSync } = await import("node:sqlite");

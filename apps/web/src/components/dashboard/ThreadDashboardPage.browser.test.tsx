@@ -4,9 +4,9 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
 import { SidebarProvider } from "../ui/sidebar";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { DEFAULT_CLIENT_SETTINGS, type DashboardLayout } from "@t3tools/contracts/settings";
-import { ThreadId } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import { DEFAULT_CLIENT_SETTINGS, type DashboardLayout } from "@d4research/contracts/settings";
+import { ThreadId } from "@d4research/contracts";
 import {
   dashboardProjects,
   dashboardThread,

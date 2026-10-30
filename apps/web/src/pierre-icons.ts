@@ -3,8 +3,8 @@ import {
   getBuiltInSpriteSheet,
   type FileTreeIcons,
 } from "@pierre/trees";
-import { VIDEO_FILE_EXTENSIONS } from "@t3tools/shared/video";
-import { fileIconPathForMimeType } from "@t3tools/shared/mediaPreview";
+import { VIDEO_FILE_EXTENSIONS } from "@d4research/shared/video";
+import { fileIconPathForMimeType } from "@d4research/shared/mediaPreview";
 
 import type { ContextChipAccentKind } from "~/lib/contextChipAccents";
 

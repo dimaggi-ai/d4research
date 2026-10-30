@@ -1,6 +1,6 @@
 import "../sidebar/projectRail.css";
 
-import type { ProjectRailGroupStyle } from "@t3tools/contracts";
+import type { ProjectRailGroupStyle } from "@d4research/contracts";
 
 import { cn } from "~/lib/utils";
 

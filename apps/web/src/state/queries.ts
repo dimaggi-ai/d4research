@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type CheckpointDiffTarget,
   type ComposerPathSearchTarget,
-} from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/threads";
 import {
   createThreadSearchResultsAtomFamily,
   makeThreadSearchKey,
@@ -11,10 +11,10 @@ import {
   type SettledThreadSearch,
   type ThreadSearchResultsState,
   type ThreadSearchScope,
-} from "@t3tools/client-runtime/state/thread-search";
-import { THREAD_SEARCH_QUERY_MAX_LENGTH } from "@t3tools/contracts";
-import { messageSearchTokens } from "@t3tools/shared/paletteSearch";
-import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
+} from "@d4research/client-runtime/state/thread-search";
+import { THREAD_SEARCH_QUERY_MAX_LENGTH } from "@d4research/contracts";
+import { messageSearchTokens } from "@d4research/shared/paletteSearch";
+import { type VcsRefTarget } from "@d4research/client-runtime/state/vcs";
 import type {
   EnvironmentId,
   OrchestrationV2GetTurnItemResult,
@@ -25,7 +25,7 @@ import type {
   TurnItemId,
   VcsListRefsResult,
   VcsRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";

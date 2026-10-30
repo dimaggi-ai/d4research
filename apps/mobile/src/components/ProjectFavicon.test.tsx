@@ -19,7 +19,7 @@ vi.mock("../state/assets", async () => {
   return { projectFaviconUrlAtom: () => url };
 });
 
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 
 import { ProjectFavicon } from "./ProjectFavicon";
 

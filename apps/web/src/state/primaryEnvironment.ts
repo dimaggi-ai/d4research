@@ -1,4 +1,4 @@
-import { isHostPrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
 import { Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";

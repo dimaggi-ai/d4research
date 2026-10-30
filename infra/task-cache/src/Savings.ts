@@ -32,7 +32,7 @@ export class SavingsError extends Schema.TaggedError<SavingsError>()("SavingsErr
 }
 
 export class Database extends Context.Service<Database, Cloudflare.D1Database>()(
-  "@t3tools/task-cache/Savings/Database",
+  "@d4research/task-cache/Savings/Database",
 ) {}
 
 export class Savings extends Context.Service<
@@ -45,7 +45,7 @@ export class Savings extends Context.Service<
     readonly emitTotals: (developer?: string, host?: string) => Effect.Effect<void, SavingsError>;
     readonly cleanup: Effect.Effect<void, SavingsError>;
   }
->()("@t3tools/task-cache/Savings") {}
+>()("@d4research/task-cache/Savings") {}
 
 const make = Effect.gen(function* () {
   const database = yield* Database;

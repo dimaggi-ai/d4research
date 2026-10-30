@@ -1,9 +1,9 @@
-import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
-import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
+import type { ComposerPathSearchTarget } from "@d4research/client-runtime/state/threads";
 import {
   resolveProviderSkillSourceKind,
   type ProviderSkillSourceKind,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@d4research/client-runtime/providerSkills";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -13,7 +13,7 @@ import {
   type ScopedThreadRef,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   BlocksIcon,
   FolderIcon,

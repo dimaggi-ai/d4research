@@ -1,4 +1,4 @@
-import { formatAssistantCitationHref } from "@t3tools/shared/assistantCitations";
+import { formatAssistantCitationHref } from "@d4research/shared/assistantCitations";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveThreadQueueRowControls } from "./threadQueueControlPresentation";

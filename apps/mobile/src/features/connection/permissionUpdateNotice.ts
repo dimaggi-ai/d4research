@@ -1,5 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
-import { sessionHasLegacyPermissions } from "@t3tools/contracts";
+import { sessionHasLegacyPermissions } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import * as SecureStore from "expo-secure-store";
 

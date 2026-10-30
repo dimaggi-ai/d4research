@@ -1,4 +1,4 @@
-import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
+import type { ReferenceAutolink } from "@d4research/client-runtime/source-control-clients";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";

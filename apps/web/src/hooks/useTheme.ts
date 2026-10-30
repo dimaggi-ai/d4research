@@ -1,6 +1,6 @@
 import { pipe } from "effect/Function";
-import type { DesktopBridge } from "@t3tools/contracts";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import type { DesktopBridge } from "@d4research/contracts";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
 import {

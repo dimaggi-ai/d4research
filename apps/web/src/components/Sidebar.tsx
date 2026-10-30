@@ -1,8 +1,8 @@
 import { type PointerEvent as ReactPointerEvent } from "react";
 import { ResumeSessionsSection } from "./sidebar/ResumeSessionsSection";
-import { PROJECT_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
-import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
-import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
+import { PROJECT_JUMP_KEYBINDING_COMMANDS } from "@d4research/contracts";
+import { type EnvironmentId, type ScopedProjectRef } from "@d4research/contracts";
+import type { EnvironmentServerConfig } from "@d4research/client-runtime/connection";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
   dropThreadContext,
@@ -30,37 +30,37 @@ import {
   canSnooze,
   effectiveSnoozed,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
+} from "@d4research/client-runtime/state/thread-settled";
 import {
   createInboxReturnTracker,
   isThreadWorking,
-} from "@t3tools/client-runtime/state/thread-inbox";
-import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
+} from "@d4research/client-runtime/state/thread-inbox";
+import { sortSettledThreads } from "@d4research/client-runtime/state/thread-sort";
 import {
   nextShownOrder,
   threadSearchMatchKey,
   threadSearchSubject,
   type ShownOrder,
-} from "@t3tools/client-runtime/state/thread-search";
-import { foldSearchQuery, rankMessageMatches } from "@t3tools/shared/paletteSearch";
+} from "@d4research/client-runtime/state/thread-search";
+import { foldSearchQuery, rankMessageMatches } from "@d4research/shared/paletteSearch";
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
   threadRuntimeCanArchive,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/models";
+} from "@d4research/client-runtime/state/models";
 import {
   parseScopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
+} from "@d4research/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
   ProjectId,
   type ScopedThreadRef,
   type ThreadId,
-} from "@t3tools/contracts";
-import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
+} from "@d4research/contracts";
+import type { OlderSettledScope } from "@d4research/client-runtime/state/threads";
 
 import { ChevronDownIcon, FolderIcon, ListFilterIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import {
@@ -81,7 +81,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
@@ -157,7 +157,7 @@ import {
   resolveThreadRouteTarget,
 } from "../threadRoutes";
 import type { SidebarThreadSummary } from "../types";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { isScratchProject } from "@d4research/client-runtime/state/projects";
 import { cn } from "~/lib/utils";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import {

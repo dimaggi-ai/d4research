@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   communicationDetailRefs,
   communicationThreadKey,
@@ -9,8 +9,8 @@ import {
   type ThreadCommunication,
   type CommunicationSelection,
   type CommunicationParticipant,
-} from "@t3tools/client-runtime/state/thread-communication";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/thread-communication";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect, useMemo, useState } from "react";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";

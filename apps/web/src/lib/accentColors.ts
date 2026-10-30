@@ -1,13 +1,13 @@
 import type { CSSProperties } from "react";
 
-import { resolveAccentHex } from "@t3tools/shared/accentColors";
+import { resolveAccentHex } from "@d4research/shared/accentColors";
 export {
   ACCENT_COLOR_OPTIONS,
   accentColorLabel,
   isAccentColorValue,
   resolveAccentHex,
   type AccentColorOption,
-} from "@t3tools/shared/accentColors";
+} from "@d4research/shared/accentColors";
 
 const tint = (hex: string, percent: number) =>
   `color-mix(in srgb, ${hex} ${percent}%, transparent)`;

@@ -9,7 +9,7 @@ import {
   type OrchestrationV2ServerCommand,
   type ThreadGuestMessage,
   type ThreadGuestShare,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 

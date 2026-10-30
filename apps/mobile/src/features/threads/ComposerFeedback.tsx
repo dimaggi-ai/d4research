@@ -2,7 +2,7 @@ import { Button } from "../../components/ui/Button";
 import {
   codexFeedbackNotice,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/threads";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";

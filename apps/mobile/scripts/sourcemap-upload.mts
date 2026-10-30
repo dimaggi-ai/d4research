@@ -1,6 +1,6 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { mobileSourceMapKey, type MobilePlatform } from "@t3tools/shared/mobileSourceMaps";
+import { mobileSourceMapKey, type MobilePlatform } from "@d4research/shared/mobileSourceMaps";
 import { AwsClient } from "aws4fetch";
 
 export interface SourceMapUpload {

@@ -10,8 +10,8 @@ import { uuidv4 } from "../../lib/uuid";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ThreadId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/shell";
+import { EnvironmentId, ThreadId, type SidebarProjectGroupingMode } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect } from "@react-navigation/native";
 import { NavigationContext, NavigationRouteContext, useNavigation } from "@react-navigation/native";

@@ -1,9 +1,9 @@
 import {
   parseGitRemoteHost,
   unknownRemoteProvider,
-} from "@t3tools/source-control-core/shared/definition";
-import { refineUnknownRemoteProvider } from "@t3tools/source-control-core/server/discovery";
-import { processOutput } from "@t3tools/source-control-testing/TestSourceControlHost";
+} from "@d4research/source-control-core/shared/definition";
+import { refineUnknownRemoteProvider } from "@d4research/source-control-core/server/discovery";
+import { processOutput } from "@d4research/source-control-testing/TestSourceControlHost";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

@@ -1,4 +1,4 @@
-import { type TerminalAttachStreamEvent, type TerminalEvent, WS_METHODS } from "@t3tools/contracts";
+import { type TerminalAttachStreamEvent, type TerminalEvent, WS_METHODS } from "@d4research/contracts";
 import type * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";

@@ -15,7 +15,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
-import { RelayApi, type RelayMobileTelemetrySignal } from "@t3tools/contracts/relay";
+import { RelayApi, type RelayMobileTelemetrySignal } from "@d4research/contracts/relay";
 
 import {
   applySymbolication,

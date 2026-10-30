@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { resolveStorage } from "./lib/storage";
-import { generateSpreadPinOrderKeys } from "@t3tools/client-runtime/state/thread-sort";
+import { generateSpreadPinOrderKeys } from "@d4research/client-runtime/state/thread-sort";
 
 /**
  * Legacy device-local arrangements, retained during migration and for older servers.

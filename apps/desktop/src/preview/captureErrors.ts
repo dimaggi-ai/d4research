@@ -1,4 +1,4 @@
-import { PreviewCaptureFailure } from "@t3tools/contracts";
+import { PreviewCaptureFailure } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import type { PreviewManagerError } from "./Manager.ts";
 

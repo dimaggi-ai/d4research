@@ -7,9 +7,9 @@ import {
   agentScopeCommand,
   type AgentScopeShape,
   type AgentSystemdScope,
-} from "@t3tools/shared/AgentScope";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+} from "@d4research/shared/AgentScope";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { resolveCommandPath } from "@d4research/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";

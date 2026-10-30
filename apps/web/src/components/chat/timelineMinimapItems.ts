@@ -1,4 +1,4 @@
-import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import { parseThreadLinkHref } from "@d4research/shared/threadLinks";
 import type { Nodes } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";

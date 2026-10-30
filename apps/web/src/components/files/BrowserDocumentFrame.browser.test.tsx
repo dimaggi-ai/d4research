@@ -1,4 +1,4 @@
-import { injectHtmlRenderBootstrap } from "@t3tools/shared/htmlRender";
+import { injectHtmlRenderBootstrap } from "@d4research/shared/htmlRender";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";

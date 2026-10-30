@@ -4,7 +4,7 @@ import type {
   EnvironmentId,
   ServerProvider,
   UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { type EnvironmentLimitsStatus, mergeEnvironmentLimits } from "./accountLimits";
 

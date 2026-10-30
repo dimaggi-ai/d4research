@@ -1,8 +1,8 @@
 import {
   sourceControlClients,
   type ChangeRequestTerminology,
-} from "@t3tools/client-runtime/source-control-clients";
-import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
+} from "@d4research/client-runtime/source-control-clients";
+import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@d4research/contracts";
 
 export type PullRequestAgentTask = "ask" | "explain" | "feedback" | "conflicts" | "watch";
 

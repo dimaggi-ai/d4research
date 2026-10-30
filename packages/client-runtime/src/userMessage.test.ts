@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { GuestMessageId } from "@t3tools/contracts";
+import { GuestMessageId } from "@d4research/contracts";
 
 import { resolveUserMessagePresentation } from "./userMessage.ts";
 

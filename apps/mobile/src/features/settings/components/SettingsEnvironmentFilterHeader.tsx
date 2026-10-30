@@ -1,5 +1,5 @@
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
-import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { resolveEnvironmentMachineKind } from "@d4research/contracts";
 import { Platform, Pressable } from "react-native";
 
 import { Menu } from "../../../components/ui/Menu";

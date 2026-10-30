@@ -1,4 +1,4 @@
-import { isAbsolutePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
+import { isAbsolutePath, isWindowsAbsolutePath } from "@d4research/shared/path";
 
 export const WORKSPACE_BASENAME_LOOKUP_LIMIT = 25;
 

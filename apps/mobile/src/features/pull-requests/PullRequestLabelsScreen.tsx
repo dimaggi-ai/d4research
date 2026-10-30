@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { StaticScreenProps } from "@react-navigation/native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { PullRequestLabelCandidate } from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { PullRequestLabelCandidate } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { FlatList, Platform, View } from "react-native";

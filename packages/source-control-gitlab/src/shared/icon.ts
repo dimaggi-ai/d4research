@@ -1,4 +1,4 @@
-import type { SourceControlIcon } from "@t3tools/source-control-core/shared/definition";
+import type { SourceControlIcon } from "@d4research/source-control-core/shared/definition";
 
 export const icon: SourceControlIcon = {
   viewBox: "0 0 32 32",

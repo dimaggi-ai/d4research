@@ -8,7 +8,7 @@ import * as NodeURL from "node:url";
 import {
   sourceControlClients,
   type SourceControlIcon,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/client-runtime/source-control-clients";
 
 const appDirectory = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),

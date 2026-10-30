@@ -8,8 +8,8 @@ import {
   createOlderSettledThreadAtoms,
   createThreadEnvironmentAtoms,
   createThreadFamilyAtoms,
-} from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/threads";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect } from "react";
 

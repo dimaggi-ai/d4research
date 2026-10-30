@@ -2,7 +2,7 @@ import {
   RelayClientTracer,
   withLocalTracing,
   withRelayClientTracing,
-} from "@t3tools/shared/relayTracing";
+} from "@d4research/shared/relayTracing";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

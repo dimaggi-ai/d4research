@@ -1,7 +1,7 @@
 import * as DateTime from "effect/DateTime";
 
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
-import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
+import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@d4research/shared/remote";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import {
   type ServerClientSessionRecord,
@@ -19,7 +19,7 @@ import {
   type DesktopSshEnvironmentTarget,
   type DesktopUpdateState,
   type DesktopWslState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   getDesktopUpdateDownloadedVersion,
   resolveDesktopUpdateButtonAction,

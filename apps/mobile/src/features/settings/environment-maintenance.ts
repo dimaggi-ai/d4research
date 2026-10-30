@@ -4,14 +4,14 @@ import {
   type AuthSessionState,
   type ExecutionEnvironmentCapabilities,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   CLI_RELEASES_PAGE_URL,
   cliReleaseChannelOf,
   cliReleaseIndexPageUrl,
   newestCliReleaseVersion,
-} from "@t3tools/shared/cliRelease";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+} from "@d4research/shared/cliRelease";
+import { compareSemverVersions } from "@d4research/shared/semver";
 import * as Schema from "effect/Schema";
 
 export function canMaintainEnvironment(session: AuthSessionState | null, connected: boolean) {

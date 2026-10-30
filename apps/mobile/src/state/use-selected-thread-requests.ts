@@ -23,7 +23,7 @@ import {
   type ProviderApprovalDecision,
   type RuntimeRequestId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   type PendingThreadRequests,
   type ThreadUserInputQuestion,
@@ -32,8 +32,8 @@ import {
   resolvedQuestionDraftKeys,
   seedUserInputDraftAnswers,
   userInputDraftKey,
-} from "@t3tools/client-runtime/state/thread-requests";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/thread-requests";
+import { AuthOrchestrationOperateScope } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 
 import { environmentThreadDetails, threadEnvironment } from "../state/threads";
@@ -42,7 +42,7 @@ import {
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
-} from "@t3tools/client-runtime/state/pending-user-input";
+} from "@d4research/client-runtime/state/pending-user-input";
 import { appAtomRegistry } from "./atom-registry";
 import { useSelectedThreadPendingRequests } from "./use-thread-detail";
 import { useThreadSelection } from "./use-thread-selection";
@@ -340,7 +340,7 @@ export function useSelectedThreadRequests() {
     if (userInputResponsesInFlight.current.has(responseKey)) return;
     const attachmentsByQuestionId = new Map<
       string,
-      import("@t3tools/contracts").UserInputAttachments[string]
+      import("@d4research/contracts").UserInputAttachments[string]
     >();
     for (const question of activePendingUserInput.questions) {
       const key = questionAttachmentDraftKey(

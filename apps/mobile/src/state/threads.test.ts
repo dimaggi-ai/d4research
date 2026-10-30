@@ -5,7 +5,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "./atom-registry";
@@ -19,7 +19,7 @@ const loads = vi.hoisted(() => [] as string[]);
 vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: {} }));
 vi.mock("../connection/catalog", () => ({ environmentCatalog: {} }));
 vi.mock("./shell", () => ({ environmentShell: {} }));
-vi.mock("@t3tools/client-runtime/state/threads", async (importOriginal) => {
+vi.mock("@d4research/client-runtime/state/threads", async (importOriginal) => {
   const { Atom } = await import("effect/reactivity");
   const stateAtom = Atom.family((key: string) =>
     Atom.make(() => {

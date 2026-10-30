@@ -1,4 +1,4 @@
-import type { ProjectWorkspace, VcsRef } from "@t3tools/contracts";
+import type { ProjectWorkspace, VcsRef } from "@d4research/contracts";
 
 export interface FileWorktreeOption {
   readonly path: string;

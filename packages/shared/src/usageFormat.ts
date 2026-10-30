@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- Usage windows are calendar days in the viewer's zone, derived from wall-clock "now" via Intl.
-import { UsageDay, type UsageResolution, type UsageSummaryInput } from "@t3tools/contracts";
+import { UsageDay, type UsageResolution, type UsageSummaryInput } from "@d4research/contracts";
 
 import type { UsageContractMismatch } from "./usageMerge.ts";
 

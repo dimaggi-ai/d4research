@@ -15,7 +15,7 @@ import {
   RESUMABLE_SESSIONS_MAX_LIMIT,
   type ListResumableSessionsResult,
   type ResumableSession,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { ServerSettingsService } from "../serverSettings.ts";
 

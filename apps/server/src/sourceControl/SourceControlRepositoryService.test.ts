@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -13,11 +13,11 @@ import {
   GitCommandError,
   SourceControlProviderError,
   type SourceControlCloneRepositoryInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
+import type * as SourceControlProvider from "@d4research/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
 

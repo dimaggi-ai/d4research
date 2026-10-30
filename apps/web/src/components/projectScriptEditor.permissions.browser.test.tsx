@@ -4,7 +4,7 @@ import {
   AuthSettingsWriteScope,
   EnvironmentId,
   type AuthEnvironmentScope,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";

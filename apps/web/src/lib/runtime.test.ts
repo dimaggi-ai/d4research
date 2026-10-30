@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import { withRelayClientTracing } from "@d4research/shared/relayTracing";
 import * as Effect from "effect/Effect";
 import * as Tracer from "effect/Tracer";
 

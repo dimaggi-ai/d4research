@@ -1,4 +1,4 @@
-import { changeRequestReferenceAutolinker } from "@t3tools/client-runtime/pull-request-markdown";
+import { changeRequestReferenceAutolinker } from "@d4research/client-runtime/pull-request-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
 import { linkReferenceAutolinks } from "./pullRequestAutolinks";

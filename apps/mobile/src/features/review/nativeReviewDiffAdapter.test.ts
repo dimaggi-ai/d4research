@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { diffWordsWithSpace } from "diff";
 import { AsyncResult } from "effect/reactivity";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { EnvironmentId, ProjectId, type PullRequestDiffResult } from "@t3tools/contracts";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { EnvironmentId, ProjectId, type PullRequestDiffResult } from "@d4research/contracts";
 
 import { combinePullRequestDiffPages } from "../pull-requests/pullRequestDiffPages";
 import { createPullRequestDiffHighlightFiles } from "../pull-requests/pullRequestDiffHighlightFiles";

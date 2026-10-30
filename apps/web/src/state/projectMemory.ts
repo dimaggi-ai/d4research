@@ -1,8 +1,8 @@
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
-} from "@t3tools/client-runtime/state/runtime";
-import { WS_METHODS } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import { WS_METHODS } from "@d4research/contracts";
 import { connectionAtomRuntime } from "../connection/runtime";
 
 export const projectMemory = {

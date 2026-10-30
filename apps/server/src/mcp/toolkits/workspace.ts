@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@d4research/contracts";
 import * as McpToolAccess from "../McpToolAccess.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import {
@@ -8,7 +8,7 @@ import {
   ThreadWorkspaceSelectInput,
   ThreadWorkspaceCreateInput,
   ThreadWorkspaceResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import * as Effect from "effect/Effect";

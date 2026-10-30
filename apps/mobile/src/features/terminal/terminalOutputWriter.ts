@@ -2,7 +2,7 @@ import {
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   readTerminalOutputUpdate,
   type TerminalOutputState,
-} from "@t3tools/client-runtime/state/terminal";
+} from "@d4research/client-runtime/state/terminal";
 
 /** One writer per mounted native view; intermediate snapshots can be coalesced safely. */
 export function createTerminalOutputWriter(

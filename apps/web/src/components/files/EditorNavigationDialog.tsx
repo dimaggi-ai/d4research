@@ -1,5 +1,5 @@
-import type { EnvironmentId, ProjectCodeSearchMatch, ProjectEntry } from "@t3tools/contracts";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId, ProjectCodeSearchMatch, ProjectEntry } from "@d4research/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Braces,

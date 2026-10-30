@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
@@ -16,15 +16,15 @@ import {
   DEFAULT_SERVER_SETTINGS,
   VcsProcessSpawnError,
   VcsProcessTimeoutError,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type {
   SourceControlCliDiscoverySpec,
   SourceControlManagedCliDiscoverySpec,
   SourceControlProviderDiscoverySpec,
-} from "@t3tools/source-control-core/server/discovery";
-import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { fakeSourceControlProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+} from "@d4research/source-control-core/server/discovery";
+import type * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
+import { fakeSourceControlProvider } from "@d4research/source-control-testing/fakeSourceControlDriver";
+import * as TestSourceControlHost from "@d4research/source-control-testing/TestSourceControlHost";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";

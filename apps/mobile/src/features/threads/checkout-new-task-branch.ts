@@ -1,16 +1,16 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import type { VcsRef } from "@d4research/client-runtime/state/vcs";
 import {
   type AtomCommandResult,
   mapAtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import type {
   VcsListRefsInput,
   VcsListRefsResult,
   VcsSwitchRefInput,
   VcsSwitchRefResult,
-} from "@t3tools/contracts";
-import { deriveLocalBranchNameFromRemoteRef } from "@t3tools/shared/git";
+} from "@d4research/contracts";
+import { deriveLocalBranchNameFromRemoteRef } from "@d4research/shared/git";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 

@@ -25,7 +25,7 @@ export class Bindings extends Context.Service<
     readonly readLimit: Cloudflare.RateLimit;
     readonly storeLimit: Cloudflare.RateLimit;
   }
->()("@t3tools/task-cache/Cache/Bindings") {}
+>()("@d4research/task-cache/Cache/Bindings") {}
 
 export class Cache extends Context.Service<
   Cache,
@@ -36,7 +36,7 @@ export class Cache extends Context.Service<
     ) => Effect.Effect<Response>;
     readonly cleanup: Effect.Effect<void, CacheError>;
   }
->()("@t3tools/task-cache/Cache") {}
+>()("@d4research/task-cache/Cache") {}
 
 const make = Effect.gen(function* () {
   const bindings = yield* Bindings;

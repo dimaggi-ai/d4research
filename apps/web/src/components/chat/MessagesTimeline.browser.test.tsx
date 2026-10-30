@@ -16,12 +16,12 @@ import {
   TurnItemId,
   ScheduledTaskId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   decodeComposerContextClipboardHtml,
   decodeComposerContextFragment,
-} from "@t3tools/shared/composerContextClipboard";
+} from "@d4research/shared/composerContextClipboard";
 import type { LegendListRef } from "@legendapp/list/react";
 import {
   createRef,
@@ -47,7 +47,7 @@ import {
   deriveTimelineEntriesFromVisibleTurnItems,
 } from "../../session-logic";
 import { remarkThoughtPreview } from "./TimelineWorkEntryRow.logic";
-import { parseMarkdownWithMath } from "@t3tools/shared/markdownMath";
+import { parseMarkdownWithMath } from "@d4research/shared/markdownMath";
 import { readTimelinePosition, rememberTimelinePosition } from "./timelineScrollAnchoring";
 
 import { toastManager } from "../ui/toast";

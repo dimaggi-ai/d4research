@@ -21,12 +21,12 @@ export class Bindings extends Context.Service<
     readonly readLimit: Cloudflare.RateLimit;
     readonly storeLimit: Cloudflare.RateLimit;
   }
->()("@t3tools/task-cache/NativeClients/Bindings") {}
+>()("@d4research/task-cache/NativeClients/Bindings") {}
 
 export class NativeClients extends Context.Service<
   NativeClients,
   { readonly handle: (request: Request) => Effect.Effect<Response> }
->()("@t3tools/task-cache/NativeClients") {}
+>()("@d4research/task-cache/NativeClients") {}
 
 const CompleteBody = Schema.fromJsonString(
   Schema.Struct({

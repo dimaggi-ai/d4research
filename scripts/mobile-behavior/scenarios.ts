@@ -3,7 +3,7 @@
  * Scenarios drive one flow on the device and return metrics. Cases in `cases.ts` name a
  * scenario and check its metrics, so one flow can serve several issues.
  */
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@d4research/contracts";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

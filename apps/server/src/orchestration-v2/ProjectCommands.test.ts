@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, EventId, ProjectId, type ProjectScript } from "@t3tools/contracts";
+import { CommandId, EventId, ProjectId, type ProjectScript } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 

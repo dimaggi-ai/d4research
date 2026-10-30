@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Scope from "effect/Scope";
 
-import { GitCommandError } from "@t3tools/contracts";
+import { GitCommandError } from "@d4research/contracts";
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { MultiworkService, layer as multiworkLayer } from "./MultiworkService.ts";

@@ -1,11 +1,11 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom, AsyncResult } from "effect/reactivity";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Dialog from "../components/ui/Dialog";
-import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
-import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
-import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
+import { filePreviewDelimiter, parseDelimitedPreview } from "@d4research/shared/delimitedPreview";
+import type { AssetResource, EnvironmentId } from "@d4research/contracts";
+import { readFilePreviewResponse } from "@d4research/client-runtime/file-preview";
+import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@d4research/shared/filePreview";
 import { fetch } from "expo/fetch";
 import { File } from "expo-file-system";
 import * as Effect from "effect/Effect";

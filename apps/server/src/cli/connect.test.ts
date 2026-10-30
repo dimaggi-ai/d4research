@@ -1,4 +1,4 @@
-import * as RelayClient from "@t3tools/shared/relayClient";
+import * as RelayClient from "@d4research/shared/relayClient";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

@@ -1,5 +1,5 @@
-import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import {
   CommandId,
   isProviderNativeSubagentThread,
@@ -10,7 +10,7 @@ import {
   type OrchestrationV2ThreadProjection,
   isOrchestrationV2WorkActive,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -20,7 +20,7 @@ import * as Schema from "effect/Schema";
 
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { restartContinuationRun } from "./RestartContinuation.ts";
@@ -28,7 +28,7 @@ import { isBufferedProviderNotification } from "./NotificationMailbox.ts";
 import {
   endOrphanedNativeSubagent,
   endRunlessRootTurns,
-} from "@t3tools/provider-core/server/subagentProjection";
+} from "@d4research/provider-core/server/subagentProjection";
 import {
   awaitingProviderThreadId,
   cancelledRosterTaskWork,

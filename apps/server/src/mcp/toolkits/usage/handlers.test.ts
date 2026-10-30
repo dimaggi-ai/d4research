@@ -11,7 +11,7 @@ import {
   type PeerEnvironment,
   type PeerRelayReply,
   type PeerRelayOperation,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as ErrorReporter from "effect/ErrorReporter";
 import * as Layer from "effect/Layer";

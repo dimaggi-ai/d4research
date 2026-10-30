@@ -1,10 +1,10 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   type EnvironmentId,
   INCOGNITO_BROWSER_PROFILE_ID,
   type PreviewSessionSnapshot,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { type ClosedViewEntry, useClosedViewStore } from "./closedViewStore";

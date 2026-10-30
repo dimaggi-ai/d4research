@@ -1,11 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   presentPendingBackgroundWork,
   type PendingBackgroundWorkItem,
-} from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/thread-execution";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import * as Haptics from "expo-haptics";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { ScreenStack } from "react-native-screens";

@@ -2,7 +2,7 @@ import type {
   ExecutionEnvironmentCapabilities,
   ThreadId,
   ThreadPullRequestKey,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { normalizeThreadPullRequestKey } from "./threadPullRequests.ts";
 
 /** "unsupported" until the environment's server config has loaded. */

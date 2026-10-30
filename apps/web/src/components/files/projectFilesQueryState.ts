@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ProjectEntriesChangedEvent, ProjectFileChangedEvent } from "@t3tools/contracts";
+import type { ProjectEntriesChangedEvent, ProjectFileChangedEvent } from "@d4research/contracts";
 import {
   type EnvironmentId,
   type ProjectFileLocation,
@@ -8,19 +8,19 @@ import {
   ProjectReadFileError,
   type ProjectReadFileResult,
   T3_PROJECT_FILE_NAME,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback, useEffect, useRef } from "react";
-import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { filePreviewKind } from "@d4research/shared/filePreview";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch } from "~/state/queries";
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
+import { executeAtomQuery } from "@d4research/client-runtime/state/runtime";
 import { revisionedQuery } from "~/state/revisionedQuery";
 
 const EMPTY_PROJECT_FILE_PATH = "";

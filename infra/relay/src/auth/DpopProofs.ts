@@ -9,7 +9,7 @@ import {
   DPOP_MAX_CLOCK_SKEW_SECONDS,
   DpopVerificationFailureCode,
   verifyDpopProof,
-} from "@t3tools/shared/dpop";
+} from "@d4research/shared/dpop";
 import * as RelayDb from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
 

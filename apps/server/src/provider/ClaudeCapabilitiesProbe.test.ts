@@ -1,4 +1,4 @@
-import { ClaudeSettings } from "@t3tools/contracts";
+import { ClaudeSettings } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import * as Cause from "effect/Cause";
 import * as Result from "effect/Result";
@@ -8,12 +8,12 @@ import * as Deferred from "effect/Deferred";
 import { probeClaudeCapabilities } from "./ClaudeProvider.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- SDK fixture modules create isolated account transcripts.
 import * as NodeFSP from "node:fs/promises";
-import { COMPACT_SLASH_COMMAND } from "@t3tools/provider-core/server/snapshotProbe";
+import { COMPACT_SLASH_COMMAND } from "@d4research/provider-core/server/snapshotProbe";
 import { probeClaudeWorkspaceSnapshot } from "./ClaudeProvider.ts";
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
-import { type ServerProvider } from "@t3tools/contracts";
-import { ProviderDriverKind } from "@t3tools/contracts";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { type ServerProvider } from "@d4research/contracts";
+import { ProviderDriverKind } from "@d4research/contracts";
+import { ProviderInstanceId } from "@d4research/contracts";
 import * as Path from "effect/Path";
 import * as FileSystem from "effect/FileSystem";
 import * as Effect from "effect/Effect";

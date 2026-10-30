@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   compileResolvedKeybindingsConfig,
   DEFAULT_RESOLVED_KEYBINDINGS,
-} from "@t3tools/shared/keybindings";
+} from "@d4research/shared/keybindings";
 
 import { act, fakeTimers, render, stubGlobal } from "../../test/render";
 import { RightPanelTabs } from "./RightPanelTabs";

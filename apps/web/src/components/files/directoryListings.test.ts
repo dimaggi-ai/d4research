@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { mergeDirectoryListings } from "./directoryListings";
 

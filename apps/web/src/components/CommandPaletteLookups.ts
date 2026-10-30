@@ -1,14 +1,14 @@
-import { isHostPrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
 import {
   type ClientSettings,
   type EnvironmentId,
   type ProjectId,
   resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useClientSettings } from "../hooks/useSettings";
-import { getProjectOrderKey } from "@t3tools/client-runtime/state/project-grouping";
+import { getProjectOrderKey } from "@d4research/client-runtime/state/project-grouping";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";

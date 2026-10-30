@@ -21,7 +21,7 @@ vi.mock("expo-image", () => ({
 }));
 vi.mock("expo/fetch", () => ({ fetch: vi.fn() }));
 vi.mock("react-native-svg", () => ({ parse: vi.fn(), SvgAst: () => null }));
-vi.mock("@t3tools/client-runtime/state/assets", () => ({ MISSING_FILE_ACCESS_MESSAGE: "" }));
+vi.mock("@d4research/client-runtime/state/assets", () => ({ MISSING_FILE_ACCESS_MESSAGE: "" }));
 vi.mock("../../components/ui/AppActivityIndicator", () => ({ AppActivityIndicator: () => null }));
 vi.mock("../../components/FilePreviewGallery", () => ({
   useFilePreviewGallery: () => (source: unknown) => source,

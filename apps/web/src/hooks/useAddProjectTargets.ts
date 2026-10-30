@@ -1,6 +1,6 @@
-import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { AuthSourceControlWriteScope, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { canCreateProjectInEnvironment } from "@d4research/client-runtime/operations/projects";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import { AuthSourceControlWriteScope, resolveEnvironmentMachineKind } from "@d4research/contracts";
 
 import type { EnvironmentOption } from "../components/BranchToolbar.logic";
 import { useEnvironments } from "../state/environments";

@@ -19,7 +19,7 @@ export class DesktopState extends Context.Service<
     readonly quitting: Ref.Ref<boolean>;
     readonly primaryBackendStartup: SubscriptionRef.SubscriptionRef<PrimaryBackendStartup>;
   }
->()("@t3tools/desktop/app/DesktopState") {}
+>()("@d4research/desktop/app/DesktopState") {}
 
 const make = Effect.all({
   backendReady: Ref.make(false),

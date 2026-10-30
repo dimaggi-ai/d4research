@@ -3,11 +3,11 @@ import * as Dialog from "../../components/ui/Dialog";
 import { useNavigation } from "@react-navigation/native";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
-import { AuthFilesystemReadScope, AuthSourceControlWriteScope } from "@t3tools/contracts";
+import { AuthFilesystemReadScope, AuthSourceControlWriteScope } from "@d4research/contracts";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@d4research/client-runtime/state/shell";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useEnvironmentQuery } from "../../state/query";

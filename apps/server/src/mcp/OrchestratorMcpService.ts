@@ -62,10 +62,10 @@ import {
   type ServerProviderModel,
   ThreadId,
   isOrchestrationV2WorkActive,
-} from "@t3tools/contracts";
-import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
-import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
-import { formatThreadLink } from "@t3tools/shared/threadLinks";
+} from "@d4research/contracts";
+import { getProviderOptionCurrentValue } from "@d4research/shared/model";
+import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
+import { formatThreadLink } from "@d4research/shared/threadLinks";
 import {
   normalizeThreadPullRequestKey,
   visibleThreadPullRequests,
@@ -87,7 +87,7 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import {
   subagentResultForRun,
   delegatedTaskProgress,
-} from "@t3tools/provider-core/server/subagentProjection";
+} from "@d4research/provider-core/server/subagentProjection";
 import {
   DispatchModeLimit,
   type DispatchModeRefusal,

@@ -1,4 +1,4 @@
-import type { UsageLimitHistoryPoint } from "@t3tools/contracts";
+import type { UsageLimitHistoryPoint } from "@d4research/contracts";
 
 /** Solid lines connect measured values, including resets. Gaps get dashed bridges. */
 export function historySegments(

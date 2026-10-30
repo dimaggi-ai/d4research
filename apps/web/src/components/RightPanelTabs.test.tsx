@@ -1,8 +1,8 @@
-import type { DesktopPreviewFavicon, PreviewSessionSnapshot } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import type { DesktopPreviewFavicon, PreviewSessionSnapshot } from "@d4research/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@d4research/shared/keybindings";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RightPanelTabs } from "./RightPanelTabs";
-import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
+import { EnvironmentId, type ThreadPullRequestLink } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

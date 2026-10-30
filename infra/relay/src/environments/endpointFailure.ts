@@ -1,4 +1,4 @@
-import type { RelayEnvironmentEndpointFailure } from "@t3tools/contracts/relay";
+import type { RelayEnvironmentEndpointFailure } from "@d4research/contracts/relay";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

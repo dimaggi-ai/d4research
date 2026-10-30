@@ -11,7 +11,7 @@ import * as Base64Url from "effect/encoding/Base64Url";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import { RelayT3ChatLink } from "@t3tools/contracts/relay";
+import { RelayT3ChatLink } from "@d4research/contracts/relay";
 
 import * as RelayConfiguration from "../Config.ts";
 

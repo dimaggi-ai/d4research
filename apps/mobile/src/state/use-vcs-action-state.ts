@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { secondTick } from "@t3tools/client-runtime/clock";
-import { type VcsActionState, type VcsActionTarget } from "@t3tools/client-runtime/state/vcs";
+import { secondTick } from "@d4research/client-runtime/clock";
+import { type VcsActionState, type VcsActionTarget } from "@d4research/client-runtime/state/vcs";
 import { Atom } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
 import { useSyncExternalStore } from "react";

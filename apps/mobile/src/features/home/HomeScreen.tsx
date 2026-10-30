@@ -13,9 +13,9 @@ import { THREAD_SIDEBAR_ROW_LAYOUT } from "../threads/threadListAnimations";
 import {
   type EnvironmentProject,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/shell";
+import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
+import { type EnvironmentId, type SidebarProjectGroupingMode } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { use, useEffect, useRef, useState, type ComponentProps } from "react";
 import {

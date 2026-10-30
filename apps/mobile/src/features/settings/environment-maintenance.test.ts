@@ -1,4 +1,4 @@
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope } from "@d4research/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { canMaintainEnvironment, findEnvironmentUpdate } from "./environment-maintenance";

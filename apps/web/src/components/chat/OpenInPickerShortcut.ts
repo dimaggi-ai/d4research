@@ -3,7 +3,7 @@ import {
   type EditorId,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useEffect } from "react";
 
 import { usePreferredEditor } from "../../editorPreferences";

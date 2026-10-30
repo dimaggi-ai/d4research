@@ -1,4 +1,4 @@
-import type { PreviewViewportSetting, PreviewViewportSize } from "@t3tools/contracts";
+import type { PreviewViewportSetting, PreviewViewportSize } from "@d4research/contracts";
 import {
   useEffect,
   useRef,

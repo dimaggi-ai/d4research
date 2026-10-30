@@ -4,9 +4,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import type { ServerInstallation } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+import type { ServerInstallation } from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { isCommandAvailable } from "@d4research/shared/shell";
 
 import packageJson from "../../package.json" with { type: "json" };
 

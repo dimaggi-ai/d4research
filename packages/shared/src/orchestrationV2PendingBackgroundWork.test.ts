@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ThreadId, ProviderInstanceId, ProviderThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, ProviderInstanceId, ProviderThreadId } from "@d4research/contracts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,

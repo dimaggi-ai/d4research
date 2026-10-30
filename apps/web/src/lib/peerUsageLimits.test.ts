@@ -10,12 +10,12 @@ import {
   PrimaryConnectionTarget,
   AVAILABLE_CONNECTION_STATE,
   type PreparedConnection,
-} from "@t3tools/client-runtime/connection";
-import type { RpcSession } from "@t3tools/client-runtime/rpc";
-import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+} from "@d4research/client-runtime/connection";
+import type { RpcSession } from "@d4research/client-runtime/rpc";
+import { EnvironmentId, WS_METHODS } from "@d4research/contracts";
 
 const { call, watch } = vi.hoisted(() => ({ call: vi.fn(), watch: vi.fn() }));
-vi.mock("@t3tools/client-runtime/rpc", () => ({
+vi.mock("@d4research/client-runtime/rpc", () => ({
   request: (...args: unknown[]) => call(...args),
   subscribe: (...args: unknown[]) => watch(...args),
 }));

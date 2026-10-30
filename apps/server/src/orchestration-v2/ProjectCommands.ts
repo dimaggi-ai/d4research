@@ -9,7 +9,7 @@ import {
   type ProjectWorkspace,
   SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";

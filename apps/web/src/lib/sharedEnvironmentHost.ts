@@ -1,6 +1,6 @@
-import { EnvironmentRegistry, EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
-import { makeEnvironmentHttpApiGroupClient } from "@t3tools/client-runtime/rpc";
-import { type EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentRegistry, EnvironmentSupervisor } from "@d4research/client-runtime/connection";
+import { makeEnvironmentHttpApiGroupClient } from "@d4research/client-runtime/rpc";
+import { type EnvironmentId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";

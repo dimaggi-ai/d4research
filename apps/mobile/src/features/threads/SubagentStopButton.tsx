@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, OrchestrationV2Subagent } from "@t3tools/contracts";
+import type { EnvironmentId, OrchestrationV2Subagent } from "@d4research/contracts";
 import { useState } from "react";
 import { View } from "react-native";
 

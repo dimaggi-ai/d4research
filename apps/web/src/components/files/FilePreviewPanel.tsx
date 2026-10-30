@@ -1,10 +1,10 @@
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { breadcrumbPathOf, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
-import type { ThreadWorkspaceSelection } from "@t3tools/contracts";
+import type { ThreadWorkspaceSelection } from "@d4research/contracts";
 import {
   resolveThreadWorkspaces,
   type SelectedProjectWorkspace,
-} from "@t3tools/shared/threadWorkspaces";
+} from "@d4research/shared/threadWorkspaces";
 import { FileWorktreeToolbar } from "./FileWorktreeToolbar";
 import { Button } from "~/components/ui/button";
 import { DownloadIcon, CopyIcon, CheckIcon } from "lucide-react";
@@ -20,9 +20,9 @@ import {
   type ProjectWorkspace,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
-import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
-import { AuthFilesystemWriteScope } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { filePreviewDelimiter } from "@d4research/shared/delimitedPreview";
+import { AuthFilesystemWriteScope } from "@d4research/contracts";
 import {
   isWorkspaceAudioPreviewPath,
   isWorkspaceImagePreviewPath,
@@ -30,7 +30,7 @@ import {
   isWorkspaceVideoPreviewPath,
   officePreviewKind,
   binaryPreviewKind,
-} from "@t3tools/shared/filePreview";
+} from "@d4research/shared/filePreview";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import {
@@ -56,8 +56,8 @@ import { useFilesystemReadAccess } from "~/state/filesystem";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
+} from "@d4research/client-runtime/state/runtime";
+import { mediaFileReference } from "@d4research/client-runtime/media-reference";
 import {
   ArrowLeft,
   ArrowRight,
@@ -76,7 +76,7 @@ import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import ChatMarkdown from "~/components/ChatMarkdown";
-import { maskMarkdownFrontmatter } from "@t3tools/shared/markdownFrontmatter";
+import { maskMarkdownFrontmatter } from "@d4research/shared/markdownFrontmatter";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
@@ -102,8 +102,8 @@ import {
   workspaceDirectoryName,
 } from "~/lib/projectWorkspacePresentation";
 import type { ChatFileAttachment } from "~/types";
-import { isHostPath } from "@t3tools/shared/path";
-import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { isHostPath } from "@d4research/shared/path";
+import { resolvePathLinkTarget } from "@d4research/shared/fileLinks";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";

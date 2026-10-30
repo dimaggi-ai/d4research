@@ -1,4 +1,4 @@
-import { EnvironmentId, ProviderDriverKind, type AcpRegistrySearchAgent } from "@t3tools/contracts";
+import { EnvironmentId, ProviderDriverKind, type AcpRegistrySearchAgent } from "@d4research/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 

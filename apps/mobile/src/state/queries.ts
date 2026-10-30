@@ -2,11 +2,11 @@ import {
   composerPullRequestsFromLinks,
   filterComposerPullRequestMatches,
   withLinkedComposerPullRequestsFirst,
-} from "@t3tools/shared/composerPullRequestMatches";
-import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
+} from "@d4research/shared/composerPullRequestMatches";
+import { resolveFilesystemReadAccess } from "@d4research/client-runtime/state/filesystem";
 import { environmentSession } from "./session";
 import { useEnvironmentPresentation } from "./presentation";
-import type { VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
+import type { VcsRefTarget } from "@d4research/client-runtime/state/vcs";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
@@ -14,7 +14,7 @@ import type {
   ThreadPullRequestLink,
   VcsListRefsResult,
   VcsRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   createThreadSearchResultsAtomFamily,
   makeThreadSearchKey,
@@ -23,12 +23,12 @@ import {
   type SettledThreadSearch,
   type ThreadSearchResultsState,
   type ThreadSearchScope,
-} from "@t3tools/client-runtime/state/thread-search";
-import { THREAD_SEARCH_QUERY_MAX_LENGTH } from "@t3tools/contracts";
-import { messageSearchTokens } from "@t3tools/shared/paletteSearch";
+} from "@d4research/client-runtime/state/thread-search";
+import { THREAD_SEARCH_QUERY_MAX_LENGTH } from "@d4research/contracts";
+import { messageSearchTokens } from "@d4research/shared/paletteSearch";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
-import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
+import { turnItemDetailRevision } from "@d4research/client-runtime/work-log/item-detail";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";

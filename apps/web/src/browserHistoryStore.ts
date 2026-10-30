@@ -2,18 +2,18 @@ import {
   scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
-} from "@t3tools/client-runtime/environment";
+} from "@d4research/client-runtime/environment";
 import type {
   EnvironmentId,
   PreviewSessionSnapshot,
   ScopedProjectRef,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
-import { normalizePreviewUrl } from "@t3tools/shared/preview";
+import { normalizePreviewUrl } from "@d4research/shared/preview";
 import {
   previewStateAtom,
   previewThreadRefsAtom,
@@ -45,7 +45,7 @@ import {
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
   type ProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "./sidebarProjectGrouping";
 import type { Project } from "./types";
 

@@ -1,6 +1,6 @@
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
+import type { EnvironmentShellStatus } from "@d4research/client-runtime/state/shell";
+import type { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";

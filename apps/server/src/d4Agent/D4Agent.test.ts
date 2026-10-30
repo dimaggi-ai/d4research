@@ -3647,6 +3647,33 @@ it.effect("closing the session of a pending rotation tells the user the message 
   }),
 );
 
+it.effect("a session without a reported window rotates on the configured fallback window", () =>
+  Effect.gen(function* () {
+    const fill = (f: { readonly state: Ref.Ref<Store.StoredState> }) =>
+      Ref.update(f.state, (state) => ({
+        ...state,
+        sessions: (state.sessions ?? []).map((entry) => ({
+          ...entry,
+          inputTokens: 70_000,
+          contextWindow: null,
+        })),
+      }));
+    const unknown = yield* fixture("ask");
+    yield* unknown.service.ensureThread();
+    yield* fill(unknown);
+    yield* unknown.send({ text: "No window known" });
+    assert.isUndefined((yield* Ref.get(unknown.state)).rotation);
+
+    const configured = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      contextWindowTokens: 100_000,
+    });
+    yield* configured.service.ensureThread();
+    yield* fill(configured);
+    yield* configured.send({ text: "Window configured" });
+    assert.isDefined((yield* Ref.get(configured.state)).rotation);
+  }),
+);
+
 it.effect("send original keeps the pending user text after a size rotation", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");

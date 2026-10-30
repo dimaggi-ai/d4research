@@ -60,6 +60,11 @@ export const D4AgentSettings = Schema.Struct({
   sessionBudgetPercent: Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 90 })).pipe(
     Schema.withDecodingDefault(Effect.succeed(60)),
   ),
+  // Local models served over a generic API report no context window, so the session budget
+  // would never rotate. This window applies only when the provider reports none.
+  contextWindowTokens: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ minimum: 8192, maximum: 2_000_000 })),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   // 0 archives a completed task as soon as it is reported.
   agentThreadArchiveHours: Schema.NullOr(Schema.Literals([0, 24])).pipe(
     Schema.withDecodingDefault(Effect.succeed(0)),
@@ -124,6 +129,7 @@ export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   sessionIdleMinutes: 120,
   sessionBudgetPercent: 60,
+  contextWindowTokens: null,
   agentThreadArchiveHours: 0,
   projectWorktreeBaseRefs: {},
   pipelineProjects: {},

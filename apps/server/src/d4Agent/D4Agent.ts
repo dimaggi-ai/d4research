@@ -437,6 +437,15 @@ const REFERENCE_EVENT_TYPES = [
   "thread.deleted",
 ] as const;
 
+function overBudget(
+  session: { readonly inputTokens: number; readonly contextWindow: number | null },
+  fallbackWindow: number | null,
+  budgetPercent: number,
+) {
+  const window = session.contextWindow ?? fallbackWindow;
+  return window !== null && session.inputTokens >= (window * budgetPercent) / 100;
+}
+
 export const layer = Layer.effect(
   D4Agent,
   Effect.gen(function* () {
@@ -1173,8 +1182,8 @@ export const layer = Layer.effect(
         !heartbeat &&
         !resumedAfterRotation &&
         input.followUpBehavior !== "steer" &&
-        session?.contextWindow != null &&
-        session.inputTokens >= (session.contextWindow * budget) / 100
+        session !== undefined &&
+        overBudget(session, sendConfig.contextWindowTokens, budget)
       ) {
         yield* beginRotation(input.text, heartbeat, id, { ...input, taskModelSelection });
         return identity;
@@ -3926,8 +3935,8 @@ export const layer = Layer.effect(
         );
         if (
           !(yield* store.get).rotation &&
-          active?.contextWindow != null &&
-          active.inputTokens >= (active.contextWindow * config.sessionBudgetPercent) / 100
+          active !== undefined &&
+          overBudget(active, config.contextWindowTokens, config.sessionBudgetPercent)
         ) {
           const shell = yield* threads
             .getThreadShell(active.threadId)

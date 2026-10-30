@@ -25,6 +25,7 @@ import {
   type AuthWebSocketTicketResult,
   DpopFailureReason,
   type DpopFailureReason as DpopFailureReasonType,
+  expandLegacyClientScopeRequest,
 } from "@d4research/contracts";
 import { encodeOAuthScope } from "@d4research/shared/oauthScope";
 import * as Context from "effect/Context";
@@ -967,7 +968,9 @@ export const make = Effect.gen(function* () {
             const grantedScopes =
               requestedScopes === undefined
                 ? grant.scopes
-                : [...new Set(requestedScopes)].filter((scope) => grant.scopes.includes(scope));
+                : expandLegacyClientScopeRequest([...new Set(requestedScopes)]).filter((scope) =>
+                    grant.scopes.includes(scope),
+                  );
             if (grantedScopes.length === 0) {
               return yield* new ServerAuthScopeNotGrantedError({});
             }

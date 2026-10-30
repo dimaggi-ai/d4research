@@ -254,6 +254,31 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         .pipe(Effect.flip);
       expect(empty._tag).toBe("ServerAuthScopeNotGrantedError");
       expect(yield* serverAuth.listClientSessions(firstSession.sessionId)).toEqual(before);
+      // A client built before the permission split asks for its whole set in the old enum.
+      const legacy = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+        token,
+        ["orchestration:read", "orchestration:operate", "terminal:operate"],
+        requestMetadata,
+      );
+      const legacySession = yield* serverAuth.authenticateHttpRequest(
+        makeBearerRequest(legacy.access_token),
+      );
+      expect([...legacySession.scopes].toSorted()).toEqual(
+        [
+          "diagnostics:read",
+          "environment:maintain",
+          "filesystem:read",
+          "filesystem:write",
+          "orchestration:operate",
+          "orchestration:read",
+          "preview:operate",
+          "providers:manage",
+          "settings:write",
+          "source-control:write",
+          "terminal:operate",
+          "terminal:read",
+        ].toSorted(),
+      );
     }).pipe(
       Effect.provide(
         layerEnvironmentAuth({

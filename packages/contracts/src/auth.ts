@@ -109,6 +109,31 @@ const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>>
   [AuthTerminalReadScope]: AuthTerminalOperateScope,
 };
 
+const legacyStandardClientScopes = [
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+] as const;
+
+/**
+ * A client built before the permission split asks for its whole standard set in the original
+ * scope enum. Give it the permissions those scopes used to cover; narrower requests stay as sent.
+ */
+export function expandLegacyClientScopeRequest(
+  requested: ReadonlyArray<AuthEnvironmentScope>,
+): ReadonlyArray<AuthEnvironmentScope> {
+  if (
+    !requested.every((scope) => legacyScopes.has(scope)) ||
+    !legacyStandardClientScopes.every((scope) => requested.includes(scope))
+  ) {
+    return requested;
+  }
+  const children = Object.entries(legacyParents).flatMap(([child, parent]) =>
+    requested.includes(parent) ? [child as AuthEnvironmentScope] : [],
+  );
+  return [...new Set([...requested, ...children])];
+}
+
 /** Keep permission denials decodable by clients with the original scope enum. */
 export function authScopeRequiredResponse(requiredPermission: AuthEnvironmentScope) {
   return {

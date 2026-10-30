@@ -410,8 +410,11 @@ export async function runNiaTurn(
       if (round === MAX_ROUNDS - 1) return fail("tools");
       for (const { call, args } of validated) {
         activeSignal.throwIfAborted();
-        let recorded = false;
+        // Save the model's exact call with a placeholder result before the tool can run.
+        history.push({ role: "tool", content: UNVERIFIED_TOOL_RESULT, tool_call_id: call.id });
+        const resultIndex = history.length - 1;
         try {
+          await callback(() => onHistory?.([...history]));
           await callback(() =>
             onTool({
               phase: "started",
@@ -429,8 +432,7 @@ export async function runNiaTurn(
             raw.length > MAX_RESULT_CHARS
               ? `${raw.slice(0, MAX_RESULT_CHARS)}\n[TRUNCATED: maxCharacters=${MAX_RESULT_CHARS}]`
               : raw;
-          history.push({ role: "tool", content: output, tool_call_id: call.id });
-          recorded = true;
+          history[resultIndex] = { role: "tool", content: output, tool_call_id: call.id };
           await callback(() =>
             onTool({
               phase: "completed",
@@ -442,12 +444,6 @@ export async function runNiaTurn(
           );
         } catch (cause) {
           // The adapter must close a started tool even when the turn is canceled.
-          if (!recorded)
-            history.push({
-              role: "tool",
-              content: UNVERIFIED_TOOL_RESULT,
-              tool_call_id: call.id,
-            });
           const saved = onHistory?.([...history]);
           if (!activeSignal.aborted) await callback(() => saved);
           else void Promise.resolve(saved).catch(() => {});

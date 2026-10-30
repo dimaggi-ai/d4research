@@ -39,6 +39,7 @@ import { historicalMessage } from "@d4research/provider-core/server/handoffBudge
 import { DeepSeekSettings, isLoopbackEndpoint } from "../settings.ts";
 import { DeepSeekAdapterV2Driver } from "./adapter.ts";
 import { makeNiaJournal } from "./niaJournal.ts";
+import type { NiaMessage } from "./nia.ts";
 import { probeDeepSeek } from "./health.ts";
 
 const config = Schema.decodeSync(DeepSeekSettings)({});
@@ -472,12 +473,14 @@ const sse = (toolCall: boolean) =>
             index: 0,
             delta: toolCall
               ? {
+                  // Text beside the call and unnormalized arguments must survive verbatim.
+                  content: "Checking.",
                   tool_calls: [
                     {
                       index: 0,
                       id: "call-1",
                       type: "function",
-                      function: { name: toolName, arguments: '{"scope":"current"}' },
+                      function: { name: toolName, arguments: '{ "scope": "current" }' },
                     },
                   ],
                 }
@@ -687,10 +690,8 @@ describe("Nia DeepSeek adapter", () => {
 
   it.effect("restores a tool call from the journal when the server dies before events commit", () =>
     Effect.gen(function* () {
-      const started = yield* Deferred.make<ReadonlyArray<{ role: string }> | undefined>();
-      let journalAtToolCall:
-        | (() => Promise<ReadonlyArray<{ role: string }> | undefined>)
-        | undefined;
+      const started = yield* Deferred.make<ReadonlyArray<NiaMessage> | undefined>();
+      let journalAtToolCall: (() => Promise<ReadonlyArray<NiaMessage> | undefined>) | undefined;
       mockNiaFetch({
         stallTool: () => {
           void journalAtToolCall?.().then((history) =>
@@ -711,6 +712,17 @@ describe("Nia DeepSeek adapter", () => {
         atToolCall?.map((message) => message.role),
         ["user", "assistant", "tool"],
       );
+      assert.deepStrictEqual(atToolCall?.[1], {
+        role: "assistant",
+        content: "Checking.",
+        tool_calls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: { name: toolName, arguments: '{ "scope": "current" }' },
+          },
+        ],
+      });
       // Restart from the thread as stored before any of the turn's events were committed.
       const server = mockNiaFetch();
       const restarted = yield* open(reply(completion("unused")), {

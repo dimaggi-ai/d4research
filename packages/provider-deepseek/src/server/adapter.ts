@@ -27,7 +27,7 @@ import {
   DEFAULT_DEEPSEEK_MODEL,
 } from "../settings.ts";
 import { deepSeekCapabilities, niaDeepSeekCapabilities } from "./capabilities.ts";
-import { runNiaTurn, UNVERIFIED_TOOL_RESULT, type NiaMessage, type NiaToolEvent } from "./nia.ts";
+import { runNiaTurn, type NiaMessage, type NiaToolEvent } from "./nia.ts";
 import { makeNiaJournal, preferJournal } from "./niaJournal.ts";
 import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import { DeepSeekRequestError, requestCompletion, type ChatMessage } from "./http.ts";
@@ -291,29 +291,9 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                   >();
                   const emitTool = (event: NiaToolEvent, closing = false) => {
                     if (finished && !closing) return;
-                    if (event.phase === "started") {
-                      workingNiaHistory.push(
-                        {
-                          role: "assistant",
-                          content: null,
-                          tool_calls: [
-                            {
-                              id: event.callId,
-                              type: "function",
-                              function: {
-                                name: event.name,
-                                arguments: JSON.stringify(event.arguments ?? {}),
-                              },
-                            },
-                          ],
-                        },
-                        {
-                          role: "tool",
-                          tool_call_id: event.callId,
-                          content: UNVERIFIED_TOOL_RESULT,
-                        },
-                      );
-                    } else if (event.result !== undefined) {
+                    // The loop has already saved its exact call through onHistory; only a
+                    // completed result replaces the placeholder here.
+                    if (event.phase === "completed" && event.result !== undefined) {
                       const last = workingNiaHistory.at(-1);
                       if (last?.role === "tool" && last.tool_call_id === event.callId) {
                         workingNiaHistory[workingNiaHistory.length - 1] = {
@@ -322,7 +302,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         };
                       }
                     }
-                    // The loop awaits this before calling the tool, so the intent is on disk first.
+                    // The loop awaits this, so a result is on disk before the next model call.
                     const saved = persistNiaHistory();
                     const time = DateTime.nowUnsafe();
                     const existing = toolStates.get(event.callId);

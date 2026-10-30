@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 import { DeepSeekSettings } from "../settings.ts";
-import { runNiaTurn, type NiaMessage, type NiaToolEvent } from "./nia.ts";
+import { runNiaTurn, UNVERIFIED_TOOL_RESULT, type NiaMessage, type NiaToolEvent } from "./nia.ts";
 
 const config = Schema.decodeSync(DeepSeekSettings)({ contextWindowTokens: 262144 });
 const registration = {
@@ -222,10 +222,13 @@ describe("Nia native streamed tool loop", () => {
       "tool",
       "assistant",
     ]);
+    // The exact call is saved with a placeholder before the tool runs, then with its result.
     expect(histories[0]!.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    expect(histories[0]![2]!.content).toBe(UNVERIFIED_TOOL_RESULT);
+    expect(histories[0]![1]).toEqual(histories[1]![1]);
     expect(server.completions()[1]!.body.messages).toEqual([
       { role: "system", content: D4_AGENT_PREFIX },
-      ...histories[0]!,
+      ...histories[1]!,
     ]);
     expect(messages).toHaveLength(1);
   });
@@ -467,8 +470,8 @@ describe("Nia native streamed tool loop", () => {
         },
       ),
     ).rejects.toThrow("cancelled");
-    expect(histories[0]!.filter((message) => message.role === "tool")).toHaveLength(1);
-    expect(histories[0]![2]!.content).toContain("Observed.");
+    expect(histories.at(-1)!.filter((message) => message.role === "tool")).toHaveLength(1);
+    expect(histories.at(-1)![2]!.content).toContain("Observed.");
   });
 
   it("closes a started tool on MCP failure without leaking response content", async () => {

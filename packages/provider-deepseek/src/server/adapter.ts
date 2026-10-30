@@ -1,5 +1,6 @@
 import {
   MessageId,
+  NodeId,
   ProviderDriverKind,
   ProviderThreadId,
   ProviderTurnId,
@@ -9,6 +10,9 @@ import {
   type OrchestrationV2ProviderTurn,
   type ProviderTurnId as TurnId,
 } from "@d4research/contracts";
+import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Fiber from "effect/Fiber";
@@ -22,8 +26,9 @@ import {
   DEFAULT_DEEPSEEK_ENDPOINT,
   DEFAULT_DEEPSEEK_MODEL,
 } from "../settings.ts";
-import { deepSeekCapabilities } from "./capabilities.ts";
-import { requestCompletion, type ChatMessage } from "./http.ts";
+import { deepSeekCapabilities, niaDeepSeekCapabilities } from "./capabilities.ts";
+import { runNiaTurn, type NiaMessage, type NiaToolEvent } from "./nia.ts";
+import { DeepSeekRequestError, requestCompletion, type ChatMessage } from "./http.ts";
 
 const DRIVER = ProviderDriverKind.make("deepseek");
 export type DeepSeekAdapterV2DriverEnv = HttpClient.HttpClient;
@@ -50,6 +55,9 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
   create: ({ instanceId, enabled, config }) =>
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient;
+      const mcpSessions = Option.getOrUndefined(
+        yield* Effect.serviceOption(McpProviderSessions.McpProviderSessions),
+      );
       return Adapter.ProviderAdapterV2.of({
         instanceId,
         driver: DRIVER,
@@ -67,6 +75,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
               Queue.unbounded<Adapter.ProviderAdapterV2Event>(),
               Queue.shutdown,
             );
+            const niaHistory = new Map<ProviderThreadId, ReadonlyArray<NiaMessage>>();
             const history = new Map<ProviderThreadId, ReadonlyArray<ChatMessage>>();
             const contexts = new Map<ProviderThreadId, string>();
             const active = new Map<TurnId, Fiber.Fiber<void>>();
@@ -83,7 +92,10 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
               status: "ready" as const,
               cwd: sessionInput.runtimePolicy.cwd ?? "/",
               model: config.model,
-              capabilities: deepSeekCapabilities,
+              capabilities:
+                sessionInput.runtimePolicy.toolPolicy === "d4-agent"
+                  ? niaDeepSeekCapabilities
+                  : deepSeekCapabilities,
               createdAt: now,
               updatedAt: now,
               lastError: null,
@@ -128,6 +140,8 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         updatedAt: time,
                       };
                   threads.set(thread.id, thread);
+                  if (thread.nativeMetadata?.deepSeekNiaHistory)
+                    niaHistory.set(thread.id, thread.nativeMetadata.deepSeekNiaHistory);
                   yield* emit({
                     type: "provider_thread.updated",
                     driver: DRIVER,
@@ -138,10 +152,26 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
               resumeThread: ({ providerThread }) =>
                 Effect.sync(() => {
                   threads.set(providerThread.id, providerThread);
+                  if (providerThread.nativeMetadata?.deepSeekNiaHistory)
+                    niaHistory.set(
+                      providerThread.id,
+                      providerThread.nativeMetadata.deepSeekNiaHistory,
+                    );
                   return providerThread;
                 }),
               injectHistory: (input) =>
                 Effect.sync(() => {
+                  if (!niaHistory.has(input.providerThread.id)) {
+                    const saved = input.providerThread.nativeMetadata?.deepSeekNiaHistory;
+                    niaHistory.set(
+                      input.providerThread.id,
+                      saved ??
+                        input.messages.map((message) => ({
+                          role: message.role,
+                          content: message.text,
+                        })),
+                    );
+                  }
                   history.set(
                     input.providerThread.id,
                     input.messages.map((message) => ({
@@ -154,9 +184,11 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                 }),
               startTurn: (input) =>
                 Effect.gen(function* () {
+                  const isNia = input.runtimePolicy.toolPolicy === "d4-agent";
                   if (
-                    (input.modelSelection.options?.find((option) => option.id === "taskMode")
-                      ?.value ?? config.taskMode) === "tools" ||
+                    (!isNia &&
+                      (input.modelSelection.options?.find((option) => option.id === "taskMode")
+                        ?.value ?? config.taskMode) === "tools") ||
                     input.message.attachments.length > 0 ||
                     input.modelSelection.model !== config.model ||
                     active.size > 0
@@ -171,11 +203,15 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                   // Resume without authoritative history must fail rather than silently lose the conversation.
                   if (
                     (input.nativeThreadHasTurns || input.providerThread.lastRunOrdinal !== null) &&
-                    !history.has(input.providerThread.id)
+                    !(isNia
+                      ? niaHistory.has(input.providerThread.id)
+                      : history.has(input.providerThread.id))
                   )
                     return yield* unsupported(
                       "Conversation history is required before continuing a local DeepSeek thread",
                     );
+                  const registration =
+                    isNia && mcpSessions ? yield* mcpSessions.read(input.threadId) : undefined;
                   const startedAt = yield* DateTime.now;
                   const turnId = ProviderTurnId.make(`deepseek:${instanceId}:${input.attemptId}`);
                   let turn: OrchestrationV2ProviderTurn = {
@@ -190,6 +226,116 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                     completedAt: null,
                   };
                   const previous = history.get(input.providerThread.id) ?? [];
+                  let workingNiaHistory: NiaMessage[] = [
+                    ...(niaHistory.get(input.providerThread.id) ?? []),
+                    { role: "user", content: input.message.text },
+                  ];
+                  let nextItemOrdinal = 1;
+                  const toolStates = new Map<
+                    string,
+                    { event: NiaToolEvent; ordinal: number; startedAt: DateTime.Utc }
+                  >();
+                  const emitTool = (event: NiaToolEvent, closing = false) => {
+                    if (finished && !closing) return;
+                    if (event.phase === "started") {
+                      workingNiaHistory.push(
+                        {
+                          role: "assistant",
+                          content: null,
+                          tool_calls: [
+                            {
+                              id: event.callId,
+                              type: "function",
+                              function: {
+                                name: event.name,
+                                arguments: JSON.stringify(event.arguments ?? {}),
+                              },
+                            },
+                          ],
+                        },
+                        {
+                          role: "tool",
+                          tool_call_id: event.callId,
+                          content: JSON.stringify({
+                            error: "tool_request_failed",
+                            completionVerified: false,
+                          }),
+                        },
+                      );
+                    } else if (event.result !== undefined) {
+                      const last = workingNiaHistory.at(-1);
+                      if (last?.role === "tool" && last.tool_call_id === event.callId) {
+                        workingNiaHistory[workingNiaHistory.length - 1] = {
+                          ...last,
+                          content: event.result,
+                        };
+                      }
+                    }
+                    niaHistory.set(input.providerThread.id, workingNiaHistory);
+                    const time = DateTime.nowUnsafe();
+                    const existing = toolStates.get(event.callId);
+                    const state = {
+                      event,
+                      ordinal: existing?.ordinal ?? nextItemOrdinal++,
+                      startedAt: existing?.startedAt ?? time,
+                    };
+                    toolStates.set(event.callId, state);
+                    const status =
+                      event.phase === "started"
+                        ? "running"
+                        : event.phase === "interrupted"
+                          ? "interrupted"
+                          : event.phase === "failed" || event.isError
+                            ? "failed"
+                            : "completed";
+                    const nodeId = NodeId.make(`${turnId}:tool:${event.callId}`);
+                    const nativeItemRef = null;
+                    Queue.offerUnsafe(queue, {
+                      type: "node.updated",
+                      driver: DRIVER,
+                      node: {
+                        id: nodeId,
+                        threadId: input.threadId,
+                        runId: input.runId,
+                        parentNodeId: input.rootNodeId,
+                        rootNodeId: input.rootNodeId,
+                        kind: "tool_call",
+                        status,
+                        countsForRun: false,
+                        providerThreadId: input.providerThread.id,
+                        providerTurnId: turnId,
+                        nativeItemRef,
+                        runtimeRequestId: null,
+                        checkpointScopeId: null,
+                        startedAt: state.startedAt,
+                        completedAt: status === "running" ? null : time,
+                      },
+                    });
+                    Queue.offerUnsafe(queue, {
+                      type: "turn_item.updated",
+                      driver: DRIVER,
+                      turnItem: {
+                        id: TurnItemId.make(`${turnId}:tool:${event.callId}`),
+                        threadId: input.threadId,
+                        runId: input.runId,
+                        nodeId,
+                        providerThreadId: input.providerThread.id,
+                        providerTurnId: turnId,
+                        nativeItemRef,
+                        parentItemId: null,
+                        ordinal: state.ordinal,
+                        status,
+                        title: null,
+                        startedAt: state.startedAt,
+                        completedAt: status === "running" ? null : time,
+                        updatedAt: time,
+                        type: "dynamic_tool",
+                        toolName: event.name,
+                        input: event.arguments ?? existing?.event.arguments ?? {},
+                        ...(event.result === undefined ? {} : { output: event.result }),
+                      },
+                    });
+                  };
                   const context = [
                     contexts.get(input.providerThread.id),
                     ...(input.appContext ?? []).map((entry) => entry.text),
@@ -212,9 +358,48 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                     threadId: input.threadId,
                     providerTurn: turn,
                   });
+                  let finished = false;
                   const finish = (status: "completed" | "interrupted" | "failed", code?: string) =>
                     Effect.gen(function* () {
+                      if (finished) return;
+                      finished = true;
                       const completedAt = yield* DateTime.now;
+                      for (const { event } of toolStates.values()) {
+                        if (event.phase === "started")
+                          emitTool(
+                            {
+                              ...event,
+                              phase: status === "interrupted" ? "interrupted" : "failed",
+                              isError: true,
+                            },
+                            true,
+                          );
+                      }
+                      if (isNia) {
+                        const savedHistory = niaHistory.get(input.providerThread.id);
+                        if (savedHistory) {
+                          const currentThread =
+                            threads.get(input.providerThread.id) ?? input.providerThread;
+                          const providerThread = {
+                            ...currentThread,
+                            updatedAt: completedAt,
+                            nativeMetadata: {
+                              ...currentThread.nativeMetadata,
+                              deepSeekNiaHistory: savedHistory.flatMap((message) =>
+                                message.role === "system"
+                                  ? []
+                                  : [{ ...message, role: message.role }],
+                              ),
+                            },
+                          };
+                          threads.set(providerThread.id, providerThread);
+                          yield* emit({
+                            type: "provider_thread.updated",
+                            driver: DRIVER,
+                            providerThread,
+                          });
+                        }
+                      }
                       turn = { ...turn, status, completedAt };
                       turns.set(input.providerThread.id, [
                         ...(turns.get(input.providerThread.id) ?? []),
@@ -234,7 +419,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                           providerThreadId: input.providerThread.id,
                           providerTurnId: turnId,
                           runOrdinal: input.runOrdinal,
-                          failureItemOrdinal: 2,
+                          failureItemOrdinal: nextItemOrdinal,
                           status,
                           failure: {
                             class: "provider_error",
@@ -256,9 +441,64 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                           threadDisposition: "reusable",
                         });
                       }
-                    });
+                    }).pipe(Effect.uninterruptible);
                   const work = Effect.gen(function* () {
-                    const result = yield* requestCompletion(client, config, requestMessages);
+                    const result = yield* isNia
+                      ? Effect.tryPromise({
+                          try: (signal) => {
+                            if (
+                              !registration ||
+                              registration.providerInstanceId !== instanceId ||
+                              registration.providerSessionId !== sessionInput.providerSessionId
+                            )
+                              throw new DeepSeekRequestError({ category: "configuration" });
+                            return runNiaTurn(
+                              config,
+                              [
+                                ...(niaHistory.get(input.providerThread.id) ?? []),
+                                { role: "user", content: input.message.text },
+                              ],
+                              {
+                                endpoint: registration.endpoint,
+                                headers: { Authorization: registration.authorizationHeader },
+                              },
+                              emitTool,
+                              signal,
+                              (nextHistory) => {
+                                if (!finished) {
+                                  workingNiaHistory = nextHistory.filter(
+                                    (message) => message.role !== "system",
+                                  );
+                                  niaHistory.set(input.providerThread.id, workingNiaHistory);
+                                }
+                              },
+                              (usage) => {
+                                if (finished) return;
+                                turn = {
+                                  ...turn,
+                                  tokenUsage: {
+                                    usedTokens: usage.total_tokens,
+                                    maxTokens: config.contextWindowTokens,
+                                    inputTokens: usage.prompt_tokens,
+                                    outputTokens: usage.completion_tokens,
+                                    updatedAt: DateTime.formatIso(DateTime.nowUnsafe()),
+                                  },
+                                };
+                                Queue.offerUnsafe(queue, {
+                                  type: "provider_turn.updated",
+                                  driver: DRIVER,
+                                  threadId: input.threadId,
+                                  providerTurn: turn,
+                                });
+                              },
+                            );
+                          },
+                          catch: (cause) =>
+                            Schema.is(DeepSeekRequestError)(cause)
+                              ? cause
+                              : new DeepSeekRequestError({ category: "transport", cause }),
+                        })
+                      : requestCompletion(client, config, requestMessages);
                     const completedAt = yield* DateTime.now;
                     if (result.usage)
                       turn = {
@@ -306,7 +546,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         providerTurnId: turnId,
                         nativeItemRef: null,
                         parentItemId: null,
-                        ordinal: 1,
+                        ordinal: nextItemOrdinal++,
                         status: "completed",
                         title: null,
                         startedAt,
@@ -346,7 +586,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                 unsupported("Local DeepSeek does not execute actions or accept tool approvals"),
               readThreadSnapshot: ({ providerThread }) =>
                 Effect.succeed({
-                  providerThread,
+                  providerThread: threads.get(providerThread.id) ?? providerThread,
                   providerTurns: turns.get(providerThread.id) ?? [],
                   messages: messages.get(providerThread.id) ?? [],
                   runtimeRequests: [],

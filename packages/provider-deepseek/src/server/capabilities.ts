@@ -91,3 +91,15 @@ export const deepSeekCapabilities: OrchestrationV2ProviderCapabilities = {
   },
   runtimePolicy: { enforcement: "client-boundary" },
 };
+
+export const niaDeepSeekCapabilities: OrchestrationV2ProviderCapabilities = {
+  ...deepSeekCapabilities,
+  tools: {
+    ...deepSeekCapabilities.tools,
+    exposesToolItemIds: true,
+    emitsToolStarted: true,
+    emitsToolCompleted: true,
+    emitsToolOutput: true,
+    supportsMcpTools: true,
+  },
+};

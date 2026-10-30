@@ -412,3 +412,25 @@ it.effect("does not load durable history when smart routing is disabled", () => 
     assert.deepEqual(historyReads, []);
   }).pipe(Effect.provide(testLayer({ config: { smartRouting: false }, historyReads })));
 });
+
+it.effect("keeps Nia on its selected provider without probes, history reads, or fallback", () => {
+  const requests: string[] = [];
+  const historyReads: ThreadId[] = [];
+  return Effect.gen(function* () {
+    const routing = yield* SmartRouting.SmartRouting;
+    const result = yield* routing.select({ ...input(), toolPolicy: "d4-agent" });
+    assert.deepEqual(result, { selection, route: null });
+    assert.deepEqual(requests, []);
+    assert.deepEqual(historyReads, []);
+  }).pipe(
+    Effect.provide(
+      testLayer({
+        requests,
+        historyReads,
+        config: { taskMode: "tools" },
+        missingFallback: true,
+        localAvailable: false,
+      }),
+    ),
+  );
+});

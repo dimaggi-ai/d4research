@@ -42,6 +42,7 @@ export class SmartRouting extends Context.Service<
       readonly projection: OrchestrationV2ThreadProjection;
       readonly text: string;
       readonly hasAttachments: boolean;
+      readonly toolPolicy?: "d4-agent";
     }) => Effect.Effect<
       { readonly selection: ModelSelection; readonly route: ProviderRoute | null },
       SmartRoutingError
@@ -59,6 +60,8 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   return SmartRouting.of({
     select: Effect.fn("SmartRouting.select")(function* (input) {
+      // Nia must keep the provider whose restricted tool boundary was selected.
+      if (input.toolPolicy === "d4-agent") return { selection: input.selection, route: null };
       const settings = yield* settingsService.getSettings.pipe(
         Effect.mapError((cause) => new SmartRoutingError({ reason: "configuration", cause })),
       );

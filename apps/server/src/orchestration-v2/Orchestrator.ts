@@ -4977,6 +4977,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           projection,
           text: dispatchText,
           hasAttachments: command.attachments.length > 0,
+          ...((yield* ownsD4Agent(command.threadId)) ? { toolPolicy: "d4-agent" as const } : {}),
         })
         .pipe(mapDispatchError(command));
       modelSelection = routed.selection;

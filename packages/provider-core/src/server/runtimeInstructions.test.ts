@@ -10,6 +10,8 @@ describe("buildRuntimeInstructions", () => {
     assert.include(instructions, "one link_pull_request per PR");
     assert.include(instructions, "Skip PRs you only read or review");
     assert.include(instructions, "If linking fails, say so.");
+    assert.include(instructions, "run your host's CLI in the matching checkout");
+    assert.include(instructions, "unlink_pull_request");
     assert.notInclude(instructions, "git log -1");
     assert.notInclude(instructions, "work on");
     // Listing linked PRs as an end-of-work check found nothing to add in audited threads.

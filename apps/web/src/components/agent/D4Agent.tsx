@@ -1,4 +1,5 @@
 import { d4ActionFailureMessage } from "@d4research/client-runtime/d4-agent-action-feedback";
+import { DEFAULT_D4_AGENT_LOOP_ITERATIONS } from "@d4research/contracts";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
@@ -645,8 +646,42 @@ function AgentActionRecord({
               Schedule · {routineScheduleLabel(launchAction.schedule)}
             </p>
           ) : null}
-          <p className="text-xs text-muted-foreground">Final prompt</p>
-          <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
+          {detail.data?.launch ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Mode ·{" "}
+                {detail.data.launch.mode === "loop"
+                  ? `Loop until the completion criteria hold, at most ${
+                      (launchAction.type === "start" ? launchAction.maxIterations : undefined) ??
+                      DEFAULT_D4_AGENT_LOOP_ITERATIONS
+                    } iterations`
+                  : "Single task, settles after a verified completion"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Folder · {detail.data.launch.workspaceRoot || "Project root"}
+                {detail.data.launch.workspace === "worktree" ? " (new worktree)" : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Runtime · {detail.data.launch.runtimeMode}
+              </p>
+              <p className="text-xs text-muted-foreground">Exact prompt</p>
+              <p className="whitespace-pre-wrap break-words">{detail.data.launch.prompt}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {launchAction.type === "start" ? "Prompt" : "Request"}
+              </p>
+              <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
+              {launchAction.type === "research" ||
+              launchAction.type === "pipeline" ||
+              launchAction.type === "prepare-routine" ? (
+                <p className="text-xs text-muted-foreground">
+                  The run adds its pipeline or setup instructions to this request.
+                </p>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
       {open && switchAction ? (

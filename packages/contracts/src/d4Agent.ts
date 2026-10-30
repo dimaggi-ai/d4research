@@ -60,9 +60,10 @@ export const D4AgentSettings = Schema.Struct({
   sessionBudgetPercent: Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 90 })).pipe(
     Schema.withDecodingDefault(Effect.succeed(60)),
   ),
-  // 0 archives a completed task as soon as it is reported.
+  // Opt-in. Null keeps completed task threads until the user archives them; 0 archives a
+  // completed task as soon as it is reported, 24 a day later.
   agentThreadArchiveHours: Schema.NullOr(Schema.Literals([0, 24])).pipe(
-    Schema.withDecodingDefault(Effect.succeed(0)),
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   // Base ref for a fresh worktree per Nia task, for projects whose root checkout lacks the code.
   projectWorktreeBaseRefs: Schema.Record(
@@ -124,7 +125,7 @@ export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   sessionIdleMinutes: 120,
   sessionBudgetPercent: 60,
-  agentThreadArchiveHours: 0,
+  agentThreadArchiveHours: null,
   projectWorktreeBaseRefs: {},
   pipelineProjects: {},
   brainVaultPath: "",
@@ -190,6 +191,22 @@ export const D4AgentRoutine = Schema.Struct({
 });
 export type D4AgentRoutine = typeof D4AgentRoutine.Type;
 
+export const D4AgentTaskMode = Schema.Literals(["single", "loop"]);
+export type D4AgentTaskMode = typeof D4AgentTaskMode.Type;
+export const MAX_D4_AGENT_LOOP_ITERATIONS = 20;
+export const DEFAULT_D4_AGENT_LOOP_ITERATIONS = 5;
+// What an approved task launch will run, fixed when the card is drafted and rechecked before it
+// runs, so the approval covers the exact folder, runtime, model and prompt.
+export const D4AgentLaunchPreview = Schema.Struct({
+  projectId: ProjectId,
+  workspaceRoot: Schema.String.check(Schema.isMaxLength(4096)),
+  workspace: Schema.Literals(["root", "worktree"]),
+  runtimeMode: Schema.String.check(Schema.isMaxLength(64)),
+  modelSelection: ModelSelection,
+  mode: D4AgentTaskMode,
+  prompt: Schema.String.check(Schema.isMaxLength(48000)),
+});
+export type D4AgentLaunchPreview = typeof D4AgentLaunchPreview.Type;
 export const D4AgentAction = Schema.Union([
   Schema.Struct({ type: Schema.Literal("prepare-routine"), ...D4RoutineDraft.fields }),
   Schema.Struct({
@@ -261,6 +278,15 @@ export const D4AgentAction = Schema.Union([
     projectId: ProjectId,
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
     modelSelection: ModelSelection,
+    // single runs once, verifies and reports, then settles when it reports completion. loop
+    // keeps working and evaluating until completionCriteria hold or maxIterations is reached.
+    mode: Schema.optionalKey(D4AgentTaskMode),
+    completionCriteria: Schema.optionalKey(
+      Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
+    ),
+    maxIterations: Schema.optionalKey(
+      Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_D4_AGENT_LOOP_ITERATIONS })),
+    ),
   }),
   // One shell command on the host's desktop session; Tool Guard sees it as text.
   Schema.Struct({
@@ -328,7 +354,19 @@ export const D4AgentActionRecord = Schema.Struct({
   failure: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
   // Set when Nia replaced this pending card with a newer one for the same target.
   supersededBy: Schema.optionalKey(Schema.String),
-  status: Schema.Literals(["pending", "approved", "denied", "executed", "failed"]),
+  launch: Schema.optionalKey(D4AgentLaunchPreview),
+  // expired: the card can no longer run as drafted (its context changed or it waited too long);
+  // the user did not deny it. interrupted: the server stopped while it ran, so whether it took
+  // effect is unknown and it is not retried automatically.
+  status: Schema.Literals([
+    "pending",
+    "approved",
+    "denied",
+    "executed",
+    "failed",
+    "expired",
+    "interrupted",
+  ]),
   createdAt: IsoDateTime,
   resolvedAt: Schema.NullOr(IsoDateTime),
 });

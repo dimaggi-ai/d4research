@@ -794,6 +794,8 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
         settings: {
           model: input.modelSelection.model,
           ...(effort === undefined ? {} : { reasoning_effort: effort }),
+          // Nia's turns carry none of Codex's default developer instructions.
+          ...(input.runtimePolicy.toolPolicy === "d4-agent" ? { developer_instructions: "" } : {}),
         },
       },
     });

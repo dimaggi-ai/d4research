@@ -52,6 +52,7 @@ import {
   D4AgentAction,
   type D4AgentActionNote,
   type D4AgentActionRecord,
+  type D4AgentLaunchPreview,
   type D4AgentResolveActionInput,
   type D4AgentSendInput,
   type D4AgentSettings,
@@ -102,6 +103,13 @@ import {
   usageAttributes,
 } from "./policy.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
+import {
+  composeStartPrompt,
+  launchPreviewsMatch,
+  parseTaskOutcome,
+  startActionProblem,
+  startTaskMode,
+} from "./taskLaunch.ts";
 
 export class D4Agent extends Context.Service<
   D4Agent,
@@ -695,7 +703,11 @@ export const layer = Layer.effect(
         transcript: [...(value.transcript ?? []), entry].slice(-200),
       }));
     });
-    const close = Effect.fn("D4Agent.close")(function* (context: D4BrainContext) {
+    // Internal size rotations keep pending drafts; a user reset or changed scope expires them.
+    const close = Effect.fn("D4Agent.close")(function* (
+      context: D4BrainContext,
+      expireDrafts = true,
+    ) {
       yield* finishRetirement();
       const state = yield* store.get;
       const session = state.sessions?.find((entry) => entry.context === context);
@@ -755,11 +767,14 @@ export const layer = Layer.effect(
           sessions: (value.sessions ?? []).filter((entry) => entry.threadId !== session.threadId),
           bindings: value.bindings.filter((entry) => entry.threadId !== session.threadId),
           ...(value.threadId === session.threadId ? { threadId: null, identityReady: false } : {}),
-          actions: value.actions.map((entry) =>
-            entry.sessionId === session.threadId && entry.status === "pending"
-              ? { ...entry, status: "denied" as const }
-              : entry,
-          ),
+          actions: expireDrafts
+            ? value.actions.map((entry) =>
+                entry.sessionId === session.threadId && entry.status === "pending"
+                  ? { ...entry, status: "expired" as const }
+                  : entry,
+              )
+            : // Drafts outlive the rotation; approval rechecks their context and target.
+              value.actions,
         };
       });
       yield* finishRetirement();
@@ -777,7 +792,7 @@ export const layer = Layer.effect(
       const existing = (yield* store.get).sessions?.find((entry) => entry.context === context);
       const canResume =
         reason === "context" && existing?.scopeHash === contextScopeHash(context, config);
-      if (existing && !canResume) yield* close(context);
+      if (existing && !canResume) yield* close(context, reason !== "size");
       const threadId = canResume
         ? existing.threadId
         : (replacementThreadId ?? ThreadId.make(yield* randomUUID));
@@ -1821,7 +1836,9 @@ export const layer = Layer.effect(
               (record.action.type === "cto-ask" ||
                 record.action.type === "auto-archive" ||
                 record.sessionId === null ||
-                record.sessionId === state.threadId),
+                record.sessionId === state.threadId ||
+                // A draft carried over from an earlier session of this context stays answerable.
+                record.status === "pending"),
           ),
         ),
         hostRoutines: yield* hostRoutines(state.brainContext),
@@ -2111,16 +2128,14 @@ export const layer = Layer.effect(
       const action = record.action;
       let preparationText: string | undefined;
       const { state, config } = yield* bound();
-      if (
-        record.context !== state.brainContext ||
-        (record.sessionId !== null && record.sessionId !== state.threadId)
-      )
+      if (record.context !== state.brainContext)
         return yield* new D4AgentError({ reason: "context" });
       if (action.type === "auto-archive") {
         const tracked = state.agentThreads?.find(
           (entry) => entry.threadId === action.threadId && entry.context === state.brainContext,
         );
-        if (!tracked || !(yield* lifecycle.archive(tracked, config.agentThreadArchiveHours)))
+        // The user approved this card, so it archives now even when automatic archival is off.
+        if (!tracked || !(yield* lifecycle.archive(tracked, config.agentThreadArchiveHours ?? 0)))
           return yield* new D4AgentError({ reason: "action-unavailable" });
         const archivedAt = DateTime.formatIso(yield* DateTime.now);
         yield* store.update((value) => ({
@@ -2176,9 +2191,19 @@ export const layer = Layer.effect(
           { ...config, taskModelSelection: action.modelSelection },
           providerList,
           yield* Clock.currentTimeMillis,
-          action.type !== "prepare-routine",
+          false,
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
+        if (action.type === "start") {
+          const current = yield* startLaunchPreview(action, config, record.guard !== undefined);
+          if (record.launch !== undefined && !launchPreviewsMatch(record.launch, current))
+            return yield* new D4AgentError({
+              reason: "action-unavailable",
+              detail:
+                "The task's folder, runtime, model or prompt changed after this card was drafted. Ask Nia to draft it again.",
+            });
+          preparationText = current.prompt;
+        }
         const targetId = ThreadId.make(`d4-action:${record.id}`);
         const runtimeMode = taskRuntimeMode(
           action.type !== "prepare-routine" && record.guard !== undefined,
@@ -2249,6 +2274,7 @@ export const layer = Layer.effect(
                 projectId: action.projectId,
                 context: state.brainContext,
                 actionId: record.id,
+                ...(action.type === "start" ? { mode: startTaskMode(action) } : {}),
                 reportedAt: null,
                 archivedAt: null,
                 undoDisabled: false,
@@ -2456,6 +2482,7 @@ export const layer = Layer.effect(
           { ...config, taskModelSelection: action.modelSelection },
           yield* providers.getProviders,
           yield* Clock.currentTimeMillis,
+          false,
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
         const { task } = yield* scheduler
@@ -2778,6 +2805,31 @@ export const layer = Layer.effect(
       if (result._tag === "Failure") return yield* Effect.fail(result.failure);
       return resolved;
     });
+    // The exact folder, runtime, model and prompt a start card will run, as its approval shows.
+    const startLaunchPreview = Effect.fn("D4Agent.startLaunchPreview")(function* (
+      action: Extract<D4AgentAction, { type: "start" }>,
+      config: Pick<D4AgentSettings, "projectWorktreeBaseRefs">,
+      guarded: boolean,
+    ) {
+      const providerList = yield* providers.getProviders;
+      const project = (yield* projects.listShells().pipe(Effect.mapError(threadError))).find(
+        (entry) => entry.id === action.projectId,
+      );
+      const workspace = taskWorkspace(config, action.projectId);
+      const preview: D4AgentLaunchPreview = {
+        projectId: action.projectId,
+        workspaceRoot: project?.workspaceRoot ?? "",
+        workspace: workspace.type === "root" ? "root" : "worktree",
+        runtimeMode: taskRuntimeMode(
+          guarded,
+          providerList.find((entry) => entry.instanceId === action.modelSelection.instanceId),
+        ),
+        modelSelection: action.modelSelection,
+        mode: startTaskMode(action),
+        prompt: composeStartPrompt(action),
+      };
+      return preview;
+    });
     const requestAction = (action: D4AgentAction, note?: D4AgentActionNote) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
@@ -2799,6 +2851,11 @@ export const layer = Layer.effect(
             Effect.mapError(() => new D4AgentError({ reason: "action-unavailable" })),
           );
           yield* validateTarget(action);
+          if (action.type === "start") {
+            const problem = startActionProblem(action);
+            if (problem !== null)
+              return yield* new D4AgentError({ reason: "action-unavailable", detail: problem });
+          }
           const state = yield* scopedState;
           // The user's turn carries an immutable worker intent as well as text. This snapshot,
           // not a later settings read, binds a proposal created after another client changes defaults.
@@ -2838,7 +2895,7 @@ export const layer = Layer.effect(
               { ...config, taskModelSelection: selectedWorker },
               catalog,
               yield* Clock.currentTimeMillis,
-              action.type !== "prepare-routine",
+              false,
             );
             if (unavailable !== null) return yield* new D4AgentError({ reason: unavailable });
           }
@@ -3027,6 +3084,10 @@ export const layer = Layer.effect(
               return yield* new D4AgentError({ reason: "busy" });
             automaticBudget = { scope, target, at };
           }
+          const launch =
+            action.type === "start"
+              ? yield* startLaunchPreview(action, config, guard !== undefined)
+              : undefined;
           const record: D4AgentActionRecord = {
             context: state.brainContext,
             sessionId: state.threadId,
@@ -3035,6 +3096,7 @@ export const layer = Layer.effect(
             ...(note === undefined ? {} : { note }),
             ...(prepared === undefined ? {} : { result: prepared }),
             ...(guard === undefined ? {} : { guard }),
+            ...(launch === undefined ? {} : { launch }),
             status: held ? "pending" : "approved",
             createdAt: DateTime.formatIso(yield* DateTime.now),
             resolvedAt: null,
@@ -3661,7 +3723,7 @@ export const layer = Layer.effect(
         ...value,
         actions: value.actions.map((entry) =>
           expired.some((old) => old.id === entry.id)
-            ? { ...entry, status: "denied" as const, supersededBy: "expired", resolvedAt }
+            ? { ...entry, status: "expired" as const, resolvedAt }
             : entry,
         ),
       }));
@@ -3796,10 +3858,21 @@ export const layer = Layer.effect(
                   result.length > TASK_RESULT_EXCERPT
                     ? `${result.slice(0, TASK_RESULT_EXCERPT).trimEnd()}…`
                     : result;
-                const text =
-                  excerpt === ""
-                    ? `Completed: ${shell.title}.`
-                    : `Completed: ${shell.title}.\n${excerpt}`;
+                // The worker's own verdict decides the label; a finished run alone is not success.
+                const outcome = parseTaskOutcome(result);
+                const settleSingleTask = entry.mode === "single" && outcome === "completed";
+                const headline = `${
+                  outcome === "completed" || (outcome === null && entry.mode === undefined)
+                    ? "Completed"
+                    : outcome === "blocked"
+                      ? "Blocked"
+                      : outcome === "failed"
+                        ? "Failed"
+                        : outcome === "needs-input"
+                          ? "Needs input"
+                          : "Finished without a reported outcome"
+                }${settleSingleTask ? " and settled" : ""}: ${shell.title}.`;
+                const text = excerpt === "" ? headline : `${headline}\n${excerpt}`;
                 yield* store.update((value) => ({
                   ...value,
                   transcript: [
@@ -3841,6 +3914,22 @@ export const layer = Layer.effect(
                         ].slice(-20),
                 }));
                 reportedAt = at;
+                if (settleSingleTask)
+                  // Settling only moves the thread out of Working; history and reopening stay.
+                  yield* threads
+                    .settleThread({
+                      commandId: command(`task-settle:${entry.actionId}:${completedRun.id}`),
+                      threadId: entry.threadId,
+                      byOwnAgent: false,
+                    })
+                    .pipe(
+                      Effect.catchCause((cause) =>
+                        Effect.logWarning("Nia could not settle a completed single task", {
+                          threadId: entry.threadId,
+                          cause,
+                        }),
+                      ),
+                    );
               }
             }
           }
@@ -4204,7 +4293,8 @@ export const layer = Layer.effect(
                   (entry.action.type === "cto-ask" ||
                     entry.action.type === "auto-archive" ||
                     entry.sessionId === null ||
-                    entry.sessionId === state.threadId),
+                    entry.sessionId === state.threadId ||
+                    entry.status === "pending"),
               ) ?? null,
           ),
         ),

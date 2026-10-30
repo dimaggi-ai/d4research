@@ -2770,8 +2770,10 @@ const finishedTask = (
   } = {},
 ) =>
   Effect.gen(function* () {
+    // Automatic archival is opt-in; these tasks opt in to archive on report.
     const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
       sessionIdleMinutes: null,
+      agentThreadArchiveHours: 0,
     });
     yield* f.service.ensureThread();
     const threadId = ThreadId.make("d4-action:small");
@@ -2811,6 +2813,79 @@ const finishedTask = (
     )!.archivedAt;
     return { f, threadId, archivedAt };
   });
+
+const singleTaskWithResult = (resultText: string) =>
+  Effect.gen(function* () {
+    // Default settings: automatic archival is off.
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      sessionIdleMinutes: null,
+    });
+    yield* f.service.ensureThread();
+    const threadId = ThreadId.make("d4-action:single");
+    const runId = RunId.make("single-run");
+    const task = {
+      ...target,
+      id: threadId,
+      title: "Fix the flaky test",
+      createdBy: "agent" as const,
+      latestRunId: runId,
+    };
+    yield* Ref.update(f.shells, (all) => [...all, task]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      thread: { ...task, lastVisitedAt: task.lastVisitedAt ?? null },
+      runs: [{ id: runId, status: "completed", completedAt: now }] as unknown as typeof value.runs,
+      messages: [
+        { id: "result", role: "assistant", runId, text: resultText, createdAt: now },
+      ] as unknown as typeof value.messages,
+    }));
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [
+        {
+          threadId,
+          projectId: target.projectId,
+          context: "Global" as const,
+          actionId: "single",
+          mode: "single" as const,
+          reportedAt: null,
+          archivedAt: null,
+          undoDisabled: false,
+        },
+      ],
+    }));
+    yield* f.service.tick;
+    const lines = ((yield* Ref.get(f.state)).transcript ?? []).filter((line) =>
+      line.links.some((link) => link.threadId === threadId),
+    );
+    const shell = (yield* Ref.get(f.shells)).find((entry) => entry.id === threadId)!;
+    return { dispatches: yield* Ref.get(f.dispatches), lines, shell };
+  });
+
+it.effect("a single task settles after a verified completion and is not archived", () =>
+  Effect.gen(function* () {
+    const { dispatches, lines, shell } = yield* singleTaskWithResult(
+      "Fixed the race.\nOutcome: completed\nTests: 40 runs passed",
+    );
+    assert.include(dispatches, "thread.settle");
+    assert.notInclude(dispatches, "thread.archive");
+    assert.isNull(shell.archivedAt);
+    assert.isTrue(lines[0]?.text.startsWith("Completed and settled: Fix the flaky test."));
+  }),
+);
+
+it.effect("a single task without a verified completion stays in Working", () =>
+  Effect.gen(function* () {
+    const blocked = yield* singleTaskWithResult("No CI access.\nOutcome: blocked");
+    assert.notInclude(blocked.dispatches, "thread.settle");
+    assert.isTrue(blocked.lines[0]?.text.startsWith("Blocked: Fix the flaky test."));
+    const silent = yield* singleTaskWithResult("I changed the test.");
+    assert.notInclude(silent.dispatches, "thread.settle");
+    assert.isTrue(
+      silent.lines[0]?.text.startsWith("Finished without a reported outcome: Fix the flaky test."),
+    );
+  }),
+);
 
 it.effect("a completed Nia task archives on success and leaves one chat line with its link", () =>
   Effect.gen(function* () {
@@ -4035,7 +4110,8 @@ it.effect("a start for a project with a base ref launches in a fresh worktree", 
       runtimeMode: "approval-required",
       workspaceStrategy: { type: "worktree", baseRef: "release", startFromOrigin: false },
     });
-    assert.equal(launch?.initialMessage?.text, "Fix the card");
+    // The task receives the approved composed prompt: the request plus the single-task protocol.
+    assert.isTrue(launch?.initialMessage?.text.startsWith("Fix the card\n\n---\nSingle task."));
     assert.equal(
       (yield* Ref.get(f.state)).agentThreads?.[0]?.threadId,
       ThreadId.make(`d4-action:${record.id}`),
@@ -5606,8 +5682,8 @@ it.effect("a pending card nobody answered expires after 24 hours", () =>
     yield* f.service.tick;
     const byId = new Map((yield* Ref.get(f.state)).actions.map((entry) => [entry.id, entry]));
     assert.equal(byId.get(fresh.id)?.status, "pending");
-    assert.equal(byId.get(stale.id)?.status, "denied");
-    assert.equal(byId.get(stale.id)?.supersededBy, "expired");
+    // Nobody answered it, so it expired; the user did not deny it.
+    assert.equal(byId.get(stale.id)?.status, "expired");
     assert.equal(byId.get(stale.id)?.resolvedAt, "1970-01-01T00:00:00.000Z");
     yield* Effect.result(f.service.resolveAction({ actionId: stale.id, decision: "approve" }));
     assert.deepEqual(yield* Ref.get(f.sends), []);

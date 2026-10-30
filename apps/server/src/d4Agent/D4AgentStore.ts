@@ -9,6 +9,7 @@ import {
   D4AgentTranscriptEntry,
   D4AgentOpenSession,
   D4BrainContext,
+  D4AgentTaskMode,
   IsoDateTime,
   ModelSelection,
   D4AgentError,
@@ -41,6 +42,8 @@ export const StoredAgentThread = Schema.Struct({
   projectId: ProjectId,
   context: D4BrainContext,
   actionId: Schema.String,
+  // A single task settles after its worker reports a verified completion; a loop stays open.
+  mode: Schema.optionalKey(D4AgentTaskMode),
   reportedAt: Schema.NullOr(IsoDateTime),
   archivedAt: Schema.NullOr(IsoDateTime),
   undoDisabled: Schema.Boolean,
@@ -376,7 +379,14 @@ export const layer = Layer.effect(
                   result: "CTO question interrupted by server restart; no automatic retry.",
                 }
               : action.status === "approved"
-                ? { ...action, status: "pending" }
+                ? // It may have run before the server stopped. Report that honestly
+                  // instead of offering it again or claiming it ran.
+                  {
+                    ...action,
+                    status: "interrupted",
+                    failure:
+                      "The server stopped while this action was running, so it may or may not have taken effect. Check its target before asking Nia to draft it again.",
+                  }
                 : action,
           ),
         },

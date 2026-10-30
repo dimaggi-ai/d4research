@@ -5010,6 +5010,46 @@ it.effect(
     }),
 );
 
+it.effect("read_tail allows only the bound Global agent thread in its own project", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const own = yield* f.service.ensureThread();
+    const ownShell = (yield* Ref.get(f.agentShell))!;
+    yield* Ref.set(f.projection, {
+      ...(yield* Ref.get(f.projection)),
+      thread: { ...ownShell, lastVisitedAt: null },
+      messages: [{ role: "assistant", text: "Own reply", createdAt: now, runId: null }] as never,
+    });
+    const tail = yield* f.service.readTail(own.threadId, 10);
+    assert.equal(tail.threadId, own.threadId);
+    assert.equal(tail.messages[0]?.text, "Own reply");
+    const sibling = ThreadId.make("other-agent-session");
+    yield* Ref.update(f.shells, (all) => [...all, { ...ownShell, id: sibling }]);
+    assert.equal((yield* Effect.result(f.service.readTail(sibling, 10)))._tag, "Failure");
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      brainContext: "Personal" as const,
+      contextScopeHash: contextScopeHash("Personal", DEFAULT_D4_AGENT_SETTINGS),
+    }));
+    assert.equal((yield* Effect.result(f.service.readTail(own.threadId, 10)))._tag, "Failure");
+  }),
+);
+
+it.effect("read_tail identifies MCP session IDs before looking up a thread", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const reads = (yield* Ref.get(f.reads)).shells;
+    const result = yield* Effect.result(f.service.readTail(ThreadId.make("mcp:1234"), 10));
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") {
+      assert.include(result.failure.message, "MCP session ID");
+      assert.include(result.failure.message, "d4_agent_list");
+      assert.notInclude(result.failure.message, "does not exist");
+    }
+    assert.equal((yield* Ref.get(f.reads)).shells, reads);
+  }),
+);
+
 it.effect("read_tail refusals name the thread and the bound context", () =>
   Effect.gen(function* () {
     const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {

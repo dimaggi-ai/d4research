@@ -4248,7 +4248,14 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound();
-            // One point lookup with the same checks scopedThreads applies to the whole list.
+            if (threadId.startsWith("mcp:"))
+              return yield* new D4AgentError({
+                reason: "context",
+                detail:
+                  "This is an MCP session ID, not a thread ID. Use d4_agent_list to find a thread ID.",
+              });
+            // Global may read its own conversation, but other agent sessions remain private.
+            const ownGlobalThread = state.brainContext === "Global" && threadId === state.threadId;
             // Archived threads stay readable: Nia must report on work it started after it closed.
             const thread = yield* threads
               .getThreadShell(threadId)
@@ -4256,9 +4263,10 @@ export const layer = Layer.effect(
             if (
               thread === null ||
               thread.deletedAt !== null ||
-              thread.projectId === state.projectId ||
-              !projectInScope(state.brainContext, config, thread.projectId) ||
-              !projectContentInScope(state.brainContext, config, thread.projectId)
+              (!ownGlobalThread &&
+                (thread.projectId === state.projectId ||
+                  !projectInScope(state.brainContext, config, thread.projectId) ||
+                  !projectContentInScope(state.brainContext, config, thread.projectId)))
             )
               return yield* new D4AgentError({
                 reason: "context",

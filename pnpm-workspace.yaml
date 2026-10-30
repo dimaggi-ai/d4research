@@ -329,8 +329,12 @@ patchedDependencies:
   react-native-webview@14.0.1: patches/react-native-webview@14.0.1.patch
   "@expo/ui@58.0.20": patches/@expo__ui@58.0.20.patch
   # Android: a Compose host that requests layout in a mount (a new screen's app bar) is laid out
-  # before that frame is drawn, instead of a frame later.
+  # before that frame is drawn, instead of a frame later. iOS: the permission registry is
+  # synchronized, because modules of two React runtimes register at once.
   expo-modules-core@58.0.22: patches/expo-modules-core@58.0.22.patch
+  # iOS: a delegate that registers while a notification response is delivered still receives it,
+  # and replaying pending responses keeps the ones that arrive during the replay.
+  expo-notifications@58.1.5: patches/expo-notifications@58.1.5.patch
   # Android: Maven-resolved gradle plugins (expo-widgets) have no sourceDir; without this
   # skip, the fingerprint silently drops every Expo native module and OTAs reach stale binaries.
   "@expo/fingerprint@0.21.5": patches/@expo__fingerprint@0.21.5.patch

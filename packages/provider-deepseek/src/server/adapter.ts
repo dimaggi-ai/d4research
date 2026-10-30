@@ -31,6 +31,7 @@ import { runNiaTurn, type NiaMessage, type NiaToolEvent } from "./nia.ts";
 import { DeepSeekRequestError, requestCompletion, type ChatMessage } from "./http.ts";
 
 const DRIVER = ProviderDriverKind.make("deepseek");
+const isDeepSeekRequestError = Schema.is(DeepSeekRequestError);
 export type DeepSeekAdapterV2DriverEnv = HttpClient.HttpClient;
 const unsupported = (detail: string) =>
   Effect.fail(new Adapter.ProviderAdapterProtocolError({ driver: DRIVER, detail }));
@@ -230,6 +231,30 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                     ...(niaHistory.get(input.providerThread.id) ?? []),
                     { role: "user", content: input.message.text },
                   ];
+                  // Commit protocol history at every step so a crash or failed request cannot drop
+                  // the admitted message or a completed tool call from later Nia turns.
+                  const persistNiaHistory = () => {
+                    niaHistory.set(input.providerThread.id, workingNiaHistory);
+                    const currentThread =
+                      threads.get(input.providerThread.id) ?? input.providerThread;
+                    const providerThread = {
+                      ...currentThread,
+                      updatedAt: DateTime.nowUnsafe(),
+                      nativeMetadata: {
+                        ...currentThread.nativeMetadata,
+                        deepSeekNiaHistory: workingNiaHistory.flatMap((message) =>
+                          message.role === "system" ? [] : [{ ...message, role: message.role }],
+                        ),
+                      },
+                    };
+                    threads.set(providerThread.id, providerThread);
+                    Queue.offerUnsafe(queue, {
+                      type: "provider_thread.updated",
+                      driver: DRIVER,
+                      providerThread,
+                    });
+                  };
+                  if (isNia) persistNiaHistory();
                   let nextItemOrdinal = 1;
                   const toolStates = new Map<
                     string,
@@ -271,7 +296,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         };
                       }
                     }
-                    niaHistory.set(input.providerThread.id, workingNiaHistory);
+                    persistNiaHistory();
                     const time = DateTime.nowUnsafe();
                     const existing = toolStates.get(event.callId);
                     const state = {
@@ -375,31 +400,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                             true,
                           );
                       }
-                      if (isNia) {
-                        const savedHistory = niaHistory.get(input.providerThread.id);
-                        if (savedHistory) {
-                          const currentThread =
-                            threads.get(input.providerThread.id) ?? input.providerThread;
-                          const providerThread = {
-                            ...currentThread,
-                            updatedAt: completedAt,
-                            nativeMetadata: {
-                              ...currentThread.nativeMetadata,
-                              deepSeekNiaHistory: savedHistory.flatMap((message) =>
-                                message.role === "system"
-                                  ? []
-                                  : [{ ...message, role: message.role }],
-                              ),
-                            },
-                          };
-                          threads.set(providerThread.id, providerThread);
-                          yield* emit({
-                            type: "provider_thread.updated",
-                            driver: DRIVER,
-                            providerThread,
-                          });
-                        }
-                      }
+                      if (isNia) persistNiaHistory();
                       turn = { ...turn, status, completedAt };
                       turns.set(input.providerThread.id, [
                         ...(turns.get(input.providerThread.id) ?? []),
@@ -454,10 +455,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                               throw new DeepSeekRequestError({ category: "configuration" });
                             return runNiaTurn(
                               config,
-                              [
-                                ...(niaHistory.get(input.providerThread.id) ?? []),
-                                { role: "user", content: input.message.text },
-                              ],
+                              workingNiaHistory,
                               {
                                 endpoint: registration.endpoint,
                                 headers: { Authorization: registration.authorizationHeader },
@@ -469,7 +467,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                                   workingNiaHistory = nextHistory.filter(
                                     (message) => message.role !== "system",
                                   );
-                                  niaHistory.set(input.providerThread.id, workingNiaHistory);
+                                  persistNiaHistory();
                                 }
                               },
                               (usage) => {
@@ -494,7 +492,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                             );
                           },
                           catch: (cause) =>
-                            Schema.is(DeepSeekRequestError)(cause)
+                            isDeepSeekRequestError(cause)
                               ? cause
                               : new DeepSeekRequestError({ category: "transport", cause }),
                         })

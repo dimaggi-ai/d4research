@@ -7,6 +7,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { requestCompletion } from "./http.ts";
 import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -27,6 +28,7 @@ import {
   type OrchestrationV2ProviderThread,
 } from "@d4research/contracts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import type * as Adapter from "@d4research/provider-core/server/ProviderAdapter";
 import type { ProviderAdapterV2RuntimePolicy } from "@d4research/provider-core/server/ProviderAdapter";
 import { D4_AGENT_PREFIX } from "@d4research/provider-core/server/d4AgentPolicy";
 import { historicalMessage } from "@d4research/provider-core/server/handoffBudget";
@@ -129,11 +131,40 @@ const open = (
         modelSelection: selection,
         runtimePolicy: options.policy ?? policy,
       });
-    const takeTurn = runtime.events.pipe(
-      Stream.takeUntil((event) => event.type === "turn.terminal"),
-      Stream.runCollect,
+    // One long-lived consumer: a per-turn Stream run would drop events that share a pulled chunk
+    // with the terminal, hiding duplicate terminals.
+    const observed = yield* Queue.unbounded<Adapter.ProviderAdapterV2Event>();
+    yield* runtime.events.pipe(
+      Stream.runForEach((event) => Queue.offer(observed, event)),
+      Effect.forkScoped,
     );
-    return { runtime, providerThread, start, takeTurn };
+    const takeTurn = Effect.gen(function* () {
+      const events: Adapter.ProviderAdapterV2Event[] = [];
+      while (true) {
+        const event = yield* Queue.take(observed);
+        events.push(event);
+        if (event.type === "turn.terminal") return events;
+      }
+    });
+    // A later turn is the ordering boundary: a duplicate terminal from an earlier turn would be
+    // queued ahead of it and become the first terminal observed here.
+    const expectNoLateTerminal = (nextOrdinal: number) =>
+      Effect.gen(function* () {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async () => {
+            throw new Error("boundary turn");
+          }),
+        );
+        yield* start(nextOrdinal);
+        const events = yield* takeTurn;
+        const terminal = events.find((event) => event.type === "turn.terminal");
+        assert.equal(
+          terminal?.type === "turn.terminal" ? terminal.providerTurnId : undefined,
+          ProviderTurnId.make(`deepseek:${instanceId}:attempt-${nextOrdinal}`),
+        );
+      });
+    return { runtime, providerThread, start, takeTurn, expectNoLateTerminal };
   }).pipe(Effect.provideService(HttpClient.HttpClient, client));
 
 describe("local DeepSeek adapter", () => {
@@ -568,6 +599,7 @@ describe("Nia DeepSeek adapter", () => {
           ["system", "user", "assistant", "tool", "assistant", "user"],
         );
         assert.equal(history[3]?.tool_call_id, "call-1");
+        yield* test.expectNoLateTerminal(2);
       }).pipe(
         Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
         Effect.scoped,
@@ -594,6 +626,11 @@ describe("Nia DeepSeek adapter", () => {
           "configuration",
         );
         assert.equal(fetch.mock.calls.length, 0);
+        const saved = events.findLast((event) => event.type === "provider_thread.updated");
+        assert.ok(saved?.type === "provider_thread.updated");
+        assert.deepStrictEqual(saved.providerThread.nativeMetadata?.deepSeekNiaHistory, [
+          { role: "user", content: "Hello" },
+        ]);
       }).pipe(Effect.scoped),
   );
 
@@ -610,7 +647,21 @@ describe("Nia DeepSeek adapter", () => {
         saved.providerThread.nativeMetadata?.deepSeekNiaHistory?.map((message) => message.role),
         ["user", "assistant", "tool"],
       );
+      // The tool result must be committed before generation continues, not only at turn end.
+      const committed = events.findIndex(
+        (event) =>
+          event.type === "provider_thread.updated" &&
+          JSON.stringify(event.providerThread.nativeMetadata).includes("Observed result"),
+      );
+      const toolCompleted = events.findIndex(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.status === "completed",
+      );
+      assert.ok(committed !== -1 && committed < toolCompleted);
       assert.equal(events.filter((event) => event.type === "turn.terminal").length, 1);
+      yield* test.expectNoLateTerminal(2);
       const failed = events.find(
         (event) => event.type === "provider_turn.updated" && event.providerTurn.status === "failed",
       );
@@ -645,7 +696,18 @@ describe("Nia DeepSeek adapter", () => {
       });
       const events = yield* test.takeTurn;
       assert.equal(requestSignal?.aborted, true);
+      // The admitted request is committed before any model or tool work can be lost to a crash.
+      const firstCommit = events.find(
+        (event) =>
+          event.type === "provider_thread.updated" &&
+          event.providerThread.nativeMetadata?.deepSeekNiaHistory !== undefined,
+      );
+      assert.ok(firstCommit?.type === "provider_thread.updated");
+      assert.deepStrictEqual(firstCommit.providerThread.nativeMetadata?.deepSeekNiaHistory, [
+        { role: "user", content: "Hello" },
+      ]);
       assert.equal(events.filter((event) => event.type === "turn.terminal").length, 1);
+      yield* test.expectNoLateTerminal(2);
       assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "interrupted");
       assert.equal(
         events.findLast((event) => event.type === "node.updated")?.node.status,

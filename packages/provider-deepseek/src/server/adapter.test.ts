@@ -705,7 +705,8 @@ describe("Nia DeepSeek adapter", () => {
         Context.get(crashed.host, ProviderHost.ProviderHost).paths.stateDir,
       );
       journalAtToolCall = () => journal.read(crashed.providerThread.id);
-      yield* crashed.start(1);
+      // Production prompts carry runtime context that the visible message does not.
+      yield* crashed.start(1, "[runtime context]\nHello");
       // The tool runs only after its call is on disk.
       const atToolCall = yield* Deferred.await(started);
       assert.deepStrictEqual(
@@ -733,15 +734,29 @@ describe("Nia DeepSeek adapter", () => {
       yield* restarted.runtime.injectHistory!({
         providerThread: restarted.providerThread,
         context: "EXCLUDED",
-        messages: [],
+        messages: [
+          {
+            role: "user",
+            text: "Hello",
+            threadId,
+            runId: null,
+            itemId: TurnItemId.make("visible-1"),
+            providerThreadId: null,
+            status: "completed",
+            kind: "message",
+          },
+        ],
       });
       yield* restarted.start(2, "After crash");
       yield* restarted.takeTurn;
-      const resumed = server.modelRequests[0]?.messages as { role: string }[] | undefined;
+      const resumed = server.modelRequests[0]?.messages as
+        | { role: string; content?: unknown }[]
+        | undefined;
       assert.deepStrictEqual(
         resumed?.map((message) => message.role),
         ["system", "user", "assistant", "tool", "user"],
       );
+      assert.deepStrictEqual(resumed?.[1], { role: "user", content: "[runtime context]\nHello" });
     }).pipe(
       Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
       Effect.scoped,

@@ -80,6 +80,8 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
               Queue.shutdown,
             );
             const niaHistory = new Map<ProviderThreadId, ReadonlyArray<NiaMessage>>();
+            // Threads whose Nia history was rebuilt from visible messages rather than saved protocol.
+            const derivedNiaHistory = new Set<ProviderThreadId>();
             const history = new Map<ProviderThreadId, ReadonlyArray<ChatMessage>>();
             const contexts = new Map<ProviderThreadId, string>();
             const active = new Map<TurnId, Fiber.Fiber<void>>();
@@ -167,6 +169,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                 Effect.sync(() => {
                   if (!niaHistory.has(input.providerThread.id)) {
                     const saved = input.providerThread.nativeMetadata?.deepSeekNiaHistory;
+                    if (!saved) derivedNiaHistory.add(input.providerThread.id);
                     niaHistory.set(
                       input.providerThread.id,
                       saved ??
@@ -209,10 +212,14 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                       journal.read(input.providerThread.id),
                     ).pipe(Effect.orElseSucceed(() => undefined));
                     const committed = niaHistory.get(input.providerThread.id);
-                    if (journaled && (committed || input.nativeThreadHasTurns))
+                    // Visible messages lack the runtime context and tool pairs the loop saw, so
+                    // they never outrank the journal; saved protocol history must be its prefix.
+                    if (journaled)
                       niaHistory.set(
                         input.providerThread.id,
-                        preferJournal(committed ?? [], journaled),
+                        committed && !derivedNiaHistory.has(input.providerThread.id)
+                          ? preferJournal(committed, journaled)
+                          : journaled,
                       );
                   }
                   // Resume without authoritative history must fail rather than silently lose the conversation.
@@ -272,7 +279,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                     });
                     return journal.write(input.providerThread.id, deepSeekNiaHistory);
                   };
-                  if (isNia)
+                  if (isNia) {
                     yield* Effect.tryPromise(persistNiaHistory).pipe(
                       Effect.mapError(
                         () =>
@@ -284,6 +291,8 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                           }),
                       ),
                     );
+                    derivedNiaHistory.delete(input.providerThread.id);
+                  }
                   let nextItemOrdinal = 1;
                   const toolStates = new Map<
                     string,

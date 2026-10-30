@@ -358,31 +358,25 @@ function D4AgentPanelContent({
                   message: decision === "approve" ? "Approving…" : "Denying…",
                   error: false,
                 });
-                try {
-                  const result = await resolve({
-                    environmentId,
-                    input: { actionId: record.id, decision, ...options },
-                  });
-                  setDecisionState(
-                    result._tag === "Failure"
-                      ? {
-                          id: record.id,
-                          message: d4ActionFailureMessage(squashAtomCommandFailure(result)),
-                          error: true,
-                        }
-                      : null,
-                  );
-                } catch {
-                  setDecisionState({
-                    id: record.id,
-                    message: d4ActionFailureMessage(null),
-                    error: true,
-                  });
-                } finally {
-                  resolving.current = false;
-                  setBusy(false);
-                  query.refresh();
-                }
+                // A rejected command reads as null; the React Compiler cannot compile try/finally.
+                const result = await resolve({
+                  environmentId,
+                  input: { actionId: record.id, decision, ...options },
+                }).catch(() => null);
+                setDecisionState(
+                  result === null || result._tag === "Failure"
+                    ? {
+                        id: record.id,
+                        message: d4ActionFailureMessage(
+                          result === null ? null : squashAtomCommandFailure(result),
+                        ),
+                        error: true,
+                      }
+                    : null,
+                );
+                resolving.current = false;
+                setBusy(false);
+                query.refresh();
               }}
             />
           ))}

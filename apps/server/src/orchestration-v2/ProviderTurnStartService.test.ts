@@ -824,6 +824,13 @@ function makeLocalCommandHarness(input: {
     start: Effect.gen(function* () {
       yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({ threadId, runId });
     }).pipe(Effect.provide(layer)),
+    startLastAttempt: Effect.gen(function* () {
+      yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
+        threadId,
+        runId,
+        willRetry: false,
+      });
+    }).pipe(Effect.provide(layer)),
     startWithRetry: Effect.gen(function* () {
       yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
         threadId,
@@ -919,13 +926,14 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-effectIt.effect("reads only thread state before taking the startup lease", () =>
+effectIt.effect("reads bounded run identity before taking the startup lease", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({ text: "/logout", previousNativeSession: true });
     yield* harness.start;
     expect(harness.getThreadRecords).toHaveBeenCalledExactlyOnceWith(
       harness.projection().thread.id,
-      [],
+      ["runs"],
+      { runIds: [harness.projection().runs.at(-1)!.id] },
     );
     expect(harness.getTurnStartContext).toHaveBeenCalledOnce();
     expect(harness.projection().runs.at(-1)?.status).toBe("completed");
@@ -1478,5 +1486,56 @@ effectIt.effect("agent-started task with no approved scope fails fast with a rea
     expect(harness.projection().turnItems).toMatchObject([
       { type: "error", failure: { message: expect.stringContaining("no approved scope") } },
     ]);
+  }),
+);
+
+effectIt.effect.each(["interrupted", "superseded"] as const)(
+  "does not settle an exhausted startup after its run was %s",
+  (change) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        d4AgentPrepare: () =>
+          Effect.gen(function* () {
+            const projection = harness.projection();
+            harness.setProjection({
+              ...projection,
+              runs: projection.runs.map((run) => ({
+                ...run,
+                ...(change === "interrupted"
+                  ? { status: "interrupted" as const }
+                  : {
+                      activeAttemptId: RunAttemptId.make("attempt:replacement"),
+                    }),
+              })),
+            });
+            return yield* new D4AgentError({ reason: "context" });
+          }),
+      });
+      yield* Effect.exit(harness.startLastAttempt);
+      expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();
+      expect(harness.events).toEqual([]);
+    }),
+);
+
+effectIt.effect("settles an exhausted startup defect but preserves fiber interruption", () =>
+  Effect.gen(function* () {
+    const defective = makeLocalCommandHarness({
+      text: "Continue",
+      d4AgentPrepare: () => Effect.die("startup defect"),
+    });
+    yield* Effect.exit(defective.startLastAttempt);
+    expect(defective.projection().runs.at(-1)?.status).toBe("failed");
+    expect(defective.projection().turnItems).toMatchObject([
+      { type: "error", failure: { class: "provider_error" } },
+    ]);
+    const interrupted = makeLocalCommandHarness({
+      text: "Continue",
+      d4AgentPrepare: () => Effect.interrupt,
+    });
+    const exit = yield* Effect.exit(interrupted.startLastAttempt);
+    expect(exit._tag === "Failure" && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+    expect(interrupted.writeIfRunCurrent).not.toHaveBeenCalled();
+    expect(interrupted.projection().runs.at(-1)?.status).toBe("starting");
   }),
 );

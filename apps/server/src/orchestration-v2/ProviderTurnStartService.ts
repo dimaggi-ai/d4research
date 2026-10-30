@@ -31,6 +31,7 @@ import { setActiveMcpTurn } from "../mcp/McpSessionRegistry.ts";
 import { projectComposerContextForProvider } from "@d4research/shared/composerContextReferences";
 import {
   CommandId,
+  D4AgentError,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ExecutionNode,
@@ -1723,15 +1724,123 @@ export const layer: Layer.Layer<
       });
     });
 
+    const settleExhaustedStart = Effect.fn("orchestrationV2.providerTurnStart.settleExhausted")(
+      function* (initialRun: OrchestrationV2Run, cause: unknown) {
+        if (initialRun.activeAttemptId === null) return;
+        const projection = yield* projectionStore.getThreadRecords(
+          initialRun.threadId,
+          ["runs", "nodes", "attempts", "turnItems"],
+          { runIds: [initialRun.id] },
+        );
+        const run = projection.runs.find((run) => run.id === initialRun.id);
+        if (run?.status !== "starting" || run.activeAttemptId !== initialRun.activeAttemptId)
+          return;
+        const now = yield* DateTime.now;
+        const node = projection.nodes.find((node) => node.id === run.rootNodeId);
+        const attempt = projection.attempts.find((attempt) => attempt.id === run.activeAttemptId);
+        const agentError = Schema.is(D4AgentError)(cause) ? cause : undefined;
+        const failure = makeProviderFailure({
+          cause,
+          message:
+            agentError?.message ??
+            "The provider could not start this turn. Retry the turn; if it keeps failing, check the provider setup and server logs.",
+          class:
+            agentError !== undefined && agentError.reason !== "storage"
+              ? "validation_error"
+              : "provider_error",
+        });
+        const item: OrchestrationV2TurnItem = {
+          id: idAllocator.derive.runSignalTurnItem({
+            runId: run.id,
+            signal: "provider-start-failure",
+          }),
+          type: "error",
+          threadId: initialRun.threadId,
+          runId: run.id,
+          nodeId: run.rootNodeId,
+          providerThreadId: run.providerThreadId,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: Math.max(0, ...projection.turnItems.map((item) => item.ordinal)) + 1,
+          status: "failed",
+          title: "Provider turn failed to start",
+          failure,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+        };
+        const payloads = [
+          { type: "turn-item.updated", payload: item },
+          { type: "run.updated", payload: { ...run, status: "failed", completedAt: now } },
+          ...(attempt === undefined
+            ? []
+            : [
+                {
+                  type: "run-attempt.updated" as const,
+                  payload: { ...attempt, status: "failed" as const, completedAt: now },
+                },
+              ]),
+          ...(node === undefined
+            ? []
+            : [
+                {
+                  type: "node.updated" as const,
+                  payload: { ...node, status: "failed" as const, completedAt: now },
+                },
+              ]),
+        ] as const;
+        const events = yield* Effect.forEach(payloads, (event) =>
+          Effect.gen(function* () {
+            return {
+              ...event,
+              id: yield* idAllocator.allocate.event({ threadId: initialRun.threadId }),
+              threadId: initialRun.threadId,
+              runId: run.id,
+              providerInstanceId: run.providerInstanceId,
+              occurredAt: now,
+            } satisfies OrchestrationV2DomainEvent;
+          }),
+        );
+        yield* eventSink.writeIfRunCurrent({
+          threadId: initialRun.threadId,
+          runId: run.id,
+          activeAttemptId: initialRun.activeAttemptId,
+          expectedStatus: "starting",
+          events,
+        });
+      },
+    );
+
     return ProviderTurnStartServiceV2.of({
       start: (input) =>
         Effect.gen(function* () {
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
-          const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
-          const providerTurn = yield* thread.worktreePath === null
-            ? start(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+          const { thread, runs } = yield* projectionStore.getThreadRecords(
+            input.threadId,
+            ["runs"],
+            {
+              runIds: [input.runId],
+            },
+          );
+          const initialRun = runs.find((run) => run.id === input.runId);
+          const providerTurn = yield* (
+            thread.worktreePath === null
+              ? start(input)
+              : withWorkspaceLease(path.resolve(thread.worktreePath), start(input))
+          ).pipe(
+            // Retry exhaustion must settle validation and other pre-session failures too.
+            Effect.catchCause((cause) =>
+              input.willRetry !== false ||
+              initialRun === undefined ||
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : settleExhaustedStart(initialRun, Cause.squash(cause)).pipe(
+                    Effect.andThen(Effect.failCause(cause)),
+                  ),
+            ),
+          );
           if (providerTurn !== undefined) yield* providerTurn;
         }).pipe(
           Effect.mapError((cause) =>

@@ -29,6 +29,7 @@ import {
   updateReleasePackageVersions,
 } from "./update-release-package-versions.ts";
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
+import { cliArchiveFileName } from "./build-cli-archive.ts";
 import {
   BRAND_ASSET_PATHS,
   resolveWebAssetBrandForChannel,
@@ -3767,7 +3768,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     );
     const archivePath = path.join(
       runtimeDir,
-      `t3-${appVersion}-darwin-${bundledServerArch}.tar.gz`,
+      cliArchiveFileName(appVersion, "mac", bundledServerArch),
     );
     yield* fs.rename(archivePath, path.join(runtimeDir, "runtime.tar.gz"));
     const sha256 = NodeCrypto.createHash("sha256")

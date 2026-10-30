@@ -27,7 +27,7 @@ import {
   DEFAULT_DEEPSEEK_MODEL,
 } from "../settings.ts";
 import { deepSeekCapabilities, niaDeepSeekCapabilities } from "./capabilities.ts";
-import { runNiaTurn, type NiaMessage, type NiaToolEvent } from "./nia.ts";
+import { runNiaTurn, UNVERIFIED_TOOL_RESULT, type NiaMessage, type NiaToolEvent } from "./nia.ts";
 import { makeNiaJournal, preferJournal } from "./niaJournal.ts";
 import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import { DeepSeekRequestError, requestCompletion, type ChatMessage } from "./http.ts";
@@ -310,10 +310,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                         {
                           role: "tool",
                           tool_call_id: event.callId,
-                          content: JSON.stringify({
-                            error: "tool_request_failed",
-                            completionVerified: false,
-                          }),
+                          content: UNVERIFIED_TOOL_RESULT,
                         },
                       );
                     } else if (event.result !== undefined) {

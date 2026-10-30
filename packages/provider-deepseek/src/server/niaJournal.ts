@@ -3,7 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { NiaMessage } from "./nia.ts";
+import { UNVERIFIED_TOOL_RESULT, type NiaMessage } from "./nia.ts";
 
 type StoredMessage = Exclude<NiaMessage, { role: "system" }>;
 
@@ -30,14 +30,19 @@ export const makeNiaJournal = (stateDir: string): NiaJournal => {
     await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
     const target = file(providerThreadId);
     const temporary = `${target}.${NodeCrypto.randomUUID()}.tmp`;
-    const handle = await NodeFSP.open(temporary, "w", 0o600);
     try {
-      await handle.writeFile(JSON.stringify({ providerThreadId, history }));
-      await handle.sync();
-    } finally {
-      await handle.close();
+      const handle = await NodeFSP.open(temporary, "w", 0o600);
+      try {
+        await handle.writeFile(JSON.stringify({ providerThreadId, history }));
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await NodeFSP.rename(temporary, target);
+    } catch (cause) {
+      await NodeFSP.rm(temporary, { force: true });
+      throw cause;
     }
-    await NodeFSP.rename(temporary, target);
     const directoryHandle = await NodeFSP.open(directory, "r");
     try {
       await directoryHandle.sync();
@@ -76,16 +81,26 @@ export const makeNiaJournal = (stateDir: string): NiaJournal => {
   };
 };
 
-/** The journal wins only when it extends the committed history, e.g. after a crash mid-turn. */
+/**
+ * The journal wins when it extends the committed history. The journal is written before each
+ * event, so it may also have replaced a committed unverified placeholder with the tool's result.
+ */
 export const preferJournal = (
   committed: ReadonlyArray<NiaMessage>,
   journal: ReadonlyArray<NiaMessage> | undefined,
 ): ReadonlyArray<NiaMessage> => {
-  if (!journal || journal.length <= committed.length) return committed;
-  const prefix = committed.every(
-    (message, index) => canonical(message) === canonical(journal[index]),
-  );
-  return prefix ? journal : committed;
+  if (!journal || journal.length < committed.length) return committed;
+  const extendsCommitted = committed.every((message, index) => {
+    const journaled = journal[index];
+    if (canonical(message) === canonical(journaled)) return true;
+    return (
+      message.role === "tool" &&
+      journaled?.role === "tool" &&
+      message.tool_call_id === journaled.tool_call_id &&
+      message.content === UNVERIFIED_TOOL_RESULT
+    );
+  });
+  return extendsCommitted ? journal : committed;
 };
 
 // Decoded thread metadata and parsed JSON can order keys differently.

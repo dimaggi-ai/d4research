@@ -319,6 +319,9 @@ async function completion(
   };
 }
 
+/** Stands in for a tool result until the call is known to have finished. */
+export const UNVERIFIED_TOOL_RESULT = '{"error":"tool_request_failed","completionVerified":false}';
+
 export async function runNiaTurn(
   config: DeepSeekSettings,
   messages: ReadonlyArray<NiaMessage>,
@@ -442,7 +445,7 @@ export async function runNiaTurn(
           if (!recorded)
             history.push({
               role: "tool",
-              content: '{"error":"tool_request_failed","completionVerified":false}',
+              content: UNVERIFIED_TOOL_RESULT,
               tool_call_id: call.id,
             });
           const saved = onHistory?.([...history]);
@@ -452,7 +455,7 @@ export async function runNiaTurn(
             phase: activeSignal.aborted ? "interrupted" : "failed",
             callId: call.id,
             name: call.function.name,
-            result: '{"error":"tool_request_failed","completionVerified":false}',
+            result: UNVERIFIED_TOOL_RESULT,
             isError: true,
           });
           if (!activeSignal.aborted) await callback(() => closed);

@@ -233,19 +233,22 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                   ];
                   // Commit protocol history at every step so a crash or failed request cannot drop
                   // the admitted message or a completed tool call from later Nia turns.
+                  // Snapshots carry the whole history, so an unchanged one is not re-sent.
+                  let lastPersisted: string | undefined;
                   const persistNiaHistory = () => {
                     niaHistory.set(input.providerThread.id, workingNiaHistory);
+                    const deepSeekNiaHistory = workingNiaHistory.flatMap((message) =>
+                      message.role === "system" ? [] : [{ ...message, role: message.role }],
+                    );
+                    const serialized = JSON.stringify(deepSeekNiaHistory);
+                    if (serialized === lastPersisted) return;
+                    lastPersisted = serialized;
                     const currentThread =
                       threads.get(input.providerThread.id) ?? input.providerThread;
                     const providerThread = {
                       ...currentThread,
                       updatedAt: DateTime.nowUnsafe(),
-                      nativeMetadata: {
-                        ...currentThread.nativeMetadata,
-                        deepSeekNiaHistory: workingNiaHistory.flatMap((message) =>
-                          message.role === "system" ? [] : [{ ...message, role: message.role }],
-                        ),
-                      },
+                      nativeMetadata: { ...currentThread.nativeMetadata, deepSeekNiaHistory },
                     };
                     threads.set(providerThread.id, providerThread);
                     Queue.offerUnsafe(queue, {

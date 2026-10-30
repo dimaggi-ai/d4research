@@ -11,6 +11,8 @@ import { matchComposerThreadItems } from "@d4research/client-runtime/composerThr
 import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/models";
 
 const EMPTY_THREAD_SHELLS: ReadonlyArray<EnvironmentThreadShell> = [];
+// Mobile does not discover linked machines yet, so thread references stay on this environment.
+const NO_LINKED_ENVIRONMENTS: ReadonlyMap<EnvironmentId, string> = new Map();
 import {
   COMPOSER_CONTEXT_MAX_RECORDS,
   PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS,
@@ -205,6 +207,7 @@ export function useComposerCommandMenu({
   readonly onUsageLimits?: () => void;
 }) {
   const [selection, setSelection] = useState(() => composerSelectionAtEnd(draftMessage));
+  const [now] = useState(() => Date.now());
   const previousOwnerKeyRef = useRef(ownerKey);
   const onSelectionChange = useCallback((nextSelection: ComposerEditorSelection) => {
     setSelection(nextSelection);
@@ -500,8 +503,10 @@ export function useComposerCommandMenu({
         ? matchComposerThreadItems({
             shells: threadShells,
             environmentId,
+            linkedEnvironments: NO_LINKED_ENVIRONMENTS,
             excludeThreadId: currentThreadId,
             query: trigger.query,
+            now,
           })
         : [];
       return [

@@ -10,7 +10,6 @@ import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
   ProjectId,
-  ThreadId,
   ThreadPullRequestLink,
   VcsListRefsResult,
   VcsRef,
@@ -52,11 +51,8 @@ const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
 }).pipe(Atom.withLabel("mobile:thread-search:empty"));
 
 const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
-  getSearchAtom: (environmentId, query) =>
-    orchestrationEnvironment.threadSearch({
-      environmentId,
-      input: { query },
-    }),
+  getSearchAtom: (environmentId, input) =>
+    orchestrationEnvironment.threadSearch({ environmentId, input }),
   labelPrefix: "mobile:thread-search",
 });
 
@@ -179,7 +175,7 @@ export function useThreadSearch(
     [environmentIds, settledQuery],
   );
   const result = useAtomValue(
-    searchKey === null ? EMPTY_THREAD_SEARCH_ATOM : threadSearchResultsAtom(searchKey),
+    searchKey === null ? EMPTY_THREAD_SEARCH_ATOM : threadSearchResultsAtom.results(searchKey),
   );
   const isDebouncing = canSearch && normalizedQuery !== debouncedQuery;
   return {

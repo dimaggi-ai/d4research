@@ -493,7 +493,7 @@ function SourceControlRow(props: {
       />
     ) : (
       <SourceControlIcon
-        kind={sourceControlClients.get(props.source).icon}
+        icon={sourceControlClients.get(props.source).icon}
         size={Platform.OS === "android" ? 24 : 18}
         colorClassName="accent-icon"
       />
@@ -1155,7 +1155,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                 }
                 icon={
                   <SourceControlIcon
-                    kind={publishTarget.definition.icon}
+                    icon={publishTarget.definition.icon}
                     size={Platform.OS === "android" ? 24 : 18}
                     colorClassName="accent-icon"
                   />
@@ -1179,7 +1179,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                         title={target.definition.label}
                         icon={
                           <SourceControlIcon
-                            kind={target.definition.icon}
+                            icon={target.definition.icon}
                             size={Platform.OS === "android" ? 24 : 17}
                             colorClassName="accent-icon"
                           />
@@ -1308,9 +1308,6 @@ export function AddProjectDestinationScreen(props: {
   readonly repositoryName?: string | string[];
   readonly prompt?: string | string[];
 }) {
-  const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
-    reportFailure: false,
-  });
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
   });
@@ -1405,24 +1402,10 @@ export function AddProjectDestinationScreen(props: {
       setIsSubmitting(false);
       return;
     }
-    const cloneResult = await cloneRepository({
-      environmentId: environment.environmentId,
-      input: {
-        remoteUrl,
-        destinationPath: resolved.path,
-      },
-    });
-    if (AsyncResult.isFailure(cloneResult)) {
-      setError(errorMessage(Cause.squash(cloneResult.cause)));
-    } else {
-      const createResult = await createProject(cloneResult.value.cwd);
-      if (createResult && AsyncResult.isFailure(createResult)) {
-        setError(errorMessage(Cause.squash(createResult.cause)));
-      }
-    }
+    // Servers without clone tracking predate the asynchronous clone command this app uses.
+    setError("Update this environment's server to clone repositories from this device.");
     setIsSubmitting(false);
   }, [
-    cloneRepository,
     createProject,
     environment,
     isBrowseNavigating,

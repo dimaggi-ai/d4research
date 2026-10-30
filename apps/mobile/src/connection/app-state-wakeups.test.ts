@@ -16,6 +16,6 @@ describe("mobileApplicationActiveWakeup", () => {
   it("replaces the session after a meaningful background suspension", () => {
     expect(
       mobileApplicationActiveWakeup(20_000, 20_000 + MOBILE_BACKGROUND_RECONNECT_AFTER_MS),
-    ).toBe("application-active-reconnect");
+    ).toBe("application-active-long");
   });
 });

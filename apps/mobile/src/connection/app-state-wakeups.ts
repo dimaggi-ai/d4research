@@ -4,7 +4,7 @@ export const MOBILE_BACKGROUND_RECONNECT_AFTER_MS = 10_000;
 
 export type MobileApplicationActiveWakeup = Extract<
   Wakeups.ConnectionWakeup,
-  "application-active-probe" | "application-active-reconnect"
+  "application-active-probe" | "application-active-long"
 >;
 
 export function mobileApplicationActiveWakeup(
@@ -13,6 +13,6 @@ export function mobileApplicationActiveWakeup(
 ): MobileApplicationActiveWakeup {
   return backgroundedAtMs !== null &&
     activeAtMs - backgroundedAtMs >= MOBILE_BACKGROUND_RECONNECT_AFTER_MS
-    ? "application-active-reconnect"
+    ? "application-active-long"
     : "application-active-probe";
 }

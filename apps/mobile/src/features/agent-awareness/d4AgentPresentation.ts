@@ -43,6 +43,8 @@ export function agentUnavailableMessage(reason: D4AgentState["unavailableReason"
       return "The selected provider is unavailable. Check its connection in Settings.";
     case "model-unavailable":
       return "The selected model is unavailable. Choose an available model in Settings → Nia and threads.";
+    case "model-mismatch":
+      return "This thread's model differs from the Nia model. Select the configured Nia model in the composer, or change it in Settings → Nia and threads.";
     case "option-unavailable":
       return "The selected model options are unavailable. Update them in Settings → Nia and threads.";
     case "sandbox-unavailable":

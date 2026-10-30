@@ -518,6 +518,7 @@ export const D4AgentState = Schema.Struct({
       "model-not-selected",
       "provider-unavailable",
       "model-unavailable",
+      "model-mismatch",
       "option-unavailable",
       "sandbox-unavailable",
     ]),
@@ -565,6 +566,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     "model-not-selected",
     "provider-unavailable",
     "model-unavailable",
+    "model-mismatch",
     "option-unavailable",
     "sandbox-unavailable",
     "read-only",
@@ -589,6 +591,8 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     const suffix = this.detail === undefined ? "" : ` ${this.detail}`;
     if (this.reason === "context")
       return `Context operation refused; inspect the selected scope configuration.${suffix}`;
+    if (this.reason === "model-mismatch")
+      return "This thread's model differs from the Nia model in Settings. Select the configured Nia model in the composer, or change the Nia model in Settings.";
     if (this.reason === "cto-unreachable") return "CTO server unreachable";
     if (this.reason === "stale")
       return "Nia's context or session changed after you wrote this message. Check it, then send again.";

@@ -88,9 +88,18 @@ it.effect(
 it.effect("the normal composer cannot switch the owned thread away from the selected model", () =>
   Effect.gen(function* () {
     const context = yield* Context.D4AgentContext;
-    const result = yield* Effect.result(context.prepare(ownId, { ...model, model: "different" }));
-    assert.equal(result._tag, "Failure");
-    if (result._tag === "Failure") assert.equal(result.failure.reason, "model-unavailable");
+    for (const selection of [
+      { ...model, model: "different" },
+      { ...model, instanceId: ProviderInstanceId.make("different-provider") },
+      { ...model, options: [{ id: "reasoning", value: "high" }] },
+    ]) {
+      const result = yield* Effect.result(context.prepare(ownId, selection));
+      assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure") {
+        assert.equal(result.failure.reason, "model-mismatch");
+        assert.include(result.failure.message, "Nia model in Settings");
+      }
+    }
   }).pipe(Effect.provide(layer)),
 );
 
@@ -218,4 +227,23 @@ it.effect("owned turns omit private endpoint diagnostics from provider snapshots
       ),
     );
   }),
+);
+
+it.effect("an unavailable configured model keeps its availability reason", () =>
+  Effect.gen(function* () {
+    const context = yield* Context.D4AgentContext;
+    const result = yield* Effect.result(context.prepare(ownId, model));
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.equal(result.failure.reason, "model-unavailable");
+  }).pipe(
+    Effect.provide(
+      testLayer(
+        {},
+        DEFAULT_D4_AGENT_SETTINGS,
+        Effect.succeed([
+          { ...provider, models: [{ ...provider.models[0]!, slug: "other-model" }] },
+        ]),
+      ),
+    ),
+  ),
 );

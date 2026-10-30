@@ -226,3 +226,9 @@ it("preserves OS update and doctor details alongside attention and healthy statu
     expect(systemCheckStatus({ ...check, status: "ok" })).toBe("Healthy · Probe details");
   }
 });
+
+it("explains how to resolve a model mismatch", () => {
+  expect(agentUnavailableMessage("model-mismatch")).toContain(
+    "Select the configured Nia model in the composer",
+  );
+});

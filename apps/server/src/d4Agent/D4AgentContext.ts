@@ -65,7 +65,7 @@ export const layer = Layer.effect(
             settings.d4Agent.modelSelection === null ||
             !selectionsEqual(selection, settings.d4Agent.modelSelection)
           )
-            return yield* new D4AgentError({ reason: "model-unavailable" });
+            return yield* new D4AgentError({ reason: "model-mismatch" });
           if (state.contextScopeHash !== contextScopeHash(state.brainContext, settings.d4Agent))
             return yield* new D4AgentError({ reason: "context" });
           // Codex shares one runtime transport across conversations; app threads never change context.

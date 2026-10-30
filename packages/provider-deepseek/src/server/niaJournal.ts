@@ -26,8 +26,22 @@ export const makeNiaJournal = (stateDir: string): NiaJournal => {
     );
   // Serialized per thread so an older snapshot can never be renamed over a newer one.
   const chains = new Map<string, Promise<void>>();
+  const syncDirectory = async (path: string) => {
+    const handle = await NodeFSP.open(path, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  };
+  let directoryDurable = false;
   const persist = async (providerThreadId: string, history: ReadonlyArray<StoredMessage>) => {
-    await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
+    if (!directoryDurable) {
+      await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
+      // A new directory survives a machine crash only once its parent entry is synced.
+      await syncDirectory(stateDir);
+      directoryDurable = true;
+    }
     const target = file(providerThreadId);
     const temporary = `${target}.${NodeCrypto.randomUUID()}.tmp`;
     try {
@@ -43,12 +57,7 @@ export const makeNiaJournal = (stateDir: string): NiaJournal => {
       await NodeFSP.rm(temporary, { force: true });
       throw cause;
     }
-    const directoryHandle = await NodeFSP.open(directory, "r");
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
+    await syncDirectory(directory);
   };
   return {
     read: async (providerThreadId) => {
@@ -68,7 +77,8 @@ export const makeNiaJournal = (stateDir: string): NiaJournal => {
         !("history" in parsed) ||
         !Array.isArray(parsed.history)
       )
-        return undefined;
+        // Treating an unreadable journal as absent would let the next write erase it.
+        throw new Error("Unrecognized Nia journal");
       return parsed.history as ReadonlyArray<StoredMessage>;
     },
     write: (providerThreadId, history) => {

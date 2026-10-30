@@ -52,6 +52,26 @@ describe("preferJournal", () => {
 });
 
 describe("makeNiaJournal", () => {
+  it("refuses to read a journal it cannot parse instead of reporting none", async () => {
+    const stateDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "nia-journal-"));
+    try {
+      const journal = makeNiaJournal(stateDir);
+      await journal.write("thread-1", [user]);
+      expect(await journal.read("thread-1")).toEqual([user]);
+      const [name] = await NodeFSP.readdir(NodePath.join(stateDir, "deepseek-nia"));
+      await NodeFSP.writeFile(NodePath.join(stateDir, "deepseek-nia", name!), '{"history":');
+      await expect(journal.read("thread-1")).rejects.toThrow();
+      await NodeFSP.writeFile(
+        NodePath.join(stateDir, "deepseek-nia", name!),
+        JSON.stringify({ providerThreadId: "other", history: [] }),
+      );
+      await expect(journal.read("thread-1")).rejects.toThrow();
+      expect(await journal.read("thread-2")).toBeUndefined();
+    } finally {
+      await NodeFSP.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
   it("removes its temporary file when the write cannot complete", async () => {
     const stateDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "nia-journal-"));
     try {

@@ -178,6 +178,15 @@ const open = (
     return { runtime, providerThread, start, takeTurn, expectNoLateTerminal, host };
   }).pipe(Effect.provideService(HttpClient.HttpClient, client));
 
+const corruptOnlyJournal = async (stateDir: string, contents: string) => {
+  const directory = `${stateDir}/deepseek-nia`;
+  const { readdir, readFile, writeFile } = await import("node:fs/promises");
+  const [name] = await readdir(directory);
+  const path = `${directory}/${name}`;
+  await writeFile(path, contents);
+  return { contents: () => readFile(path, "utf8") };
+};
+
 describe("local DeepSeek adapter", () => {
   it.effect("completes text turns with usage and preserves conversation context", () =>
     Effect.gen(function* () {
@@ -757,6 +766,25 @@ describe("Nia DeepSeek adapter", () => {
         ["system", "user", "assistant", "tool", "user"],
       );
       assert.deepStrictEqual(resumed?.[1], { role: "user", content: "[runtime context]\nHello" });
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("refuses a Nia turn rather than overwrite an unreadable journal", () =>
+    Effect.gen(function* () {
+      const fetch = vi.fn(() => Promise.reject(new Error("Unexpected request")));
+      vi.stubGlobal("fetch", fetch);
+      const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      const stateDir = Context.get(test.host, ProviderHost.ProviderHost).paths.stateDir;
+      const journal = makeNiaJournal(stateDir);
+      yield* Effect.promise(() => journal.write(test.providerThread.id, []));
+      const corrupt = yield* Effect.promise(() => corruptOnlyJournal(stateDir, '{"history":'));
+      const exit = yield* Effect.exit(test.start(1));
+      assert.equal(exit._tag, "Failure");
+      assert.equal(yield* Effect.promise(corrupt.contents), '{"history":');
+      assert.equal(fetch.mock.calls.length, 0);
     }).pipe(
       Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
       Effect.scoped,

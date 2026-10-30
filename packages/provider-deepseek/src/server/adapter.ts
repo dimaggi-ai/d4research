@@ -208,9 +208,20 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
                     });
                   }
                   if (isNia) {
+                    // Only a missing journal reads as absent; anything else must not be overwritten.
                     const journaled = yield* Effect.tryPromise(() =>
                       journal.read(input.providerThread.id),
-                    ).pipe(Effect.orElseSucceed(() => undefined));
+                    ).pipe(
+                      Effect.mapError(
+                        () =>
+                          new Adapter.ProviderAdapterTurnStartError({
+                            driver: DRIVER,
+                            threadId: input.threadId,
+                            providerThreadId: input.providerThread.id,
+                            runId: input.runId,
+                          }),
+                      ),
+                    );
                     const committed = niaHistory.get(input.providerThread.id);
                     // Visible messages lack the runtime context and tool pairs the loop saw, so
                     // they never outrank the journal; saved protocol history must be its prefix.

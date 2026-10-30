@@ -91,22 +91,22 @@ it.layer(TestLayer)("MultiworkService", (it) => {
 
         const result = yield* service.create({
           cwd: src,
-          branch: "spilshchikov-test-task",
+          branch: "feature-test-task",
           baseDirectory,
         });
 
         assert.equal(result.reused, false);
-        assert.equal(result.branch, "spilshchikov-test-task");
+        assert.equal(result.branch, "feature-test-task");
         assert.equal(result.projectName, path.basename(src));
         assert.equal(
           result.path,
-          path.join(baseDirectory, `${path.basename(src)}-spilshchikov-test-task`),
+          path.join(baseDirectory, `${path.basename(src)}-feature-test-task`),
         );
 
         // On the requested branch.
         assert.equal(
           yield* git(result.path, ["rev-parse", "--abbrev-ref", "HEAD"]),
-          "spilshchikov-test-task",
+          "feature-test-task",
         );
         // Tracked content came across.
         assert.equal(yield* git(result.path, ["show", "HEAD:README.md"]), "# source");
@@ -127,22 +127,22 @@ it.layer(TestLayer)("MultiworkService", (it) => {
         const baseDirectory = yield* makeTmpDir("multiwork-base-");
 
         // Publish a feature branch on origin from the source repo.
-        yield* git(src, ["checkout", "-b", "spilshchikov-existing"]);
+        yield* git(src, ["checkout", "-b", "feature-existing"]);
         yield* writeTextFile(src, "feature.txt", "feature\n");
         yield* git(src, ["add", "feature.txt"]);
         yield* git(src, ["commit", "-m", "feature commit"]);
-        yield* git(src, ["push", "-u", "origin", "spilshchikov-existing"]);
+        yield* git(src, ["push", "-u", "origin", "feature-existing"]);
         yield* git(src, ["checkout", "master"]);
 
         const result = yield* service.create({
           cwd: src,
-          branch: "spilshchikov-existing",
+          branch: "feature-existing",
           baseDirectory,
         });
 
         assert.equal(
           yield* git(result.path, ["rev-parse", "--abbrev-ref", "HEAD"]),
-          "spilshchikov-existing",
+          "feature-existing",
         );
         // The committed feature file is present (we continued the existing branch).
         assert.equal(yield* git(result.path, ["show", "HEAD:feature.txt"]), "feature");
@@ -157,7 +157,7 @@ it.layer(TestLayer)("MultiworkService", (it) => {
 
         const first = yield* service.create({
           cwd: src,
-          branch: "spilshchikov-reuse",
+          branch: "feature-reuse",
           baseDirectory,
         });
         assert.equal(first.reused, false);
@@ -173,7 +173,7 @@ it.layer(TestLayer)("MultiworkService", (it) => {
 
         const second = yield* service.create({
           cwd: src,
-          branch: "spilshchikov-reuse",
+          branch: "feature-reuse",
           baseDirectory,
         });
         assert.equal(second.reused, true);
@@ -193,7 +193,7 @@ it.layer(TestLayer)("MultiworkService", (it) => {
         assert.equal(listed.baseDirectory, baseDirectory);
         assert.include(
           listed.copies.map((copy) => copy.name),
-          `${(yield* Path.Path).basename(src)}-spilshchikov-reuse`,
+          `${(yield* Path.Path).basename(src)}-feature-reuse`,
         );
       }),
     );
@@ -205,7 +205,7 @@ it.layer(TestLayer)("MultiworkService", (it) => {
         const baseDirectory = yield* makeTmpDir("multiwork-base-");
 
         const exit = yield* Effect.exit(
-          service.create({ cwd, branch: "spilshchikov-x", baseDirectory }),
+          service.create({ cwd, branch: "feature-x", baseDirectory }),
         );
         assert.equal(exit._tag, "Failure");
       }),

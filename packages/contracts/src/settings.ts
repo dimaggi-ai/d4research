@@ -1480,19 +1480,6 @@ const SourceControlWritingStyleSetting = Schema.Union([
 export const BranchNamingMode = Schema.Literals(["static", "semantic", "custom"]);
 export type BranchNamingMode = typeof BranchNamingMode.Type;
 
-const DEFAULT_BRANCH_NAME_PREFIX = "spilshchikov";
-
-export const BranchNamePrefix = TrimmedString.pipe(
-  Schema.decodeTo(
-    TrimmedString,
-    SchemaTransformation.transform({
-      decode: (prefix) =>
-        /^(?:t3|t3code)\/?$/i.test(prefix) ? DEFAULT_BRANCH_NAME_PREFIX : prefix,
-      encode: (prefix) => prefix,
-    }),
-  ),
-);
-
 export interface BranchNamingOptions {
   mode: BranchNamingMode;
   prefix: string;
@@ -1992,7 +1979,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSetting),
   removeAgentCreditsOnMerge: Schema.optionalKey(Schema.Boolean),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
-  branchNamePrefix: Schema.optionalKey(BranchNamePrefix),
+  branchNamePrefix: Schema.optionalKey(TrimmedString),
   branchNameInstructions: Schema.optionalKey(TrimmedString),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
@@ -2277,9 +2264,7 @@ export const ServerSettings = Schema.Struct({
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
   ),
-  branchNamePrefix: BranchNamePrefix.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BRANCH_NAME_PREFIX)),
-  ),
+  branchNamePrefix: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("t3"))),
   branchNameInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   removeAgentCreditsOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sourceControlWritingStyle: SourceControlWritingStyleSetting.pipe(
@@ -2727,7 +2712,7 @@ export const ServerSettingsPatch = Schema.Struct({
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
-  branchNamePrefix: Schema.optionalKey(BranchNamePrefix),
+  branchNamePrefix: Schema.optionalKey(TrimmedString),
   branchNameInstructions: Schema.optionalKey(TrimmedString),
   removeAgentCreditsOnMerge: Schema.optionalKey(Schema.Boolean),
   sourceControlWritingStyle: Schema.optionalKey(

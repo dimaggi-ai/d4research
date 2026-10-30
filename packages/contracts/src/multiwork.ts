@@ -8,7 +8,7 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 export const MultiworkCreateInput = Schema.Struct({
   /** Any path inside the source repository; its toplevel is resolved server-side. */
   cwd: TrimmedNonEmptyString,
-  /** Branch to create/continue in the copy (e.g. `spilshchikov-my-task`). */
+  /** Branch to create/continue in the copy (e.g. `feature-my-task`). */
   branch: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
 });
 export type MultiworkCreateInput = typeof MultiworkCreateInput.Type;

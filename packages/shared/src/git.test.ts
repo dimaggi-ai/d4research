@@ -241,31 +241,29 @@ describe("applyGitStatusStreamEvent", () => {
 describe("sanitizeFeatureBranchName", () => {
   it.each(["feature", "fix", "team/jules"])("preserves the %s namespace", (namespace) => {
     expect(sanitizeFeatureBranchName(`${namespace}/refine-toolbar`)).toBe(
-      namespace === "feature"
-        ? "spilshchikov/refine-toolbar"
-        : `spilshchikov/${namespace}/refine-toolbar`,
+      namespace === "feature" ? "feature/refine-toolbar" : `feature/${namespace}/refine-toolbar`,
     );
   });
 
   it("sanitizes an explicit namespace before preserving it", () => {
     expect(sanitizeFeatureBranchName(' "FIX//Calendar recruitment filter" ')).toBe(
-      "spilshchikov/fix/calendar-recruitment-filter",
+      "feature/fix/calendar-recruitment-filter",
     );
   });
 
   // regression: #15615 generated branch namespaces are preserved
   it.each([
-    ["refine toolbar", "spilshchikov/refine-toolbar"],
-    ["", "spilshchikov/update"],
-    [" /?. / ", "spilshchikov/update"],
-    ["fix///", "spilshchikov/fix"],
+    ["refine toolbar", "feature/refine-toolbar"],
+    ["", "feature/update"],
+    [" /?. / ", "feature/update"],
+    ["fix///", "feature/fix"],
   ])("keeps the fallback for unprefixed input %s", (input, expected) => {
     expect(sanitizeFeatureBranchName(input)).toBe(expected);
   });
 
   it("keeps the existing length limit for namespaced branches", () => {
     expect(sanitizeFeatureBranchName(`fix/${"x".repeat(80)}`)).toBe(
-      `spilshchikov/fix/${"x".repeat(60)}`,
+      `feature/fix/${"x".repeat(60)}`,
     );
   });
 });
@@ -274,41 +272,34 @@ describe("resolveAutoFeatureBranchName", () => {
   it("resolves case-insensitive collisions within the generated namespace", () => {
     expect(
       resolveAutoFeatureBranchName(
-        ["SPILSHCHIKOV/FIX/refine-toolbar", "spilshchikov/fix/refine-toolbar-2"],
+        ["FEATURE/FIX/refine-toolbar", "feature/fix/refine-toolbar-2"],
         "fix/refine-toolbar",
       ),
-    ).toBe("spilshchikov/fix/refine-toolbar-3");
+    ).toBe("feature/fix/refine-toolbar-3");
   });
 
   it("keeps the fallback when no preferred branch is supplied", () => {
-    expect(resolveAutoFeatureBranchName(["spilshchikov/update"])).toBe("spilshchikov/update-2");
+    expect(resolveAutoFeatureBranchName(["feature/update"])).toBe("feature/update-2");
   });
 
   it.each([
-    ["fix/name", ["spilshchikov/fix"], "spilshchikov/fix-2/name"],
-    ["team/jules/fix/name", ["spilshchikov/team/jules"], "spilshchikov/team/jules-2/fix/name"],
-    ["fix/name", ["spilshchikov/fix/name/child"], "spilshchikov/fix/name-2"],
-    ["FIX/name", ["SPILSHCHIKOV/FIX", "SPILSHCHIKOV/FIX-2"], "spilshchikov/fix-3/name"],
-    [
-      "fix/name",
-      ["spilshchikov/fixes", "spilshchikov/fix/name-extra/child"],
-      "spilshchikov/fix/name",
-    ],
-    [undefined, ["spilshchikov", "spilshchikov-2"], "spilshchikov-3/update"],
+    ["fix/name", ["feature/fix"], "feature/fix-2/name"],
+    ["team/jules/fix/name", ["feature/team/jules"], "feature/team/jules-2/fix/name"],
+    ["fix/name", ["feature/fix/name/child"], "feature/fix/name-2"],
+    ["FIX/name", ["FEATURE/FIX", "FEATURE/FIX-2"], "feature/fix-3/name"],
+    ["fix/name", ["feature/fixes", "feature/fix/name-extra/child"], "feature/fix/name"],
+    [undefined, ["feature", "feature-2"], "feature-3/update"],
   ])("resolves %s against namespace blockers %j", (preferredBranch, existingNames, expected) => {
     expect(resolveAutoFeatureBranchName(existingNames, preferredBranch)).toBe(expected);
   });
 });
 
 describe("formatGeneratedBranchName", () => {
-  it.each(["t3code", "t3code/", "t3", "spilshchikov"])(
-    "replaces legacy/default static prefix %s with the owner namespace",
-    (prefix) => {
-      expect(
-        formatGeneratedBranchName("Add Search", { mode: "static", prefix, instructions: "" }),
-      ).toBe("spilshchikov/add-search");
-    },
-  );
+  it.each(["t3code", "t3code/"])("joins static prefix %s with one slash", (prefix) => {
+    expect(
+      formatGeneratedBranchName("Add Search", { mode: "static", prefix, instructions: "" }),
+    ).toBe("t3code/add-search");
+  });
   it("supports an empty prefix and preserves user prefix casing", () => {
     expect(
       formatGeneratedBranchName("Add Search", { mode: "static", prefix: "", instructions: "" }),

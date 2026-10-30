@@ -734,7 +734,7 @@ function createTextGeneration(
       Effect.succeed({
         subject: "Implement stacked git actions",
         body: "",
-        ...(input.includeBranch ? { branch: "spilshchikov/implement-stacked-git-actions" } : {}),
+        ...(input.includeBranch ? { branch: "feature/implement-stacked-git-actions" } : {}),
       }),
     generatePrContent: () =>
       Effect.succeed({
@@ -2464,7 +2464,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "fork-pr.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Fork PR branch"]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-      yield* runGit(repoDir, ["checkout", "-b", "spilshchikov/pr-488/statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-488/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -2495,7 +2495,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       const status = yield* manager.status({ cwd: repoDir });
-      expect(status.refName).toBe("spilshchikov/pr-488/statemachine");
+      expect(status.refName).toBe("t3code/pr-488/statemachine");
       expect(status.pr).toEqual({
         number: 488,
         title: "Rebase this PR on latest main",
@@ -2525,7 +2525,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["remote", "set-head", "origin", "main"]);
       yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
       yield* runGit(repoDir, ["push", "fork-seed", "main"]);
-      yield* runGit(repoDir, ["checkout", "-b", "spilshchikov/pr-777/main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-777/main"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/main"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -2556,7 +2556,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       const status = yield* manager.status({ cwd: repoDir });
-      expect(status.refName).toBe("spilshchikov/pr-777/main");
+      expect(status.refName).toBe("t3code/pr-777/main");
       expect(status.pr).toEqual({
         number: 777,
         title: "Fork PR from main",
@@ -3290,9 +3290,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               return {
                 subject: "Implement stacked git actions",
                 body: "",
-                ...(input.includeBranch
-                  ? { branch: "spilshchikov/implement-stacked-git-actions" }
-                  : {}),
+                ...(input.includeBranch ? { branch: "feature/implement-stacked-git-actions" } : {}),
               };
             }),
         },
@@ -3304,7 +3302,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       expect(result.branch.status).toBe("created");
-      expect(result.branch.name).toBe("spilshchikov/implement-stacked-git-actions");
+      expect(result.branch.name).toBe("feature/implement-stacked-git-actions");
       expect(result.commit.status).toBe("created");
       expect(result.push.status).toBe("pushed");
       expect(result.toast).toMatchObject({
@@ -3318,13 +3316,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         },
       });
       expect(result.toast.title).toMatch(
-        /^Pushed [0-9a-f]{7} to origin\/spilshchikov\/implement-stacked-git-actions$/,
+        /^Pushed [0-9a-f]{7} to origin\/feature\/implement-stacked-git-actions$/,
       );
       expect(
         yield* runGit(repoDir, ["rev-parse", "--abbrev-ref", "HEAD"]).pipe(
           Effect.map((result) => result.stdout.trim()),
         ),
-      ).toBe("spilshchikov/implement-stacked-git-actions");
+      ).toBe("feature/implement-stacked-git-actions");
 
       const mainSha = yield* runGit(repoDir, ["rev-parse", "main"]).pipe(
         Effect.map((r) => r.stdout.trim()),
@@ -3339,14 +3337,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect.each([
     {
-      branch: "spilshchikov/fix/name",
-      existingBranches: ["spilshchikov/fix"],
-      expected: "spilshchikov/fix-2/name",
+      branch: "feature/fix/name",
+      existingBranches: ["feature/fix"],
+      expected: "feature/fix-2/name",
     },
     {
-      branch: "spilshchikov/fix/name",
-      existingBranches: ["spilshchikov/fix/name/child"],
-      expected: "spilshchikov/fix/name-2",
+      branch: "feature/fix/name",
+      existingBranches: ["feature/fix/name/child"],
+      expected: "feature/fix/name-2",
     },
   ])("commits on $expected when $branch has ref namespace collisions", (scenario) =>
     Effect.gen(function* () {
@@ -4085,7 +4083,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         "git@github.com:pingdotgg/codething-mvp.git",
       ]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-      yield* runGit(repoDir, ["checkout", "-b", "spilshchikov/pr-142/statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -4097,7 +4095,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListByHeadSelector: {
-            "spilshchikov/pr-142/statemachine": JSON.stringify([]),
+            "t3code/pr-142/statemachine": JSON.stringify([]),
             statemachine: JSON.stringify([
               {
                 number: 41,
@@ -4155,7 +4153,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         "git@github.com:pingdotgg/codething-mvp.git",
       ]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-      yield* runGit(repoDir, ["checkout", "-b", "spilshchikov/pr-142/statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -4184,7 +4182,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 },
               },
             ]),
-            "spilshchikov/pr-142/statemachine": JSON.stringify([]),
+            "t3code/pr-142/statemachine": JSON.stringify([]),
           },
         },
       });
@@ -4950,7 +4948,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "changes.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Feature commit"]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-      yield* runGit(repoDir, ["checkout", "-b", "spilshchikov/pr-91/statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-91/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -5585,7 +5583,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         pullRequestNumber: 93,
         headRepository: "octocat/codething-mvp",
         headBranch: "feature/missing-fork-branch",
-        localBranch: "spilshchikov/pr-93/feature/missing-fork-branch",
+        localBranch: "t3code/pr-93/feature/missing-fork-branch",
       });
       if (!(error.cause instanceof AggregateError)) {
         return yield* Effect.die(error.cause);
@@ -6018,7 +6016,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           yield* runGit(repoDir, ["push", "fork-seed", "main:pr-pagination"]);
         }
         const headBranch = "pr-pagination";
-        const localBranch = isCrossRepository ? "spilshchikov/pr-78/pr-pagination" : headBranch;
+        const localBranch = isCrossRepository ? "t3code/pr-78/pr-pagination" : headBranch;
         yield* runGit(repoDir, ["branch", localBranch]);
         yield* runGit(repoDir, ["push", "origin", `${localBranch}:refs/pull/78/head`]);
         const worktreePath = NodePath.join(repoDir, "existing-pr");
@@ -6261,7 +6259,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           "@{upstream}",
         ])).stdout.trim(),
       ).toBe("origin/main");
-      expect(result.branch).toBe("spilshchikov/pr-94/main");
+      expect(result.branch).toBe("t3code/pr-94/main");
       expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
         NodeFS.realpathSync.native(mainWorktreePath),
       );
@@ -6332,7 +6330,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           mode: "worktree",
         });
 
-        expect(result.branch).toBe("spilshchikov/pr-91/main");
+        expect(result.branch).toBe("t3code/pr-91/main");
         expect(result.worktreePath).not.toBeNull();
         expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe("main");
         expect((yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim()).toBe(mainBefore);
@@ -6341,7 +6339,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             "branch",
             "--show-current",
           ])).stdout.trim(),
-        ).toBe("spilshchikov/pr-91/main");
+        ).toBe("t3code/pr-91/main");
       }),
   );
 
@@ -6393,7 +6391,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           mode: "worktree",
         });
 
-        expect(result.branch).toBe("spilshchikov/pr-92/main");
+        expect(result.branch).toBe("t3code/pr-92/main");
         expect((yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim()).toBe(localMainBefore);
         expect(
           (yield* runGit(result.worktreePath as string, [
@@ -6429,7 +6427,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         "worktree",
         "add",
         "-b",
-        "spilshchikov/pr-83/feature/pr-reused-fork",
+        "t3code/pr-83/feature/pr-reused-fork",
         worktreePath,
         "feature/pr-reused-fork",
       ]);
@@ -6466,7 +6464,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
         NodeFS.realpathSync.native(worktreePath),
       );
-      expect(result.branch).toBe("spilshchikov/pr-83/feature/pr-reused-fork");
+      expect(result.branch).toBe("t3code/pr-83/feature/pr-reused-fork");
       expect((yield* runGit(worktreePath, ["branch", "--show-current"])).stdout.trim()).toBe(
         result.branch,
       );

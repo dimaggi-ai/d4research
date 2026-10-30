@@ -461,7 +461,7 @@ it.effect("runs a thread-bound automation on the provider the thread uses now", 
     });
 
     const result = yield* tasks.runNow({ id: task.id });
-    assert.equal(result.task.lastRunStatus, "succeeded");
+    assert.equal(result.task.lastRunStatus, "running");
     const projection = yield* threads.getThreadProjection(launched.threadId);
     const message = projection.messages.find((item) => item.scheduledTaskId === task.id);
     const run = projection.runs.find((item) => item.id === message?.runId);
@@ -1008,7 +1008,7 @@ it.effect("runs a Scratch scheduled task saved with a worktree in its own folder
       WHERE task_id = ${task.id}
     `;
     const ran = yield* tasks.runNow({ id: task.id });
-    assert.equal(ran.task.lastRunStatus, "succeeded");
+    assert.equal(ran.task.lastRunStatus, "running");
     const [thread] = yield* threads.listProjectThreads({ projectId, includeSubagents: false });
     assert.isDefined(thread);
     const projection = yield* preparationSettled(thread!.id);

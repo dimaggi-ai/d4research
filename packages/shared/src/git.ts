@@ -9,13 +9,18 @@ import type {
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
-export const WORKTREE_BRANCH_PREFIX = "spilshchikov";
-// Accept the owner namespace and every released temporary branch shape, including strict legacy UUID v4 names.
+export const WORKTREE_BRANCH_PREFIX = "t3";
+// Canonical form is `t3/<8 hex>`. `t3-<8 hex>` is the fallback when a plain `t3`
+// branch blocks the namespace. The matcher also accepts every legacy shape, so
+// existing threads stay eligible for branch regeneration: `t3code/<8 hex>` and
+// `t3code-<8 hex>` from before the prefix was shortened, and `t3code/<uuid>` from
+// older mobile builds that used Crypto.randomUUID() (always RFC 4122 v4, so version
+// nibble `4` and variant nibble `[89ab]`). Nothing looser than what was generated.
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
   "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
-  `^(?:(?:${WORKTREE_BRANCH_PREFIX}|t3)[-/]${TEMP_WORKTREE_HEX_TOKEN}|t3code(?:[-/]${TEMP_WORKTREE_HEX_TOKEN}|\\/${TEMP_WORKTREE_UUID_V4_TOKEN}))$`,
+  `^(?:${WORKTREE_BRANCH_PREFIX}[-/]${TEMP_WORKTREE_HEX_TOKEN}|t3code(?:[-/]${TEMP_WORKTREE_HEX_TOKEN}|\\/${TEMP_WORKTREE_UUID_V4_TOKEN}))$`,
 );
 
 export function sanitizeBranchFragment(raw: string): string {
@@ -37,14 +42,10 @@ export function sanitizeBranchFragment(raw: string): string {
 }
 
 export function formatGeneratedBranchName(raw: string, naming?: BranchNamingOptions): string {
-  const normalizedRaw = raw.trim().replace(/^(?:t3code|t3)[/-]/i, `${WORKTREE_BRANCH_PREFIX}/`);
-  if (naming?.mode === "custom") return normalizedRaw;
-  const branch = sanitizeBranchFragment(normalizedRaw);
+  if (naming?.mode === "custom") return raw.trim();
+  const branch = sanitizeBranchFragment(raw);
   if (naming?.mode !== "static") return branch;
-  const effectivePrefix = /^(?:t3|t3code)\/?$/i.test(naming.prefix.trim())
-    ? WORKTREE_BRANCH_PREFIX
-    : naming.prefix;
-  const prefix = effectivePrefix
+  const prefix = naming.prefix
     .split("/")
     .map((part) =>
       part
@@ -54,23 +55,27 @@ export function formatGeneratedBranchName(raw: string, naming?: BranchNamingOpti
     )
     .filter(Boolean)
     .join("/");
-  const fragment =
-    prefix === WORKTREE_BRANCH_PREFIX && branch.startsWith(`${WORKTREE_BRANCH_PREFIX}/`)
-      ? branch.slice(WORKTREE_BRANCH_PREFIX.length + 1)
-      : branch;
-  return prefix ? `${prefix}/${fragment}` : fragment;
+  return prefix ? `${prefix}/${branch}` : branch;
 }
 
+/**
+ * Sanitize a string into a `feature/…` refName name.
+ * Preserves an existing `feature/` prefix or slash-separated namespace.
+ */
 export function sanitizeFeatureBranchName(raw: string): string {
-  const sanitized = sanitizeBranchFragment(raw).replace(
-    /^(?:(?:feature|t3|t3code|spilshchikov)\/)+/,
-    "",
-  );
-  return `${WORKTREE_BRANCH_PREFIX}/${sanitized || "update"}`;
+  const sanitized = sanitizeBranchFragment(raw);
+  if (sanitized.includes("/")) {
+    return sanitized.startsWith("feature/") ? sanitized : `feature/${sanitized}`;
+  }
+  return `feature/${sanitized}`;
 }
 
-const AUTO_FEATURE_BRANCH_FALLBACK = "spilshchikov/update";
+const AUTO_FEATURE_BRANCH_FALLBACK = "feature/update";
 
+/**
+ * Resolve a unique `feature/…` refName name that doesn't collide with
+ * any existing refName. Appends a numeric suffix when needed.
+ */
 export function resolveAutoFeatureBranchName(
   existingBranchNames: readonly string[],
   preferredBranch?: string,
@@ -121,8 +126,8 @@ export function buildTemporaryWorktreeBranchName(
 }
 
 /**
- * Git stores refs as paths, so a plain namespace branch makes every owner-prefixed
- * ref impossible. This moves a temporary name to the flat owner-prefixed sibling.
+ * Git stores refs as paths, so a plain `t3` branch makes every `t3/<hex>`
+ * ref impossible. This moves a temporary name to the flat `t3-<hex>` sibling.
  */
 export function flattenTemporaryWorktreeBranchName(refName: string): string {
   const normalized = refName.trim().toLowerCase();

@@ -316,7 +316,6 @@ export function buildBranchNamePrompt(input: BranchNamePromptInput) {
     rules: [
       "Branch should describe the requested work from the user message.",
       "Return a valid Git branch name without spaces.",
-      "Do not use t3code or t3 branding in branch or worktree names.",
       ...(input.naming?.mode === "custom"
         ? [
             "Return the complete branch name, following the user's naming instructions. No prefix or suffix will be added.",

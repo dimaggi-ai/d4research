@@ -99,7 +99,11 @@ export default mergeConfig(
         : {}),
       deps: {
         // alwaysBundle=false has no opinion; neverBundle must retain transitive native acceleration.
-        alwaysBundle: shouldBundleCliDependency,
+        // A single executable cannot resolve ESM imports of file-backed packages, so it inlines zod
+        // for the server's own MCP client; Cursor still requires its shipped copy at runtime.
+        alwaysBundle: packExecutable
+          ? (id: string) => id === "zod" || id.startsWith("zod/") || shouldBundleCliDependency(id)
+          : shouldBundleCliDependency,
         onlyBundle: false,
       },
       banner: {

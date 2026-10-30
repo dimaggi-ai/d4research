@@ -328,16 +328,37 @@ export function openCodeCommandsToServerProviderSlashCommands(
   return commands;
 }
 
+function openCodeModelsFromSettings(
+  settings: OpenCodeSettings,
+  discovered: ReadonlyArray<ServerProviderModel> = [],
+): ReadonlyArray<ServerProviderModel> {
+  const models = new Map(discovered.map((model) => [model.slug, model]));
+  for (const [providerId, provider] of Object.entries(settings.config.provider)) {
+    for (const [modelId, model] of Object.entries(provider.models)) {
+      const slug = `${providerId}/${modelId}`;
+      if (models.has(slug)) continue;
+      models.set(slug, {
+        slug,
+        name: model.name ?? modelId,
+        subProvider: provider.name ?? providerId,
+        isCustom: false,
+        capabilities: DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+      });
+    }
+  }
+  return providerModelsFromSettings(
+    [...models.values()],
+    settings.customModels,
+    DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+  );
+}
+
 export const makePendingOpenCodeProvider = (
   openCodeSettings: OpenCodeSettings,
 ): Effect.Effect<ServerProviderDraft> =>
   Effect.gen(function* () {
     const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
-    const models = providerModelsFromSettings(
-      [],
-      openCodeSettings.customModels,
-      DEFAULT_OPENCODE_MODEL_CAPABILITIES,
-    );
+    const models = openCodeModelsFromSettings(openCodeSettings);
 
     if (!openCodeSettings.enabled) {
       return buildServerProvider({
@@ -535,16 +556,13 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
       presentation: OPENCODE_2_PRESENTATION,
       enabled: true,
       checkedAt,
-      models: providerModelsFromSettings(
-        [],
-        settings.customModels,
-        DEFAULT_OPENCODE_MODEL_CAPABILITIES,
-      ),
+      models: openCodeModelsFromSettings(settings),
       slashCommands: [COMPACT_SLASH_COMMAND],
       probe: probe("error", "OpenCode could not load its model list."),
     });
   }
-  const models = providerModelsFromSettings(
+  const models = openCodeModelsFromSettings(
+    settings,
     result.value
       .map((model) => {
         const subProvider = subProviderLabelFor(model);
@@ -557,8 +575,6 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
         };
       })
       .toSorted((left, right) => left.name.localeCompare(right.name)),
-    settings.customModels,
-    DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
   return buildServerProvider({
     presentation: OPENCODE_2_PRESENTATION,
@@ -592,7 +608,6 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   const openCodeRuntime = yield* OpenCodeRuntime.OpenCodeRuntime;
   const serverOwner = yield* OpenCodeServerOwner.OpenCodeServerOwner;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const customModels = openCodeSettings.customModels;
   const isExternalServer = openCodeSettings.serverUrl.trim().length > 0;
 
   const fallback = (
@@ -610,7 +625,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       presentation: OPENCODE_PRESENTATION,
       enabled: openCodeSettings.enabled,
       checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+      models: openCodeModelsFromSettings(openCodeSettings),
       probe: {
         installed: failure.installed,
         version,
@@ -626,7 +641,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       presentation: OPENCODE_PRESENTATION,
       enabled: false,
       checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+      models: openCodeModelsFromSettings(openCodeSettings),
       probe: {
         installed: false,
         version: null,
@@ -661,7 +676,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       presentation: OPENCODE_PRESENTATION,
       enabled: openCodeSettings.enabled,
       checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+      models: openCodeModelsFromSettings(openCodeSettings),
       probe: {
         installed: true,
         version: probed.version,
@@ -715,10 +730,9 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
 
   version = inventoryExit.value.version;
 
-  const models = providerModelsFromSettings(
+  const models = openCodeModelsFromSettings(
+    openCodeSettings,
     flattenOpenCodeModels(inventoryExit.value.inventory),
-    customModels,
-    DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
   const skills = openCodeSkillsToServerProviderSkills(inventoryExit.value.inventory.skills);
   const connectedCount = inventoryExit.value.inventory.providerList.connected.length;

@@ -19,6 +19,7 @@ import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
+  makePendingOpenCodeProvider,
   makeOpenCode2ModelLoader,
   type OpenCode2Model,
   type OpenCode2Workspace,
@@ -348,6 +349,85 @@ const checkProvider = Effect.fn("checkProvider")(function* (
 });
 
 it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
+  it.effect.each(["pending", "v1", "v2", "failed"] as const)(
+    "includes instance-configured provider models in the %s catalog",
+    (state) =>
+      Effect.gen(function* () {
+        const settings = makeOpenCodeSettings({
+          config: {
+            provider: {
+              strata: {
+                npm: "@ai-sdk/openai-compatible",
+                name: "Strata",
+                options: { baseURL: "http://127.0.0.1:8080/v1" },
+                models: {
+                  "qwen3.8-flash-next-iq3_s": {
+                    name: "Qwen Flash",
+                    limit: { context: 200000, output: 8192 },
+                  },
+                },
+              },
+            },
+          },
+        });
+        if (state === "v2") runtimeMock.state.versionStdout = "opencode v2.0.18\n";
+        if (state === "failed")
+          runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");
+        const snapshot = yield* state === "pending"
+          ? makePendingOpenCodeProvider(settings)
+          : checkProvider(settings);
+        const configured = snapshot.models.filter(
+          (model) => model.slug === "strata/qwen3.8-flash-next-iq3_s",
+        );
+        NodeAssert.equal(configured.length, 1);
+        NodeAssert.equal(configured[0]?.name, "Qwen Flash");
+        NodeAssert.equal(configured[0]?.subProvider, "Strata");
+      }),
+  );
+
+  it.effect(
+    "preserves discovered capabilities and custom names for configured model duplicates",
+    () =>
+      Effect.gen(function* () {
+        runtimeMock.state.versionStdout = "opencode v2.0.18\n";
+        const snapshot = yield* checkProvider(
+          makeOpenCodeSettings({
+            config: {
+              provider: {
+                strata: {
+                  npm: "@ai-sdk/openai-compatible",
+                  options: { baseURL: "http://127.0.0.1:8080/v1" },
+                  models: {
+                    qwen: { name: "Configured Qwen", limit: { context: 200000, output: 8192 } },
+                  },
+                },
+              },
+            },
+            customModels: [{ slug: "strata/qwen", name: "Preferred Qwen" }],
+          }),
+          process.cwd(),
+          undefined,
+          undefined,
+          Effect.succeed([
+            {
+              providerID: "strata",
+              id: "qwen",
+              name: "Discovered Qwen",
+              variants: [{ id: "high" }],
+            },
+          ]),
+        );
+        const models = snapshot.models.filter((model) => model.slug === "strata/qwen");
+        NodeAssert.equal(models.length, 1);
+        NodeAssert.equal(models[0]?.name, "Preferred Qwen");
+        const variants = models[0]?.capabilities?.optionDescriptors?.[0];
+        NodeAssert.deepEqual(
+          variants?.type === "select" ? variants.options.map((option) => option.id) : [],
+          ["high"],
+        );
+      }),
+  );
+
   it.effect("shows a codex-style missing binary message", () =>
     Effect.gen(function* () {
       runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");

@@ -505,3 +505,7 @@ export function resetVoiceInputGlobalsForTests(): void {
   activeSession = null;
   activeTranscriptionOperation = null;
 }
+
+export function voiceInputFreezesEditor(state: VoiceInputState): boolean {
+  return voiceInputBlocksSubmission(state);
+}

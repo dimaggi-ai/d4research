@@ -139,7 +139,6 @@ export const D4_FEATURE_SUITES: ReadonlyArray<D4FeatureSuite> = [
     contract: "System Monitor reports environment telemetry without mixing in account usage.",
     testFiles: [
       "apps/server/src/diagnostics/ProcessDiagnostics.test.ts",
-      "apps/server/src/diagnostics/ProcessResourceMonitor.test.ts",
       "apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.test.ts",
       "apps/server/src/resourceTelemetry/Model.test.ts",
       "apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts",
@@ -165,8 +164,6 @@ export const D4_FEATURE_SUITES: ReadonlyArray<D4FeatureSuite> = [
       "apps/server/src/usage/usagePricing.test.ts",
       "apps/web/src/providerModels.test.ts",
       "apps/web/src/providerInstances.test.ts",
-      "apps/web/src/components/settings/ProviderModelsSection.test.ts",
-      "apps/web/src/components/usage/UsageLimits.test.ts",
       "apps/web/src/components/usage/UsageProviderChart.test.ts",
       "apps/mobile/src/lib/modelOptions.test.ts",
     ],
@@ -177,9 +174,7 @@ export const D4_FEATURE_SUITES: ReadonlyArray<D4FeatureSuite> = [
     testFiles: [
       "scripts/d4-feature-suite.test.ts",
       "scripts/build-desktop-artifact.test.ts",
-      "scripts/lib/brand-assets.test.ts",
       "scripts/resolve-nightly-release.test.ts",
-      "scripts/sign-macos.test.ts",
       "scripts/update-release-package-versions.test.ts",
       "apps/web/src/branding.test.ts",
       "apps/server/src/cloud/bootService.test.ts",

@@ -1,6 +1,5 @@
 import { pipe } from "effect/Function";
 import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
-import { canStartProviderTurn } from "@d4research/contracts";
 import * as Equal from "effect/Equal";
 /**
  * Instance-aware view over the wire `ServerProvider[]`.
@@ -17,6 +16,7 @@ import * as Equal from "effect/Equal";
  * @module providerInstances
  */
 import {
+  DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   resolveProjectProviderInstanceEnabled,
   type ModelSelection,
@@ -61,7 +61,7 @@ export interface ProviderInstanceEntry {
 
 /** Disabled instances may retain ready status until reconciliation. */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled && entry.isAvailable && canStartProviderTurn(entry.snapshot);
+  return entry.enabled && entry.isAvailable && entry.status === "ready";
 }
 
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
@@ -216,12 +216,13 @@ export function getDefaultProviderInstanceModel(
   return (
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
-    entry.models[0]?.slug
+    entry.models[0]?.slug ??
+    DEFAULT_MODEL_BY_PROVIDER[entry.driverKind]
   );
 }
 
 const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolean =>
-  entry.enabled && entry.isAvailable && canStartProviderTurn(entry.snapshot);
+  entry.enabled && entry.isAvailable;
 
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -233,7 +234,10 @@ export function resolveSelectableProviderInstanceEntry(
       return requested;
     }
   }
-  return entries.find(isProviderInstancePickerReady);
+  return (
+    entries.find(isProviderInstancePickerReady) ??
+    entries.find((entry) => isSelectableProviderInstanceEntry(entry) && entry.status !== "error")
+  );
 }
 
 export function resolveSelectableProviderInstance(

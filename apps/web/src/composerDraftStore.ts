@@ -4337,6 +4337,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nonPersistedImageIds: [],
               persistedAttachments: [],
               terminalContexts: [],
+              elementContexts: [],
+              pastedContexts: [],
               previewAnnotations: [],
               reviewComments: [],
               threadContexts: [],

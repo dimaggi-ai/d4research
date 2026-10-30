@@ -481,9 +481,9 @@ describe("ClientSettings send shortcut", () => {
 });
 
 describe("ClientSettings follow-up behavior", () => {
-  it("defaults to steer and accepts either behavior", () => {
-    expect(decodeClientSettings({}).followUpBehavior).toBe("steer");
-    for (const followUpBehavior of ["queue", "steer"]) {
+  it("defaults to wait and accepts every behavior", () => {
+    expect(decodeClientSettings({}).followUpBehavior).toBe("wait");
+    for (const followUpBehavior of ["wait", "queue", "steer"]) {
       expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
       expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(
         followUpBehavior,

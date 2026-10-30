@@ -61,13 +61,13 @@ it.effect("Codex agent disables inherited MCP endpoints and exposes only bounded
     assert.equal(params.config["skills.bundled.enabled"], false);
     assert.equal(params.baseInstructions, D4_AGENT_PREFIX);
     assert.equal(params.developerInstructions, "");
-    assert.deepInclude(params.config.mcp_servers, { dangerous: { enabled: false } });
-    const servers = params.config.mcp_servers as Record<
-      string,
-      { tools?: Record<string, { approval_mode: string }> }
-    >;
+    // Server overrides are dotted keys so launch-argument MCP servers survive.
+    assert.equal(params.config["mcp_servers.dangerous.enabled"], false);
+    const t3Server = params.config["mcp_servers.t3-code"] as {
+      tools?: Record<string, { approval_mode: string }>;
+    };
     assert.deepEqual(
-      servers["t3-code"]?.tools,
+      t3Server?.tools,
       Object.fromEntries(D4_AGENT_TOOLS.map((name) => [name, { approval_mode: "approve" }])),
     );
     assert.equal(params.model, "selected");

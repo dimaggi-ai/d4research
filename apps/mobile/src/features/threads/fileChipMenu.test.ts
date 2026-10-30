@@ -78,10 +78,19 @@ describe("file chip downloads", () => {
   });
 
   it("does not offer downloads the host asset endpoint cannot serve", () => {
-    for (const href of ["src/app.ts", "/tmp/archive.zip", "/tmp/clip.mp4.txt"]) {
+    for (const href of ["src/app.ts", "/tmp/disk.img", "/tmp/clip.mp4.txt"]) {
       const target = resolveFileChipTarget(href, "/repo")!;
       expect(fileChipShareSource(target, threadId)).toBeNull();
       expect(fileChipMenu(target).actions.some(({ id }) => id === "save")).toBe(false);
     }
+  });
+
+  it("offers archives, which the host now serves for preview", () => {
+    const target = resolveFileChipTarget("/tmp/archive.zip", "/repo")!;
+    expect(fileChipShareSource(target, threadId)).toMatchObject({
+      name: "archive.zip",
+      mimeType: "application/zip",
+    });
+    expect(fileChipMenu(target).actions.some(({ id }) => id === "save")).toBe(true);
   });
 });

@@ -19,7 +19,7 @@ describe("project thread title", () => {
     expect(deriveThreadTitleFromPrompt(" \n ")).toBe("New thread");
   });
 
-  it("derives attachment-only titles from prepared image metadata", () => {
+  it("titles an image-only thread readably instead of by its file name", () => {
     const uploadedAttachments = [
       {
         type: "image" as const,
@@ -48,7 +48,7 @@ describe("project thread title", () => {
       worktreeBranchName: "unused",
     });
 
-    expect(input.titleSeed).toBe("Image: photo.png");
+    expect(input.titleSeed).toBe("Attached image");
     expect(input.bootstrap.createThread.title).toBe(input.titleSeed);
     expect(input.message.attachments).toEqual(uploadedAttachments);
   });

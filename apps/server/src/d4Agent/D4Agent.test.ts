@@ -5234,9 +5234,13 @@ it.effect("an explicit null request never adopts a later task default", () =>
   }),
 );
 
-it.effect("an evicted active request snapshot fails closed instead of adopting the default", () =>
+it.effect("a request without a worker snapshot uses the saved default worker", () =>
   Effect.gen(function* () {
-    const f = yield* fixture();
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      modelSelection: managerSelection,
+      taskModelSelection: modelSelection,
+    });
+    yield* Ref.set(f.catalog, [managerProvider, provider]);
     const identity = yield* f.service.ensureThread();
     yield* Ref.set(f.agentShell, {
       ...target,
@@ -5253,17 +5257,16 @@ it.effect("an evicted active request snapshot fails closed instead of adopting t
         { id: "evicted-worker-message", text: "Create work", createdBy: "user" },
       ] as unknown as typeof projection.messages,
     }));
-    assert.isNull((yield* f.service.environment()).d4Agent.taskModelSelection);
-    assert.isNull((yield* f.service.listPipelines()).modelSelection);
+    assert.deepEqual((yield* f.service.environment()).d4Agent.taskModelSelection, modelSelection);
     const proposal = yield* Effect.result(
       f.service.requestAction({
         type: "start",
         projectId: target.projectId,
-        text: "Must not start",
+        text: "Start with the default worker",
         modelSelection,
       }),
     );
-    assert.equal(proposal._tag, "Failure");
+    assert.equal(proposal._tag, "Success");
   }),
 );
 

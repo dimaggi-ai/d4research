@@ -1287,7 +1287,7 @@ export const layer = Layer.effect(
           ? config.taskModelSelection
           : activeMessage.snapshotFound
             ? (activeMessage.taskModelSelection ?? null)
-            : null;
+            : config.taskModelSelection;
       return {
         application: "d4research",
         boundContext: state.brainContext,
@@ -2806,14 +2806,10 @@ export const layer = Layer.effect(
             action.type === "prepare-routine"
           ) {
             const requestMessage = yield* currentUserMessage;
-            if (requestMessage !== undefined && !requestMessage.snapshotFound)
-              return yield* new D4AgentError({
-                reason: "action-unavailable",
-                detail:
-                  "The active request has no saved worker selection. Keep the draft and send it again before asking Nia to create an approval.",
-              });
+            // A message typed in the plain thread composer carries no worker snapshot; it uses
+            // the saved default worker instead of refusing the draft.
             const selectedWorker =
-              requestMessage === undefined
+              requestMessage === undefined || !requestMessage.snapshotFound
                 ? config.taskModelSelection
                 : (requestMessage.taskModelSelection ?? null);
             if (selectedWorker === null)
@@ -4029,7 +4025,7 @@ export const layer = Layer.effect(
                 ? config.taskModelSelection
                 : requestMessage.snapshotFound
                   ? (requestMessage.taskModelSelection ?? null)
-                  : null;
+                  : config.taskModelSelection;
             const availableProjects = yield* projects
               .listShells()
               .pipe(Effect.mapError(threadError));

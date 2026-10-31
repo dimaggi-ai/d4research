@@ -21,10 +21,11 @@ import { useEnvironmentQuery } from "../../state/query";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 
-interface ResumeSessionsSectionProps {
+interface ResumeProject {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly projectRef: ScopedProjectRef;
+  readonly label: string;
 }
 
 function relativeTime(iso: string, now: number): string {
@@ -42,7 +43,7 @@ function relativeTime(iso: string, now: number): string {
   return months < 12 ? `${months}mo` : `${Math.round(months / 12)}y`;
 }
 
-function ResumeSessionsList({ environmentId, cwd, projectRef }: ResumeSessionsSectionProps) {
+function ResumeSessionsList({ environmentId, cwd, projectRef }: ResumeProject) {
   const query = useEnvironmentQuery(
     projectEnvironment.listResumableSessions({ environmentId, input: { cwd } }),
   );
@@ -133,7 +134,7 @@ function ResumeSessionsList({ environmentId, cwd, projectRef }: ResumeSessionsSe
               <button
                 type="button"
                 className="group/resume flex w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left hover:bg-accent"
-                aria-label={`Continue ${session.providerLabel} session — ${session.title}`}
+                aria-label={`Continue ${session.providerLabel} session: ${session.title}`}
                 disabled={resuming}
                 onClick={() => void handleResume(session)}
               />
@@ -158,7 +159,7 @@ function ResumeSessionsList({ environmentId, cwd, projectRef }: ResumeSessionsSe
             </span>
           </TooltipTrigger>
           <TooltipPopup side="right">
-            Continue {session.providerLabel} session — {session.title}
+            Continue {session.providerLabel} session: {session.title}
           </TooltipPopup>
         </Tooltip>
       ))}
@@ -170,21 +171,35 @@ function ResumeSessionsList({ environmentId, cwd, projectRef }: ResumeSessionsSe
  * Collapsible per-project list of resumable Claude/Codex CLI sessions discovered on disk. Querying
  * scans the provider session stores, so the list mounts (and scans) only once the user expands it.
  */
-export function ResumeSessionsSection(props: ResumeSessionsSectionProps) {
+export function ResumeSessionsSection({ projects }: { projects: ReadonlyArray<ResumeProject> }) {
   const [open, setOpen] = useState(false);
+  if (projects.length === 0) return null;
   return (
-    <div className="mx-0.5 mt-0.5 flex flex-col px-1 sm:mx-1 sm:px-1.5">
+    <div className="mt-1 flex flex-col border-t border-sidebar-border/70 px-1.5 pt-1">
       <button
         type="button"
-        className="flex h-6 w-full items-center gap-1.5 rounded px-2 text-left text-3xs font-medium uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-foreground"
+        className="flex h-7 w-full items-center gap-1.5 rounded px-2 text-left text-2xs font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
         <History className="size-3 shrink-0" />
-        <span>Resume from CLI</span>
+        <span className="flex-1">Resume from CLI</span>
       </button>
-      {open ? <ResumeSessionsList {...props} /> : null}
+      {open ? (
+        <div className="flex flex-col gap-1 pb-1">
+          {projects.map((project) => (
+            <div key={`${project.environmentId}:${project.projectRef.projectId}`}>
+              {projects.length > 1 ? (
+                <div className="truncate px-2 pt-1 text-3xs font-medium text-sidebar-muted-foreground">
+                  {project.label}
+                </div>
+              ) : null}
+              <ResumeSessionsList {...project} />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

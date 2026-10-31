@@ -1,10 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ActivityIcon,
-  ChartNoAxesColumnIcon,
-  SettingsIcon,
-  LayoutDashboardIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, ActivityIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -220,16 +214,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </SidebarMenuItem>
       ) : (
         <>
-          {isMobile ? (
-            <SidebarUtilityItem
-              icon={<LayoutDashboardIcon />}
-              label="Dashboard"
-              onClick={() => {
-                closeMobileSidebar();
-                void navigate({ to: "/dashboard" });
-              }}
-            />
-          ) : null}
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
@@ -249,6 +233,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             tooltipContent={<AccountLimitsHoverCard />}
           />
           <SidebarUtilityItem icon={<ActivityIcon />} label="System" onClick={handleSystemClick} />
+          <SidebarProviderUpdatePill compact />
         </>
       )}
       <SidebarThreadUndoNotice />
@@ -260,7 +245,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter>
-      <SidebarProviderUpdatePill />
       <SidebarUtilityMenu />
     </SidebarFooter>
   );

@@ -1,4 +1,3 @@
-import { LayoutDashboardIcon } from "lucide-react";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { type Project } from "../types";
 import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
@@ -149,7 +148,10 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "@d4research/client-runtime/state/thread-sort";
+import {
+  getLatestThreadForProject,
+  sortThreads,
+} from "@d4research/client-runtime/state/thread-sort";
 import {
   cn,
   getLocalFileManagerName,
@@ -1651,17 +1653,6 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
-
-  actionItems.push({
-    kind: "action",
-    value: "action:dashboard",
-    searchTerms: ["dashboard", "on deck", "working", "monitoring", "ready", "unread", "projects"],
-    title: "Open dashboard",
-    icon: <LayoutDashboardIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      await navigate({ to: "/dashboard" });
-    },
-  });
 
   actionItems.push({
     kind: "action",

@@ -5,8 +5,6 @@ import type { CSSProperties } from "react";
 import { useState } from "react";
 import {
   type ComposerActionStyle,
-  DEFAULT_DASHBOARD_LAYOUT,
-  type DashboardLayout,
   DEFAULT_COMPOSER_ACTION_STYLE,
   DEFAULT_PROJECT_RAIL_GROUP_STYLE,
   DEFAULT_COMPOSER_ORB_SEND_COLOR,
@@ -152,36 +150,6 @@ export function AppearanceSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="appearance-interface" title="Interface">
-        <SettingsRow
-          {...searchableSetting("dashboard-layout")}
-          description="Choose how On deck shows running threads and unread results across projects and environments."
-          resetAction={
-            settings.dashboardLayout !== DEFAULT_DASHBOARD_LAYOUT ? (
-              <SettingResetButton
-                label="dashboard layout"
-                onClick={() => updateSettings({ dashboardLayout: DEFAULT_DASHBOARD_LAYOUT })}
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.dashboardLayout}
-              onValueChange={(value) =>
-                value && updateSettings({ dashboardLayout: value as DashboardLayout })
-              }
-            >
-              <SelectTrigger aria-label="Dashboard layout">
-                <SelectValue>
-                  {settings.dashboardLayout === "projects" ? "Project lanes" : "Status board"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                <SelectItem value="board">Status board</SelectItem>
-                <SelectItem value="projects">Project lanes</SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
         <SettingsRow
           {...searchableSetting("setting-accent-color")}
           description="The colour of primary buttons, the focus ring, and the send action. Overrides the accent of whichever theme is active; clear it to hand that back."

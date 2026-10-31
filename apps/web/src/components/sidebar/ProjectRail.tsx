@@ -18,7 +18,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { ChevronDownIcon, LayersIcon, LayoutDashboardIcon, EllipsisIcon } from "lucide-react";
+import { ChevronDownIcon, LayersIcon, EllipsisIcon } from "lucide-react";
 import type { ContextMenuItem, EnvironmentId, EnvironmentMachineKind } from "@d4research/contracts";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -1083,30 +1083,7 @@ export const ProjectRail = memo(function ProjectRail() {
         <div className="px-1.5">
           <button
             type="button"
-            className={ROW_CLASS}
-            aria-current={pathname === "/dashboard" ? "page" : undefined}
-            onClick={() => void router.navigate({ to: "/dashboard" })}
-          >
-            <span className={ICON_BOX_CLASS}>
-              <LayoutDashboardIcon className="size-4.5" />
-            </span>
-            <span className="min-w-0 flex-1 truncate">Dashboard</span>
-          </button>
-        </div>
-      ) : (
-        <RailFooterButton
-          label="Dashboard"
-          active={pathname === "/dashboard"}
-          onClick={() => void router.navigate({ to: "/dashboard" })}
-        >
-          <LayoutDashboardIcon className="size-4.5" />
-        </RailFooterButton>
-      )}
-      {named ? (
-        <div className="px-1.5">
-          <button
-            type="button"
-            aria-current={projectScopeKey === null && pathname !== "/dashboard"}
+            aria-current={projectScopeKey === null}
             className={ROW_CLASS}
             onClick={() => selectScope(null)}
           >

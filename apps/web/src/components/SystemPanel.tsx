@@ -7,9 +7,12 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-react";
+import { resolveEnvironmentMachineKind } from "@d4research/contracts";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "./ui/button";
+import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { useEnvironments } from "../state/environments";
 import { cn } from "~/lib/utils";
 
 export const SYSTEM_MONITOR_POLL_INTERVAL_MS = 2_000;
@@ -122,6 +125,7 @@ function Meter(props: { label: string; value: number; detail: string }) {
 }
 
 export function SystemPanel() {
+  const { environments } = useEnvironments();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -163,6 +167,8 @@ export function SystemPanel() {
     await toolGuardRequest;
   };
 
+  // Keep the system snapshot in step with the local monitor while this panel is mounted.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polling synchronizes React state with the system monitor endpoint
   useEffect(() => {
     return startSystemMonitorPolling(() => void refresh());
   }, [refresh]);
@@ -208,6 +214,39 @@ export function SystemPanel() {
       {error ? (
         <p className="mb-4 rounded-md bg-amber-500/10 p-2 text-xs text-amber-600">{error}</p>
       ) : null}
+
+      <section className="mb-5">
+        <h3 className="mb-2 text-xs font-medium text-muted-foreground">Environments</h3>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {environments.map((environment) => {
+            const connected = environment.connection.phase === "connected";
+            return (
+              <div
+                key={environment.environmentId}
+                className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 p-3"
+              >
+                <EnvironmentMachineIcon
+                  className="size-4 shrink-0 text-muted-foreground"
+                  kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium">{environment.label}</div>
+                  <div className="truncate text-3xs text-muted-foreground">
+                    {environment.serverConfig?.environment.serverVersion ?? "Version unavailable"}
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    connected ? "bg-emerald-500" : "bg-amber-500",
+                  )}
+                  aria-label={connected ? "Connected" : environment.connection.phase}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <ToolGuardMonitor snapshot={toolGuard} />
 

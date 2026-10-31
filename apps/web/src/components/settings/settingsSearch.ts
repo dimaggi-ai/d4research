@@ -354,12 +354,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["orb sphere send stop plasma arcane classic button style"],
   },
   {
-    id: "dashboard-layout",
-    title: "Dashboard layout",
-    to: "/settings/appearance",
-    searchTerms: ["on deck dashboard status board project lanes working monitoring ready unread"],
-  },
-  {
     id: "project-rail-group-style",
     title: "Project group style",
     to: "/settings/appearance",

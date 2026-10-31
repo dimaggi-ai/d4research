@@ -3542,15 +3542,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               )}
             </div>
           ) : null}
-          {!isSearchingThreads &&
-            scopedProjectGroup?.memberProjects.map((project) => (
-              <ResumeSessionsSection
-                key={`${project.environmentId}:${project.id}`}
-                environmentId={project.environmentId}
-                cwd={project.workspaceRoot}
-                projectRef={scopeProjectRef(project.environmentId, project.id)}
-              />
-            ))}
+          {!isSearchingThreads && scopedProjectGroup ? (
+            <ResumeSessionsSection
+              projects={scopedProjectGroup.memberProjects.map((project) => ({
+                environmentId: project.environmentId,
+                cwd: project.workspaceRoot,
+                projectRef: scopeProjectRef(project.environmentId, project.id),
+                label: project.title,
+              }))}
+            />
+          ) : null}
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

@@ -42,7 +42,7 @@ function latestProviderCheckedAt(
   );
 }
 
-export function SidebarProviderUpdatePill() {
+export function SidebarProviderUpdatePill({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const providers = useAtomValue(primaryServerProvidersAtom);
   const [dismissedKeys, setDismissedKeys] = useState<ReadonlySet<string>>(() => new Set());
@@ -140,7 +140,7 @@ export function SidebarProviderUpdatePill() {
 
   return (
     <div
-      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform ${
+      className={`group/provider-update relative flex min-h-7 shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform ${compact ? "size-8" : "w-full"} ${
         PROVIDER_UPDATE_PILL_STYLES[displayedView.tone]
       } ${
         exitingKey === displayedView.key
@@ -170,7 +170,11 @@ export function SidebarProviderUpdatePill() {
               type="button"
               aria-label={displayedView.description}
               data-provider-update-main
-              className="relative z-[1] flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+              className={
+                compact
+                  ? "relative z-[1] flex size-8 items-center justify-center"
+                  : "relative z-[1] flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+              }
               onClick={openProviderSettings}
             >
               {displayedView.tone === "loading" ? (
@@ -182,13 +186,15 @@ export function SidebarProviderUpdatePill() {
               ) : (
                 <DownloadIcon className="size-3.5 shrink-0" />
               )}
-              <span className="min-w-0 wrap-break-word">{displayedView.title}</span>
+              {compact ? null : (
+                <span className="min-w-0 wrap-break-word">{displayedView.title}</span>
+              )}
             </button>
           }
         />
         <TooltipPopup side="top">{displayedView.description}</TooltipPopup>
       </Tooltip>
-      {displayedView.dismissible && (
+      {!compact && displayedView.dismissible && (
         <Tooltip>
           <TooltipTrigger
             render={

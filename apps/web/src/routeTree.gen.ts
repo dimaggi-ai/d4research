@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SystemRouteImport } from './routes/system'
 import { Route as PairRouteImport } from './routes/pair'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConnectAgentRouteImport } from './routes/connect-agent'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
@@ -68,11 +67,6 @@ const SystemRoute = SystemRouteImport.update({
 const PairRoute = PairRouteImport.update({
   id: '/pair',
   path: '/pair',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectAgentRoute = ConnectAgentRouteImport.update({
@@ -289,7 +283,6 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect-agent': typeof ConnectAgentRoute
-  '/dashboard': typeof DashboardRoute
   '/pair': typeof PairRoute
   '/system': typeof SystemRoute
   '/welcome': typeof WelcomeRoute
@@ -334,7 +327,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/connect-agent': typeof ConnectAgentRoute
-  '/dashboard': typeof DashboardRoute
   '/pair': typeof PairRoute
   '/system': typeof SystemRoute
   '/welcome': typeof WelcomeRoute
@@ -382,7 +374,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect-agent': typeof ConnectAgentRoute
-  '/dashboard': typeof DashboardRoute
   '/pair': typeof PairRoute
   '/system': typeof SystemRoute
   '/welcome': typeof WelcomeRoute
@@ -431,7 +422,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/connect-agent'
-    | '/dashboard'
     | '/pair'
     | '/system'
     | '/welcome'
@@ -476,7 +466,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect-agent'
-    | '/dashboard'
     | '/pair'
     | '/system'
     | '/welcome'
@@ -523,7 +512,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_chat'
     | '/connect-agent'
-    | '/dashboard'
     | '/pair'
     | '/system'
     | '/welcome'
@@ -571,7 +559,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectAgentRoute: typeof ConnectAgentRoute
-  DashboardRoute: typeof DashboardRoute
   PairRoute: typeof PairRoute
   SystemRoute: typeof SystemRoute
   WelcomeRoute: typeof WelcomeRoute
@@ -599,13 +586,6 @@ declare module '@tanstack/react-router' {
       path: '/pair'
       fullPath: '/pair'
       preLoaderRoute: typeof PairRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect-agent': {
@@ -995,7 +975,6 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectAgentRoute: ConnectAgentRoute,
-  DashboardRoute: DashboardRoute,
   PairRoute: PairRoute,
   SystemRoute: SystemRoute,
   WelcomeRoute: WelcomeRoute,

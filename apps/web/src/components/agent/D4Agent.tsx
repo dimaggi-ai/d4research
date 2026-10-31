@@ -89,6 +89,7 @@ export function D4AgentEntry({
   const agentShell = useThreadShell(
     state.data?.threadId ? { environmentId, threadId: state.data.threadId } : null,
   );
+  if (config && !config.settings.d4Agent.enabled) return null;
   const presence = config?.settings.d4Agent.enabled
     ? niaPresence(
         agentActivityLabel({
@@ -114,10 +115,6 @@ export function D4AgentEntry({
         }
         onClick={async () => {
           if (!config) return;
-          if (!config.settings.d4Agent.enabled) {
-            await navigate({ to: "/settings/general" });
-            return;
-          }
           if (state.data?.threadId && !allowed) {
             if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
               setError(true);

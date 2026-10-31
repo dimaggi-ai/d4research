@@ -306,5 +306,9 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   NodeAssert.equal(await agentEnabled.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await probes.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await picker.innerText(), "Choose model");
+  NodeAssert.equal(
+    await page.locator('[data-slot="sidebar-inner"]').getByRole("button", { name: "Nia" }).count(),
+    0,
+  );
   console.log("PASS monitor and Nia disable persistence after reload");
 }

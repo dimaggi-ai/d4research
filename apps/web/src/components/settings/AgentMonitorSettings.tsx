@@ -141,8 +141,8 @@ function AgentMonitorForm() {
         }
       />
       <SettingsRow
-        title="Enable agent chat"
-        description="Chat with Nia about threads and host health."
+        title="Enable Nia"
+        description="Show Nia in the sidebar and allow agent chat about threads and host health."
         control={
           <Switch
             aria-label="Enable Nia"

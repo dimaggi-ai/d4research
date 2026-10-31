@@ -637,11 +637,12 @@ it("opens the existing agent thread for a client without operate permission", as
   });
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
-it("opens settings when agent chat is disabled", async () => {
+it("removes Nia from the sidebar when agent chat is disabled", async () => {
   mocks.enabled = false;
   await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
-  await act(async () => container.querySelector("button")!.click());
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/settings/general" });
+  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).toBe("");
+  expect(mocks.navigate).not.toHaveBeenCalled();
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
 

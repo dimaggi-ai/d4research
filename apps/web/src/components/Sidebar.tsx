@@ -2966,12 +2966,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       }
                     >
                       {scopedProjectGroup ? (
-                        <span className="flex shrink-0">
-                          <ProjectFavicon
-                            project={scopedProjectGroup}
-                            className="size-6 md:size-5"
-                          />
-                        </span>
+                        <>
+                          {showProjectEnvironments ? (
+                            <ProjectEnvironmentBadge
+                              group={scopedProjectGroup}
+                              primaryEnvironmentId={primaryEnvironmentId}
+                              machineByEnvironmentId={environmentMachineById}
+                            />
+                          ) : null}
+                          <span className="flex shrink-0">
+                            <ProjectFavicon
+                              project={scopedProjectGroup}
+                              className="size-6 md:size-5"
+                            />
+                          </span>
+                        </>
                       ) : scopedRailGroup ? (
                         <span className="grid size-6 shrink-0 place-items-center md:size-5">
                           <span
@@ -3052,10 +3061,19 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               }}
                             >
                               {project ? (
-                                <ProjectFavicon
-                                  project={project}
-                                  className="size-6 shrink-0 md:size-5"
-                                />
+                                <>
+                                  {showProjectEnvironments ? (
+                                    <ProjectEnvironmentBadge
+                                      group={project}
+                                      primaryEnvironmentId={primaryEnvironmentId}
+                                      machineByEnvironmentId={environmentMachineById}
+                                    />
+                                  ) : null}
+                                  <ProjectFavicon
+                                    project={project}
+                                    className="size-6 shrink-0 md:size-5"
+                                  />
+                                </>
                               ) : (
                                 <FolderIcon className="size-6 shrink-0 md:size-5" />
                               )}
@@ -3065,13 +3083,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   {projectSlotLabels[slot - 1] ?? slot}
                                 </Kbd>
                               )}
-                              {project && showProjectEnvironments ? (
-                                <ProjectEnvironmentBadge
-                                  group={project}
-                                  primaryEnvironmentId={primaryEnvironmentId}
-                                  machineByEnvironmentId={environmentMachineById}
-                                />
-                              ) : null}
                               {project ? (
                                 <Button
                                   size="icon-xs"

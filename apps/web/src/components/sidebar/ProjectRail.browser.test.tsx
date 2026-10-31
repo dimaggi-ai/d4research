@@ -3,20 +3,28 @@ import "~/index.css";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
+import type { EnvironmentId, EnvironmentMachineKind } from "@d4research/contracts";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 
 const projectGroups = vi.hoisted(() =>
   ["alpha", "beta", "gamma"].map((name) => ({
     id: name,
-    environmentId: "local",
+    environmentId: name === "gamma" ? "remote" : "local",
     projectKey: `local:${name}`,
     displayName: name,
     title: name,
     workspaceRoot: `/work/${name}`,
     faviconPath: null,
     projectIcon: null,
-    memberProjects: [{ id: name, environmentId: "local", physicalProjectKey: `local:${name}` }],
-    memberProjectRefs: [{ environmentId: "local", projectId: name }],
+    memberProjects: [
+      {
+        id: name,
+        environmentId: name === "gamma" ? "remote" : "local",
+        environmentLabel: name === "gamma" ? "cacheos" : "MacBook",
+        physicalProjectKey: `local:${name}`,
+      },
+    ],
+    memberProjectRefs: [{ environmentId: name === "gamma" ? "remote" : "local", projectId: name }],
   })),
 );
 
@@ -34,6 +42,19 @@ vi.mock(import("../../state/entities"), async (original) => ({
 vi.mock(import("../../hooks/useMediaQuery"), async (original) => ({
   ...(await original()),
   useIsMobile: () => false,
+}));
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  useEnvironmentIdentities: () => [
+    { environmentId: "local" as EnvironmentId, label: "MacBook" },
+    { environmentId: "remote" as EnvironmentId, label: "cacheos" },
+  ],
+  useEnvironmentMachines: () =>
+    new Map<EnvironmentId, EnvironmentMachineKind>([
+      ["local" as EnvironmentId, "laptop"],
+      ["remote" as EnvironmentId, "linux"],
+    ]),
+  usePrimaryEnvironmentId: () => "local" as EnvironmentId,
 }));
 vi.mock(import("../ProjectFavicon"), () => ({
   ProjectFavicon: () => <span data-testid="favicon" />,
@@ -140,6 +161,19 @@ it("switches between the short and the named rail", async () => {
     [...screen.container.querySelectorAll('[data-rail="row"]')].map((row) => row.textContent),
   ).toEqual(["alpha", "beta", "gamma"]);
   expect(groupHead(screen.container)?.dataset.rail).toBe("gc-head");
+});
+
+it("groups the left rail by environment without splitting a cross-environment custom group", async () => {
+  using _state = setup();
+  await using screen = await renderRail();
+  await userEvent.click(screen.getByRole("button", { name: "Project actions", exact: true }));
+  await userEvent.click(page.getByRole("menuitem", { name: "Show names", exact: true }));
+  expect(
+    [...screen.container.querySelectorAll<HTMLElement>('[role="group"]')].map((group) =>
+      group.getAttribute("aria-label"),
+    ),
+  ).toEqual(["MacBook · This Mac projects", "Multiple environments projects"]);
+  expect(groupHead(screen.container)?.textContent).toContain("Trading");
 });
 
 it("keeps project grouping and settings available in the project menu", async () => {

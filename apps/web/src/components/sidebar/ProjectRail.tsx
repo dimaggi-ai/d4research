@@ -19,7 +19,7 @@ import {
 } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { ChevronDownIcon, LayersIcon, LayoutDashboardIcon, EllipsisIcon } from "lucide-react";
-import type { ContextMenuItem } from "@d4research/contracts";
+import type { ContextMenuItem, EnvironmentId, EnvironmentMachineKind } from "@d4research/contracts";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
@@ -37,6 +37,7 @@ import { useProjects, useThreadShells } from "../../state/entities";
 import { useUiStateStore } from "../../uiStateStore";
 import { cn } from "~/lib/utils";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PreviewCard, PreviewCardPopup, PreviewCardTrigger } from "../ui/preview-card";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -97,6 +98,11 @@ import {
   useProjectRailVisible,
 } from "./projectRailVisibility";
 import { useSidebarProjectGroups } from "./useSidebarProjectGroups";
+import {
+  useEnvironmentIdentities,
+  useEnvironmentMachines,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 
 const ITEM_CLASS =
   // The focus ring is inset: an offset ring would sit on the neighbouring
@@ -115,6 +121,65 @@ type DropPosition = "before" | "after" | "into";
 interface DropTarget {
   readonly id: string;
   readonly position: DropPosition;
+}
+
+interface RailEnvironmentSection {
+  readonly key: string;
+  readonly label: string;
+  readonly machine: EnvironmentMachineKind | null;
+  readonly entries: ReadonlyArray<RailEntry>;
+}
+
+function railEntryEnvironmentId(
+  entry: RailEntry,
+  snapshotByKey: ReadonlyMap<string, SidebarProjectSnapshot>,
+): EnvironmentId | null {
+  const keys = entry.kind === "project" ? [entry.key] : entry.members;
+  const environmentIds = new Set(
+    keys.flatMap(
+      (key) => snapshotByKey.get(key)?.memberProjects.map((project) => project.environmentId) ?? [],
+    ),
+  );
+  return environmentIds.size === 1 ? ([...environmentIds][0] ?? null) : null;
+}
+
+function RailEnvironmentHeader({
+  label,
+  machine,
+  named,
+}: {
+  readonly label: string;
+  readonly machine: EnvironmentMachineKind | null;
+  readonly named: boolean;
+}) {
+  const icon = machine ? (
+    <EnvironmentMachineIcon aria-hidden kind={machine} className="size-3.5" />
+  ) : (
+    <LayersIcon aria-hidden className="size-3.5" />
+  );
+  if (named)
+    return (
+      <div className="flex h-7 items-center gap-2 px-2 text-2xs font-semibold tracking-wide text-sidebar-muted-foreground">
+        {icon}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      </div>
+    );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="img"
+            aria-label={label}
+            className="grid size-7 place-items-center text-sidebar-muted-foreground"
+          />
+        }
+      >
+        {icon}
+      </TooltipTrigger>
+      <TooltipPopup side="right">{label}</TooltipPopup>
+    </Tooltip>
+  );
 }
 
 function menuPosition(event: React.MouseEvent<HTMLElement>) {
@@ -498,6 +563,9 @@ export const ProjectRail = memo(function ProjectRail() {
   const setDragWidth = useProjectRailDragWidth((state) => state.setWidth);
   const groupStyle = useClientSettings((settings) => settings.projectRailGroupStyle);
   const { projectGroups } = useSidebarProjectGroups({ sortOrder: "manual" });
+  const environmentIdentities = useEnvironmentIdentities();
+  const environmentMachines = useEnvironmentMachines();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projects = useProjects();
   const threads = useThreadShells();
   const railGroups = useProjectRailGroupsStore((state) => state.groups);
@@ -595,6 +663,32 @@ export const ProjectRail = memo(function ProjectRail() {
       ),
     [entries, railGroups, settledKeys],
   );
+  const environmentSections = useMemo(() => {
+    const byKey = new Map<string, RailEnvironmentSection>();
+    for (const environment of environmentIdentities) {
+      byKey.set(environment.environmentId, {
+        key: environment.environmentId,
+        label:
+          environment.environmentId === primaryEnvironmentId
+            ? `${environment.label} · This Mac`
+            : environment.label,
+        machine: environmentMachines.get(environment.environmentId) ?? "server",
+        entries: [],
+      });
+    }
+    for (const entry of entries) {
+      const environmentId = railEntryEnvironmentId(entry, snapshotByKey);
+      const key = environmentId ?? "multiple-environments";
+      const current = byKey.get(key) ?? {
+        key,
+        label: environmentId ? "Unknown environment" : "Multiple environments",
+        machine: environmentId ? (environmentMachines.get(environmentId) ?? "server") : null,
+        entries: [],
+      };
+      byKey.set(key, { ...current, entries: [...current.entries, entry] });
+    }
+    return [...byKey.values()].filter((section) => section.entries.length > 0);
+  }, [entries, environmentIdentities, environmentMachines, primaryEnvironmentId, snapshotByKey]);
 
   if (isMobile || !visible || projectGroups.length === 0) return null;
 
@@ -1047,33 +1141,47 @@ export const ProjectRail = memo(function ProjectRail() {
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          {entries.map((entry) => {
-            if (entry.kind === "project") return renderProject(entry.key, 0, false);
-            const { group } = entry;
-            const members = entry.members.flatMap((key) => snapshotByKey.get(key) ?? []);
-            return (
-              <RailGroupBlock
-                key={`g:${group.id}`}
-                group={group}
-                members={members}
-                memberStatuses={members.map(
-                  (project) => statusByKey.get(project.projectKey) ?? EMPTY_PROJECT_RAIL_STATUS,
-                )}
-                isCurrent={projectScopeKey === railGroupScopeKey(group.id)}
+          {environmentSections.map((section) => (
+            <div
+              key={section.key}
+              role="group"
+              aria-label={`${section.label} projects`}
+              className={cn("flex w-full flex-col", named ? "gap-px" : "items-center gap-1")}
+            >
+              <RailEnvironmentHeader
+                label={section.label}
+                machine={section.machine}
                 named={named}
-                drop={dropFor(`g:${group.id}`)}
-                dragActive={activeDragId !== null}
-                onToggle={() =>
-                  commitGroups(setRailGroupCollapsed(model, group.id, !group.collapsed))
-                }
-                onSelectGroup={() => selectScope(railGroupScopeKey(group.id))}
-                onSelectProject={(projectKey) => selectScope(projectKey)}
-                onContextMenu={(position) => void openGroupMenu(group, position)}
-              >
-                {entry.members.map((key, index) => renderProject(key, index, group.collapsed))}
-              </RailGroupBlock>
-            );
-          })}
+              />
+              {section.entries.map((entry) => {
+                if (entry.kind === "project") return renderProject(entry.key, 0, false);
+                const { group } = entry;
+                const members = entry.members.flatMap((key) => snapshotByKey.get(key) ?? []);
+                return (
+                  <RailGroupBlock
+                    key={`g:${group.id}`}
+                    group={group}
+                    members={members}
+                    memberStatuses={members.map(
+                      (project) => statusByKey.get(project.projectKey) ?? EMPTY_PROJECT_RAIL_STATUS,
+                    )}
+                    isCurrent={projectScopeKey === railGroupScopeKey(group.id)}
+                    named={named}
+                    drop={dropFor(`g:${group.id}`)}
+                    dragActive={activeDragId !== null}
+                    onToggle={() =>
+                      commitGroups(setRailGroupCollapsed(model, group.id, !group.collapsed))
+                    }
+                    onSelectGroup={() => selectScope(railGroupScopeKey(group.id))}
+                    onSelectProject={(projectKey) => selectScope(projectKey)}
+                    onContextMenu={(position) => void openGroupMenu(group, position)}
+                  >
+                    {entry.members.map((key, index) => renderProject(key, index, group.collapsed))}
+                  </RailGroupBlock>
+                );
+              })}
+            </div>
+          ))}
           <RailEndDropZone />
           <DragOverlay dropAnimation={null}>
             {activeProject ? (

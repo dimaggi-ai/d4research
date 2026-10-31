@@ -73,7 +73,26 @@ vi.mock(import("../hooks/useSettings"), async (original) => {
   return { ...actual, useClientSettings };
 });
 
+const niaThread = vi.hoisted(() => ({
+  id: "d4-action:5d1e9c40-2b7a-4f3e-9c11-7a6b5e4d3c2b",
+  title: "Fix login redirect",
+}));
+// One thread exists, so a reference to it shows its title and others stay unresolved.
+vi.mock(import("../state/entities"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useThreadShell: ((ref: { environmentId: string; threadId: string } | null) => {
+      const shell = actual.useThreadShell(ref as never);
+      return ref?.threadId === niaThread.id
+        ? { ...ref, id: ref.threadId, projectId: "project-nia", title: niaThread.title }
+        : shell;
+    }) as never,
+  };
+});
+
 import ChatMarkdown from "./ChatMarkdown";
+import { niaThreadReferenceMarkdown } from "@d4research/client-runtime/d4-agent-references";
 import { AudioPreview } from "./files/AudioPreview";
 
 it("keeps compact audio playback loaded across signed URL renewals", async () => {
@@ -370,5 +389,26 @@ describe("ChatMarkdown Windows file links", () => {
       expect(container.innerHTML).not.toContain("d:alert");
       expect(fileHrefs(container)).toEqual([]);
     }
+  });
+});
+
+describe("ChatMarkdown Nia thread references", () => {
+  it("opens a referenced thread by its title and labels an unknown one by a short id", async () => {
+    setup();
+    const environmentId = EnvironmentId.make("env-nia");
+    await using screen = await renderText(
+      niaThreadReferenceMarkdown(
+        `Started ${niaThread.id}; d4-action:0badc0de-0000-4000-8000-000000000000 is gone.`,
+        environmentId,
+        new Set(),
+      ),
+      { environmentId },
+    );
+    const known = screen.container.querySelector<HTMLAnchorElement>(
+      `a[aria-label="Thread, ${niaThread.title}"]`,
+    );
+    expect(known?.getAttribute("href")).toBe(`/env-nia/${encodeURIComponent(niaThread.id)}`);
+    expect(screen.container.textContent).toContain("Thread 0badc0de");
+    expect(screen.container.textContent).not.toContain("d4-action:");
   });
 });

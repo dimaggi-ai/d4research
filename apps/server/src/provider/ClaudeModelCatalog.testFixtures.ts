@@ -3,7 +3,7 @@ import type { ClaudeModelCatalog } from "./ClaudeModelCatalog.ts";
 export const SYNTHETIC_CLAUDE_CAPABLE_MODEL = "claude-synthetic-capable";
 export const SYNTHETIC_CLAUDE_COLLIDING_ALIAS = "synthetic-collision";
 export const SYNTHETIC_CLAUDE_STANDARD_MODEL = "claude-synthetic-standard";
-export const SYNTHETIC_CLAUDE_THINKING_MODEL = "claude-synthetic-thinking";
+const SYNTHETIC_CLAUDE_THINKING_MODEL = "claude-synthetic-thinking";
 
 const effort = {
   id: "effort",
@@ -11,6 +11,7 @@ const effort = {
   type: "select" as const,
   options: [
     { id: "low", label: "Low" },
+    { id: "medium", label: "Medium" },
     { id: "high", label: "High", isDefault: true },
     { id: "max", label: "Max" },
     { id: "ultrathink", label: "Ultrathink" },
@@ -71,7 +72,9 @@ export const SYNTHETIC_CLAUDE_MODEL_CATALOG: ClaudeModelCatalog = {
         name: "Claude Synthetic Thinking",
         isCustom: false,
         capabilities: {
-          optionDescriptors: [{ id: "thinking", label: "Thinking", type: "boolean" }],
+          optionDescriptors: [
+            { id: "thinking", label: "Thinking", type: "boolean", currentValue: true },
+          ],
         },
       },
       runtime: {},

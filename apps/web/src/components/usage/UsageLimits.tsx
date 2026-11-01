@@ -1,149 +1,45 @@
-import { AuthProvidersManageScope } from "@d4research/contracts";
-import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-import { type EnvironmentId } from "@d4research/contracts";
-import { type ProviderConsumeResetCreditOutcome } from "@d4research/contracts";
-import { ProviderConsumeResetCreditInput } from "@d4research/contracts";
-import { ServerProviderResetCredits } from "@d4research/contracts";
-import { elapsedShare } from "@d4research/shared/usageLimits";
-import { formatDuration } from "@d4research/shared/usageLimits";
-import { formatResetsIn } from "@d4research/shared/usageLimits";
-import { type LimitPace } from "@d4research/shared/usageLimits";
-import { paceOf } from "@d4research/shared/usageLimits";
-import { remainingPercent } from "@d4research/shared/usageLimits";
-import { GaugeIcon } from "lucide-react";
-import { TrendingDownIcon } from "lucide-react";
-import { TrendingUpIcon } from "lucide-react";
-import { Fragment } from "react";
-import { useState } from "react";
-import { type ReactNode } from "react";
+import {
+  AuthProvidersManageScope,
+  type EnvironmentId,
+  type ProviderConsumeResetCreditOutcome,
+  ProviderConsumeResetCreditInput,
+  ServerProvider,
+  ServerProviderResetCredits,
+  ServerProviderUsageWindow,
+  UsageProviderKind,
+} from "@d4research/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  formatDuration,
+  formatResetsIn,
+  type LimitPace,
+  paceOf,
+  paceRemainingPercent,
+  remainingPercent,
+} from "@d4research/shared/usageLimits";
+import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { Fragment, type ReactNode, useState } from "react";
+
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
-import { AlertDialog } from "../ui/alert-dialog";
-import { AlertDialogClose } from "../ui/alert-dialog";
-import { AlertDialogDescription } from "../ui/alert-dialog";
-import { AlertDialogFooter } from "../ui/alert-dialog";
-import { AlertDialogHeader } from "../ui/alert-dialog";
-import { AlertDialogPopup } from "../ui/alert-dialog";
-import { AlertDialogTitle } from "../ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Button } from "../ui/button";
-import { Tooltip } from "../ui/tooltip";
-import { TooltipPopup } from "../ui/tooltip";
-import { TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
+import { UsageLimitTrends } from "./UsageLimitTrends";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
-import { useAtomValue } from "@effect/atom-react";
-import type {
-  ServerProvider,
-  LegacyServerProviderUsageWindow,
-  ServerProviderUsageWindow,
-  UsageProviderKind,
-} from "@d4research/contracts";
-
-import { formatDateTimeShort } from "@d4research/shared/usageFormat";
-
-export interface ProviderLimitWindow {
-  readonly key: string;
-  readonly providerLabel: string;
-  /** Set only for the harnesses the usage charts already colour. */
-  readonly providerKind: UsageProviderKind | null;
-  readonly planType: string | null;
-  readonly window: LegacyServerProviderUsageWindow;
-}
-
-const CHARTED_PROVIDERS = new Set<string>(["claude", "codex"]);
-
-/**
- * One row per reported window, flattened across providers. A provider whose
- * usage probe never answered carries no windows and drops out here instead of
- * rendering an empty card.
- */
-export function selectProviderLimitWindows(
-  providers: readonly ServerProvider[],
-): readonly ProviderLimitWindow[] {
-  return providers.flatMap((provider) => {
-    const usage = provider.usage;
-    if (usage === undefined || usage.support !== "supported") return [];
-    return usage.windows.map((window) => ({
-      key: `${provider.instanceId}:${window.id}`,
-      providerLabel: provider.displayName ?? provider.driver,
-      providerKind: CHARTED_PROVIDERS.has(provider.driver)
-        ? (provider.driver as UsageProviderKind)
-        : null,
-      planType: usage.planType,
-      window,
-    }));
-  });
-}
-
-/** Providers may report a window without a reset stamp; say so rather than guess. */
-export function formatLimitReset(resetsAt: string | null, planType: string | null): string {
-  const reset =
-    resetsAt !== null && !Number.isNaN(Date.parse(resetsAt))
-      ? `Resets ${formatDateTimeShort(resetsAt)}`
-      : "Reset time unavailable";
-  return planType === null ? reset : `${planType} · ${reset}`;
-}
-
-/** The presentation half, split out so it renders without the atom registry. */
-export function UsageLimitsView({ rows }: { readonly rows: readonly ProviderLimitWindow[] }) {
-  if (rows.length === 0) return null;
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-medium text-foreground">Limits</h2>
-        <span className="text-xs text-muted-foreground">Reported by each provider account</span>
-      </div>
-      <div className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-4">
-        {rows.map((row) => (
-          <LimitWindow key={row.key} row={row} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function LimitWindow({ row }: { readonly row: ProviderLimitWindow }) {
-  const percent = row.window.utilizationPercent;
-  const filled = percent === null ? 0 : Math.min(100, Math.max(0, percent));
-  const provider = row.providerKind === null ? null : PROVIDER_PRESENTATION[row.providerKind];
-  return (
-    <div className="flex flex-col gap-1.5 bg-background px-4 py-3">
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        {provider === null ? null : (
-          <ProviderInstanceIcon
-            driverKind={provider.driverKind}
-            displayName={provider.label}
-            iconClassName="size-3.5"
-          />
-        )}
-        {row.providerLabel} · {row.window.label}
-      </span>
-      <span className="text-lg text-foreground tabular-nums">
-        {percent === null ? "—" : `${Math.round(percent)}%`}
-      </span>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full"
-          style={{
-            width: `${filled.toFixed(1)}%`,
-            backgroundColor:
-              row.providerKind === null
-                ? "var(--color-foreground)"
-                : PROVIDER_PRESENTATION[row.providerKind].color,
-          }}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground">
-        {formatLimitReset(row.window.resetsAt, row.planType)}
-      </span>
-    </div>
-  );
-}
 
 const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
   ahead: { label: "Ahead of pace: spending faster than the window elapses", icon: TrendingUpIcon },
@@ -152,15 +48,10 @@ const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof Ga
 };
 
 export function barColor(driver: ServerProvider["driver"]): string {
-  const kind: UsageProviderKind | undefined =
-    driver === "codex"
-      ? "codex"
-      : driver === "claudeAgent"
-        ? "claude"
-        : driver === "antigravity"
-          ? "antigravity"
-          : undefined;
-  return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
+  const presentation = Object.values(PROVIDER_PRESENTATION).find(
+    (entry) => entry.driverKind === driver,
+  );
+  return presentation?.color ?? "var(--foreground)";
 }
 
 export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
@@ -194,8 +85,7 @@ function WindowBar({
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
+  const timeLeft = paceRemainingPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
@@ -216,29 +106,21 @@ function WindowBar({
           />
         }
       >
-        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
-        {remaining > 0 ? (
-          <div
-            className="absolute inset-y-1.5 left-0 rounded-full"
-            style={{ width: `${remaining}%`, backgroundColor: color }}
-          />
-        ) : null}
-        {timeLeft !== null ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-0.5 w-px -translate-x-1/2 bg-foreground/60"
-            style={{ left: `${timeLeft}%` }}
-          />
-        ) : null}
+        <div className="absolute inset-0">
+          <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
+          {remaining > 0 ? (
+            <div
+              className="absolute inset-y-1.5 left-0 rounded-full"
+              style={{ width: `${remaining}%`, backgroundColor: color }}
+            />
+          ) : null}
+        </div>
       </TooltipTrigger>
       <TooltipPopup side="top">
         <div className="flex flex-col gap-0.5">
           <span className="text-foreground">
             {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}
           </span>
-          {timeLeft !== null ? (
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
-          ) : null}
           {resetsAt ? (
             <span className="text-muted-foreground">
               Resets {resetsAt}
@@ -332,11 +214,8 @@ export function useResetCredit(
   return { canManageProviders, confirming, setConfirming, busy, status, redeem };
 }
 
-/**
- * Redeeming spends a credit the provider granted the user, so it never fires on a bare click.
- * Mount it outside any popover that holds the button: dialogs stack under popovers, and closing
- * the popover would unmount a dialog rendered inside it.
- */
+/** Require confirmation because redemption spends credits. Mount outside popovers, which stack above
+ * dialogs and unmount on close. */
 export function ResetCreditDialog({
   open,
   onOpenChange,
@@ -427,10 +306,7 @@ export function ResetCredits({
   );
 }
 
-/**
- * The page advances `now` on explicit refresh rather than ticking: a live clock would repaint the
- * page for no decision-changing gain.
- */
+/** Advance now only on explicit refresh to avoid page repaints from ticking. */
 export function UsageLimitsSection({
   selectedEnvironmentIds,
   hiddenProviders,
@@ -443,6 +319,7 @@ export function UsageLimitsSection({
   readonly cursorPrompt?: ReactNode;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
+  const [view, setView] = useState<"current" | "trends">("current");
   const hiddenDrivers = new Set<ServerProvider["driver"]>(
     [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
   );
@@ -472,5 +349,36 @@ export function UsageLimitsSection({
       ];
     }),
   );
-  return <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex gap-2" aria-label="Limits view">
+        <Button
+          size="sm"
+          variant={view === "current" ? "secondary" : "ghost"}
+          aria-pressed={view === "current"}
+          onClick={() => setView("current")}
+        >
+          Current limits
+        </Button>
+        <Button
+          size="sm"
+          variant={view === "trends" ? "secondary" : "ghost"}
+          aria-pressed={view === "trends"}
+          onClick={() => setView("trends")}
+        >
+          Trends
+        </Button>
+      </div>
+      {view === "current" ? (
+        <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />
+      ) : (
+        <UsageLimitTrends
+          environments={[...selected].map(([environmentId, presentation]) => ({
+            environmentId,
+            label: presentation.entry.target.label,
+          }))}
+        />
+      )}
+    </div>
+  );
 }

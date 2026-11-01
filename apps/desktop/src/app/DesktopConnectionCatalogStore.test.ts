@@ -1,3 +1,5 @@
+import * as PlatformError from "effect/PlatformError";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@d4research/client-runtime/platform";
@@ -8,7 +10,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as PlatformError from "effect/PlatformError";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
@@ -101,7 +102,7 @@ const withStore = <A, E, R>(
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
 describe("DesktopConnectionCatalogStore", () => {
-  it.effect("persists, reads, and clears an encrypted connection catalog", () =>
+  it.effect("persists and reads an encrypted connection catalog", () =>
     withStore(
       Effect.gen(function* () {
         const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
@@ -109,22 +110,133 @@ describe("DesktopConnectionCatalogStore", () => {
 
         assert.isTrue(yield* store.set(catalog));
         assert.deepStrictEqual(yield* store.get, Option.some(catalog));
-
-        yield* store.clear;
-        assert.deepStrictEqual(yield* store.get, Option.none());
       }),
     ),
   );
 
-  it.effect("does not persist when secure storage is unavailable", () =>
+  it.effect("persists with owner-only local encryption when Keychain is unavailable", () =>
     withStore(
       Effect.gen(function* () {
         const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
-        assert.isFalse(yield* store.set("{}"));
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const catalog = '{"credential":"temporary-test-secret"}';
+        const localPath = path.join(environment.stateDir, "connection-catalog.local.json");
+        const keyDirectory = path.join(environment.stateDir, "local-secrets");
+        const keyPath = path.join(keyDirectory, "connection-catalog.key");
+        assert.isTrue(yield* store.set(catalog));
+        assert.deepStrictEqual(yield* store.get, Option.some(catalog));
+        assert.notInclude(yield* fileSystem.readFileString(localPath), "temporary-test-secret");
+        assert.equal((yield* fileSystem.readFile(keyPath)).length, 32);
+        if ((yield* HostProcess.Platform) !== "win32") {
+          assert.equal((yield* fileSystem.stat(localPath)).mode & 0o777, 0o600);
+          assert.equal((yield* fileSystem.stat(keyPath)).mode & 0o777, 0o600);
+          assert.equal((yield* fileSystem.stat(keyDirectory)).mode & 0o777, 0o700);
+        }
+        yield* store.clear;
+        assert.isFalse(yield* fileSystem.exists(localPath));
         assert.deepStrictEqual(yield* store.get, Option.none());
       }),
       false,
     ),
+  );
+
+  it.effect("reopens local connections using the same key in a fresh service", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-local-catalog-reopen-",
+      });
+      const first = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      const catalog = '{"schemaVersion":1,"targets":[],"credential":"reopen-test-secret"}';
+      assert.isTrue(yield* first.set(catalog));
+      const reopened = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      assert.deepStrictEqual(yield* reopened.get, Option.some(catalog));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("does not replace a catalog whose local key was lost", () =>
+    withStore(
+      Effect.gen(function* () {
+        const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const localPath = path.join(environment.stateDir, "connection-catalog.local.json");
+        const keyPath = path.join(environment.stateDir, "local-secrets", "connection-catalog.key");
+        yield* store.set('{"credential":"preserve-test-secret"}');
+        const original = yield* fileSystem.readFileString(localPath);
+        yield* fileSystem.remove(keyPath);
+        const readError = yield* store.get.pipe(Effect.flip);
+        assert.equal(readError._tag, "DesktopConnectionCatalogStoreProtectionError");
+        const writeError = yield* store.set("{}").pipe(Effect.flip);
+        assert.equal(writeError._tag, "DesktopConnectionCatalogStoreProtectionError");
+        assert.equal(yield* fileSystem.readFileString(localPath), original);
+        assert.isFalse(yield* fileSystem.exists(keyPath));
+      }),
+      false,
+    ),
+  );
+
+  it.effect("preserves inaccessible Keychain data and keeps newer local data on opt-in", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-local-catalog-legacy-",
+      });
+      const legacy = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true)),
+      );
+      yield* legacy.set('{"credential":"old-keychain-test-secret"}');
+      const legacyPath = path.join(baseDir, "userdata", "connection-catalog.json");
+      const original = yield* fileSystem.readFileString(legacyPath);
+      const local = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      assert.deepStrictEqual(yield* local.get, Option.none());
+      yield* local.set('{"credential":"new-local-test-secret"}');
+      const optedIn = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true)),
+      );
+      assert.deepStrictEqual(
+        yield* optedIn.get,
+        Option.some('{"credential":"new-local-test-secret"}'),
+      );
+      yield* optedIn.set('{"credential":"updated-local-test-secret"}');
+      assert.equal(yield* fileSystem.readFileString(legacyPath), original);
+      assert.deepStrictEqual(
+        yield* local.get,
+        Option.some('{"credential":"updated-local-test-secret"}'),
+      );
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("concurrent service instances publish one complete key", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-local-catalog-concurrent-",
+      });
+      const first = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      const second = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      yield* Effect.all([first.set('{"writer":1}'), second.set('{"writer":2}')], {
+        concurrency: "unbounded",
+      });
+      const value = yield* first.get;
+      assert.isTrue(Option.isSome(value));
+      assert.isTrue(Option.isSome(value) && ['{"writer":1}', '{"writer":2}'].includes(value.value));
+      assert.deepStrictEqual(yield* second.get, value);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
   it.effect("migrates legacy relay, SSH, bearer profile, and credential data", () =>
@@ -278,7 +390,7 @@ describe("DesktopConnectionCatalogStore", () => {
         _tag: "PermissionDenied",
         module: "FileSystem",
         method: "readFileString",
-        pathOrDescriptor: path.join(baseDir, "userdata", "connection-catalog.json"),
+        pathOrDescriptor: path.join(baseDir, "userdata", "connection-catalog.local.json"),
       });
       const layerFileSystem = Layer.succeed(
         FileSystem.FileSystem,
@@ -295,11 +407,14 @@ describe("DesktopConnectionCatalogStore", () => {
         error,
         DesktopConnectionCatalogStore.DesktopConnectionCatalogStoreReadError,
       );
-      assert.equal(error.catalogPath, path.join(baseDir, "userdata", "connection-catalog.json"));
+      assert.equal(
+        error.catalogPath,
+        path.join(baseDir, "userdata", "connection-catalog.local.json"),
+      );
       assert.strictEqual(error.cause, permissionError);
       assert.equal(
         error.message,
-        `Failed to read the desktop connection catalog at ${path.join(baseDir, "userdata", "connection-catalog.json")}.`,
+        `Failed to read the desktop connection catalog at ${path.join(baseDir, "userdata", "connection-catalog.local.json")}.`,
       );
       assert.notEqual(error.message, permissionError.message);
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),

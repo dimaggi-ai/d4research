@@ -3,6 +3,8 @@
   "short_name": "d4[Research]",
   "description": "A local-first workspace for research and coding agents.",
   "id": "/",
+  "name": "T3 Code",
+  "short_name": "T3 Code",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

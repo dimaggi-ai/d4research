@@ -10,6 +10,7 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
   type UnknownUnionMember,
@@ -17,8 +18,10 @@ import {
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
+const PROJECT_SEARCH_CODE_MAX_LIMIT = 200;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
+const PROJECT_DELETE_ENTRY_PATH_MAX_LENGTH = 512;
 
 export const ProjectScriptIcon = Schema.Literals([
   "play",
@@ -27,8 +30,71 @@ export const ProjectScriptIcon = Schema.Literals([
   "configure",
   "build",
   "debug",
+  "deploy",
+  "frontend",
+  "backend",
+  "server",
+  "database",
+  "cloud",
+  "package",
+  "refresh",
+  "terminal",
+  "web",
+  "mobile",
+  "api",
+  "git",
+  "monitor",
+  "rocket",
+  "success",
+  "warning",
+  "search",
+  "settings",
+  "upload",
+  "download",
+  "layers",
+  "workflow",
+  "performance",
+  "security",
+  "code",
+  "network",
+  "storage",
+  "cpu",
+  "design",
+  "blocks",
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
+
+export const ProjectWorkspaceColor = Schema.Literals([
+  "red",
+  "orange",
+  "amber",
+  "green",
+  "cyan",
+  "blue",
+  "violet",
+  "pink",
+]);
+export type ProjectWorkspaceColor = typeof ProjectWorkspaceColor.Type;
+
+/**
+ * A directory participating in a project. `workspaceRoot` remains the
+ * primary directory for backwards compatibility with existing threads and
+ * integrations; this list describes the complete project workspace.
+ */
+export const ProjectWorkspace = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  label: Schema.optional(TrimmedNonEmptyString),
+  color: Schema.optional(ProjectWorkspaceColor),
+  /** Private, persistent operating guidance injected into agent turns for this directory. */
+  agentGuidance: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(8_000))),
+  defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
+});
+export type ProjectWorkspace = typeof ProjectWorkspace.Type;
+
+export const ProjectScriptWorkingDirectory = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(4_096),
+  Schema.isPattern(/^(?:\/|[A-Za-z]:[\\/])/),
+);
 
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -36,6 +102,8 @@ export const ProjectScript = Schema.Struct({
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
+  workingDirectory: Schema.optional(ProjectScriptWorkingDirectory),
+  /** Run in the thread's worktree each time the thread settles. */
   runOnSettle: Schema.optional(Schema.Boolean),
   async: Schema.optional(Schema.Boolean),
   previewUrl: Schema.optional(TrimmedNonEmptyString),
@@ -152,6 +220,7 @@ export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoots: Schema.optional(Schema.Array(ProjectWorkspace)),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
@@ -172,19 +241,10 @@ export const ProjectSnapshot = Schema.Struct({
 });
 export type ProjectSnapshot = typeof ProjectSnapshot.Type;
 
-export const ProjectChange = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("project.upserted"), project: Project }),
-  Schema.Struct({
-    type: Schema.Literal("project.deleted"),
-    projectId: ProjectId,
-    deletedAt: IsoDateTime,
-  }),
-]);
-export type ProjectChange = typeof ProjectChange.Type;
-
 export const ProjectCreatePayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoots: Schema.optional(Schema.Array(ProjectWorkspace)),
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
@@ -194,6 +254,7 @@ export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
 export const ProjectUpdatePayload = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceRoots: Schema.optional(Schema.Array(ProjectWorkspace)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
@@ -249,7 +310,8 @@ export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 export const ProjectEntry = Schema.Struct({
   path: TrimmedNonEmptyString,
   kind: ProjectEntryKind,
-  ignored: Schema.optional(Schema.Boolean),
+  // Git-ignored entries are included in the file browser but remain visually muted.
+  ignored: Schema.optionalKey(Schema.Boolean),
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 
@@ -261,8 +323,7 @@ export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 
 export const ProjectSearchContentsInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
-  // Whitespace is significant in content queries (" foo", regex trailing
-  // spaces), so the query is deliberately not trimmed on the wire.
+  // Preserve whitespace because it is significant in content queries.
   query: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CONTENTS_MAX_LIMIT)),
   caseSensitive: Schema.Boolean,
@@ -304,11 +365,36 @@ export const ProjectListEntriesResult = Schema.Struct({
 });
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
+/** Invalidation emitted while a visible workspace file tree is being watched. */
+export const ProjectEntriesChangedEvent = Schema.Struct({
+  revision: NonNegativeInt,
+});
+export type ProjectEntriesChangedEvent = typeof ProjectEntriesChangedEvent.Type;
+// Untracked files git ignores. Wholly ignored folders such as `node_modules`
+// are left out, so the list stays small enough to pick from.
+export const ProjectListIgnoredFilesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+});
+export type ProjectListIgnoredFilesInput = typeof ProjectListIgnoredFilesInput.Type;
+
+export const ProjectIgnoredFile = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  byteLength: NonNegativeInt,
+});
+export type ProjectIgnoredFile = typeof ProjectIgnoredFile.Type;
+
+export const ProjectListIgnoredFilesResult = Schema.Struct({
+  files: Schema.Array(ProjectIgnoredFile),
+  truncated: Schema.Boolean,
+});
+export type ProjectListIgnoredFilesResult = typeof ProjectListIgnoredFilesResult.Type;
+
 export const ProjectEntriesFailure = Schema.Literals([
   "workspace_root_not_found",
   "workspace_root_create_failed",
   "workspace_root_stat_failed",
   "workspace_root_not_directory",
+  "workspace_watch_failed",
   "search_index_create_failed",
   "search_index_scan_timed_out",
   "search_index_search_failed",
@@ -391,6 +477,57 @@ export class ProjectSearchContentsError extends Schema.TaggedError<ProjectSearch
   }
 }
 
+export const ProjectCodeSearchScope = Schema.Literals(["classes", "symbols", "text", "navigation"]);
+export type ProjectCodeSearchScope = typeof ProjectCodeSearchScope.Type;
+
+export const ProjectCodeSymbolKind = Schema.Literals([
+  "class",
+  "interface",
+  "enum",
+  "struct",
+  "trait",
+  "type",
+  "function",
+  "method",
+  "parameter",
+  "variable",
+  "symbol",
+  "text",
+]);
+export type ProjectCodeSymbolKind = typeof ProjectCodeSymbolKind.Type;
+
+export const ProjectSearchCodeInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  query: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  scope: ProjectCodeSearchScope,
+  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CODE_MAX_LIMIT)),
+});
+export type ProjectSearchCodeInput = typeof ProjectSearchCodeInput.Type;
+
+export const ProjectCodeSearchMatch = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  lineNumber: PositiveInt,
+  column: NonNegativeInt,
+  snippet: Schema.String,
+  isDefinition: Schema.Boolean,
+  kind: ProjectCodeSymbolKind,
+});
+export type ProjectCodeSearchMatch = typeof ProjectCodeSearchMatch.Type;
+
+export const ProjectSearchCodeResult = Schema.Struct({
+  matches: Schema.Array(ProjectCodeSearchMatch),
+  truncated: Schema.Boolean,
+});
+export type ProjectSearchCodeResult = typeof ProjectSearchCodeResult.Type;
+
+export class ProjectSearchCodeError extends Schema.TaggedError<ProjectSearchCodeError>()(
+  "ProjectSearchCodeError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
 export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntriesError>()(
   "ProjectListEntriesError",
   {
@@ -416,9 +553,10 @@ export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntri
 export const ProjectReadFileInput = Schema.Struct({
   metadataOnly: Schema.optional(Schema.Boolean),
   cwd: TrimmedNonEmptyString,
-  // Workspace-relative, or an absolute host path for a file outside the
-  // workspace. Only workspace-relative paths can be written back.
+  // Workspace-relative or absolute host path; only workspace-relative paths are writable.
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+  // Optional files can be absent without failing the read.
+  allowMissing: Schema.optional(Schema.Boolean),
 });
 export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
 
@@ -429,6 +567,8 @@ export const ProjectReadFileResult = Schema.Struct({
   contents: Schema.String,
   byteLength: NonNegativeInt,
   truncated: Schema.Boolean,
+  // Omitted by older servers; false only for an absent optional file.
+  exists: Schema.optional(Schema.Boolean),
 });
 export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
 
@@ -461,6 +601,13 @@ export class ProjectLocateFileError extends Schema.TaggedError<ProjectLocateFile
   },
 ) {}
 
+/** Invalidation emitted while a client is actively watching one workspace file. */
+export const ProjectFileChangedEvent = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+  revision: NonNegativeInt,
+});
+export type ProjectFileChangedEvent = typeof ProjectFileChangedEvent.Type;
+
 export const ProjectFileFailure = Schema.Literals([
   "workspace_path_outside_root",
   "resolved_path_outside_root",
@@ -476,9 +623,12 @@ export const ProjectFileOperation = Schema.Literals([
   "realpath-target",
   "open",
   "stat",
+  "stat-target",
   "read",
+  "watch",
   "close",
   "make-directory",
+  "remove-entry",
   "write-file",
 ]);
 export type ProjectFileOperation = typeof ProjectFileOperation.Type;
@@ -549,6 +699,16 @@ export const ProjectCreateNewResult = Schema.Struct({
 });
 export type ProjectCreateNewResult = typeof ProjectCreateNewResult.Type;
 
+export const ProjectCreateFromThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ProjectCreateFromThreadInput = typeof ProjectCreateFromThreadInput.Type;
+
+export const ProjectCreateFromThreadResult = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ProjectCreateFromThreadResult = typeof ProjectCreateFromThreadResult.Type;
+
 export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
   "ProjectWriteFileError",
   {
@@ -570,6 +730,44 @@ export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileEr
       message:
         decodedProjectErrorMessage(props) ??
         `Failed to write workspace file '${props.relativePath}' in '${props.cwd}'.`,
+    } as any);
+  }
+}
+
+export const ProjectDeleteEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_DELETE_ENTRY_PATH_MAX_LENGTH),
+  ),
+});
+export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
+
+export const ProjectDeleteEntryResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+});
+export type ProjectDeleteEntryResult = typeof ProjectDeleteEntryResult.Type;
+
+export class ProjectDeleteEntryError extends Schema.TaggedError<ProjectDeleteEntryError>()(
+  "ProjectDeleteEntryError",
+  {
+    cwd: Schema.optional(TrimmedNonEmptyString),
+    relativePath: Schema.optional(TrimmedNonEmptyString),
+    failure: Schema.optional(ProjectFileFailure),
+    resolvedPath: Schema.optional(TrimmedNonEmptyString),
+    resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+    operation: Schema.optional(ProjectFileOperation),
+    operationPath: Schema.optional(TrimmedNonEmptyString),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectFileFailureContext) {
+    super({
+      ...props,
+      message:
+        decodedProjectErrorMessage(props) ??
+        `Failed to delete workspace entry '${props.relativePath}' in '${props.cwd}'.`,
     } as any);
   }
 }

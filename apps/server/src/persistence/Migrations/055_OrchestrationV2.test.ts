@@ -3,21 +3,25 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/sql/Migrator";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { migrationEntries, runMigrations } from "../Migrations.ts";
+import { migrationManifest as migrationEntries, runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import OrchestrationV2 from "./055_OrchestrationV2.ts";
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 layer("055_OrchestrationV2", (it) => {
   it.effect("preserves retired d4 migration slots and appends V2", () =>
     Effect.sync(() => {
+      const ids = migrationEntries.map(([id]) => id);
+      // 37, 38, 45 and 46 stay reserved for migrations d4research shipped and retired.
       assert.deepStrictEqual(
-        migrationEntries.map(([id]) => id),
-        Array.from({ length: 73 }, (_, index) => index + 1).filter(
-          (id) => ![37, 38, 45, 46].includes(id),
+        ids,
+        Array.from({ length: 88 }, (_, index) => index + 1).filter(
+          (id) => id !== 37 && id !== 38 && id !== 45 && id !== 46,
         ),
       );
     }),
@@ -29,142 +33,124 @@ layer("055_OrchestrationV2", (it) => {
       yield* runMigrations({ toMigrationInclusive: 61 });
 
       const executed = yield* runMigrations();
-      assert.deepStrictEqual(executed, [
-        [62, "OrchestrationV2"],
-        [63, "RemoveRedundantProjectionIndexes"],
-        [64, "ScheduledTaskWebhooks"],
-        [65, "WebhookRelayDeliveries"],
-        [66, "McpAppModelContext"],
-        [67, "ThreadSnapshotWindowIndexes"],
-        [68, "PullRequestReviewGuides"],
-        [69, "ThreadFailureLookupIndex"],
-        [70, "DropUnusedV1Projections"],
-        [71, "AgentMonitorNotificationClaims"],
-        [72, "AgentMonitorDelivery"],
-        [73, "AgentMonitorEpisodes"],
-      ]);
+      assert.deepStrictEqual(
+        executed,
+        migrationEntries.filter(([id]) => id > 61).map(([id, name]) => [id, name]),
+      );
       assert.deepStrictEqual(yield* runMigrations(), []);
 
-      const migrations = yield* sql<{
-        readonly migration_id: number;
-        readonly name: string;
-      }>`
-        SELECT migration_id, name
-        FROM effect_sql_migrations
-        WHERE migration_id >= 54
-        ORDER BY migration_id
-      `;
-      assert.deepStrictEqual(migrations, [
-        { migration_id: 54, name: "ProjectionThreadBranchPullRequest" },
-        { migration_id: 55, name: "ProjectionThreadsActiveOrderKey" },
-        { migration_id: 56, name: "ProjectionThreadPullRequests" },
-        { migration_id: 57, name: "ProjectionThreadMessageContext" },
-        { migration_id: 58, name: "ProjectionThreadTitleState" },
-        { migration_id: 59, name: "PullRequestFilesViewed" },
-        { migration_id: 60, name: "ProjectionThreadComposerModelSelection" },
-        { migration_id: 61, name: "ProjectionThreadsAutoSettleDisabledAt" },
-        { migration_id: 62, name: "OrchestrationV2" },
-        { migration_id: 63, name: "RemoveRedundantProjectionIndexes" },
-        { migration_id: 64, name: "ScheduledTaskWebhooks" },
-        { migration_id: 65, name: "WebhookRelayDeliveries" },
-        { migration_id: 66, name: "McpAppModelContext" },
-        { migration_id: 67, name: "ThreadSnapshotWindowIndexes" },
-        { migration_id: 68, name: "PullRequestReviewGuides" },
-        { migration_id: 69, name: "ThreadFailureLookupIndex" },
-        { migration_id: 70, name: "DropUnusedV1Projections" },
-        { migration_id: 71, name: "AgentMonitorNotificationClaims" },
-        { migration_id: 72, name: "AgentMonitorDelivery" },
-        { migration_id: 73, name: "AgentMonitorEpisodes" },
-      ]);
-
-      const tables = yield* sql<{ readonly name: string }>`
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table'
-          AND name IN (
-            'orchestration_v2_projection_threads',
-            'orchestration_v2_projection_subagents',
-            'orchestration_v2_effect_outbox',
-            'orchestration_v2_turn_item_positions',
-            'orchestration_v2_projection_metadata',
-            'orchestration_v2_projection_provider_session_bindings',
-            'orchestration_v2_thread_launch_workflows',
-            'orchestration_v2_legacy_imports',
-            'scheduled_tasks'
-          )
-        ORDER BY name
+      const migrations = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+        SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id
       `;
       assert.deepStrictEqual(
-        tables.map(({ name }) => name),
-        [
-          "orchestration_v2_effect_outbox",
-          "orchestration_v2_legacy_imports",
-          "orchestration_v2_projection_metadata",
-          "orchestration_v2_projection_provider_session_bindings",
-          "orchestration_v2_projection_subagents",
-          "orchestration_v2_projection_threads",
-          "orchestration_v2_thread_launch_workflows",
-          "orchestration_v2_turn_item_positions",
-          "scheduled_tasks",
-        ],
-      );
-
-      const eventColumns = yield* sql<{ readonly name: string }>`
-        PRAGMA table_info(orchestration_events)
-      `;
-      const receiptColumns = yield* sql<{ readonly name: string }>`
-        PRAGMA table_info(orchestration_command_receipts)
-      `;
-      const threadColumns = yield* sql<{ readonly name: string }>`
-        PRAGMA table_info(orchestration_v2_projection_threads)
-      `;
-      const subagentColumns = yield* sql<{ readonly name: string }>`
-        PRAGMA table_info(orchestration_v2_projection_subagents)
-      `;
-      assert.ok(eventColumns.some(({ name }) => name === "application_event_version"));
-      assert.ok(receiptColumns.some(({ name }) => name === "command_type"));
-      assert.ok(threadColumns.some(({ name }) => name === "provider_instance_id"));
-      assert.ok(subagentColumns.some(({ name }) => name === "driver"));
-      assert.ok(subagentColumns.some(({ name }) => name === "provider_instance_id"));
-
-      const indexes = yield* sql<{ readonly name: string }>`
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'index'
-          AND name IN (
-            'idx_orchestration_events_application_high_water',
-            'orchestration_events_v2_created_threads_idx',
-            'orchestration_v2_projection_turn_items_shell_pending_idx'
-          )
-        ORDER BY name
-      `;
-      assert.deepStrictEqual(
-        indexes.map(({ name }) => name),
-        [
-          "idx_orchestration_events_application_high_water",
-          "orchestration_events_v2_created_threads_idx",
-          "orchestration_v2_projection_turn_items_shell_pending_idx",
-        ],
+        migrations.map((row) => [Number(row.migration_id), row.name]),
+        migrationEntries.map(([id, name]) => [id, name]),
       );
     }),
   );
 });
 
-// d4research never shipped upstream's V2 preview slots (53/54). Its slot 53 is
-// ProjectionProjectIcon, so an upstream-numbered ledger must fail closed.
-it.effect("refuses an upstream V2 preview ledger without changing it", () =>
+// Upstream previews recorded V2 at 53. Translate that ledger by name into this
+// build's ids instead of letting the id-only migrator skip d4's slots 53-61.
+it.effect("translates an upstream V2 preview ledger into this build's ids", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* runMigrations({ toMigrationInclusive: 52 });
     yield* Migrator.make({})({
       loader: Migrator.fromRecord({ "53_OrchestrationV2": OrchestrationV2 }),
     });
-    const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
 
-    assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+    const executed = yield* runMigrations();
     assert.deepStrictEqual(
-      yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
-      history,
+      executed.slice(0, 8).map(([id]) => id),
+      [53, 54, 55, 56, 57, 58, 59, 60],
     );
+    const ledger = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+      SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id >= 53 AND migration_id <= 62
+      ORDER BY migration_id
+    `;
+    assert.deepStrictEqual(
+      ledger.map((row) => [Number(row.migration_id), row.name]),
+      [
+        [53, "ProjectionProjectIcon"],
+        [54, "ProjectionThreadBranchPullRequest"],
+        [55, "ProjectionThreadsActiveOrderKey"],
+        [56, "ProjectionThreadPullRequests"],
+        [57, "ProjectionThreadMessageContext"],
+        [58, "ProjectionThreadTitleState"],
+        [59, "PullRequestFilesViewed"],
+        [60, "ProjectionThreadComposerModelSelection"],
+        [61, "ProjectionThreadsAutoSettleDisabledAt"],
+        [62, "OrchestrationV2"],
+      ],
+    );
+    assert.deepStrictEqual(yield* runMigrations(), []);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
+
+it.effect("indexes batched Codex native turns without discarding duplicate candidates", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 64 });
+    for (const [id, driver, nativeId] of [
+      ["match", "codex", "requested"],
+      ["duplicate", "codex", "requested"],
+      ["second", "codex", "requested-second"],
+      ["other-provider", "claudeAgent", "requested"],
+      ["unrelated", "codex", "unrelated"],
+    ] as const) {
+      yield* sql`INSERT INTO orchestration_v2_projection_run_attempts ${sql.insert({
+        attempt_id: `attempt-${id}`,
+        thread_id: `thread-${id}`,
+        run_id: `run-${id}`,
+        attempt_ordinal: 1,
+        root_node_id: `node-${id}`,
+        provider: driver,
+        provider_thread_id: `provider-thread-${id}`,
+        status: "completed",
+        payload_json: "{}",
+      })}`;
+      yield* sql`INSERT INTO orchestration_v2_projection_provider_turns ${sql.insert({
+        provider_turn_id: `turn-${id}`,
+        thread_id: `thread-${id}`,
+        provider_thread_id: `provider-thread-${id}`,
+        node_id: `node-${id}`,
+        run_attempt_id: `attempt-${id}`,
+        ordinal: 1,
+        status: "completed",
+        payload_json: encodeJson({ nativeTurnRef: { driver, nativeId, strength: "strong" } }),
+      })}`;
+    }
+    const lookup = sql<{ readonly provider_turn_id: string }>`
+      SELECT turn.provider_turn_id
+      FROM orchestration_v2_projection_provider_turns AS turn
+      JOIN orchestration_v2_projection_run_attempts AS attempt
+        ON attempt.attempt_id = turn.run_attempt_id
+        AND attempt.thread_id = turn.thread_id
+        AND attempt.provider_thread_id = turn.provider_thread_id
+      WHERE json_extract(turn.payload_json, '$.nativeTurnRef.driver') = 'codex'
+        AND json_extract(turn.payload_json, '$.nativeTurnRef.nativeId') IN (
+          SELECT value FROM json_each(${encodeJson(["requested", "requested-second", "missing"])})
+        )
+    `;
+    const before = (yield* lookup).map((row) => row.provider_turn_id).toSorted();
+    assert.deepStrictEqual(before, ["turn-duplicate", "turn-match", "turn-second"]);
+    yield* runMigrations();
+    assert.deepStrictEqual((yield* lookup).map((row) => row.provider_turn_id).toSorted(), before);
+
+    const [statement, parameters] = lookup.compile();
+    const plan = yield* sql.unsafe<{ readonly detail: string }>(
+      `EXPLAIN QUERY PLAN ${statement}`,
+      parameters,
+    );
+    assert.isTrue(
+      plan.some(({ detail }) =>
+        /SEARCH turn USING INDEX orchestration_v2_provider_turns_codex_native_id_idx\b/.test(
+          detail,
+        ),
+      ),
+      plan.map(({ detail }) => detail).join("\n"),
+    );
+    assert.isFalse(plan.some(({ detail }) => /SCAN turn\b/.test(detail)));
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

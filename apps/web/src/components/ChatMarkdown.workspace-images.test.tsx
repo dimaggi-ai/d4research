@@ -47,7 +47,8 @@ vi.mock("~/lib/openPullRequestLink", () => ({
   useOpenChangeRequestLink: () => vi.fn(),
 }));
 
-import ChatMarkdown, { ChatMarkdownAssetImage } from "./ChatMarkdown";
+import ChatMarkdown from "./ChatMarkdown";
+import { ChatMarkdownAssetImage } from "./chat/ChatMarkdownMedia";
 import { FileMarkdownPreview } from "./files/FileMarkdownPreview";
 
 const threadRef = {

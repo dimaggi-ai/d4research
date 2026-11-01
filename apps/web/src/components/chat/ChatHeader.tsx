@@ -1,5 +1,4 @@
 import { ThreadNotesButton } from "./ThreadNotes";
-import type { ChangeRequestStateLike } from "@d4research/client-runtime/state/thread-settled";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -40,7 +39,6 @@ import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 
 interface ChatHeaderProps {
-  changeRequestState: ChangeRequestStateLike | null;
   readonly onExportResearch?: (() => void) | undefined;
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
@@ -80,7 +78,6 @@ export const ChatHeader = memo(function ChatHeader({
   rightPanelOpen,
   onNewThreadInProject,
   onOpenProjectSettings,
-  changeRequestState,
   onExportResearch,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.title;
@@ -196,7 +193,8 @@ export const ChatHeader = memo(function ChatHeader({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
-    changeRequestState,
+    // Guest links need T3 Connect, which this build does not run.
+    canShareWithGuest: false,
     onExportMarkdown: isServerThread ? onExportResearch : undefined,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);

@@ -25,10 +25,12 @@ import * as Schema from "effect/Schema";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { decryptLocalCatalog, encryptLocalCatalog } from "./localCatalogEncryption.ts";
 
 const EncryptedConnectionCatalogDocument = Schema.Struct({
   version: Schema.Literal(1),
   encryptedCatalog: Schema.String,
+  encryption: Schema.optionalKey(Schema.Literal("aes-256-gcm")),
 });
 type EncryptedConnectionCatalogDocument = typeof EncryptedConnectionCatalogDocument.Type;
 
@@ -65,6 +67,8 @@ const DesktopConnectionCatalogStoreProtectionOperation = Schema.Literals([
   "check-encryption-availability",
   "encrypt-catalog",
   "decrypt-catalog",
+  "read-local-key",
+  "create-local-key",
 ]);
 
 export class DesktopConnectionCatalogStoreWriteError extends Schema.TaggedError<DesktopConnectionCatalogStoreWriteError>()(
@@ -146,6 +150,8 @@ export class DesktopConnectionCatalogStoreProtectionError extends Schema.TaggedE
   }
 }
 
+const isCatalogProtectionError = Schema.is(DesktopConnectionCatalogStoreProtectionError);
+
 export class DesktopConnectionCatalogStore extends Context.Service<
   DesktopConnectionCatalogStore,
   {
@@ -157,13 +163,13 @@ export class DesktopConnectionCatalogStore extends Context.Service<
       | DesktopConnectionCatalogStoreMigrationError
       | DesktopConnectionCatalogStoreProtectionError
     >;
+    readonly clear: Effect.Effect<void>;
     readonly set: (
       catalog: string,
     ) => Effect.Effect<
       boolean,
       DesktopConnectionCatalogStoreWriteError | DesktopConnectionCatalogStoreProtectionError
     >;
-    readonly clear: Effect.Effect<void>;
   }
 >()("@d4research/desktop/app/DesktopConnectionCatalogStore") {}
 
@@ -247,16 +253,18 @@ const writeDocument = Effect.fn("desktop.connectionCatalogStore.writeDocument")(
     ),
   );
   yield* Effect.gen(function* () {
-    yield* input.fileSystem.writeFileString(tempPath, `${encoded}\n`).pipe(
-      Effect.mapError(
-        (cause) =>
-          new DesktopConnectionCatalogStoreWriteError({
-            operation: "write-temporary-file",
-            path: tempPath,
-            cause,
-          }),
-      ),
-    );
+    yield* input.fileSystem
+      .writeFileString(tempPath, `${encoded}\n`, { mode: 0o600, flag: "wx" })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopConnectionCatalogStoreWriteError({
+              operation: "write-temporary-file",
+              path: tempPath,
+              cause,
+            }),
+        ),
+      );
     yield* input.fileSystem.rename(tempPath, input.catalogPath).pipe(
       Effect.mapError(
         (cause) =>
@@ -385,6 +393,10 @@ export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
   const catalogPath = path.join(environment.stateDir, "connection-catalog.json");
+  // Preserve inaccessible Keychain catalogs for an explicitly opted-in migration later.
+  const localCatalogPath = path.join(environment.stateDir, "connection-catalog.local.json");
+  const keyDirectory = path.join(environment.stateDir, "local-secrets");
+  const keyPath = path.join(keyDirectory, "connection-catalog.key");
   const encryptionAvailable = safeStorage.isEncryptionAvailable.pipe(
     Effect.mapError(
       (cause) =>
@@ -394,6 +406,115 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     ),
+  );
+
+  const readLocalKey = Effect.gen(function* () {
+    const key = yield* fileSystem.readFile(keyPath);
+    if (key.length !== 32) {
+      return yield* new DesktopConnectionCatalogStoreProtectionError({
+        operation: "read-local-key",
+        catalogPath: localCatalogPath,
+        cause: new Error("Local connection encryption key has an invalid length."),
+      });
+    }
+    yield* fileSystem.chmod(keyPath, 0o600);
+    return key;
+  }).pipe(
+    Effect.mapError((cause) =>
+      isCatalogProtectionError(cause)
+        ? cause
+        : new DesktopConnectionCatalogStoreProtectionError({
+            operation: "read-local-key",
+            catalogPath: localCatalogPath,
+            cause,
+          }),
+    ),
+  );
+
+  const createLocalKey = Effect.gen(function* () {
+    yield* fileSystem.makeDirectory(keyDirectory, { recursive: true });
+    yield* fileSystem.chmod(keyDirectory, 0o700);
+    if (yield* fileSystem.exists(keyPath)) return yield* readLocalKey;
+    if (yield* fileSystem.exists(localCatalogPath)) {
+      return yield* new DesktopConnectionCatalogStoreProtectionError({
+        operation: "read-local-key",
+        catalogPath: localCatalogPath,
+        cause: new Error("The key for the existing local connection catalog is missing."),
+      });
+    }
+    const key = yield* crypto.randomBytes(32);
+    const suffix = yield* crypto.randomUUIDv4();
+    const temporary = path.join(keyDirectory, `${suffix}.tmp`);
+    return yield* Effect.gen(function* () {
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const file = yield* fileSystem.open(temporary, { flag: "wx", mode: 0o600 });
+          yield* file.writeAll(key);
+          yield* file.sync;
+        }),
+      );
+      // Publish only a complete key, without replacing one created by another process.
+      yield* fileSystem.link(temporary, keyPath).pipe(
+        Effect.catchIf(
+          (error) => error.reason._tag === "AlreadyExists",
+          () => Effect.void,
+        ),
+      );
+      return yield* readLocalKey;
+    }).pipe(Effect.ensuring(fileSystem.remove(temporary, { force: true }).pipe(Effect.ignore)));
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new DesktopConnectionCatalogStoreProtectionError({
+          operation: "create-local-key",
+          catalogPath: localCatalogPath,
+          cause,
+        }),
+    ),
+  );
+
+  const writeLocalCatalog = Effect.fn("desktop.connectionCatalogStore.writeLocalCatalog")(
+    function* (catalog: string) {
+      const key = yield* createLocalKey;
+      const nonce = yield* crypto.randomBytes(12).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopConnectionCatalogStoreProtectionError({
+              operation: "encrypt-catalog",
+              catalogPath: localCatalogPath,
+              cause,
+            }),
+        ),
+      );
+      const encryptedCatalog = Base64.encode(
+        yield* Effect.try({
+          try: () => encryptLocalCatalog(catalog, key, nonce),
+          catch: (cause) =>
+            new DesktopConnectionCatalogStoreProtectionError({
+              operation: "encrypt-catalog",
+              catalogPath: localCatalogPath,
+              cause,
+            }),
+        }),
+      );
+      const suffix = yield* crypto.randomUUIDv4().pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopConnectionCatalogStoreWriteError({
+              operation: "create-temporary-file-name",
+              path: localCatalogPath,
+              cause,
+            }),
+        ),
+      );
+      yield* writeDocument({
+        fileSystem,
+        path,
+        catalogPath: localCatalogPath,
+        document: { version: 1, encryption: "aes-256-gcm", encryptedCatalog },
+        suffix,
+      });
+    },
   );
 
   const writeCatalog = Effect.fn("desktop.connectionCatalogStore.writeCatalog")(function* (
@@ -473,6 +594,28 @@ export const make = Effect.gen(function* () {
 
   return DesktopConnectionCatalogStore.of({
     get: Effect.gen(function* () {
+      const local = yield* readDocument(fileSystem, localCatalogPath);
+      if (Option.isSome(local)) {
+        if (local.value.encryption !== "aes-256-gcm") {
+          return yield* new DesktopConnectionCatalogStoreDocumentDecodeError({
+            catalogPath: localCatalogPath,
+            cause: new Error("Unsupported local connection encryption format."),
+          });
+        }
+        const key = yield* readLocalKey;
+        const encrypted = yield* decodeSecretBytes(localCatalogPath, local.value.encryptedCatalog);
+        return Option.some(
+          yield* Effect.try({
+            try: () => decryptLocalCatalog(encrypted, key),
+            catch: (cause) =>
+              new DesktopConnectionCatalogStoreProtectionError({
+                operation: "decrypt-catalog",
+                catalogPath: localCatalogPath,
+                cause,
+              }),
+          }),
+        );
+      }
       const document = yield* readDocument(fileSystem, catalogPath);
       if (Option.isNone(document)) {
         return yield* migrateLegacyCatalog;
@@ -497,13 +640,30 @@ export const make = Effect.gen(function* () {
       return Option.some(decrypted);
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
-      if (!(yield* encryptionAvailable)) {
-        return false;
+      const localExists = yield* fileSystem.exists(localCatalogPath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopConnectionCatalogStoreWriteError({
+              operation: "replace-catalog-file",
+              path: localCatalogPath,
+              cause,
+            }),
+        ),
+      );
+      if (localExists || !(yield* encryptionAvailable)) {
+        yield* writeLocalCatalog(catalog);
+      } else {
+        yield* writeCatalog(catalog);
       }
-      yield* writeCatalog(catalog);
       return true;
     }),
-    clear: fileSystem.remove(catalogPath, { force: true }).pipe(
+    clear: Effect.all(
+      [
+        fileSystem.remove(localCatalogPath, { force: true }),
+        fileSystem.remove(catalogPath, { force: true }),
+      ],
+      { discard: true },
+    ).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Could not clear the desktop connection catalog.", {
           catalogPath,

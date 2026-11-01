@@ -26,16 +26,33 @@ export interface ProviderTotals {
 }
 
 export interface ModelTotals {
+  readonly tokens: UsageTokenTotals;
   readonly model: string;
   readonly provider: UsageProviderKind;
+  /** The account whose transcripts these tokens came from; one row per model per account. */
+  readonly sourceId: string;
+  readonly sourceLabel: string;
+  readonly instanceId: string | null;
   readonly costUsd: number;
   readonly totalTokens: number;
-  readonly tokens: UsageTokenTotals;
   readonly records: number;
+  /** Records with counted tokens but unknown cost, not zero cost. */
   readonly unpricedRecords: number;
   readonly unpricedTokens: number;
   readonly costShare: number;
   readonly tokenShare: number;
+}
+
+export interface UsageSourceTotals {
+  readonly sourceId: string;
+  readonly label: string;
+  readonly provider: UsageProviderKind;
+  /** The provider instance this source was configured from, when the server named one. */
+  readonly instanceId: string | null;
+  readonly costUsd: number;
+  readonly totalTokens: number;
+  readonly records: number;
+  readonly costShare: number;
 }
 
 /**
@@ -100,6 +117,7 @@ export interface MergedUsage {
   readonly records: number;
   readonly sessions: number;
   readonly providers: readonly ProviderTotals[];
+  readonly sources: readonly UsageSourceTotals[];
   readonly models: readonly ModelTotals[];
   readonly daily: readonly DailyTotals[];
   readonly hourly: readonly HourlyTotals[];
@@ -111,10 +129,7 @@ export interface MergedUsage {
   readonly contractMismatches: readonly UsageContractMismatch[];
 }
 
-/**
- * `volumeId` is what stops two machines that happen to share a hostname and a home path, which is
- * every Mac in a fleet, from collapsing into one source and having one of them silently dropped.
- */
+// volumeId distinguishes machines sharing a hostname and home path.
 function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
   return [
     fingerprint.hostId,
@@ -178,9 +193,7 @@ function claimSources(environments: readonly EnvironmentUsage[]): {
     }
   }
 
-  // A newer partial scan may contain usage recorded after an older complete
-  // scan. Keep cells absent from the complete scan. Aggregated cells do not
-  // reveal enough to reconcile overlapping records without double counting.
+  // Keep cells unique to newer partial scans; aggregates cannot reconcile overlapping records without double-counting.
   for (const environment of ordered) {
     for (const source of environment.summary.sources) {
       if (source.status !== "partial") continue;
@@ -243,8 +256,7 @@ function ownedContribution(
       const provider = source.fingerprint.provider;
       ownedProviders.add(provider);
       ownedSources.add(`${provider}\u0000${source.fingerprint.resolvedHomePath}`);
-      // Distinct within a directory. Summing per-bucket session counts instead
-      // would count a session once per day and model it spans.
+      // Count distinct sessions per directory; bucket sums overcount sessions spanning days/models.
       sessionsByProvider.set(
         provider,
         (sessionsByProvider.get(provider) ?? 0) +
@@ -289,6 +301,7 @@ const EMPTY_MERGED: MergedUsage = {
   records: 0,
   sessions: 0,
   providers: [],
+  sources: [],
   models: [],
   daily: [],
   hourly: [],
@@ -305,6 +318,18 @@ const EMPTY_MERGED: MergedUsage = {
   contractMismatches: [],
 };
 
+const PROVIDER_FALLBACK_LABEL: Record<UsageProviderKind, string> = {
+  antigravity: "Antigravity",
+  claude: "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor",
+  grok: "Grok",
+  muse: "Muse Code",
+  opencode: "OpenCode",
+  pi: "Pi",
+};
+
+/** Exclude incompatible summaries without blocking the page; additive provider versions retain older totals. */
 export function mergeUsage(
   environments: readonly EnvironmentUsage[],
   expectedContractVersion: number,
@@ -358,13 +383,29 @@ export function mergeUsage(
   const modelAccumulator = new Map<
     string,
     {
-      provider: UsageProviderKind;
-      costUsd: number;
-      totalTokens: number;
-      tokens: UsageTokenTotals;
-      records: number;
       unpricedRecords: number;
       unpricedTokens: number;
+      tokens: UsageTokenTotals;
+      model: string;
+      provider: UsageProviderKind;
+      sourceId: string;
+      sourceLabel: string;
+      instanceId: string | null;
+      costUsd: number;
+      totalTokens: number;
+      records: number;
+    }
+  >();
+  const sourceAccumulator = new Map<
+    string,
+    {
+      sourceId: string;
+      label: string;
+      provider: UsageProviderKind;
+      instanceId: string | null;
+      costUsd: number;
+      totalTokens: number;
+      records: number;
     }
   >();
   const dailyAccumulator = new Map<
@@ -443,9 +484,47 @@ export function mergeUsage(
       provider.records += bucket.records;
       providerAccumulator.set(bucket.provider, provider);
 
-      const modelKey = `${bucket.provider} ${bucket.model}`;
-      const model = modelAccumulator.get(modelKey) ?? {
+      const matchingSource = environment.summary.sources.find(
+        (source) =>
+          (bucket.sourceId !== undefined &&
+            (source.sourceId === bucket.sourceId ||
+              source.fingerprint.resolvedHomePath === bucket.sourceId)) ||
+          (bucket.sourceId === undefined && source.fingerprint.provider === bucket.provider),
+      );
+      const sourceId =
+        bucket.sourceId ??
+        matchingSource?.sourceId ??
+        matchingSource?.fingerprint.resolvedHomePath ??
+        bucket.provider;
+      const sourceKey = `${environment.environmentId}\u0000${sourceId}`;
+      const sourceLabel =
+        matchingSource?.sourceLabel ??
+        matchingSource?.fingerprint.resolvedHomePath ??
+        PROVIDER_FALLBACK_LABEL[bucket.provider];
+      const instanceId = matchingSource?.instanceId ?? null;
+      const source = sourceAccumulator.get(sourceKey) ?? {
+        sourceId,
+        label: sourceLabel,
         provider: bucket.provider,
+        instanceId,
+        costUsd: 0,
+        totalTokens: 0,
+        records: 0,
+      };
+      source.costUsd += bucket.costUsd;
+      source.totalTokens += tokens;
+      source.records += bucket.records;
+      sourceAccumulator.set(sourceKey, source);
+
+      // Keyed by account as well as model: two Claude subscriptions running the same model are two
+      // separate lines of spend, and one merged row cannot say which account is doing the spending.
+      const modelKey = `${bucket.provider}\u0000${sourceKey}\u0000${bucket.model}`;
+      const model = modelAccumulator.get(modelKey) ?? {
+        model: bucket.model,
+        provider: bucket.provider,
+        sourceId,
+        sourceLabel,
+        instanceId,
         costUsd: 0,
         totalTokens: 0,
         tokens: {
@@ -524,10 +603,21 @@ export function mergeUsage(
     }))
     .sort((a, b) => b.costUsd - a.costUsd);
 
-  const models: ModelTotals[] = [...modelAccumulator.entries()]
-    .map(([key, totals]) => ({
-      model: key.slice(key.indexOf(" ") + 1),
+  const sources: UsageSourceTotals[] = [...sourceAccumulator.values()]
+    .map((source) => ({
+      ...source,
+      instanceId: source.instanceId,
+      costShare: costUsd === 0 ? 0 : source.costUsd / costUsd,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd || a.label.localeCompare(b.label));
+
+  const models: ModelTotals[] = [...modelAccumulator.values()]
+    .map((totals) => ({
+      model: totals.model,
       provider: totals.provider,
+      sourceId: totals.sourceId,
+      sourceLabel: totals.sourceLabel,
+      instanceId: totals.instanceId,
       costUsd: totals.costUsd,
       totalTokens: totals.totalTokens,
       tokens: totals.tokens,
@@ -563,6 +653,7 @@ export function mergeUsage(
     records,
     sessions,
     providers,
+    sources,
     models,
     daily,
     hourly,

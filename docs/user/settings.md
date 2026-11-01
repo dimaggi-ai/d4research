@@ -95,20 +95,43 @@ summary for its replacement in the same context. If a summary fails or the scope
 the replacement starts without it. Models that report no context window cannot use this
 size check. Changing the vault path or relevant project or pipeline mappings requires a fresh session.
 
+Before Nia starts new work, it checks the project's existing threads. If a thread already
+owns the work, Nia drafts a follow-up for that thread instead of starting another one.
+
+A new task runs in one of two modes:
+
+- **Single task** does the work, verifies it, and reports its outcome to Nia. When the task
+  reports a verified completion, the thread settles: it leaves Working but keeps its history,
+  and you can reopen it. A task that reports itself blocked, failed, or waiting for your input stays
+  in Working.
+- **Loop** keeps working and checking its progress until the completion criteria on the card
+  are met. It has no iteration limit unless you ask Nia for one. It stops early to report a
+  blocker or ask for your input, and it stops when you interrupt it. The thread stays open.
+
+The approval card for a new task shows its mode, the folder it runs in, its runtime mode, its
+model, and the exact prompt the task will receive. If any of these change before the task
+starts, it doesn't start, and you can ask Nia for a new card. To change a draft, ask Nia to
+revise it.
+
 To start research or a pipeline, map the pipeline to its project in Settings, then ask
-Nia in the same conversation. Review the final prompt, project, pipeline, and model
-before approving. To send a message to another thread, ask Nia to rewrite it for
-that thread. The approval card lets you edit and send the draft or send your original text.
-Every approval card shows the full action, with a Why line on the reason for it and an Effect
-line on what it will change.
+Nia in the same conversation. Review the request, project, pipeline, and model
+before approving; the run adds its pipeline instructions to your request. To send a message
+to another thread, ask Nia to rewrite it for that thread. The approval card lets you edit and
+send the draft or send your original text. Every approval card shows the full action, with a
+Why line on the reason for it and an Effect line on what it will change.
+
+A card you didn't answer is marked **Expired** if it waited more than 24 hours or you started
+a new Nia session; Nia does not treat it as denied. If the server stops while an approved
+action is running, the card is marked **Interrupted** because it may or may not have taken
+effect. Nia doesn't retry it on its own.
 
 When Tool Guard reviews Nia's actions, a thread Nia starts runs in **Auto** mode, where the
 provider sandboxes or reviews each step. Without Tool Guard, each step waits for your approval
 in that thread.
 
-By default (**On success**), Nia archives a thread it started as soon as it reports the thread
-completed, and keeps one line in the conversation with a link to the archived thread. In
-Settings, choose **24 hours** to archive later, or **Off**. A user reply, pin, pending
+Automatic archiving is off by default. In Settings, choose **On success** to archive a thread
+Nia started as soon as it reports the thread completed, or **24 hours** to archive it a day
+later. Nia keeps one line in the conversation with a link to the archived thread. A user reply, pin, pending
 question, or linked pull request prevents automatic archiving; user-started threads are never
 archived automatically. To archive a thread now, ask Nia to archive it; "settle" and "close"
 work too. Nia drafts an approval card for that thread and archives it once you approve. Any

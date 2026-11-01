@@ -40,7 +40,7 @@ const layerTest = Layer.mergeAll(
   ProviderReplayHarness.layerWithRegistry(
     { name: "control-reads" },
     ProviderAdapterRegistry.layerFromAdapters([adapter]),
-    { layerDatabase: layerDatabase, runEffectWorker: false },
+    { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
 ).pipe(Layer.provide(ownershipLayer));
 

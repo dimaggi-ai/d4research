@@ -1,10 +1,11 @@
-import type {
-  D4BrainContext,
-  EnvironmentId,
-  ProjectId,
-  ServerSettings,
+import {
+  type D4BrainContext,
+  type EnvironmentId,
+  type ProjectId,
+  type ServerSettings,
   ThreadId,
 } from "@d4research/contracts";
+import { formatThreadLink } from "@d4research/shared/threadLinks";
 
 export interface AgentMention {
   readonly kind: "thread" | "project" | "pipeline";
@@ -170,4 +171,70 @@ export function niaSystemTextSegments(
   }
   pushText(text.slice(cursor));
   return segments;
+}
+
+// Code comes first so references inside code stay literal; written links and autolinks are kept,
+// except a markdown link whose web URL opens a thread.
+const niaThreadReferencePattern =
+  /(?<fence>(`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?<href>[^\s)]+)\)|(?<autolink><[^\s<>]+>)|(?<url>https?:\/\/[^\s<>"'`]+)|(?<![\w:/.-])(?<id>[A-Za-z0-9][\w:-]*[A-Za-z0-9])(?![\w:/-])/g;
+
+const NIA_ACTION_THREAD_PREFIX = "d4-action:";
+
+/**
+ * Rewrites the thread references Nia writes as prose into `t3-thread` links, so the chat shows
+ * them as thread chips: `d4-action:` ids, ids of threads `knownThreadIds` holds, and web URLs
+ * that open a thread of `environmentId`. Unknown references keep a short id as their label.
+ */
+export function niaThreadReferenceMarkdown(
+  text: string,
+  environmentId: EnvironmentId,
+  knownThreadIds: ReadonlySet<string>,
+): string {
+  const isThread = (id: string) =>
+    knownThreadIds.has(id) || id.startsWith(NIA_ACTION_THREAD_PREFIX);
+  const link = (threadId: string, label?: string) =>
+    formatThreadLink(
+      { environmentId, threadId: ThreadId.make(threadId) },
+      label?.trim() || shortThreadLabel(threadId),
+    );
+  const urlThreadId = (href: string) => {
+    let url: URL;
+    try {
+      url = new URL(href);
+    } catch {
+      return null;
+    }
+    const [environment, threadId, ...rest] = url.pathname.split("/").filter(Boolean);
+    if (rest.length > 0 || environment === undefined || threadId === undefined) return null;
+    try {
+      const decoded = decodeURIComponent(threadId);
+      return decodeURIComponent(environment) === environmentId && isThread(decoded)
+        ? decoded
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  return text.replace(niaThreadReferencePattern, (source, ...args) => {
+    const groups = args.at(-1) as Record<string, string | undefined>;
+    if (groups.href !== undefined) {
+      const threadId = urlThreadId(groups.href);
+      return threadId === null ? source : link(threadId, groups.label);
+    }
+    if (groups.url !== undefined) {
+      // Sentence punctuation after a URL is not part of it.
+      const href = groups.url.replace(/[.,;:!?)\]'"]+$/, "");
+      const threadId = urlThreadId(href);
+      return threadId === null ? source : link(threadId) + groups.url.slice(href.length);
+    }
+    if (groups.id !== undefined && isThread(groups.id)) return link(groups.id);
+    return source;
+  });
+}
+
+function shortThreadLabel(threadId: string) {
+  const id = threadId.startsWith(NIA_ACTION_THREAD_PREFIX)
+    ? threadId.slice(NIA_ACTION_THREAD_PREFIX.length)
+    : threadId;
+  return `Thread ${id.slice(0, 8)}`;
 }

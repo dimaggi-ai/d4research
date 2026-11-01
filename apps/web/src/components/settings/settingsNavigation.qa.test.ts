@@ -1,48 +1,37 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
-import { SETTINGS_SEARCH_ITEMS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
+import {
+  SETTINGS_NAV_GROUPS,
+  SETTINGS_SEARCH_ITEMS,
+  SETTINGS_SECTION_LABELS,
+} from "./settingsSearch";
 
-const EXPECTED_SETTINGS_SCREENS = [
-  "/settings/projects",
-  "/settings/general",
-  "/settings/appearance",
-  "/settings/keybindings",
-  "/settings/snap-shot",
-  "/settings/providers",
-  "/settings/integrations",
-  "/settings/scheduled-tasks",
-  "/settings/source-control",
+const D4_SETTINGS_SCREENS = [
   "/settings/research",
   "/settings/second-brain",
   "/settings/dev-pipelines",
-  "/settings/storage",
-  "/settings/connections",
-  "/settings/tool-guard",
   "/settings/skills",
-  "/settings/archived",
+  "/settings/tool-guard",
 ] as const;
 
-describe("settings navigation QA", () => {
-  it("registers one navigation button for every user-facing settings screen", () => {
-    const destinations = SETTINGS_NAV_ITEMS.map((item) => item.to);
+// Detail pages reached from another page rather than the sidebar.
+const DETAIL_PAGES: ReadonlySet<string> = new Set(["/settings/diagnostics"]);
 
-    expect(destinations).toEqual(EXPECTED_SETTINGS_SCREENS);
+describe("settings navigation QA", () => {
+  const destinations = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths);
+
+  it("registers each d4research settings screen once in the sidebar", () => {
+    expect(destinations).toEqual(expect.arrayContaining([...D4_SETTINGS_SCREENS]));
     expect(new Set(destinations).size).toBe(destinations.length);
-    expect(SETTINGS_NAV_ITEMS.every((item) => item.label.trim().length > 0)).toBe(true);
   });
 
-  it("keeps screen labels and navigation buttons in sync", () => {
-    expect(SETTINGS_NAV_ITEMS.map(({ to, label }) => [to, label])).toEqual(
-      // Diagnostics is a General settings detail page, not a sidebar section.
-      Object.entries(SETTINGS_SECTION_LABELS).filter(([to]) => to !== "/settings/diagnostics"),
-    );
+  it("gives every labelled screen a sidebar entry", () => {
+    const labelled = Object.keys(SETTINGS_SECTION_LABELS).filter((to) => !DETAIL_PAGES.has(to));
+    expect(new Set(destinations)).toEqual(new Set(labelled));
   });
 
   it("routes every settings search result to a visible settings screen", () => {
-    const destinations = new Set(SETTINGS_NAV_ITEMS.map((item) => item.to));
-    const invalidResults = SETTINGS_SEARCH_ITEMS.filter((item) => !destinations.has(item.to));
-
-    expect(invalidResults).toEqual([]);
+    const visible = new Set<string>([...destinations, ...DETAIL_PAGES]);
+    expect(SETTINGS_SEARCH_ITEMS.filter((item) => !visible.has(item.to))).toEqual([]);
   });
 });

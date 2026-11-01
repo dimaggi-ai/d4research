@@ -1,12 +1,13 @@
 import {
   bootstrapRemoteBearerSession,
   fetchRemoteSessionState,
-  issueRemoteWebSocketTicket,
   RemoteEnvironmentAuthUndeclaredStatusError,
   type RemoteEnvironmentAuthError,
 } from "@d4research/client-runtime/authorization";
 import { fetchRemoteEnvironmentDescriptor } from "@d4research/client-runtime/environment";
 import {
+  BundledServerRuntime,
+  DesktopBundledServerUpdateInput,
   EnvironmentAuthInvalidError,
   DesktopDiscoveredSshHostSchema,
   DesktopSshBearerBootstrapInputSchema,
@@ -24,7 +25,6 @@ import {
   EnvironmentScopeRequiredError,
   AuthAccessTokenResult,
   AuthSessionState,
-  AuthWebSocketTicketResult,
 } from "@d4research/contracts";
 import { SshHttpBridgeError } from "@d4research/ssh/errors";
 import { resolveLoopbackSshHttpBaseUrl } from "@d4research/ssh/tunnel";
@@ -40,8 +40,7 @@ import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.
 type DesktopSshEnvironmentRequestOperation =
   | "fetch-environment-descriptor"
   | "bootstrap-bearer-session"
-  | "fetch-session-state"
-  | "issue-websocket-ticket";
+  | "fetch-session-state";
 
 type DesktopSshEnvironmentRequestCause = RemoteEnvironmentAuthError | SshHttpBridgeError;
 
@@ -83,6 +82,7 @@ export class DesktopSshEnvironmentRequestError extends Data.TaggedError(
   readonly cause: DesktopSshEnvironmentRequestCause;
   readonly sshHttpStatus: number | null;
 }> {
+  // The web client matches "[ssh_http:500]" to explain version-skewed SSH pairing.
   override get message() {
     const prefix = this.sshHttpStatus === null ? "" : `[ssh_http:${this.sshHttpStatus}] `;
     return `${prefix}SSH remote API request failed during ${this.operation}.`;
@@ -202,23 +202,6 @@ export const fetchSshSessionState = DesktopIpc.makeIpcMethod({
   }),
 });
 
-export const issueSshWebSocketTicket = DesktopIpc.makeIpcMethod({
-  channel: IpcChannels.ISSUE_SSH_WEBSOCKET_TOKEN_CHANNEL,
-  payload: DesktopSshBearerRequestInputSchema,
-  result: AuthWebSocketTicketResult,
-  handler: Effect.fn("desktop.ipc.sshEnvironment.issueWebSocketTicket")(function* ({
-    httpBaseUrl,
-    bearerToken,
-  }) {
-    return yield* withLoopbackSshApi("issue-websocket-ticket", (resolvedHttpBaseUrl) =>
-      issueRemoteWebSocketTicket({
-        httpBaseUrl: resolvedHttpBaseUrl,
-        bearerToken,
-      }),
-    )(httpBaseUrl);
-  }),
-});
-
 export const resolveSshPasswordPrompt = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.RESOLVE_SSH_PASSWORD_PROMPT_CHANNEL,
   payload: DesktopSshPasswordPromptResolutionInputSchema,
@@ -229,5 +212,22 @@ export const resolveSshPasswordPrompt = DesktopIpc.makeIpcMethod({
   }) {
     const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
     yield* prompts.resolve({ requestId, password });
+  }),
+});
+
+export const getBundledServerRuntime = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.BUNDLED_SERVER_RUNTIME_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(BundledServerRuntime),
+  handler: Effect.fn("desktop.ipc.sshEnvironment.getBundledRuntime")(function* () {
+    return yield* (yield* DesktopSshEnvironment.DesktopSshEnvironment).getBundledRuntime;
+  }),
+});
+export const updateBundledSshServer = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.UPDATE_BUNDLED_SSH_SERVER_CHANNEL,
+  payload: DesktopBundledServerUpdateInput,
+  result: BundledServerRuntime,
+  handler: Effect.fn("desktop.ipc.sshEnvironment.updateBundledRuntime")(function* (input) {
+    return yield* (yield* DesktopSshEnvironment.DesktopSshEnvironment).updateBundledRuntime(input);
   }),
 });

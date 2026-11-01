@@ -1,4 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- d4research host integration uses Node APIs directly.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect Crypto does not provide HMAC.
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NodeCrypto from "node:crypto";
 
 import * as Context from "effect/Context";

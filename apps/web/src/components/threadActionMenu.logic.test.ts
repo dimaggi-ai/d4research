@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { ACCENT_COLOR_OPTIONS } from "~/lib/accentColors";
 import {
   buildDraftActionMenuItems,
   buildThreadActionMenuItems,
@@ -27,14 +28,8 @@ const baseState: ThreadActionMenuState = {
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
   ],
+  accentColor: null,
 };
-
-function ids(state: ThreadActionMenuState): string[] {
-  return buildThreadActionMenuItems(state).flatMap((item) => [
-    item.id,
-    ...(item.children?.map((child) => child.id) ?? []),
-  ]);
-}
 
 describe("buildThreadActionMenuItems", () => {
   it.each([false, true])(
@@ -55,6 +50,7 @@ describe("buildThreadActionMenuItems", () => {
             "rename",
             "regenerate-title",
             "auto-settle",
+            "color",
             "archive",
             "delete",
           ]
@@ -65,6 +61,7 @@ describe("buildThreadActionMenuItems", () => {
             "rename",
             "regenerate-title",
             "auto-settle",
+            "color",
             "archive",
             "delete",
           ];
@@ -100,16 +97,18 @@ describe("buildThreadActionMenuItems", () => {
           titleRegeneration: false,
         },
       }),
-    ).toEqual([
-      "rename",
-      "mark-unread",
-      "copy",
-      "copy-path",
-      "copy-thread-id",
-      "project-settings",
-      "archive",
-      "delete",
-    ]);
+    ).toEqual(["rename", "mark-unread", "color", "copy", "project-settings", "archive", "delete"]);
+  });
+
+  it("groups project settings with utility actions before archive", () => {
+    const items = buildThreadActionMenuItems(baseState);
+    const copyIndex = items.findIndex((item) => item.id === "copy");
+    expect(items[copyIndex + 1]).toMatchObject({
+      id: "project-settings",
+      label: "Project settings",
+      icon: "settings",
+    });
+    expect(items[copyIndex + 2]?.id).toBe("archive");
   });
 
   it("offers project filtering only for surfaces with a scoped thread list", () => {
@@ -212,6 +211,41 @@ describe("buildThreadActionMenuItems", () => {
     );
     expect(archiveItem?.disabled).toBe(true);
   });
+
+  it("disables archive and turning into a project while the thread is running", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      isRunning: true,
+      canTurnIntoProject: true,
+    });
+    expect(items.find((item) => item.id === "archive")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "turn-into-project")?.disabled).toBe(true);
+  });
+});
+
+describe("colour submenu", () => {
+  it("offers every palette colour plus a way back to none", () => {
+    const colour = buildThreadActionMenuItems(baseState).find((item) => item.id === "color");
+    expect(colour?.children?.map((child) => child.id)).toEqual([
+      "color:none",
+      ...ACCENT_COLOR_OPTIONS.map((option) => `color:${option.id}`),
+    ]);
+  });
+
+  it("checks the colour the thread is already marked with", () => {
+    const colour = buildThreadActionMenuItems({ ...baseState, accentColor: "teal" }).find(
+      (item) => item.id === "color",
+    );
+    expect(colour?.children?.find((child) => child.id === "color:teal")?.label).toBe("\u2713 Teal");
+    expect(colour?.children?.find((child) => child.id === "color:none")?.label).toBe("No colour");
+  });
+
+  it("checks none when the thread carries no colour", () => {
+    const colour = buildThreadActionMenuItems(baseState).find((item) => item.id === "color");
+    expect(colour?.children?.find((child) => child.id === "color:none")?.label).toBe(
+      "\u2713 No colour",
+    );
+  });
 });
 
 describe("buildDraftActionMenuItems", () => {
@@ -234,3 +268,10 @@ describe("buildDraftActionMenuItems", () => {
     expect(items.at(-1)).toMatchObject({ label: "Discard draft", destructive: true });
   });
 });
+
+function ids(state: ThreadActionMenuState): string[] {
+  return buildThreadActionMenuItems(state).flatMap((item) => [
+    item.id,
+    ...(item.children?.map((child) => child.id) ?? []),
+  ]);
+}

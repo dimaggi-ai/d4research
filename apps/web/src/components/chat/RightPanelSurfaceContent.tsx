@@ -111,6 +111,7 @@ export function RightPanelSurfaceContent(props: {
             mode="embedded"
             composerDraftTarget={props.composerDraftTarget}
             workspaceMutationId={props.workspaceMutationId}
+            visible={visible}
           />
         </Suspense>
       );
@@ -187,6 +188,9 @@ export function RightPanelSurfaceContent(props: {
         <Suspense fallback={null}>
           <FilePreviewPanel
             active={visible}
+            openInShortcutEnabled={visible}
+            primaryCwd={files.workspaceRoot ?? ""}
+            projectRoot={files.workspaceRoot ?? ""}
             key={`${props.environmentId}:${
               attachment ? `attachment:${attachment.id}` : files.workspaceRoot
             }`}

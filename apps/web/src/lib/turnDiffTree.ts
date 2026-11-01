@@ -1,5 +1,12 @@
 import type { TurnDiffFileChange } from "../types";
 
+export interface DiffTreeFile {
+  readonly path: string;
+  readonly kind?: string;
+  readonly additions?: number;
+  readonly deletions?: number;
+}
+
 export interface TurnDiffStat {
   additions: number;
   deletions: number;
@@ -30,7 +37,7 @@ interface MutableDirectoryNode {
   files: TurnDiffTreeFileNode[];
 }
 
-const SORT_LOCALE_OPTIONS: Intl.CollatorOptions = { numeric: true, sensitivity: "base" };
+let sortCollator: Intl.Collator | undefined;
 
 function normalizePathSegments(pathValue: string): string[] {
   return pathValue
@@ -40,10 +47,12 @@ function normalizePathSegments(pathValue: string): string[] {
 }
 
 function compareByName(a: { name: string }, b: { name: string }): number {
-  return a.name.localeCompare(b.name, undefined, SORT_LOCALE_OPTIONS);
+  // Defer ICU initialization until the first name comparison.
+  sortCollator ??= new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  return sortCollator.compare(a.name, b.name);
 }
 
-function readStat(file: TurnDiffFileChange): TurnDiffStat | null {
+function readStat(file: DiffTreeFile): TurnDiffStat | null {
   if (typeof file.additions !== "number" || typeof file.deletions !== "number") {
     return null;
   }
@@ -96,21 +105,7 @@ function toTreeNodes(directory: MutableDirectoryNode): TurnDiffTreeNode[] {
   return [...subdirectories, ...files];
 }
 
-export function summarizeTurnDiffStats(files: ReadonlyArray<TurnDiffFileChange>): TurnDiffStat {
-  return files.reduce(
-    (acc, file) => {
-      const stat = readStat(file);
-      if (!stat) return acc;
-      return {
-        additions: acc.additions + stat.additions,
-        deletions: acc.deletions + stat.deletions,
-      };
-    },
-    { additions: 0, deletions: 0 },
-  );
-}
-
-export function buildTurnDiffTree(files: ReadonlyArray<TurnDiffFileChange>): TurnDiffTreeNode[] {
+export function buildTurnDiffTree(files: ReadonlyArray<DiffTreeFile>): TurnDiffTreeNode[] {
   const root: MutableDirectoryNode = {
     name: "",
     path: "",
@@ -169,4 +164,18 @@ export function buildTurnDiffTree(files: ReadonlyArray<TurnDiffFileChange>): Tur
   }
 
   return toTreeNodes(root);
+}
+
+export function summarizeTurnDiffStats(files: ReadonlyArray<TurnDiffFileChange>): TurnDiffStat {
+  return files.reduce(
+    (acc, file) => {
+      const stat = readStat(file);
+      if (!stat) return acc;
+      return {
+        additions: acc.additions + stat.additions,
+        deletions: acc.deletions + stat.deletions,
+      };
+    },
+    { additions: 0, deletions: 0 },
+  );
 }

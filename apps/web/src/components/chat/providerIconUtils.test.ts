@@ -2,11 +2,8 @@ import { ProviderDriverKind } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { AntigravityIcon, JunieIcon } from "../Icons";
-import {
-  PROVIDER_ICON_BY_PROVIDER,
-  getDisplayModelName,
-  getProviderRowLabel,
-} from "./providerIconUtils";
+import { PROVIDER_ICON_BY_PROVIDER } from "./ProviderInstanceIcon";
+import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
 
 describe("provider icons", () => {
   it("uses distinct provider icons for Agy and Junie", () => {

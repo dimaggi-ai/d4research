@@ -69,14 +69,14 @@ describe("resolveThreadListV2SnoozeMenuSelection", () => {
     const displayedPresets = resolveSnoozePresets(menuOpenedAt);
 
     const selection = resolveThreadListV2SnoozeMenuSelection({
-      event: "snooze:evening",
+      event: "snooze:at:today:18:00",
       displayedPresets,
       now: selectedAt,
     });
 
     expect(selection).toEqual({
       _tag: "selected",
-      preset: displayedPresets.find((preset) => preset.id === "evening"),
+      preset: displayedPresets.find((preset) => preset.id === "at:today:18:00"),
     });
   });
 
@@ -85,7 +85,7 @@ describe("resolveThreadListV2SnoozeMenuSelection", () => {
 
     expect(
       resolveThreadListV2SnoozeMenuSelection({
-        event: "snooze:evening",
+        event: "snooze:at:today:18:00",
         displayedPresets,
         now: new Date(2026, 4, 8, 18, 0, 1),
       }),
@@ -96,7 +96,7 @@ describe("resolveThreadListV2SnoozeMenuSelection", () => {
     const displayedPresets = resolveSnoozePresets(new Date(2026, 4, 8, 10));
     const selectedAt = new Date(2026, 4, 8, 10, 30);
     const selection = resolveThreadListV2SnoozeMenuSelection({
-      event: "snooze:hour",
+      event: "snooze:after:60",
       displayedPresets,
       now: selectedAt,
     });

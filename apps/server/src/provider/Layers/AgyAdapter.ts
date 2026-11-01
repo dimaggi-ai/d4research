@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import { tokenizeCliArgs } from "@d4research/shared/cliArgs";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import {

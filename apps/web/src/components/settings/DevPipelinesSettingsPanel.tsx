@@ -10,11 +10,7 @@ import {
 } from "@d4research/contracts";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
+import { providerInstanceEntriesFor } from "../../providerInstances";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { listDevScenarios } from "../../devPipeline";
 import { ACCEPTED_PROMPT_FILE_SUFFIXES, mergePromptFiles } from "../../lib/promptFiles";
@@ -59,9 +55,7 @@ export function DevPipelinesSettingsPanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const candidates = deriveResearchProviderCandidates(
-    sortProviderInstanceEntries(
-      applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings, null),
-    ),
+    providerInstanceEntriesFor(serverProviders, settings, null),
   );
   const persistedPipelines = listDevScenarios(settings.dev, candidates);
   const promptRef = useRef<HTMLTextAreaElement>(null);

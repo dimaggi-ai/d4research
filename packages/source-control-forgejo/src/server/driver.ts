@@ -1,15 +1,25 @@
-import { SourceControlProviderKind } from "@d4research/contracts";
-import { defineSourceControlDriver } from "@d4research/source-control-core/server/driver";
+import {
+  defineSourceControlDriver,
+  withOwnServices,
+} from "@d4research/source-control-core/server/driver";
 import * as Effect from "effect/Effect";
 
+import { definition } from "../shared/definition.ts";
+
+import * as ForgejoCli from "./ForgejoCli.ts";
 import * as ForgejoPullRequestProvider from "./ForgejoPullRequestProvider.ts";
 import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
 
+const services = ForgejoCli.layer;
+
+const makeInstance = Effect.all({
+  sourceControl: ForgejoSourceControlProvider.make,
+  discovery: ForgejoSourceControlProvider.makeDiscovery,
+  pullRequests: ForgejoPullRequestProvider.make,
+});
+
 export const driver = defineSourceControlDriver({
-  kind: SourceControlProviderKind.make("forgejo"),
-  make: Effect.all({
-    sourceControl: ForgejoSourceControlProvider.make,
-    discovery: ForgejoSourceControlProvider.makeDiscovery,
-    pullRequests: ForgejoPullRequestProvider.make,
-  }),
+  kind: definition.kind,
+  definition,
+  make: withOwnServices(makeInstance, services),
 });

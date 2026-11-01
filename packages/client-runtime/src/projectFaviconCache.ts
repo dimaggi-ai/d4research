@@ -1,5 +1,5 @@
 import { EnvironmentId } from "@d4research/contracts";
-import { mediaMimeType } from "@d4research/shared/filePreview";
+import { mediaMimeType } from "@d4research/shared/mediaPreview";
 import {
   getProjectFaviconCacheKey,
   getProjectFaviconResourceKey,

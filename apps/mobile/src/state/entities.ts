@@ -111,8 +111,11 @@ export function useLiveThreadLinkLabels(markdown: string, environmentId: Environ
     () =>
       titles.size === 0
         ? markdown
-        : relabelThreadLinks(markdown, (threadId) => titles.get(threadId)),
-    [markdown, titles],
+        : // Titles cover this environment; links to other machines keep their written labels.
+          relabelThreadLinks(markdown, environmentId, (ref) =>
+            ref.environmentId === environmentId ? titles.get(ref.threadId) : undefined,
+          ),
+    [environmentId, markdown, titles],
   );
 }
 

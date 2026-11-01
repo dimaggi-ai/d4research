@@ -11,7 +11,7 @@ import * as Config from "../config.ts";
 import * as Store from "./D4AgentStore.ts";
 const decodeState = Schema.decodeUnknownSync(Schema.fromJsonString(Store.StoredState));
 it.effect(
-  "store survives restart and makes interrupted approved actions require confirmation",
+  "store survives restart and records interrupted approved actions as interrupted, not pending",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -57,7 +57,9 @@ it.effect(
         }));
         const reopened = yield* acquire;
         assert.equal((yield* reopened.get).threadId, "persistent");
-        assert.equal((yield* reopened.get).actions[0]?.status, "pending");
+        // It may already have run, so it is neither offered again nor reported as executed.
+        assert.equal((yield* reopened.get).actions[0]?.status, "interrupted");
+        assert.include((yield* reopened.get).actions[0]?.failure ?? "", "may or may not");
         assert.deepEqual((yield* reopened.get).rotation, (yield* first.get).rotation);
         assert.equal((yield* reopened.get).rotation?.pendingAttachments?.[0]?.name, "screen.png");
         assert.equal(

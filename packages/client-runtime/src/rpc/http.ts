@@ -1,3 +1,4 @@
+import { environmentGatewayPath } from "@d4research/shared/environmentGateway";
 import {
   EnvironmentHttpApi,
   EnvironmentHttpCommonError,
@@ -27,7 +28,7 @@ export class RemoteEnvironmentAuthFetchError extends Data.TaggedError(
   readonly cause: unknown;
 }> {}
 
-export class RemoteEnvironmentAuthInvalidJsonError extends Data.TaggedError(
+class RemoteEnvironmentAuthInvalidJsonError extends Data.TaggedError(
   "RemoteEnvironmentAuthInvalidJsonError",
 )<{
   readonly message: string;
@@ -88,7 +89,7 @@ export const layerRemoteHttpClient = (
 
 const remoteApiBaseUrl = (httpBaseUrl: string): string => {
   const url = new URL(httpBaseUrl);
-  url.pathname = "/";
+  url.pathname = environmentGatewayPath(httpBaseUrl) || "/";
   url.search = "";
   url.hash = "";
   return url.toString();

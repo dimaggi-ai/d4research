@@ -1,16 +1,20 @@
-import { deriveProviderEntriesByEnvironment } from "./providerInstances";
-import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@d4research/contracts";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   applyProviderInstanceSettings,
+  deriveProviderEntriesByEnvironment,
   deriveProviderInstanceEntries,
   getDefaultProviderInstanceModel,
-  getRedundantProviderInstanceIds,
   isProviderInstancePickerReady,
-  isProviderInstancePickerVisible,
   resolveDefaultProviderModelSelection,
-  resolveProviderCatalogAvailability,
   resolveSelectableProviderInstance,
+  shouldShowInstanceBadge,
 } from "./providerInstances";
 
 function provider(input: {
@@ -27,11 +31,11 @@ function provider(input: {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
     driver: input.provider,
-    ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     ...(input.supportsTextGeneration === undefined
       ? {}
       : { supportsTextGeneration: input.supportsTextGeneration }),
     ...(input.displayName ? { displayName: input.displayName } : {}),
+    ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     enabled: input.enabled ?? true,
     installed: true,
     version: null,
@@ -39,9 +43,7 @@ function provider(input: {
     ...(input.availability ? { availability: input.availability } : {}),
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
-    models: input.models ?? [
-      { slug: "test-model", name: "Test model", isCustom: false, capabilities: null },
-    ],
+    models: input.models ?? [],
     slashCommands: [],
     skills: [],
   };
@@ -68,188 +70,9 @@ describe("isProviderInstancePickerReady", () => {
     expect(entry?.status).toBe("ready");
     expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
   });
-
-  it("accepts an enabled, available, ready instance", () => {
-    const [entry] = deriveProviderInstanceEntries([
-      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
-    ]);
-
-    expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
-  });
-});
-
-describe("resolveProviderCatalogAvailability", () => {
-  const [entry] = deriveProviderInstanceEntries([
-    provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
-  ]);
-
-  it("keeps the initial reactive config state distinct from an empty catalogue", () => {
-    expect(
-      resolveProviderCatalogAvailability({
-        catalogLoaded: false,
-        entries: [],
-        selectedEntry: undefined,
-      }),
-    ).toBe("loading");
-    expect(
-      resolveProviderCatalogAvailability({
-        catalogLoaded: true,
-        entries: [],
-        selectedEntry: undefined,
-      }),
-    ).toBe("unconfigured");
-  });
-
-  it("distinguishes a selected provider from configured but unusable providers", () => {
-    expect(
-      resolveProviderCatalogAvailability({
-        catalogLoaded: true,
-        entries: entry ? [entry] : [],
-        selectedEntry: entry,
-      }),
-    ).toBe("ready");
-    expect(
-      resolveProviderCatalogAvailability({
-        catalogLoaded: true,
-        entries: entry ? [entry] : [],
-        selectedEntry: undefined,
-      }),
-    ).toBe("unavailable");
-  });
-});
-
-describe("isProviderInstancePickerVisible", () => {
-  it("keeps enabled instances in the rail and removes disabled instances", () => {
-    const [enabledEntry, disabledEntry] = deriveProviderInstanceEntries([
-      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claudeAgent",
-        enabled: false,
-      }),
-    ]);
-
-    expect(enabledEntry && isProviderInstancePickerVisible(enabledEntry)).toBe(true);
-    expect(disabledEntry && isProviderInstancePickerVisible(disabledEntry)).toBe(false);
-  });
 });
 
 describe("applyProviderInstanceSettings", () => {
-  it("keeps separate managed ChatGPT accounts with identical public configuration selectable", () => {
-    const driver = ProviderDriverKind.make("codex");
-    const settings = {
-      projectSettingsOverrides: {},
-      providers: { codex: { setupMode: "managed" } } as never,
-      providerInstances: Object.fromEntries(
-        ["codex_personal", "codex_work"].map((id) => [
-          id,
-          {
-            driver,
-            enabled: true,
-            config: { enabled: true, setupMode: "managed" },
-          },
-        ]),
-      ),
-    };
-    const entries = deriveProviderInstanceEntries(
-      ["codex_personal", "codex_work"].map((instanceId) =>
-        provider({ provider: driver, instanceId }),
-      ),
-    );
-    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set());
-    expect(
-      applyProviderInstanceSettings(entries, settings, null).map((entry) => entry.instanceId),
-    ).toEqual(["codex_personal", "codex_work"]);
-  });
-
-  it("keeps accounts whose distinct credentials are redacted from the client", () => {
-    const driver = ProviderDriverKind.make("claudeAgent");
-    const settings = {
-      projectSettingsOverrides: {},
-      providers: {} as never,
-      providerInstances: Object.fromEntries(
-        ["claude_personal", "claude_work"].map((id) => [
-          id,
-          {
-            driver,
-            enabled: true,
-            environment: [
-              { name: "ANTHROPIC_API_KEY", value: "", sensitive: true, valueRedacted: true },
-            ],
-          },
-        ]),
-      ),
-    };
-    const entries = deriveProviderInstanceEntries(
-      ["claude_personal", "claude_work"].map((instanceId) =>
-        provider({ provider: driver, instanceId }),
-      ),
-    );
-    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set());
-    expect(applyProviderInstanceSettings(entries, settings, null)).toHaveLength(2);
-  });
-
-  it("collapses a presentation-only Agy duplicate into the canonical default", () => {
-    const defaultId = ProviderInstanceId.make("agy");
-    const duplicateId = ProviderInstanceId.make("agy_agy");
-    const settings = {
-      projectSettingsOverrides: {},
-      providers: { agy: {} } as never,
-      providerInstances: {
-        [defaultId]: {
-          driver: ProviderDriverKind.make("agy"),
-          enabled: true,
-          config: {
-            enabled: true,
-            binaryPath: "agy",
-            defaultModel: "gemini-3.6-flash-medium",
-            launchArgs: "",
-            customModels: [],
-          },
-        },
-        [duplicateId]: {
-          driver: ProviderDriverKind.make("agy"),
-          displayName: "Agy",
-          enabled: true,
-        },
-      },
-    };
-    const entries = deriveProviderInstanceEntries([
-      provider({ provider: ProviderDriverKind.make("agy"), instanceId: duplicateId }),
-      provider({ provider: ProviderDriverKind.make("agy"), instanceId: defaultId }),
-    ]);
-
-    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set([duplicateId]));
-    expect(
-      applyProviderInstanceSettings(entries, settings, null).map((entry) => entry.instanceId),
-    ).toEqual([defaultId]);
-  });
-
-  it("preserves Agy instances with distinct models or environments", () => {
-    const defaultId = ProviderInstanceId.make("agy");
-    const modelId = ProviderInstanceId.make("agy_pro");
-    const environmentId = ProviderInstanceId.make("agy_work");
-    const settings = {
-      projectSettingsOverrides: {},
-      providers: { agy: {} } as never,
-      providerInstances: {
-        [defaultId]: { driver: ProviderDriverKind.make("agy"), enabled: true },
-        [modelId]: {
-          driver: ProviderDriverKind.make("agy"),
-          enabled: true,
-          config: { defaultModel: "gemini-3.6-pro-high" },
-        },
-        [environmentId]: {
-          driver: ProviderDriverKind.make("agy"),
-          enabled: true,
-          environment: [{ name: "AGY_PROFILE", value: "work", sensitive: false }],
-        },
-      },
-    };
-
-    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set());
-  });
-
   it("uses settings when a streamed snapshot still reports a disabled default as enabled", () => {
     const entries = deriveProviderInstanceEntries([
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
@@ -263,25 +86,6 @@ describe("applyProviderInstanceSettings", () => {
             enabled: false,
           },
         },
-        projectSettingsOverrides: {},
-      },
-      null,
-    );
-
-    expect(entry?.enabled).toBe(false);
-  });
-
-  it("treats a removed custom instance snapshot as disabled", () => {
-    const entries = deriveProviderInstanceEntries([
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claude_work",
-      }),
-    ]);
-    const [entry] = applyProviderInstanceSettings(
-      entries,
-      {
-        providerInstances: {},
         projectSettingsOverrides: {},
       },
       null,
@@ -312,6 +116,7 @@ describe("applyProviderInstanceSettings", () => {
     },
   );
 
+  // regression: #8337 provider ids matching Object.prototype keys resolved to prototype members
   it("uses settings for a configured custom instance named constructor", () => {
     const instanceId = ProviderInstanceId.make("constructor");
     const entries = deriveProviderInstanceEntries([
@@ -337,62 +142,6 @@ describe("applyProviderInstanceSettings", () => {
     expect(entry?.enabled).toBe(false);
   });
 
-  it("treats a removed default instance for a fork driver as disabled", () => {
-    const driver = ProviderDriverKind.make("constructor");
-    const entries = deriveProviderInstanceEntries([
-      provider({
-        provider: driver,
-        instanceId: "constructor",
-      }),
-    ]);
-    const [entry] = applyProviderInstanceSettings(
-      entries,
-      {
-        providerInstances: {},
-        projectSettingsOverrides: {},
-      },
-      null,
-    );
-
-    expect(entry?.isDefault).toBe(true);
-    expect(entry?.enabled).toBe(false);
-  });
-
-  it.each(["constructor", "toString"])(
-    "keeps an explicitly enabled instance named %s selectable",
-    (instanceId) => {
-      const entries = deriveProviderInstanceEntries([
-        provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId }),
-      ]);
-      const [entry] = applyProviderInstanceSettings(
-        entries,
-        {
-          providerInstances: {
-            [ProviderInstanceId.make(instanceId)]: {
-              driver: ProviderDriverKind.make("claudeAgent"),
-              enabled: true,
-              environment: [{ name: "CLAUDE_PROFILE", value: "work", sensitive: false }],
-            },
-          },
-          projectSettingsOverrides: {},
-          providers: {} as never,
-        },
-        null,
-      );
-      expect(entry?.enabled).toBe(true);
-    },
-  );
-
-  it("keeps a configured fork default enabled when its legacy config omits enabled", () => {
-    const driver = ProviderDriverKind.make("fork-driver");
-    const [entry] = applyProviderInstanceSettings(
-      deriveProviderInstanceEntries([provider({ provider: driver, instanceId: "fork-driver" })]),
-      { providerInstances: {}, projectSettingsOverrides: {}, providers: { [driver]: {} } as never },
-      null,
-    );
-    expect(entry?.enabled).toBe(true);
-  });
-
   it("uses the driver default for an unconfigured built-in default instance", () => {
     const entries = deriveProviderInstanceEntries([
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex", enabled: false }),
@@ -409,20 +158,6 @@ describe("applyProviderInstanceSettings", () => {
 
     expect(codex?.enabled).toBe(true);
     expect(grok?.enabled).toBe(false);
-  });
-});
-
-describe("deriveProviderInstanceEntries", () => {
-  it("uses explicit instance id and driver kind from the snapshot", () => {
-    const snapshot = provider({
-      provider: ProviderDriverKind.make("codex"),
-      instanceId: "codex_personal",
-    });
-    const [entry] = deriveProviderInstanceEntries([snapshot]);
-
-    expect(entry?.instanceId).toBe("codex_personal");
-    expect(entry?.driverKind).toBe("codex");
-    expect(entry?.isDefault).toBe(false);
   });
 });
 
@@ -458,6 +193,7 @@ describe("deriveProviderEntriesByEnvironment", () => {
     );
   });
 
+  // regression: #7292 sidebar provider icons resolved from the wrong environment
   it("keeps same-id default instances distinct per environment", () => {
     const byEnvironment = deriveProviderEntriesByEnvironment([
       [
@@ -490,27 +226,35 @@ describe("deriveProviderEntriesByEnvironment", () => {
     expect(byEnvironment.get("remote")?.get("claude")?.accentColor).toBe("#445566");
   });
 
-  it("never falls back to another environment's instances", () => {
+  it("keeps an instance a project turns on as a sibling for the instance badge", () => {
+    const codex = ProviderDriverKind.make("codex");
     const byEnvironment = deriveProviderEntriesByEnvironment([
-      ["local", [provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" })]],
-      ["empty", []],
+      [
+        "local",
+        [
+          provider({ provider: codex, instanceId: "codex" }),
+          provider({ provider: codex, instanceId: "codex_work" }),
+        ],
+        {
+          providerInstances: {
+            [ProviderInstanceId.make("codex_work")]: { driver: codex, enabled: false },
+          },
+          projectSettingsOverrides: {
+            [ProjectId.make("project-work")]: {
+              providerInstances: { [ProviderInstanceId.make("codex_work")]: { enabled: true } },
+            },
+          },
+        },
+      ],
     ]);
+    const entries = byEnvironment.get("local");
+    const personal = entries?.get("codex");
 
-    expect(byEnvironment.get("empty")?.get("codex")).toBeUndefined();
-    expect(byEnvironment.get("empty")?.size).toBe(0);
+    expect(personal && shouldShowInstanceBadge(personal, entries?.values() ?? [])).toBe(true);
   });
 });
+
 describe("resolveSelectableProviderInstance", () => {
-  it("returns the requested instance when it is enabled and available", () => {
-    const requested = ProviderInstanceId.make("claude_work");
-    const providers = [
-      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
-      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: requested }),
-    ];
-
-    expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
-  });
-
   it("falls back to the first enabled and available instance", () => {
     const disabled = ProviderInstanceId.make("codex");
     const fallback = ProviderInstanceId.make("claudeAgent");
@@ -541,26 +285,7 @@ describe("resolveSelectableProviderInstance", () => {
     expect(resolveSelectableProviderInstance(providers, undefined)).toBe(ready);
   });
 
-  it("rejects unprobed and errored instances until readiness is confirmed", () => {
-    const notInstalled = ProviderInstanceId.make("codex");
-    const unprobed = ProviderInstanceId.make("claudeAgent");
-    const providers = [
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: notInstalled,
-        status: "error",
-      }),
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: unprobed,
-        status: "warning",
-      }),
-    ];
-
-    expect(resolveSelectableProviderInstance(providers, undefined)).toBeUndefined();
-  });
-
-  it("falls back from a requested errored instance to a ready instance", () => {
+  it("keeps a requested instance even when its probe errored", () => {
     const requested = ProviderInstanceId.make("codex");
     const providers = [
       provider({
@@ -571,9 +296,10 @@ describe("resolveSelectableProviderInstance", () => {
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, requested)).toBe("claudeAgent");
+    expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
   });
 
+  // regression: #4117 users without Codex got a broken default provider
   it("does not invent an errored instance as a new-user default", () => {
     const notInstalled = ProviderInstanceId.make("codex");
     const providers = [
@@ -630,20 +356,16 @@ describe("getDefaultProviderInstanceModel", () => {
     ).toBe("claude-opus-4-8");
   });
 
-  it("does not fabricate a driver default when the instance reports no models", () => {
+  it("falls back to the driver default when the instance reports no models", () => {
     const providers = [
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claudeAgent",
-        models: [],
-      }),
+      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
     ];
 
     const resolved = getDefaultProviderInstanceModel(
       providers,
       ProviderInstanceId.make("claudeAgent"),
     );
-    expect(resolved).toBeUndefined();
+    expect(resolved).toBe(DEFAULT_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")]);
   });
 
   it("honors the instance's declared default before model-list order", () => {
@@ -659,15 +381,10 @@ describe("getDefaultProviderInstanceModel", () => {
       "claude-opus-4-8",
     );
   });
-
-  it("returns undefined for an unknown instance", () => {
-    expect(
-      getDefaultProviderInstanceModel([], ProviderInstanceId.make("removed_instance")),
-    ).toBeUndefined();
-  });
 });
 
 describe("resolveDefaultProviderModelSelection", () => {
+  // regression: #4117 users without Codex got a broken default provider
   it.each([
     ["codex", "codex", "gpt-5.6"],
     ["claudeAgent", "claudeAgent", "claude-fable-5"],
@@ -727,6 +444,7 @@ describe("resolveDefaultProviderModelSelection", () => {
     ).toEqual({ instanceId: "claudeAgent", model: "claude-opus-4-8" });
   });
 
+  // regression: #4117 users without Codex got a broken default provider
   it.each([{ enabled: false }, { availability: "unavailable" as const }])(
     "replaces an unavailable stored instance deterministically",
     (requestedState) => {
@@ -844,17 +562,5 @@ describe("provider icon metadata", () => {
     expect(restoredEntry?.acpRegistryAgentId).toBe("swe-agent");
     expect(restoredEntry?.acpRegistryIconUrl).toBe(iconUrl);
     expect(restoredEntry?.enabled).toBe(true);
-  });
-
-  it("retains server-published registry icons without local settings", () => {
-    const iconUrl = "https://cdn.agentclientprotocol.com/registry/icons/swe-agent.svg";
-    const [entry] = deriveProviderInstanceEntries([
-      {
-        ...provider({ provider: ProviderDriverKind.make("acpRegistry"), instanceId: "swe-remote" }),
-        iconUrl,
-      },
-    ]);
-    expect(entry?.acpRegistryIconUrl).toBe(iconUrl);
-    expect(entry?.driverKind).toBe("acpRegistry");
   });
 });

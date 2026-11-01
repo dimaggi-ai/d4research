@@ -22,7 +22,8 @@ block. What you typed is what the agent receives, markers and numbering
 included, and `#1234` without a space still looks up a pull request.
 
 Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
-on an empty line leaves it; **Tab** nests a list item. In a code block, Enter
+on an empty line moves out one level, then leaves it; **Tab** nests a list item
+under the one above. In a code block, Enter
 starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
 the selected lines, and a closing ` ``` ` followed by Enter, or two blank lines
 at the end, leave the block. **Backspace** at the start of a code block turns it
@@ -77,23 +78,28 @@ after a project rename, and deleting that document removes every copy with its e
 
 ## Follow-up messages
 
-On web and desktop, choose **Settings → General → Follow-up behavior** to queue
+On web and desktop, choose **Settings → Chat → Follow-up behavior** to queue
 new messages for a later turn or steer the running turn immediately. The setting
 applies to this client; already queued messages keep their place. Queued messages
-are saved on the server and can be edited, reordered, or removed above the composer.
-`Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action:
-it steers when your default is Queue and queues when your default is Steer.
+are saved on the server and can be edited or removed before they send.
+When Enter sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses
+the opposite action: it steers when your default is Queue and queues when your
+default is Steer.
+If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses
+your default follow-up behavior; add **Shift** to use the opposite action. This
+applies only to multiline messages when you choose the multiline send option.
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
-requires an active turn that supports steering. Change
+requires an active turn that supports steering. If that shortcut sends the opposite
+action for your draft, move focus outside the composer to steer the queued message. Change
 `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
 
 Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the
 start of the composer to edit the most recently queued message. Change
 `thread.editQueuedMessage` to use another shortcut.
 
-Mobile has the same choice under **Settings → Follow-ups**. While a turn is
+Mobile has the same choice under **Settings → Chat**. While a turn is
 running the send button shows which action it will take. Long-press it to use the
 other action for a single message, or hold `Cmd` while sending from a hardware
 keyboard. The button only offers Steer when the running agent supports it.
@@ -240,7 +246,8 @@ into a normal draft.
 
 On web and desktop, choose **Edit from here** beneath a sent message to rewind
 the conversation to before that message. Choose **Revert and keep changes** to
-leave workspace files as they are, or **Revert files too** to restore them as well.
+leave workspace files as they are, or **Revert files too** to put the workspace back
+to its checkpoint from before that message. That also undoes edits you made yourself.
 File restore is only offered for threads running in a worktree, and it is
 refused when another thread or agent session also uses that directory, a folder
 inside it, or a folder that contains it, since
@@ -280,7 +287,7 @@ The list mixes kinds (built-in, other wired, other Bluetooth, CarPlay) with wire
 Bluetooth devices you have dictated with, listed by name. Drag to rank them together:
 for example, put **Other Bluetooth** above your AirPods so a new headset is preferred
 while the AirPods microphone stays low. By default, CarPlay comes after the built-in
-microphone.
+microphone. Swipe a device left to forget it.
 
 Transcription runs on your device. d4research deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
@@ -303,7 +310,7 @@ sheet on mobile, to continue. You can edit, reorder, or remove held messages wit
 The pencil on a queued row opens that message in the composer for editing. The original message
 stays in the queue until you save, and its row is highlighted while you edit. The message's
 attachments appear above the text with a remove control, and new images can be added the usual way.
-The checkmark saves the queued message in place; **Cancel** on its row leaves it unchanged. Whatever
+The checkmark saves the queued message in place; **Cancel** next to it leaves it unchanged. Whatever
 you had typed in the composer before starting the edit is restored afterwards. If the queued
 message starts or is removed while you are editing, the edit ends: changed content moves into the
 composer when it is empty, and is discarded otherwise.
@@ -314,8 +321,8 @@ Type `/` for commands or `$` to add a skill from the selected environment and
 provider. On mobile, both are also available before starting a thread on
 **New task**.
 
-The slash menu also includes skills unless you turn off **Settings → General →
-Show skills in slash menu**. Only skills enabled for the provider are listed.
+The slash menu also includes skills unless you turn off **Settings → Chat →
+Show skills in slash menu**, under Advanced. Only skills enabled for the provider are listed.
 
 After adding or changing skills, plugins, or MCP servers, use **Restart agent
 session** in the command palette on web and desktop. The conversation continues;
@@ -327,18 +334,49 @@ Provider commands must start the message to run. d4research commands such as
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it. Web and desktop also offer compaction from the context meter.
 
+### Compact sessions automatically
+
+In **Settings → Providers → Automatic compaction**, enable automatic compaction and choose a
+context token threshold and idle timeout. Defaults are **300,000 tokens** and **5 minutes**,
+with automatic compaction switched off. Select a project above the settings to override
+individual values. Each setting's indicator shows its source and the projects overriding it;
+reset a project value to inherit the global default. Native mobile has the same section under
+**Maintenance**, including the source of each value.
+
+**Allow background work to continue** is on by default. Claude and Codex can compact between
+parent replies while native background commands and provider subagents keep running; Claude
+monitors can continue too. The timeout starts when the last parent reply finishes. Background
+output does not reset it, but a new parent reply does. Turn this option off to wait for all work
+to finish before starting the timeout. It can also be overridden per project.
+
+Active parent turns, queued messages, pending questions, other unfinished tools, and
+T3-managed delegated tasks still prevent compaction. Sessions without reported context usage,
+archived, settled, snoozed, failed, interrupted, and native child threads are skipped. Reading
+the conversation does not reset the timer. A compaction never triggers another compaction
+without a new conversation turn. The server must remain running; the client can be closed.
+After a provider usage limit, automatic compaction waits for a new successful agent turn with
+results after the reset. The idle timeout starts from that completed work; the reset time alone
+does not trigger compaction.
+
+Compaction uses the provider's normal operation and can consume provider usage.
+
 ## Goals
 
 With Codex and Claude, send `/goal` followed by what "done" means, for example
 `/goal all tests in packages/api pass`. The agent keeps working across turns
 until it judges the goal met. The thread shows **Goal** while it works, and a
-row above the composer shows the goal and its progress.
+line at the end of the thread (above the composer on mobile) shows the goal and
+its progress.
 
 - `/goal` alone shows the current goal. `/goal clear` removes it.
 - Codex also supports `/goal pause` and `/goal resume`. Stopping a Codex goal
-  pauses it.
+  pauses it, and so does Codex ending its work without meeting the goal.
 - Stopping Claude ends the current turn, but the goal stays set. Claude checks it
   again at the end of your next message.
+- Sending a new goal, or `/goal resume`, while the agent works stops the current
+  turn and starts the goal, unless you queue it. `/goal clear` and `/goal pause`
+  stop the turn only when it is working on the goal. Other goal commands wait for
+  the turn to end.
 
 ## Context in your message
 
@@ -365,7 +403,8 @@ opens it when selected. Your prompt only carries a reference: the agent reads th
 history on demand, rather than adding the full transcript to your prompt. Attaching a thread does
 not change it or itself send a message to that thread.
 
-Dropping a thread from another environment attaches a saved transcript file. The source
+A thread from a linked machine, picked, pasted or dropped, stays a reference that the agent reads
+on that machine. Dropping a thread from any other environment attaches a saved transcript file. The source
 environment must be connected and up to date. The transcript includes the visible history and
 saved text context at the time of the drop; later messages and the contents of attached files
 are not copied. The agent can read the saved transcript after the source disconnects. Normal
@@ -401,7 +440,9 @@ file: a header row with the view toggle, **Copy contents** and **Save file**. On
 open in the same file screen as workspace files; its menu holds **Copy contents**, **Save or
 share** and **Open in file viewer**. Pictures, videos and PDFs keep their native viewers, and
 other document formats such as Word or Pages open in the device's own viewer when it has one.
-If nothing on the device can show a format, save or share it to open it elsewhere.
+If nothing on the device can show a format, save or share it to open it elsewhere. A ZIP up to
+50 MB opens as a folder list on every surface; on mobile, select a file inside it to preview,
+save, or add it to chat.
 
 ## Images and videos in messages
 

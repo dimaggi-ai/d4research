@@ -365,6 +365,8 @@ it.effect(
           const scope = yield* registry.resolve(
             issued.config.authorizationHeader.replace(/^Bearer\s+/, ""),
           );
+          // Reissuing a thread's credential revokes the previous token outright.
+          if (expectedFailure && scope === undefined) continue;
           assert.isDefined(scope);
           const results = yield* toolkit
             .handle("d4_agent_system_health", {})

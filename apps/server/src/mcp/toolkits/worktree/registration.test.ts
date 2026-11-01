@@ -1,3 +1,8 @@
+import * as D4AgentModule from "../../../d4Agent/D4Agent.ts";
+import * as ProjectStoreModule from "../../../orchestration-v2/ProjectStore.ts";
+import { ResearchDelegationBudget } from "../research/budget.ts";
+import * as SecondBrainCaptureModule from "../../../second-brain/SecondBrainCapture.ts";
+import * as SecondBrainServiceModule from "../../../second-brain/SecondBrainService.ts";
 import * as D4Agent from "../../../d4Agent/D4Agent.ts";
 import * as D4AgentContext from "../../../d4Agent/D4AgentContext.ts";
 import * as HandoffMemory from "../../../handoffMemory.ts";
@@ -6,6 +11,14 @@ import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { ResearchDelegationBudgetLive } from "../research/budget.ts";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
+import { RemoteDelegation } from "../../../peer/RemoteDelegation.ts";
+import { PeerLinkRequests } from "../../../peer/PeerLinkRequests.ts";
+import { PeerLinks } from "../../../peer/PeerLinks.ts";
+import { PeerForwarding } from "../../../peer/PeerForwarding.ts";
+import * as DocumentText from "../../../provider/DocumentText.ts";
+import * as Context from "effect/Context";
+import * as ThreadWorkspaces from "../../../workspace/ThreadWorkspaces.ts";
+import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
@@ -40,17 +53,24 @@ import * as SourceControlRepositoryService from "../../../sourceControl/SourceCo
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
+import * as Peers from "../../../peers/Peers.ts";
+import * as PeerThreadMessaging from "../../../peers/PeerThreadMessaging.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
+import * as UsageService from "../../../usage/UsageService.ts";
+import * as UsageLimitSources from "../../../usage/UsageLimitSources.ts";
 
 const layerStubServices = Layer.mergeAll(
-  Layer.mock(D4Agent.D4Agent)({}),
-  Layer.mock(D4AgentContext.D4AgentContext)({ owns: () => Effect.succeed(false) }),
-  Layer.mock(SecondBrainService.SecondBrainService)({}),
-  Layer.mock(Capture.SecondBrainCapture)({}),
-  McpProviderSessions.layer,
-  ResearchDelegationBudgetLive,
-  Layer.mock(ProjectStore.ProjectStoreV2)({}),
+  Layer.mock(RemoteDelegation)({}),
+  Layer.mock(PeerLinkRequests)({}),
+  Layer.mock(PeerLinks)({}),
+  Layer.mock(PeerForwarding)({}),
+  Layer.mock(DocumentText.DocumentText)({}),
+  Layer.mock(UsageService.UsageService)({}),
+  Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+  Layer.mock(PeerThreadMessaging.PeerThreadMessaging)({}),
+  Layer.mock(ThreadWorkspaces.ThreadWorkspaces)({}),
+  SqlitePersistence.layerMemory,
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
   Layer.mock(DeviceService.DeviceService)({}),
@@ -72,6 +92,7 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
+  McpProviderSessions.layer,
 );
 
 const ToolsListPayload = Schema.fromJsonString(
@@ -98,7 +119,19 @@ const decodeToolsListPayload = Schema.decodeUnknownEffect(ToolsListPayload);
 it.effect("production mcp layer lists worktree tools over http", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const layerRoutes = McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer));
+      const registryContext = yield* Layer.build(
+        McpSessionRegistry.layer.pipe(
+          Layer.provide(McpProviderSessions.layer),
+          Layer.provide(
+            Layer.mock(ServerEnvironment.ServerEnvironment)({
+              getEnvironmentId: Effect.succeed("environment-scratch" as never),
+            }),
+          ),
+        ),
+      );
+      const layerRoutes = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.succeedContext(registryContext)),
+      );
       yield* HttpRouter.serve(layerRoutes, {
         disableListenLog: true,
         disableLogger: true,
@@ -109,13 +142,24 @@ it.effect("production mcp layer lists worktree tools over http", () =>
           }),
         ),
         Layer.provide(PreviewAutomationBroker.layer),
+        Layer.provide(Layer.mock(Peers.Peers)({})),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(D4AgentModule.D4Agent)({}),
+            McpProviderSessions.layer,
+            Layer.mock(ProjectStoreModule.ProjectStoreV2)({}),
+            Layer.mock(ResearchDelegationBudget)({}),
+            Layer.mock(SecondBrainCaptureModule.SecondBrainCapture)({}),
+            Layer.mock(SecondBrainServiceModule.SecondBrainService)({}),
+          ),
+        ),
         Layer.provide(PreviewBrowser.layer),
         Layer.provide(HandoffMemory.layer),
         Layer.provide(layerStubServices),
         Layer.build,
       );
 
-      const registry = McpSessionRegistry.issueActiveMcpCredential({
+      const registry = Context.get(registryContext, McpSessionRegistry.McpSessionRegistry).issue({
         threadId: ThreadId.make("thread-scratch"),
         providerInstanceId: ProviderInstanceId.make("claudeAgent"),
       });
@@ -157,8 +201,8 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       expect(toolNames).toContain("t3_worktree_status");
       expect(toolNames).toContain("preview_status");
       expect(toolNames).toContain("delegate_task");
-      expect(toolNames).toContain("handoff_status");
-      expect(toolNames).toContain("handoff_read");
+      expect(toolNames).toContain("t3_usage_limits_read");
+      expect(toolNames).toContain("t3_usage_read");
 
       const handoff = tools.find((tool) => tool.name === "t3_worktree_handoff");
       expect(handoff?.annotations?.readOnlyHint).toBe(false);

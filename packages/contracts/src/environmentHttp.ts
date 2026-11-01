@@ -1,3 +1,4 @@
+import { PublishSharedEnvironmentsInput, SharedEnvironmentCatalog } from "./environmentSharing.ts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -11,9 +12,9 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
   AuthAccessTokenResult,
+  AuthClientSession,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
-  AuthClientSession,
   AuthCreatePairingCredentialInput,
   AuthMcpApprovalDecisionRequest,
   AuthMcpApprovalDetails,
@@ -29,12 +30,13 @@ import {
   AuthMcpTokenRequest,
   AuthMcpTokenResult,
   AuthPairingCredentialResult,
-  AuthPairingLink,
   AuthRevokeClientSessionInput,
+  AuthUpdateClientScopesInput,
   AuthRevokePairingLinkInput,
   AuthEnvironmentScope,
   AuthTokenExchangeRequest,
   AuthSessionState,
+  AuthWebSocketTicketParams,
   AuthWebSocketTicketResult,
   ServerAuthSessionMethod,
 } from "./auth.ts";
@@ -96,6 +98,7 @@ export type EnvironmentAuthInvalidReason = typeof EnvironmentAuthInvalidReason.T
 
 export const EnvironmentOperationForbiddenReason = Schema.Literals([
   "current_session_revoke_not_allowed",
+  "current_session_scope_change_not_allowed",
 ]);
 export type EnvironmentOperationForbiddenReason = typeof EnvironmentOperationForbiddenReason.Type;
 
@@ -372,6 +375,89 @@ export class EnvironmentAuthenticatedAuth extends HttpApiMiddleware.Service<
   error: EnvironmentAuthenticationErrors,
 }) {}
 
+export const EnvironmentConnectReachabilityCause = Schema.Literals([
+  "not_linked",
+  "connector_not_running",
+  "connector_not_ready",
+  "edge_unreachable",
+  "no_connector",
+  "origin_unreachable",
+  "dns_failed",
+  "timeout",
+  "unexpected_response",
+]);
+export type EnvironmentConnectReachabilityCause = typeof EnvironmentConnectReachabilityCause.Type;
+
+/** Whether other devices can reach this environment through its T3 Connect tunnel. */
+export const EnvironmentConnectReachability = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("reachable"),
+    checkedAt: Schema.String,
+    /** Null when cloudflared did not report a count. */
+    readyConnections: Schema.NullOr(Schema.Int),
+    protocol: Schema.NullOr(Schema.String),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("unreachable"),
+    checkedAt: Schema.String,
+    cause: EnvironmentConnectReachabilityCause,
+    reason: Schema.String,
+    hint: Schema.NullOr(Schema.String),
+    fix: Schema.String,
+  }),
+]);
+export type EnvironmentConnectReachability = typeof EnvironmentConnectReachability.Type;
+
+/** "Tunnel connected · 4 connections · QUIC" for a healthy check. */
+export function formatConnectReachable(
+  result: Extract<EnvironmentConnectReachability, { status: "reachable" }>,
+): string {
+  const count = result.readyConnections;
+  return [
+    "Tunnel connected",
+    ...(count === null ? [] : [`${count} connection${count === 1 ? "" : "s"}`]),
+    ...(result.protocol ? [result.protocol.toUpperCase()] : []),
+  ].join(" · ");
+}
+
+/**
+ * Sections of docs/user/t3-connect-troubleshooting.md. Each is the GitHub anchor of a
+ * heading there; the test fails when a heading is renamed without updating this list.
+ */
+export const T3_CONNECT_TROUBLESHOOTING_SECTIONS = [
+  "the-hosts-tunnel-is-offline",
+  "port-7844-is-blocked-on-the-host",
+  "the-tunnel-works-but-t3-code-does-not-answer",
+  "the-t3-connect-address-does-not-resolve-or-answer",
+  "this-device-cant-reach-t3-connect",
+  "sign-in-account-or-link-problems",
+  "the-clock-is-off",
+  "the-host-runs-an-older-t3-code",
+  "t3-connect-returned-an-error",
+] as const;
+export type T3ConnectTroubleshootingSection = (typeof T3_CONNECT_TROUBLESHOOTING_SECTIONS)[number];
+
+/** Clients, the CLI, and server logs link here as "More info". */
+export function t3ConnectTroubleshootingUrl(section: T3ConnectTroubleshootingSection): string {
+  return `https://github.com/dimaggi-ai/d4research/blob/master/docs/user/t3-connect-troubleshooting.md#${section}`;
+}
+
+const REACHABILITY_SECTION = {
+  not_linked: "sign-in-account-or-link-problems",
+  connector_not_running: "the-hosts-tunnel-is-offline",
+  connector_not_ready: "the-hosts-tunnel-is-offline",
+  no_connector: "the-hosts-tunnel-is-offline",
+  edge_unreachable: "port-7844-is-blocked-on-the-host",
+  origin_unreachable: "the-tunnel-works-but-t3-code-does-not-answer",
+  unexpected_response: "the-tunnel-works-but-t3-code-does-not-answer",
+  dns_failed: "the-t3-connect-address-does-not-resolve-or-answer",
+  timeout: "the-t3-connect-address-does-not-resolve-or-answer",
+} satisfies Record<EnvironmentConnectReachabilityCause, T3ConnectTroubleshootingSection>;
+
+export function connectReachabilityHelpUrl(cause: EnvironmentConnectReachabilityCause): string {
+  return t3ConnectTroubleshootingUrl(REACHABILITY_SECTION[cause]);
+}
+
 export const AuthPairingLinkRevokeResult = Schema.Struct({
   revoked: Schema.Boolean,
 });
@@ -424,18 +510,19 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
+    HttpApiEndpoint.post("webSocketTicketFor", "/api/auth/websocket-ticket/:use", {
+      headers: OptionalBearerHeaders,
+      params: AuthWebSocketTicketParams,
+      success: AuthWebSocketTicketResult,
+      error: [EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
     HttpApiEndpoint.post("pairingCredential", "/api/auth/pairing-token", {
       headers: OptionalBearerHeaders,
       payload: AuthCreatePairingCredentialInput,
       success: AuthPairingCredentialResult,
       error: EnvironmentPairingCredentialErrors,
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
-    HttpApiEndpoint.get("pairingLinks", "/api/auth/pairing-links", {
-      headers: OptionalBearerHeaders,
-      success: Schema.Array(AuthPairingLink),
-      error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
@@ -451,6 +538,14 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
       headers: OptionalBearerHeaders,
       success: Schema.Array(AuthClientSession),
       error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("updateClientScopes", "/api/auth/clients/scopes", {
+      headers: OptionalBearerHeaders,
+      payload: AuthUpdateClientScopesInput,
+      success: Schema.Struct({ updated: Schema.Boolean }),
+      error: [EnvironmentRequestInvalidError, ...EnvironmentSessionRevokeErrors],
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
@@ -519,14 +614,24 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
   threadId: ThreadId,
 });
 
+const EnvironmentOrchestrationShellSnapshotQuery = Schema.Struct({
+  omitIdleSubagents: Schema.optionalKey(Schema.String),
+  omitOlderSettled: Schema.optionalKey(Schema.String),
+});
+
 const EnvironmentOrchestrationThreadBoundedSnapshotQuery = Schema.Struct({
+  deferWork: Schema.optionalKey(Schema.String),
   compactTurnItems: Schema.optionalKey(Schema.String),
+  dedupeBodies: Schema.optionalKey(Schema.String),
+  compactIds: Schema.optionalKey(Schema.String),
 });
 
 const EnvironmentOrchestrationThreadHistoryQuery = Schema.Struct({
   cursor: TrimmedNonEmptyString,
   throughEntryId: Schema.optional(TrimmedNonEmptyString),
-  view: Schema.optional(Schema.Literals(["conversation", "activity"])),
+  view: Schema.optional(Schema.Literals(["conversation", "activity", "work"])),
+  deferWork: Schema.optionalKey(Schema.String),
+  compactIds: Schema.optionalKey(Schema.String),
 });
 
 const EnvironmentOrchestrationThreadHistoryErrors = [
@@ -540,6 +645,7 @@ class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
   .add(
     HttpApiEndpoint.get("shellSnapshot", "/api/orchestration/shell", {
       headers: OrchestrationProtocolHeaders,
+      query: EnvironmentOrchestrationShellSnapshotQuery,
       success: OrchestrationV2ShellSnapshot,
       error: EnvironmentOrchestrationSnapshotErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
@@ -686,8 +792,26 @@ class EnvironmentWebhooksHttpApi extends HttpApiGroup.make("webhooks")
   .add(HttpApiEndpoint.patch("webhookPatch", WEBHOOK_PATH, webhookEndpoint))
   .add(HttpApiEndpoint.get("webhookGet", WEBHOOK_PATH, webhookEndpoint)) {}
 
+class EnvironmentSharingHttpApi extends HttpApiGroup.make("sharedEnvironments")
+  .add(
+    HttpApiEndpoint.get("catalog", "/api/shared-environments", {
+      headers: OptionalBearerHeaders,
+      success: SharedEnvironmentCatalog,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("publish", "/api/shared-environments", {
+      headers: OptionalBearerHeaders,
+      payload: PublishSharedEnvironmentsInput,
+      success: Schema.Struct({ published: Schema.Number }),
+      error: [EnvironmentRequestInvalidError, ...EnvironmentScopedOperationErrors],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
+  .add(EnvironmentSharingHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentMcpOAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)

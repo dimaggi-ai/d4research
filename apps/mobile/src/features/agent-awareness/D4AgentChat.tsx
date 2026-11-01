@@ -227,33 +227,32 @@ export function D4AgentChat({
     const target = origin ?? agentDraftOrigin(state);
     setSending(true);
     setError(null);
-    try {
-      const result = await send({
-        environmentId,
-        input: {
-          text: submitted.trim(),
-          taskModelSelection: taskSelection,
-          expectedContext: target.context,
-          expectedThreadId: target.threadId,
-        },
-      });
-      if (result._tag === "Failure") {
-        const failure = squashAtomCommandFailure(result);
-        const stale = isD4AgentError(failure) && failure.reason === "stale";
-        setError(
-          stale
-            ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
-            : taskFailureMessage(failure, config?.providers ?? [], taskSelection),
-        );
-        // The resend must carry the current context and session, not the ones that went stale.
-        if (stale) refresh();
-      } else {
-        setText((current) => (current === submitted ? "" : current));
-        setTaskSelectionOverride(undefined);
-        refresh();
-      }
-    } catch {
+    // A rejected command reads as null; the React Compiler cannot compile a conditional in try.
+    const result = await send({
+      environmentId,
+      input: {
+        text: submitted.trim(),
+        taskModelSelection: taskSelection,
+        expectedContext: target.context,
+        expectedThreadId: target.threadId,
+      },
+    }).catch(() => null);
+    if (result === null) {
       setError("Could not send this message. Your draft is preserved.");
+    } else if (result._tag === "Failure") {
+      const failure = squashAtomCommandFailure(result);
+      const stale = isD4AgentError(failure) && failure.reason === "stale";
+      setError(
+        stale
+          ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
+          : taskFailureMessage(failure, config?.providers ?? [], taskSelection),
+      );
+      // The resend must carry the current context and session, not the ones that went stale.
+      if (stale) refresh();
+    } else {
+      setText((current) => (current === submitted ? "" : current));
+      setTaskSelectionOverride(undefined);
+      refresh();
     }
     setSending(false);
   };

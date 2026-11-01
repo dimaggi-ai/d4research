@@ -1,4 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- d4research host integration uses Node APIs directly.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- spawn gives a process group to kill on timeout and lets the wait end when bash exits, even if a started app keeps the pipes open.
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NodeChildProcess from "node:child_process";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- a synchronous PATH probe at layer build.
 import * as NodeFS from "node:fs";

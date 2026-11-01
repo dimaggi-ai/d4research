@@ -5,6 +5,8 @@ import {
   type AuthEnvironmentScope,
   EnvironmentId,
   ProjectId,
+  ProjectReadFileInput,
+  ProjectReadFileResult,
   ThreadId,
   type AuthSessionState,
   type ScopedProjectRef,
@@ -17,6 +19,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Stream from "effect/Stream";
 import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
@@ -28,6 +31,8 @@ import type { RpcSession } from "../rpc/session.ts";
 import type { EnvironmentProject } from "./models.ts";
 import { createProjectEnvironmentAtoms } from "./projectCommands.ts";
 
+const decodeReadFileInput = Schema.decodeUnknownSync(ProjectReadFileInput);
+const decodeReadFileResult = Schema.decodeUnknownSync(ProjectReadFileResult);
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 vi.mock("./session.ts", () => ({
   createEnvironmentSessionAtoms: () => ({ sessionStateAtom: sessions }),
@@ -48,7 +53,10 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* (
   const metadataRequests: string[][] = [];
   const locateRequests: Array<{ cwd: string; relativePath: string }> = [];
   const file = { byteLength: 5 };
-  const readResponse = { wait: Effect.void as Effect.Effect<void> };
+  const readResponse = {
+    wait: Effect.void as Effect.Effect<void>,
+    missing: false,
+  };
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
     target: { environmentId: destinationEnvironmentId },
     session: yield* SubscriptionRef.make(
@@ -73,7 +81,17 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* (
             Effect.gen(function* () {
               const byteLength = file.byteLength;
               yield* readResponse.wait;
-              return { relativePath: "foo", byteLength, contents: "old", truncated: false };
+              return decodeReadFileResult(
+                readResponse.missing
+                  ? {
+                      relativePath: "foo",
+                      byteLength: 0,
+                      contents: "",
+                      truncated: false,
+                      exists: false,
+                    }
+                  : { relativePath: "foo", byteLength, contents: "old", truncated: false },
+              );
             }),
           [WS_METHODS.projectsWriteFile]: () =>
             Effect.sync(() => {
@@ -84,10 +102,11 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* (
             Effect.sync(() => {
               metadataRequests.push(input.paths);
               return {
-                entries: input.paths.map(() => ({
-                  kind: "file" as const,
-                  byteLength: file.byteLength,
-                })),
+                entries: input.paths.map(() =>
+                  readResponse.missing
+                    ? null
+                    : { kind: "file" as const, byteLength: file.byteLength },
+                ),
               };
             }),
         },
@@ -231,25 +250,32 @@ describe("locateFile authorization", () => {
 });
 
 describe("writeFile metadata", () => {
-  it.effect("reuses a current file read without another metadata request", () =>
+  it.effect("preserves optional read results without seeding metadata for an absent file", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness();
-      yield* AtomRegistry.getResult(
+      h.readResponse.missing = true;
+      const input = { cwd: "/repo", relativePath: "foo", allowMissing: true };
+      expect.soft(decodeReadFileInput(input)).toEqual(input);
+      const result = yield* AtomRegistry.getResult(
         h.registry,
-        h.commands.readFile({
-          environmentId: ENVIRONMENT_ID,
-          input: { cwd: "/repo", relativePath: "foo" },
-        }),
+        h.commands.readFile({ environmentId: ENVIRONMENT_ID, input }),
         { suspendOnWaiting: true },
       );
+      expect.soft(result).toEqual({
+        relativePath: "foo",
+        byteLength: 0,
+        contents: "",
+        truncated: false,
+        exists: false,
+      });
       const metadata = h.commands.fileMetadata({
         environmentId: ENVIRONMENT_ID,
         input: { path: "/repo/foo" },
       });
       expect(
         yield* AtomRegistry.getResult(h.registry, metadata, { suspendOnWaiting: true }),
-      ).toEqual({ kind: "file", byteLength: 5 });
-      expect(h.metadataRequests).toHaveLength(0);
+      ).toBeNull();
+      expect(h.metadataRequests).toEqual([["/repo/foo"]]);
     }).pipe(Effect.scoped),
   );
 

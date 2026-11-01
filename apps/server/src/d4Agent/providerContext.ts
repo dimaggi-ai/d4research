@@ -50,7 +50,6 @@ export function providerDecisionContext(providers: ReadonlyArray<ServerProvider>
         : null,
       canRunD4Agent: supportsD4AgentDriver(provider.driver),
       supportedRuntimeModes: provider.supportedRuntimeModes ?? null,
-      requiresNewThreadForModelChange: provider.requiresNewThreadForModelChange ?? null,
       quota: {
         state: quotaState,
         checkedAt: limits?.checkedAt ?? null,

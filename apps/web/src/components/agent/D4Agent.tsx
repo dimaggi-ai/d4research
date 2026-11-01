@@ -89,6 +89,7 @@ export function D4AgentEntry({
   const agentShell = useThreadShell(
     state.data?.threadId ? { environmentId, threadId: state.data.threadId } : null,
   );
+  if (config && !config.settings.d4Agent.enabled) return null;
   const presence = config?.settings.d4Agent.enabled
     ? niaPresence(
         agentActivityLabel({
@@ -114,10 +115,6 @@ export function D4AgentEntry({
         }
         onClick={async () => {
           if (!config) return;
-          if (!config.settings.d4Agent.enabled) {
-            await navigate({ to: "/settings/general" });
-            return;
-          }
           if (state.data?.threadId && !allowed) {
             if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
               setError(true);
@@ -645,8 +642,41 @@ function AgentActionRecord({
               Schedule · {routineScheduleLabel(launchAction.schedule)}
             </p>
           ) : null}
-          <p className="text-xs text-muted-foreground">Final prompt</p>
-          <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
+          {detail.data?.launch ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Mode ·{" "}
+                {detail.data.launch.mode === "loop"
+                  ? launchAction.type === "start" && launchAction.maxIterations !== undefined
+                    ? `Loop until the completion criteria hold, within your budget of ${launchAction.maxIterations} iterations`
+                    : "Loop until the completion criteria hold"
+                  : "Single task, settles after a verified completion"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Folder · {detail.data.launch.workspaceRoot || "Project root"}
+                {detail.data.launch.workspace === "worktree" ? " (new worktree)" : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Runtime · {detail.data.launch.runtimeMode}
+              </p>
+              <p className="text-xs text-muted-foreground">Exact prompt</p>
+              <p className="whitespace-pre-wrap break-words">{detail.data.launch.prompt}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {launchAction.type === "start" ? "Prompt" : "Request"}
+              </p>
+              <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
+              {launchAction.type === "research" ||
+              launchAction.type === "pipeline" ||
+              launchAction.type === "prepare-routine" ? (
+                <p className="text-xs text-muted-foreground">
+                  The run adds its pipeline or setup instructions to this request.
+                </p>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
       {open && switchAction ? (

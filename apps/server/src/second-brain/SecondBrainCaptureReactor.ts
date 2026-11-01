@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as AgentContext from "../d4Agent/D4AgentContext.ts";
 import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import * as Option from "effect/Option";

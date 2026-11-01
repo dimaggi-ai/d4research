@@ -1,10 +1,11 @@
 # Model manifest
 
-The [bundled manifest](../../apps/server/src/provider/model-manifest.json) allows
-offline startup; fetching it from `main` lets model metadata change between
-releases. Failed fetches or invalid data preserve the last usable manifest.
-Remote data must pass both catalog-reference validation and the owning provider's
-adapter validation before replacing the cache.
+`apps/server/src/provider/model-manifest.json` is bundled for offline startup. This fork fetches the
+copy on upstream `main` only when `T3CODE_ENABLE_PROVIDER_VERSION_CHECKS=true` and provider update
+checks are enabled. A remote fetch replaces the in-memory and on-disk cache only after generic
+catalog references and provider-owned adapter data validate. A failed or invalid fetch keeps the
+last successful remote manifest. Without the network opt-in, the service uses the bundle or an
+existing valid cache.
 
 A newer bundle outranks the cached remote manifest by `updatedAt`, so a release can
 correct model data before the next successful fetch. Bump `updatedAt` whenever the

@@ -83,8 +83,6 @@ function coerceLegacyOptionsObjectToArray(
     } else if (typeof rawValue === "boolean") {
       entries.push({ id, value: rawValue });
     }
-    // Drop anything else (numbers, null, nested objects/arrays) to match the
-    // permissive normalization performed by migration 026.
   }
   return entries;
 }
@@ -117,6 +115,7 @@ export type CustomModelSetting = typeof CustomModelSetting.Type;
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
+const FX_DRIVER_KIND = ProviderDriverKind.make("fx");
 const MUSE_DRIVER_KIND = ProviderDriverKind.make("muse");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const JUNIE_DRIVER_KIND = ProviderDriverKind.make("junie");
@@ -136,11 +135,7 @@ const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
  */
 export const DEFAULT_MODEL = "gpt-5.6-terra";
 
-/**
- * The provider snapshot marks the first of these present in the live
- * `model/list` response as default; when none are available, Codex's own
- * `isDefault` flag wins.
- */
+/** First model present in model/list wins; otherwise use Codex's isDefault. */
 export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-6-astra",
   "gpt-5.6-sol",
@@ -156,10 +151,11 @@ export const MUSE_DEFAULT_MODEL = "default";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-fable-5-1",
+  [CLAUDE_DRIVER_KIND]: "claude-opus-5-5",
   [CURSOR_DRIVER_KIND]: "auto",
-  // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
+  // Product slug meaning the current session model, never an ACP model id.
   [GROK_DRIVER_KIND]: "grok-build",
+  [FX_DRIVER_KIND]: "default",
   [MUSE_DRIVER_KIND]: MUSE_DEFAULT_MODEL,
   [JUNIE_DRIVER_KIND]: "default",
   [ACP_REGISTRY_DRIVER_KIND]: "default",
@@ -236,6 +232,7 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CLAUDE_DRIVER_KIND]: "Claude",
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
+  [FX_DRIVER_KIND]: "fx",
   [MUSE_DRIVER_KIND]: "Muse Code",
   [JUNIE_DRIVER_KIND]: "Junie",
   [ACP_REGISTRY_DRIVER_KIND]: "ACP Registry",

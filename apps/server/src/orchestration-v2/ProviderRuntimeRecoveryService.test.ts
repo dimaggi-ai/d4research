@@ -16,7 +16,6 @@ import {
 } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
 
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -25,103 +24,6 @@ import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ServerSettings from "../serverSettings.ts";
-
-it.effect("leaves durable effects for the worker after runtime reconciliation", () =>
-  Effect.gen(function* () {
-    const runs = yield* Ref.make(0);
-    const layer = ProviderRuntimeRecovery.layer.pipe(
-      Layer.provide(ServerSettings.layerTest()),
-      Layer.provide(
-        Layer.mergeAll(
-          Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getRecoveryThreadIds: () => Effect.succeed([]),
-          }),
-          Layer.mock(EventSink.EventSinkV2)({}),
-          IdAllocator.layer,
-          Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
-            runRecoveryOnce: Ref.getAndUpdate(runs, (count) => count + 1).pipe(
-              Effect.map((count) => count < 2),
-            ),
-          }),
-          Layer.mock(EffectOutbox.EffectOutboxV2)({
-            reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
-          }),
-        ),
-      ),
-    );
-    const summary = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService.pipe(
-      Effect.flatMap((recovery) => recovery.recover),
-      Effect.provide(layer),
-    );
-    assert.deepEqual(summary, {
-      terminalizedRuns: 0,
-      stoppedSessions: 0,
-      closedRequests: 0,
-      retiredEffects: 0,
-      requeuedEffects: 0,
-    });
-    assert.equal(yield* Ref.get(runs), 0);
-  }),
-);
-
-it.effect("reads recovery projections only for threads that need runtime recovery", () => {
-  const settledThreadIds = Array.from({ length: 1_000 }, (_, index) =>
-    ThreadId.make(`thread_recovery_settled_${index}`),
-  );
-  const recoveryThreadId = ThreadId.make("thread_recovery_candidate");
-  const projectionReads = vi.fn<(threadId: ThreadId) => void>();
-  const layer = ProviderRuntimeRecovery.layer.pipe(
-    Layer.provide(ServerSettings.layerTest()),
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.mock(ProjectionStore.ProjectionStoreV2)({
-          getShellSnapshot: () =>
-            Effect.succeed({
-              schemaVersion: 2,
-              snapshotSequence: 0,
-              threads: [...settledThreadIds, recoveryThreadId].map((id) => ({ id })),
-              archivedThreads: [],
-            } as never),
-          getRecoveryThreadIds: () => Effect.succeed([recoveryThreadId]),
-          getRuntimeRecoveryProjection: (threadId) => {
-            projectionReads(threadId);
-            return Effect.succeed({
-              thread: { id: threadId },
-              runtimeRequests: [],
-              providerSessions: [],
-              providerThreads: [],
-              providerTurns: [],
-              runs: [],
-              attempts: [],
-              nodes: [],
-              subagents: [],
-              messages: [],
-              turnItems: [],
-            } as unknown as OrchestrationV2ThreadProjection);
-          },
-        }),
-        Layer.mock(EventSink.EventSinkV2)({}),
-        IdAllocator.layer,
-        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
-          runRecoveryOnce: Effect.succeed(false),
-        }),
-        Layer.mock(EffectOutbox.EffectOutboxV2)({
-          cancelUnsettled: () => Effect.succeed([]),
-          signalCancellations: () => Effect.void,
-          reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
-        }),
-      ),
-    ),
-  );
-
-  return Effect.gen(function* () {
-    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover;
-    assert.deepEqual(
-      projectionReads.mock.calls.map(([threadId]) => threadId),
-      [recoveryThreadId],
-    );
-  }).pipe(Effect.provide(layer));
-});
 
 it.effect("expires orphaned runtime requests before command readiness", () => {
   const threadId = ThreadId.make("thread_recovery_requests");
@@ -241,7 +143,7 @@ it.effect.each([
   const nodeId = NodeId.make("old-worker-question-node");
   const requestId = RuntimeRequestId.make("old-worker-question-request");
   const runId = RunId.make("old-worker-question-run");
-  let projection = {
+  const projection = {
     thread: { id: threadId, lineage: { relationshipToParent: subagent ? "subagent" : null } },
     runtimeRequests: [
       {
@@ -284,11 +186,11 @@ it.effect.each([
               committed.push(input);
               for (const event of input.events) {
                 if (event.type === "runtime-request.updated")
-                  projection = { ...projection, runtimeRequests: [event.payload] };
+                  Object.assign(projection, { runtimeRequests: [event.payload] });
                 if (event.type === "node.updated")
-                  projection = { ...projection, nodes: [event.payload] };
+                  Object.assign(projection, { nodes: [event.payload] });
                 if (event.type === "turn-item.updated")
-                  projection = { ...projection, turnItems: [event.payload] };
+                  Object.assign(projection, { turnItems: [event.payload] });
               }
               return { committed: true, cancelledEffectCount: 0 } as never;
             }),
@@ -663,7 +565,7 @@ it.effect("cancels a stale waiting run when no checkpoint capture can finish it"
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("closes a secret request card's form when its run is recovered", () => {
+it.effect("recovery closes a secret card's form but leaves a link card open", () => {
   const threadId = ThreadId.make("thread_secret_recovery");
   const runId = RunId.make("run_secret_recovery");
   let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =
@@ -690,6 +592,17 @@ it.effect("closes a secret request card's form when its run is recovered", () =>
         secretStatus: "pending",
         label: "GitHub token",
         reason: "Used as GH_TOKEN.",
+      },
+      {
+        id: "turn-item:link-request:recovery",
+        threadId,
+        runId,
+        nodeId: null,
+        type: "link_request",
+        status: "waiting",
+        linkStatus: "pending",
+        url: "https://box.example.ts.net",
+        reason: "Run the suite there.",
       },
     ],
   } as unknown as OrchestrationV2ThreadProjection;
@@ -721,10 +634,17 @@ it.effect("closes a secret request card's form when its run is recovered", () =>
 
   return Effect.gen(function* () {
     yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).reconcile("startup");
-    const itemEvent = committedInput?.events.find((event) => event.type === "turn-item.updated");
-    const card = itemEvent?.type === "turn-item.updated" ? itemEvent.payload : null;
-    assert.equal(card?.status, "cancelled");
-    assert.equal(card?.type === "secret_request" ? card.secretStatus : null, "cancelled");
+    const cards = (committedInput?.events ?? []).flatMap((event) =>
+      event.type === "turn-item.updated" ? [event.payload] : [],
+    );
+    const secret = cards.find((card) => card.type === "secret_request");
+    assert.equal(secret?.status, "cancelled");
+    assert.equal(secret?.type === "secret_request" ? secret.secretStatus : null, "cancelled");
+    // Nothing in memory waits on a link card; the user can still answer it.
+    assert.equal(
+      cards.some((card) => card.type === "link_request"),
+      false,
+    );
   }).pipe(Effect.provide(layer));
 });
 

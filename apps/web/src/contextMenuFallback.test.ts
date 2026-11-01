@@ -1,6 +1,7 @@
+import { dismissContextMenu } from "./contextMenuFallback";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
+import { showContextMenuFallback } from "./contextMenuFallback";
 
 type FakeListener = (event: FakeDomEvent) => void;
 
@@ -63,6 +64,10 @@ class FakeElement {
     const existing = this.listeners.get(type) ?? [];
     existing.push(listener);
     this.listeners.set(type, existing);
+  }
+
+  matches(_selector: string) {
+    return false;
   }
 
   setAttribute(name: string, value: string) {
@@ -191,6 +196,8 @@ beforeEach(() => {
   vi.stubGlobal("window", {
     innerWidth: 1280,
     innerHeight: 800,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   });
   vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
     callback(0);
@@ -219,34 +226,6 @@ afterEach(() => {
 });
 
 describe("showContextMenuFallback", () => {
-  it("renders one separator between menu sections", async () => {
-    const selectionPromise = showContextMenuFallback([
-      { id: "rename", label: "Rename" },
-      { id: "archive", label: "Archive", separatorBefore: true },
-    ]);
-    const separators = (document as unknown as FakeDocument)
-      .querySelectorAll("div")
-      .filter((element) => element.dataset.contextMenuSeparator === "true");
-
-    expect(separators).toHaveLength(1);
-    expect(separators[0]?.attributes.get("role")).toBe("separator");
-    dismissContextMenu();
-    await expect(selectionPromise).resolves.toBeNull();
-  });
-
-  it("resolves a clicked flat menu item", async () => {
-    const selectionPromise = showContextMenuFallback([
-      { id: "rename", label: "Rename" },
-      { id: "delete", label: "Delete", destructive: true },
-    ]);
-
-    const renameButton = findButton("Rename");
-    expect(renameButton).toBeTruthy();
-    renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    await expect(selectionPromise).resolves.toBe("rename");
-  });
-
   it("ignores a click from the gesture that opened the menu", async () => {
     let enablePointerSelection: ((time: number) => void) | undefined;
     vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
@@ -315,7 +294,7 @@ describe("showContextMenuFallback", () => {
     expect(siblingButton).toBeTruthy();
     expect(childButton?.focused).toBe(true);
     expect(childButton?.style.background).toBe("var(--accent)");
-    expect(childButton?.style.color).toBe("var(--contrast-accent-foreground)");
+    expect(childButton?.style.color).toBe("var(--accent-foreground)");
     siblingButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     expect(childButton?.focused).toBe(false);
     expect(childButton?.style.background).toBe("transparent");

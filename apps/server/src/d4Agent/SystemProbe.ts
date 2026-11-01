@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import { sha256Hex } from "@d4research/shared/hash";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- execFile supplies a hard child-process timeout and bounded output without invoking a shell.
 import * as NodeChildProcess from "node:child_process";

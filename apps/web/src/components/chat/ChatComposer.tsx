@@ -1,4 +1,6 @@
 import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
+import { readPromptUltrathink } from "./TraitsPicker";
+import { useLinkedEnvironments } from "~/state/peerLinks";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { runtimeModeConfig, runtimeModeOptions as runtimeModes } from "./runtimeModeConfig";
@@ -2619,6 +2621,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   const environmentThreadShells = useThreadShells(isPathTrigger);
+  const linkedEnvironments = useLinkedEnvironments(environmentId);
+  // Recency is relative to when the composer opened; a stale clock only shifts ranking slightly.
+  const [threadSearchNow] = useState(() => Date.now());
   const workspaceEntries = useComposerPathSearch({
     environmentId,
     cwd: isPathTrigger ? gitCwd : null,
@@ -2716,8 +2721,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ...matchComposerThreadItems({
           shells: environmentThreadShells,
           environmentId,
+          linkedEnvironments,
           excludeThreadId: activeThreadId,
           query: composerTrigger.query,
+          now: threadSearchNow,
         }),
         ...workspaceEntries.entries.map((entry) => ({
           id: `path:${entry.kind}:${entry.path}`,
@@ -2964,6 +2971,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus();
   };
   const setPromptFromTraitsStable = useStableCallback(setPromptFromTraits);
+  const editPromptFromTraitsStable = useStableCallback((edit: (prompt: string) => string) =>
+    setPromptFromTraits(edit(promptRef.current)),
+  );
+  const promptUltrathink = readPromptUltrathink(prompt);
 
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
     provider: selectedProvider,
@@ -2974,8 +2985,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     models: selectedProviderModels,
     modelOptions: composerModelOptions?.[selectedInstanceId],
     reportedModelSelection,
-    prompt,
-    onPromptChange: setPromptFromTraitsStable,
+    promptUltrathink,
+    onPromptEdit: editPromptFromTraitsStable,
     planModeEnabled: settings.planModeEnabled,
   });
   const providerTraitsPickerInput = {
@@ -2987,8 +2998,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     models: selectedProviderModels,
     modelOptions: composerModelOptions?.[selectedInstanceId],
     reportedModelSelection,
-    prompt,
-    onPromptChange: setPromptFromTraitsStable,
+    promptUltrathink,
+    onPromptEdit: editPromptFromTraitsStable,
     planModeEnabled: settings.planModeEnabled,
     isComposerOwned: true,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];

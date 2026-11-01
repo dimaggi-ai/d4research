@@ -26,15 +26,9 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentQueryAtomFamily,
+  createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
-import {
-  type CreateProjectInput,
-  type DeleteProjectInput,
-  type UpdateProjectInput,
-  createProject,
-  deleteProject,
-  updateProject,
-} from "../operations/commands.ts";
+import { createProject, deleteProject, updateProject } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { createFileMetadataAtoms } from "./fileMetadata.ts";
@@ -130,11 +124,22 @@ export function createProjectEnvironmentAtoms<R, E>(
           (result, isCurrent) => fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent),
         ),
     }),
+    listResumableSessions: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:sessions:list-resumable",
+      tag: WS_METHODS.sessionsListResumable,
+      staleTimeMs: 15_000,
+      idleTtlMs: 5 * 60_000,
+    }),
+    searchCode: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:search-code",
+      tag: WS_METHODS.projectsSearchCode,
+      staleTimeMs: 5_000,
+    }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,
-      staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      retainPreviousData: true,
+      idleTtlMs: 60_000,
       execute: (input) =>
         fileMetadata.seedAfterRead(
           request(WS_METHODS.projectsListEntries, input),
@@ -144,6 +149,7 @@ export function createProjectEnvironmentAtoms<R, E>(
     locateFile: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:projects:locate-file",
       staleTimeMs: 10_000,
+      // @effect-diagnostics-next-line effectFnOpportunity:off -- one-shot command body, not a reusable function
       execute: (input: EnvironmentRpcInput<typeof WS_METHODS.projectsLocateFile>) =>
         Effect.gen(function* () {
           const registry = yield* AtomRegistry.AtomRegistry;
@@ -157,36 +163,72 @@ export function createProjectEnvironmentAtoms<R, E>(
           return result._tag === "Success" ? result.value : yield* Effect.failCause(result.cause);
         }),
     }),
+    watchEntries: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:projects:watch-entries",
+      tag: WS_METHODS.projectsWatchEntries,
+      // Visible file trees own the host watcher; stop it as soon as the last consumer unmounts.
+      idleTtlMs: 0,
+    }),
+    listIgnoredFiles: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:list-ignored-files",
+      tag: WS_METHODS.projectsListIgnoredFiles,
+      staleTimeMs: 15_000,
+    }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
       tag: WS_METHODS.projectsReadFile,
+      retainPreviousData: true,
+      // Open tabs explicitly validate disk identity; age alone must not reread/repaint them.
       staleTimeMs: Infinity,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: 0,
       execute: (input) =>
         fileMetadata.seedAfterRead(
           request(WS_METHODS.projectsReadFile, input),
-          (result, isCurrent) => fileMetadata.rememberFile(input.cwd, result, isCurrent),
+          (result, isCurrent) =>
+            result.exists === false
+              ? Effect.void
+              : fileMetadata.rememberFile(input.cwd, result, isCurrent),
         ),
+    }),
+    watchFile: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:projects:watch-file",
+      tag: WS_METHODS.projectsWatchFile,
+      // Stop the host watcher as soon as the file surface unmounts.
+      idleTtlMs: 0,
     }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:create",
-      execute: (input: CreateProjectInput) => createProject(input),
+      execute: createProject,
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
     update: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:update",
-      execute: (input: UpdateProjectInput) => updateProject(input),
+      execute: updateProject,
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:delete",
-      execute: (input: DeleteProjectInput) => deleteProject(input),
+      execute: deleteProject,
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
+    }),
+    /**
+     * One-shot read for callers that need a file's contents at a moment in time rather than a
+     * subscription to them — snapshotting before a delete, so the delete can be undone.
+     */
+    readFileOnce: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:read-file-once",
+      tag: WS_METHODS.projectsReadFile,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+      },
     }),
     // Finds or creates the environment's Scratch project and resolves once the
     // project is in the client store, since drafts key off its stored path.
@@ -222,6 +264,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    createFromThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:create-from-thread",
+      tag: WS_METHODS.projectsCreateFromThread,
+      scheduler: projectScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",
       tag: WS_METHODS.projectsWriteFile,
@@ -242,6 +290,16 @@ export function createProjectEnvironmentAtoms<R, E>(
           for (const path of writtenFilePaths(input, result))
             fileMetadata.refreshPath(environmentId, path, registry);
         }),
+    }),
+    deleteEntry: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:delete-entry",
+      tag: WS_METHODS.projectsDeleteEntry,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+      },
     }),
   };
 }

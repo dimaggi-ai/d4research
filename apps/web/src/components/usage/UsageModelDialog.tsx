@@ -30,6 +30,7 @@ export interface UsageChartWindow {
   readonly resolution: "day" | "hour";
   readonly timeZone: string;
   readonly referenceTime: string | undefined;
+  readonly hour12: boolean;
 }
 
 export function UsageModelDialog({
@@ -48,7 +49,29 @@ export function UsageModelDialog({
   readonly onClose: () => void;
 }) {
   const usage = mergeAnsweredUsage(
-    environments,
+    environments.map((environment) => ({
+      ...environment,
+      summary:
+        environment.summary === null
+          ? null
+          : {
+              ...environment.summary,
+              buckets: environment.summary.buckets.filter((bucket) => {
+                const source = environment.summary?.sources.find((candidate) =>
+                  bucket.sourceId !== undefined
+                    ? candidate.sourceId === bucket.sourceId ||
+                      candidate.fingerprint.resolvedHomePath === bucket.sourceId
+                    : candidate.fingerprint.provider === bucket.provider,
+                );
+                const sourceId =
+                  bucket.sourceId ??
+                  source?.sourceId ??
+                  source?.fingerprint.resolvedHomePath ??
+                  bucket.provider;
+                return sourceId === model.sourceId;
+              }),
+            },
+    })),
     (bucket) => bucket.provider === model.provider && bucket.model === model.model,
   );
   const providers = [model.provider];
@@ -81,7 +104,7 @@ export function UsageModelDialog({
             <DialogTitle>{model.model}</DialogTitle>
           </div>
           <DialogDescription>
-            {presentation.label}
+            {presentation.label} · {model.sourceLabel}
             {costUnknown ? "" : ` · ${formatPercent(model.costShare)} of cost`}
           </DialogDescription>
         </DialogHeader>
@@ -107,6 +130,7 @@ export function UsageModelDialog({
               referenceTime={chartWindow.referenceTime}
               resolution={chartWindow.resolution}
               timeZone={chartWindow.timeZone}
+              hour12={chartWindow.hour12}
             />
 
             <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2">

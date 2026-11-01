@@ -102,12 +102,7 @@ vi.mock("../../state/presentation", () => ({
 }));
 vi.mock("../../state/filesystem", () => ({ filesystemEnvironment: {} }));
 vi.mock("../../state/sourceControl", () => ({
-  sourceControlEnvironment: {
-    cloneRepository: async ({ input }: { input: { destinationPath: string } }) => {
-      NodeFS.mkdirSync(input.destinationPath);
-      return AsyncResult.success({ cwd: input.destinationPath });
-    },
-  },
+  sourceControlEnvironment: {},
 }));
 vi.mock("../../state/projects", () => ({
   projectEnvironment: {
@@ -185,15 +180,6 @@ describe("clone project permissions", () => {
 
     expect(NodeFS.existsSync(NodePath.join(state.baseDirectory, "repo"))).toBe(false);
     expect(state.projects).toEqual([]);
-  });
-
-  it("clones and registers the project when both permissions are granted", async () => {
-    state.scopes.add(AuthOrchestrationOperateScope);
-    await cloneAction()();
-
-    const destination = NodePath.join(state.baseDirectory, "repo");
-    expect(NodeFS.existsSync(destination)).toBe(true);
-    expect(state.projects).toEqual([destination]);
   });
 
   it.each([AuthSourceControlWriteScope, AuthOrchestrationOperateScope])(

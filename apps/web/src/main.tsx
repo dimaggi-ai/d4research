@@ -1,40 +1,38 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createHashHistory, createBrowserHistory } from "@tanstack/react-router";
 
+import "@fontsource-variable/inter";
 import "./index.css";
 
-import { prepareProviderAuthDelivery } from "./providerAuthDelivery";
-import { isElectron } from "./env";
-import { getRouter } from "./router";
-import {
-  syncDocumentElectronPlatformClasses,
-  syncDocumentWindowControlsOverlayClass,
-} from "./lib/windowControlsOverlay";
+import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
-import { clearChunkReloadGuard } from "./lib/chunkReloadGuard";
+import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 
-prepareProviderAuthDelivery();
+const router = startAppServices();
 
-export const startup = Promise.resolve().then(() => {
-  // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-  const history = isElectron ? createHashHistory() : createBrowserHistory();
-
-  const router = getRouter(history);
-  router.subscribe("onResolved", () => {
-    if (router.state.matches.every((match) => match.status === "success")) {
-      clearChunkReloadGuard();
-    }
-  });
-
-  if (isElectron) {
-    syncDocumentElectronPlatformClasses(navigator.platform);
-    syncDocumentWindowControlsOverlayClass();
+let chunkLoadFailed = false;
+let reloadScheduled = false;
+window.addEventListener("vite:preloadError", (event) => {
+  chunkLoadFailed = true;
+  if (reloadOnceForChunkLoadError()) {
+    reloadScheduled = true;
+    event.preventDefault();
   }
-
-  const app = <AppRoot router={router} />;
-
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>{app}</React.StrictMode>,
-  );
 });
+
+const app = <AppRoot router={router} />;
+
+export const startup = router
+  .load()
+  .then(() => {
+    // Route chunk failures resolve router.load() and surface later through the error boundary.
+    if (reloadScheduled) return;
+    if (!chunkLoadFailed) clearChunkReloadGuard();
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode>{app}</React.StrictMode>,
+    );
+  })
+  .catch((error: unknown) => {
+    if (reloadScheduled) return;
+    throw error;
+  });

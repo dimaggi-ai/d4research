@@ -629,7 +629,7 @@ function HandoffEndpoint(props: {
       : entry?.models.find((candidate) => candidate.slug === model);
   const label =
     providerModel !== undefined
-      ? getTriggerDisplayModelName(providerModel)
+      ? getTriggerDisplayModelName(providerModel, entry?.driverKind ?? null)
       : model !== undefined && model.length > 0
         ? model
         : (entry?.displayName ?? props.instanceId);

@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import { D4AgentError } from "@d4research/contracts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";

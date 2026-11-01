@@ -1,3 +1,4 @@
+import { environmentResourceUrl } from "@d4research/shared/environmentGateway";
 import {
   type AssetCreateUrlInput,
   type AssetCreateUrlResult,
@@ -7,12 +8,13 @@ import {
   type ProjectCloneSnapshot,
   WS_METHODS,
 } from "@d4research/contracts";
-import { mediaMimeTypeFromExtension } from "@d4research/shared/filePreview";
+import { mediaMimeTypeFromExtension } from "@d4research/shared/mediaPreview";
 import { isWindowsAbsolutePath } from "@d4research/shared/path";
 import {
   getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
 } from "@d4research/shared/projectFavicon";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -45,7 +47,7 @@ const decodeAssetCollectionKey = Schema.decodeUnknownSync(
   Schema.Tuple([EnvironmentId, Schema.Array(AssetResource)]),
 );
 
-export function parseAssetCollectionKey(
+function parseAssetCollectionKey(
   key: string,
 ): readonly [EnvironmentId, ReadonlyArray<AssetResource>] {
   try {
@@ -57,7 +59,7 @@ export function parseAssetCollectionKey(
 
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
   try {
-    return new URL(relativeUrl, httpBaseUrl).toString();
+    return environmentResourceUrl(httpBaseUrl, relativeUrl);
   } catch {
     return null;
   }
@@ -79,6 +81,7 @@ export type AssetUrlState =
       readonly expiresAt: number;
       readonly sourcePath?: string;
       readonly imageDimensions?: AssetImageDimensions;
+      readonly fileRevision?: string;
     };
 
 export const MISSING_FILE_ACCESS_MESSAGE =
@@ -123,6 +126,7 @@ export function assetUrlStateFromResult(
     ...(result.value.imageDimensions !== undefined
       ? { imageDimensions: result.value.imageDimensions }
       : {}),
+    ...(result.value.fileRevision !== undefined ? { fileRevision: result.value.fileRevision } : {}),
   };
 }
 
@@ -156,11 +160,11 @@ export function createAssetEnvironmentAtoms<R, E>(
     )
       return yield* error;
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-    const asset = yield* registry.run(
-      local.environmentId,
-      request(WS_METHODS.assetsCreateUrl, input),
-    );
-    return { ...asset, relativeUrl: new URL(asset.relativeUrl, local.httpBaseUrl).href };
+    // Map the full cause so retry defects and interruption survive.
+    const asset = yield* registry
+      .run(local.environmentId, request(WS_METHODS.assetsCreateUrl, input))
+      .pipe(Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, () => error))));
+    return { ...asset, relativeUrl: environmentResourceUrl(local.httpBaseUrl, asset.relativeUrl) };
   });
   const createUrl = createEnvironmentQueryAtomFamily(runtime, {
     label: "environment-data:assets:create-url",
@@ -254,7 +258,7 @@ export function createProjectFaviconUrlAtomFamily(input: {
     return Atom.make((get): string | null => {
       const result = get(image);
       if (isProjectFaviconFallbackUrl(get(resolvedUrl))) return null;
-      return Option.getOrElse(AsyncResult.value(result), () => cache.peek(target));
+      return AsyncResult.getOrElse(result, () => cache.peek(target));
     }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
   });
   return (target: ProjectFaviconTarget) =>

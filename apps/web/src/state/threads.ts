@@ -9,19 +9,31 @@ import {
   createEnvironmentThreadStateAtoms,
   EMPTY_ENVIRONMENT_THREAD_STATE,
   type EnvironmentThreadState,
+  createOlderSettledThreadAtoms,
   createThreadEnvironmentAtoms,
+  createThreadFamilyAtoms,
 } from "@d4research/client-runtime/state/threads";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { useEffect } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
-import { environmentSnapshotAtom } from "./shell";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentShell } from "./shell";
 
+export const threadFamilies = createThreadFamilyAtoms(
+  connectionAtomRuntime,
+  environmentShell.stateAtom,
+);
+export const olderSettledThreads = createOlderSettledThreadAtoms(
+  connectionAtomRuntime,
+  environmentShell.stateAtom,
+);
 export const threadEnvironment = createThreadEnvironmentAtoms(
   connectionAtomRuntime,
-  environmentSnapshotAtom,
+  threadFamilies.snapshotAtom,
 );
 const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
@@ -31,6 +43,18 @@ export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   snapshotAtom: threadEnvironment.snapshotAtom,
 });
+
+/** Keeps the subagent tree under `rootThreadId` in the thread list while the caller shows it. */
+export function useThreadFamily(
+  environmentId: EnvironmentId | null,
+  rootThreadId: ThreadId | null,
+): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mounts the subagent tree into the thread family registry while the caller shows it
+  useEffect(() => {
+    if (environmentId === null || rootThreadId === null) return;
+    return threadFamilies.mount(appAtomRegistry, environmentId, rootThreadId);
+  }, [environmentId, rootThreadId]);
+}
 
 const EMPTY_THREAD_STATE_ATOM = Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)).pipe(
   Atom.withLabel("web-environment-thread:empty"),
@@ -45,10 +69,7 @@ export function useEnvironmentThread(
       ? environmentThreads.stateAtom(environmentId, threadId)
       : EMPTY_THREAD_STATE_ATOM,
   );
-  const state = Option.getOrElse(
-    AsyncResult.value(result),
-    () => EMPTY_ENVIRONMENT_THREAD_STATE,
-  ) as EnvironmentThreadState;
+  const state = AsyncResult.getOrElse(result, () => EMPTY_ENVIRONMENT_THREAD_STATE);
   return state;
 }
 
@@ -67,11 +88,7 @@ function isDetailDone<E>(result: AsyncResult.AsyncResult<EnvironmentThreadState,
   );
 }
 
-/**
- * The shell and detail streams are independent, so the shell can report a stop
- * before the detail loads or catches up. A stopped thread stays mounted until
- * its own detail is live and shows the stop too.
- */
+/** Keeps stopped threads mounted until their independent detail stream is live and also reports stopped. */
 export function createRunningThreadKeepAliveAtom<E>(input: {
   readonly environmentIdsAtom: Atom.Atom<ReadonlyArray<EnvironmentId>>;
   readonly threadsAtom: (
@@ -102,8 +119,7 @@ export function createRunningThreadKeepAliveAtom<E>(input: {
       for (const threadId of previous?.get(environmentId) ?? []) {
         if (threadIds.has(threadId)) continue;
         const stateAtom = input.stateAtom(environmentId, threadId);
-        // `once`, not `get`: a dependency on a stopped thread would hold its
-        // stream open until some other change rebuilds this atom.
+        // A get dependency would hold stopped streams open until another change rebuilds this atom.
         if (isDetailDone(get.once(stateAtom))) continue;
         threadIds.add(threadId);
         get.subscribe(stateAtom, (state) => {
@@ -124,6 +140,19 @@ export const runningThreadKeepAliveAtom = createRunningThreadKeepAliveAtom({
   threadsAtom: environmentThreadShells.environmentThreadsAtom,
   stateAtom: environmentThreads.stateAtom,
 });
+
+// The sidebar reads the quiet list so streaming status changes do not re-render every row.
+export const normalNavigationQuietThreadShellsAtom = (() => {
+  let previous: ReadonlyArray<EnvironmentThreadShell> = [];
+  return Atom.make((get) => {
+    const next = get(environmentThreadShells.quietThreadShellsAtom).filter(
+      (thread) => thread.projectId !== get(agentProjectIdAtom(thread.environmentId)),
+    );
+    if (arrayElementsEqual(previous, next)) return previous;
+    previous = next;
+    return next;
+  });
+})();
 
 export const normalNavigationThreadShellsAtom = (() => {
   let previous: ReadonlyArray<EnvironmentThreadShell> = [];

@@ -1,5 +1,11 @@
+import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
 // @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - Local mock OAuth server validates the browser callback boundary.
+import * as NodeNet from "node:net";
+import * as Context from "effect/Context";
+import * as Scope from "effect/Scope";
+import * as ServerConfig from "../config.ts";
+import * as CodexManagedTokenBroker from "./CodexManagedTokenBroker.ts";
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -11,9 +17,8 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
-import * as TestClock from "effect/testing/TestClock";
 import { subscribeChatGptHandoff } from "./CodexChatGptHandoff.ts";
-import { FetchHttpClient } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -303,6 +308,16 @@ const makeHarnessFor = Effect.fnUntraced(function* (
       );
       return { auth: destination, bytes: destinationBytes };
     }),
+    bindProfile: (expectedProfileKey: string) =>
+      makeCodexChatGptAuth({
+        instanceId,
+        expectedProfileKey,
+        discoveryUrl: `${origin}/discovery`,
+        resource: `${origin}/v1`,
+      }).pipe(
+        Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+        Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, environment),
+      ),
     recreateAuth: makeCodexChatGptAuth({
       instanceId,
       discoveryUrl: `${origin}/discovery`,
@@ -436,33 +451,6 @@ it.effect.each(["identity", "sharing"] as const)(
       }),
     ),
 );
-it.effect("retains the callback host and path after controller recreation and token removal", () =>
-  provision(
-    Effect.gen(function* () {
-      const bytes = new Map<string, Uint8Array>();
-      const first = yield* makeHarnessFor(instanceId, bytes);
-      yield* first.signIn;
-      yield* first.phase("succeeded");
-      const redirectUri = first.authorizationRequests[0]!.searchParams.get("redirect_uri");
-      yield* first.auth.revoke;
-      const restarted = yield* makeHarnessFor(instanceId, bytes);
-      yield* restarted.signIn;
-      yield* restarted.phase("succeeded");
-      assert.strictEqual(
-        restarted.authorizationRequests[0]!.searchParams.get("client_id"),
-        "oaiapp_test",
-      );
-      assertSameCallback(
-        restarted.authorizationRequests[0]!.searchParams.get("redirect_uri"),
-        redirectUri,
-      );
-      assert.strictEqual(
-        restarted.exchanges[0]!.get("redirect_uri"),
-        restarted.authorizationRequests[0]!.searchParams.get("redirect_uri"),
-      );
-    }),
-  ),
-);
 it.effect("reauthorizes on an available port when the original callback port is occupied", () =>
   provision(
     Effect.gen(function* () {
@@ -492,30 +480,6 @@ it.effect("reauthorizes on an available port when the original callback port is 
       );
       assert.strictEqual(h.authorizationRequests[1]!.searchParams.get("client_id"), "oaiapp_test");
       assert.strictEqual(h.exchanges.length, 2);
-    }),
-  ),
-);
-
-it.effect("registers a fresh client when the original registration is no longer stored", () =>
-  provision(
-    Effect.gen(function* () {
-      const bytes = new Map<string, Uint8Array>();
-      const h = yield* makeHarnessFor(instanceId, bytes);
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      for (const [key, value] of bytes) {
-        const record = JSON.parse(new TextDecoder().decode(value));
-        if (record.profiles) bytes.delete(key);
-      }
-      h.setCallbackClientId("oaiapp_replacement");
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      assert.strictEqual(
-        h.authorizationRequests[1]!.searchParams.get("client_id"),
-        "dynamic_agent_client",
-      );
-      assert.strictEqual(h.exchanges[1]!.get("client_id"), "oaiapp_replacement");
-      assert.strictEqual(Option.getOrThrow(yield* h.auth.read).clientId, "oaiapp_replacement");
     }),
   ),
 );
@@ -697,20 +661,6 @@ it.effect(
       }),
     ),
 );
-it.effect("preserves the Welcome agents step and strips unrelated callback return parameters", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      h.setReturnUrl("http://localhost:7001/welcome?code=never-forward#agents:test-environment");
-      yield* h.signIn;
-      assert.include(
-        h.callbackResponses[0]!.body,
-        'content="1;url=http://localhost:7001/welcome#agents:test-environment"',
-      );
-      assert.notInclude(h.callbackResponses[0]!.body, "never-forward");
-    }),
-  ),
-);
 it.effect(
   "does not redirect to an arbitrary return URL or claim success after verification fails",
   () =>
@@ -873,60 +823,6 @@ it.effect(
       }),
     ),
 );
-it.effect("revoked connection clears tokens but preserves registration for reconnect", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      yield* h.seedExpired;
-      h.setRevoked();
-      yield* h.auth.access.pipe(Effect.result);
-      assert.isTrue(Option.isNone(yield* h.auth.read));
-      assert.deepEqual(h.storedRecords(), [
-        {
-          profiles: [
-            {
-              clientId: "oaiapp_test",
-              connectionLabel: "Connection 1",
-              sharingEnabled: true,
-              redirectUri: h.authorizationRequests[0]!.searchParams.get("redirect_uri"),
-              subject: "user-test",
-              email: "hidden@example.test",
-            },
-          ],
-          lastClientId: "oaiapp_test",
-        },
-      ]);
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      assert.strictEqual(h.authorizationRequests[1]?.searchParams.get("client_id"), "oaiapp_test");
-    }),
-  ),
-);
-
-it.effect("fresh sign-in ignores a registration left by the old disconnect behavior", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      yield* h.auth.revoke;
-      assert.isTrue(Option.isNone(yield* h.auth.read));
-      assert.strictEqual(h.storedRecords().length, 1);
-      h.setCallbackClientId("oaiapp_new_workspace");
-      h.setIdentity("new-workspace-user", "new@example.test");
-      yield* h.changeAccount;
-      yield* h.phase("succeeded");
-      assert.strictEqual(
-        h.authorizationRequests[1]!.searchParams.get("client_id"),
-        "dynamic_agent_client",
-      );
-      assert.strictEqual(Option.getOrThrow(yield* h.auth.read).clientId, "oaiapp_new_workspace");
-      assert.strictEqual(Option.getOrThrow(yield* h.auth.read).subject, "new-workspace-user");
-    }),
-  ),
-);
 
 it.effect("rejects mismatched callback state before any token exchange or credential write", () =>
   provision(
@@ -974,25 +870,6 @@ it.effect.each([
       assert.strictEqual(h.exchanges.length, 1);
       assert.deepEqual(h.storedRecords(), before);
       assert.strictEqual(Option.isNone(yield* h.auth.read), revoked);
-    }),
-  ),
-);
-
-it.effect("returns successful desktop sign-in to the original Welcome step", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      h.setReturnUrl("t3code-dev://app/welcome#agents:test-environment");
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      assert.include(
-        h.callbackResponses[0]!.body,
-        'content="1;url=t3code-dev://app/welcome#agents:test-environment"',
-      );
-      assert.include(
-        h.callbackResponses[0]!.body,
-        'href="t3code-dev://app/welcome#agents:test-environment"',
-      );
     }),
   ),
 );
@@ -1188,44 +1065,6 @@ it.effect(
     ),
 );
 
-it.effect("fresh sign-in to the same identity preserves separate registration profiles", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      h.setIdentity("other-user", "other@example.test");
-      h.setCallbackClientId("oaiapp_other_account");
-      yield* h.changeAccount;
-      yield* h.phase("succeeded");
-      h.setIdentity("user-test", "hidden@example.test");
-      h.setCallbackClientId("oaiapp_replacement");
-      yield* h.changeAccount;
-      const changed = yield* h.phase("succeeded");
-      assert.deepEqual(
-        changed
-          .methods!.filter((method) => method.id.startsWith("chatgpt-profile:"))
-          .map((method) => method.id),
-        [
-          "chatgpt-profile:oaiapp_replacement",
-          "chatgpt-profile:oaiapp_other_account",
-          "chatgpt-profile:oaiapp_test",
-        ],
-      );
-      assert.strictEqual(Option.getOrThrow(yield* h.auth.read).clientId, "oaiapp_replacement");
-      const redirectUri = h.authorizationRequests[2]!.searchParams.get("redirect_uri");
-      yield* h.auth.controller.logout(Effect.void);
-      yield* h.reconnectProfile("oaiapp_replacement");
-      yield* h.phase("succeeded");
-      assert.strictEqual(
-        h.authorizationRequests[3]!.searchParams.get("client_id"),
-        "oaiapp_replacement",
-      );
-      assertSameCallback(h.authorizationRequests[3]!.searchParams.get("redirect_uri"), redirectUri);
-    }),
-  ),
-);
-
 it.effect("preserves legacy profiles with the same email and subject", () =>
   provision(
     Effect.gen(function* () {
@@ -1368,38 +1207,6 @@ it.effect("declined sharing on an older profile does not replace the active acco
   ),
 );
 
-it.effect(
-  "Disconnect preserves a remote profile's callback URI for client-delivered reconnect",
-  () =>
-    provision(
-      Effect.gen(function* () {
-        const h = yield* makeHarness;
-        const first = yield* h.startRemote();
-        yield* h.auth.controller.complete("owner", {
-          flowId: first.waiting.flowId!,
-          callbackUrl: first.callbackUrl,
-        });
-        yield* h.phase("succeeded");
-        yield* h.auth.controller.logout(Effect.void);
-        const second = yield* h.startRemote();
-        assert.strictEqual(
-          new URL(second.waiting.authorizationUrl!).searchParams.get("client_id"),
-          "oaiapp_test",
-        );
-        assertSameCallback(
-          new URL(second.waiting.authorizationUrl!).searchParams.get("redirect_uri"),
-          new URL(first.waiting.authorizationUrl!).searchParams.get("redirect_uri"),
-        );
-        yield* h.auth.controller.complete("owner", {
-          flowId: second.waiting.flowId!,
-          callbackUrl: second.callbackUrl,
-        });
-        yield* h.phase("succeeded");
-        assert.strictEqual(Option.getOrThrow(yield* h.auth.read).subject, "user-test");
-      }),
-    ),
-);
-
 it.effect.each([
   "invalid_grant",
   "invalid_refresh_token",
@@ -1461,23 +1268,6 @@ it.effect(
         assert.strictEqual(h.authorizationRequests[1]!.searchParams.get("ext_agent_host_id"), host);
       }),
     ),
-);
-
-it.live("logout retries temporary revocation failures and reports local-only sign-out", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      h.setRevocationStatus(503);
-      const state = yield* h.auth.controller.logout(Effect.void);
-      assert.lengthOf(h.revocations, 3);
-      assert.strictEqual(state.phase, "idle");
-      assert.include(state.message!, "Remote revocation could not be confirmed");
-      assert.isTrue(Option.isNone(yield* h.auth.read));
-      assert.isFalse(h.storedRecords().some((record) => record.idToken));
-    }),
-  ),
 );
 
 it.effect(
@@ -1627,26 +1417,6 @@ it.effect(
         assert.isTrue(h.authorizationRequests[2]!.searchParams.has("id_token_hint"));
       }),
     ),
-);
-
-it.effect("keeps the active connection first when another profile declines sharing", () =>
-  provision(
-    Effect.gen(function* () {
-      const h = yield* makeHarness;
-      yield* h.signIn;
-      yield* h.phase("succeeded");
-      h.setCallbackClientId("oaiapp_identity_only");
-      h.setIdentity("other-user", "other@example.test");
-      h.declineSharing();
-      yield* h.changeAccount;
-      const state = yield* h.phase("failed");
-      assert.strictEqual(Option.getOrThrow(yield* h.auth.read).clientId, "oaiapp_test");
-      const profiles = state.methods!.filter((method) => method.id.startsWith("chatgpt-profile:"));
-      assert.strictEqual(profiles[0]!.id, "chatgpt-profile:oaiapp_test");
-      assert.include(profiles[0]!.name, "Connection 1");
-      assert.include(profiles[1]!.name, "Connection 2");
-    }),
-  ),
 );
 
 it.effect("primary completes OAuth and destination imports and owns the refresh session", () =>

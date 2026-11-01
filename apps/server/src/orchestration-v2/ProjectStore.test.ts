@@ -33,6 +33,15 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             projectId,
             title: "Null options project",
             workspaceRoot: "/tmp/project-null-options",
+            workspaceRoots: [
+              { path: "/tmp/project-null-options" },
+              {
+                path: "/tmp/backend",
+                label: "Backend",
+                color: "green",
+                agentGuidance: "Use backend checks",
+              },
+            ],
             defaultModelSelection: modelSelection,
             scripts: [],
             createdAt: "2026-03-24T00:00:00.000Z",
@@ -40,6 +49,20 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
           },
         });
 
+        assert.deepStrictEqual(Option.getOrNull(yield* projects.get(projectId))?.workspaceRoots, [
+          { path: "/tmp/project-null-options" },
+          {
+            path: "/tmp/backend",
+            label: "Backend",
+            color: "green",
+            agentGuidance: "Use backend checks",
+          },
+        ]);
+        yield* sql`UPDATE projection_projects SET default_thread_env_mode = 'multiwork' WHERE project_id = ${projectId}`;
+        assert.strictEqual(
+          Option.getOrNull(yield* projects.get(projectId))?.defaultThreadEnvMode,
+          "worktree",
+        );
         const rows = yield* sql<{ readonly defaultModelSelection: string | null }>`
           SELECT default_model_selection_json AS "defaultModelSelection"
           FROM projection_projects

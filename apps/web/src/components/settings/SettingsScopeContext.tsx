@@ -5,7 +5,6 @@ import {
 } from "@d4research/contracts";
 import { parseT3ProjectFile } from "@d4research/shared/t3ProjectFile";
 import { useAtomValue } from "@effect/atom-react";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { createContext, type ReactNode, useContext } from "react";
 
@@ -22,7 +21,6 @@ type ProjectFileMember = readonly [
   physicalProjectKey: string,
 ];
 
-// Keyed by the members' identifying fields so each render reads the same atom.
 const memberProjectFilesAtom = Atom.family((membersKey: string) => {
   const members = JSON.parse(membersKey) as ReadonlyArray<ProjectFileMember>;
   return Atom.make((get) => {
@@ -34,10 +32,12 @@ const memberProjectFilesAtom = Atom.family((membersKey: string) => {
       if (result.waiting) continue;
       const data =
         get(optimisticFileAtom(environmentId, workspaceRoot, T3_PROJECT_FILE_NAME))?.data ??
-        Option.getOrNull(AsyncResult.value(result));
+        AsyncResult.getOrElse(result, () => null);
       files.set(
         physicalProjectKey,
-        data === null || data.truncated ? null : parseT3ProjectFile(data.contents),
+        data === null || data.exists === false || data.truncated
+          ? null
+          : parseT3ProjectFile(data.contents),
       );
     }
     return files;

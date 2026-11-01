@@ -27,7 +27,7 @@ import {
 } from "@d4research/provider-acp-registry/testing";
 import * as AcpRegistrySupport from "@d4research/provider-acp-registry/server/AcpRegistrySupport";
 
-const REPLAY_SETTINGS = Schema.decodeUnknownSync(AcpRegistrySettings)({
+const REPLAY_SETTINGS = Schema.decodeSync(AcpRegistrySettings)({
   agentId: "replay-agent",
   authMethodId: "replay",
 });

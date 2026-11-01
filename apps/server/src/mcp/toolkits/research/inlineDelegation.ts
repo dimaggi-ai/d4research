@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";

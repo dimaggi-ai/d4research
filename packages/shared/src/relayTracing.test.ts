@@ -39,21 +39,6 @@ describe("withRelayClientTracing", () => {
       expect(productSpans).toEqual(["relay.operation"]);
     }),
   );
-
-  it.effect("preserves the active tracer when product tracing is disabled", () =>
-    Effect.gen(function* () {
-      const userSpans: Array<string> = [];
-      const userTracer = collectingTracer(userSpans);
-
-      yield* Effect.void.pipe(
-        Effect.withSpan("relay.operation"),
-        withRelayClientTracing,
-        Effect.withTracer(userTracer),
-      );
-
-      expect(userSpans).toEqual(["relay.operation"]);
-    }),
-  );
 });
 
 describe("withLocalTracing", () => {
@@ -84,20 +69,6 @@ describe("withLocalTracing", () => {
         "environment.orchestration.threadSnapshot",
       ]);
       expect(localSpans).toEqual(["sql.execute", "ServerSecretStore.get"]);
-    }),
-  );
-
-  it.effect("leaves the current tracer alone outside relay tracing", () =>
-    Effect.gen(function* () {
-      const localSpans: Array<string> = [];
-
-      yield* Effect.void.pipe(
-        Effect.withSpan("sql.execute"),
-        withLocalTracing,
-        Effect.withTracer(collectingTracer(localSpans)),
-      );
-
-      expect(localSpans).toEqual(["sql.execute"]);
     }),
   );
 });

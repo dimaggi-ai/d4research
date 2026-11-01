@@ -10,7 +10,7 @@ export function WizardPopup({
   children,
   size = "default",
   ...props
-}: Omit<ComponentProps<typeof DialogPopup>, "className" | "style"> & {
+}: Omit<ComponentProps<typeof DialogPopup>, "className" | "style" | "size"> & {
   readonly size?: "default" | "wide";
 }) {
   return (

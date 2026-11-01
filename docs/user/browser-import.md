@@ -3,7 +3,7 @@
 The desktop app can import cookies from another browser so you can reuse its signed-in sessions
 in the preview browser.
 
-Open **Settings → Integrations → Browser profiles → Add profile**, then choose a browser under
+Open **Settings → Browser → Browser profiles → Add profile**, then choose a browser under
 **Import from**. Close the source browser before importing, and allow an operating-system keyring
 unlock prompt if one appears.
 
@@ -14,6 +14,6 @@ On macOS, Safari imports need Full Disk Access. Choose **Allow**, drag d4researc
 System Settings permission list, and turn access on. **Continue** becomes available when access
 is detected. You can revoke Full Disk Access once the import is done.
 
-On Windows, import supports Firefox and Helium profiles that use standard profile encryption.
+On Windows, import supports Firefox, Zen, and Helium profiles that use standard profile encryption.
 Other Chromium-based browsers use app-bound encryption and cannot be imported. Partitioned cookies
 are skipped on all platforms.

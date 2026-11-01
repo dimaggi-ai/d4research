@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - The readable paths are relative to the real home directory.
+import * as NodeOS from "node:os";
+
 import { assert, describe, it } from "@effect/vitest";
 import { classifyHostReadOnly } from "./hostReadOnly.ts";
 
@@ -10,7 +13,8 @@ const allowed = [
   "systemctl list-timers --all --no-pager",
   "systemctl is-active cronie.service",
   "cat ~/tools/d4-agent-lane/DEPLOY-RESULT-r37.txt",
-  "tail -n 40 /home/dmitriis/tools/d4-agent-lane/DEPLOY-RESULT-r39.txt",
+  // An absolute path under the running user's own home, whatever that is on this host.
+  `tail -n 40 ${NodeOS.homedir()}/tools/d4-agent-lane/DEPLOY-RESULT-r39.txt`,
   "head -c 2000 /var/lib/system-doctor/status.json",
   "systemctl --user status tg-nia-proxy.service",
   "systemctl --user --failed",
@@ -29,6 +33,10 @@ const allowed = [
 ];
 
 const refused: ReadonlyArray<[string, RegExp]> = [
+  [
+    "tail -n 40 /nonexistent-other-user/tools/d4-agent-lane/DEPLOY-RESULT-r39.txt",
+    /outside the readable paths/,
+  ],
   ["cat ~/.local/state/schedule-watch/../secret.json", /outside the readable paths/],
   ["cat ~/.local/state/schedule-watch/pushed/host.json", /outside the readable paths/],
   ["cat ~/.local/state/nia-inbox/evolution-global.json", /outside the readable paths/],

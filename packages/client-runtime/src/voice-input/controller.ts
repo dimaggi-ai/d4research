@@ -18,10 +18,6 @@ export function voiceInputBlocksSubmission(state: VoiceInputState): boolean {
   );
 }
 
-export function voiceInputFreezesEditor(state: VoiceInputState): boolean {
-  return voiceInputBlocksSubmission(state);
-}
-
 export type VoiceDraftSnapshot = {
   readonly ownerKey: string;
   readonly text: string;
@@ -508,4 +504,8 @@ export class VoiceInputController {
 export function resetVoiceInputGlobalsForTests(): void {
   activeSession = null;
   activeTranscriptionOperation = null;
+}
+
+export function voiceInputFreezesEditor(state: VoiceInputState): boolean {
+  return voiceInputBlocksSubmission(state);
 }

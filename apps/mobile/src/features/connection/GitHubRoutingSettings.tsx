@@ -2,9 +2,9 @@ import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
-  gitHubRoutingConnectionKey,
-  gitHubRoutingPermissionFor,
-  type GitHubRoutingPermission,
+  pullRequestRoutingConnectionKey,
+  pullRequestRoutingPermissionFor,
+  type PullRequestRoutingPermission,
 } from "@d4research/client-runtime/connection";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
@@ -16,7 +16,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
 
 const options: ReadonlyArray<{
-  value: GitHubRoutingPermission;
+  value: PullRequestRoutingPermission;
   label: string;
   description: string;
 }> = [
@@ -35,8 +35,8 @@ const options: ReadonlyArray<{
 
 export function GitHubRoutingSettings() {
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
-  const permissions = useAtomValue(environmentCatalog.githubRoutingPermissionsValueAtom);
-  const update = useAtomCommand(environmentCatalog.setGitHubRoutingPermission);
+  const permissions = useAtomValue(environmentCatalog.pullRequestRoutingPermissionsValueAtom);
+  const update = useAtomCommand(environmentCatalog.setPullRequestRoutingPermission);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   if (catalog.entries.size === 0) return null;
@@ -46,8 +46,9 @@ export function GitHubRoutingSettings() {
       <SettingsSection title="GitHub routing">
         {[...catalog.entries.values()].map((entry) => {
           const environmentId = entry.target.environmentId;
-          const selected = gitHubRoutingPermissionFor(entry, permissions);
-          const disabled = !catalog.isReady || saving || gitHubRoutingConnectionKey(entry) === null;
+          const selected = pullRequestRoutingPermissionFor(entry, permissions);
+          const disabled =
+            !catalog.isReady || saving || pullRequestRoutingConnectionKey(entry) === null;
           return (
             <View key={environmentId}>
               <Pressable

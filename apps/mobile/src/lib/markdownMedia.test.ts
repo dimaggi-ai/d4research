@@ -38,9 +38,7 @@ describe("resolveMarkdownMediaPreview", () => {
     ["/tmp/frame%23one.png:12", "/tmp/frame#one.png"],
     ["/tmp/frame%3Fone.png:12:3", "/tmp/frame?one.png"],
     ["/tmp/frame%2523one.png:12", "/tmp/frame%23one.png"],
-    ["file://server/share/frame.png", "\\\\server\\share\\frame.png"],
-    ["\\\\server\\share\\frame.png", "\\\\server\\share\\frame.png"],
-  ])("keeps encoded filename and UNC semantics for %s", (href, path) => {
+  ])("keeps encoded filename semantics for %s", (href, path) => {
     expect(resolveMarkdownMediaPreview(href, input)).toMatchObject({
       kind: "image",
       source: {
@@ -49,6 +47,23 @@ describe("resolveMarkdownMediaPreview", () => {
       },
     });
   });
+
+  it.each(["file://server/share/frame.png", "\\\\server\\share\\frame.png"])(
+    "renders the network path %s only from the project's own share",
+    (href) => {
+      const path = "\\\\server\\share\\frame.png";
+      expect(resolveMarkdownMediaPreview(href, input)).toBeNull();
+      expect(
+        resolveMarkdownMediaPreview(href, { ...input, workspaceRoot: "\\\\server\\share" }),
+      ).toMatchObject({
+        kind: "image",
+        source: {
+          resource: { path },
+          actionsSource: { reference: { kind: "file", path } },
+        },
+      });
+    },
+  );
 
   it("separates a video playback fragment from literal filename characters", () => {
     expect(resolveMarkdownMediaPreview("/tmp/clip%23one.mp4#t=2", input)).toMatchObject({

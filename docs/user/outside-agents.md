@@ -8,7 +8,7 @@ in once, and you choose what it may do.
 
 ## Get the MCP URL
 
-In **Settings → Connections**, open a saved environment's menu and choose
+In **Settings → Environments**, open a saved environment's menu and choose
 **Copy MCP URL**. The URL is the environment's address followed by `/mcp`, for
 example:
 
@@ -87,8 +87,30 @@ Any agent that supports remote MCP servers over HTTP with OAuth can connect. Giv
 it the MCP URL and choose OAuth, and the agent finds the sign-in settings itself.
 Agents without OAuth support cannot connect.
 
+## Scripts on the host
+
+On the machine that runs the environment, `t3 thread` uses the same tools
+without a sign-in:
+
+```sh
+id=$(t3 thread start . "Find why the tests are slow")
+t3 thread send "$id" "Now fix it" --wait
+t3 thread show "$id"
+t3 thread list
+```
+
+`.` means the project that contains the current folder; a project id also
+works. A new thread uses the project's default model and permission mode, and
+runs in the project folder unless you pass `--worktree <base-branch>`. `send`
+never interrupts: a busy thread gets the message as its next turn. Pass `-` as
+the message to read it from stdin.
+
+`--wait` prints the agent's reply. It exits 1 when the run fails or stops, and
+2 when the agent waits for an answer you give in the app. Add `--json` for a
+result that always includes the thread id.
+
 ## Remove an agent
 
-Approved agents appear under **Settings → Connections** like other clients.
+Approved agents appear under **Settings → Sharing & access** like other clients.
 Revoke one there to cut off its access immediately. A sign-in lasts 30 days;
 after that the agent asks you to approve it again.

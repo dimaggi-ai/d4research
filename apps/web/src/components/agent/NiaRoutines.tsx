@@ -18,11 +18,7 @@ import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
+import { providerInstanceEntriesFor } from "../../providerInstances";
 import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
@@ -85,9 +81,7 @@ function NiaRoutinesContent({
   const [taskModelOverride, setTaskModelOverride] = useState<ModelSelection | null>(null);
   const taskModel = taskModelOverride ?? configuredTaskModel;
   const taskPickerModel = taskModel ?? resolveAppModelSelectionState(settings, providers);
-  const taskEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-  );
+  const taskEntries = providerInstanceEntriesFor(providers, settings, null);
   const taskModelOptions = getCustomModelOptionsByInstance(
     settings,
     providers,

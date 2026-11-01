@@ -53,7 +53,7 @@ describe("T3ProjectFile", () => {
 
   it("rejects unknown script icons", () => {
     expect(() =>
-      decode({ scripts: [{ name: "Dev", command: "pnpm dev", icon: "rocket" }] }),
+      decode({ scripts: [{ name: "Dev", command: "pnpm dev", icon: "spaceship" }] }),
     ).toThrow();
   });
 

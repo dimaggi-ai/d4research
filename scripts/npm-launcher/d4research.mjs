@@ -36,7 +36,6 @@ async function get(url) {
   return response;
 }
 
-/** Downloads `url` to `file` and returns its sha256, showing progress on a terminal. */
 async function download(url, file) {
   const response = await get(url);
   const total = Number(response.headers.get("content-length")) || 0;
@@ -81,8 +80,7 @@ async function install(dir, key) {
     .find((m) => m && m[2] === archive);
   if (!line) throw new Error(`${archive} is not listed in the release's SHA256SUMS`);
 
-  // Extract beside the final folder and rename it into place, so an
-  // interrupted download never leaves a half-installed version behind.
+  // Stage beside the destination and rename atomically to avoid half-installed versions.
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   const staging = fs.mkdtempSync(`${dir}.staging-`);
   try {
@@ -123,11 +121,36 @@ const isComplete = (dir) => {
 function publish(staging, dir) {
   try {
     fs.renameSync(staging, dir);
+    return;
   } catch (error) {
     if (isComplete(dir)) return;
     if (!fs.existsSync(dir)) throw error;
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.renameSync(staging, dir);
+  }
+  const lock = `${dir}.lock`;
+  try {
+    fs.mkdirSync(lock);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    throw new Error(
+      `another t3 is installing ${version}. If none is running, delete ${lock} and try again.`,
+      { cause: error },
+    );
+  }
+  const stale = `${staging}.stale`;
+  try {
+    // A peer may have published between our marker check and taking the lock.
+    if (isComplete(dir)) return;
+    // Move it aside rather than deleting in place: once the folder is empty, a
+    // peer's first rename can land in it.
+    fs.renameSync(dir, stale);
+    try {
+      fs.renameSync(staging, dir);
+    } catch (error) {
+      if (!isComplete(dir)) throw error;
+    }
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+    fs.rmSync(stale, { recursive: true, force: true });
   }
 }
 
@@ -142,9 +165,7 @@ async function main() {
   const dir = path.join(t3Home(), "runtime", "versions", version);
   if (!isComplete(dir)) await install(dir, key);
 
-  // A service launcher talks to its server over IPC; pass that channel and
-  // signals through. In a terminal, Ctrl-C already reaches the child directly,
-  // so forwarding SIGINT too would deliver it twice.
+  // Service IPC and signals must reach the child; terminal Ctrl-C already does, so do not forward SIGINT twice.
   const ipc = process.send !== undefined;
   const child = spawn(
     path.join(dir, process.platform === "win32" ? "d4research.exe" : "d4research"),

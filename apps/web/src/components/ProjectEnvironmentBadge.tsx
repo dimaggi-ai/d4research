@@ -9,18 +9,22 @@ export function ProjectEnvironmentBadge(props: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly machineByEnvironmentId: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
 }) {
-  const remoteMembers = props.group.memberProjects
-    .filter((member) => member.environmentId !== props.primaryEnvironmentId)
-    .map((member) => ({ ...member, environmentLabel: member.environmentLabel ?? "Remote" }))
+  const members = props.group.memberProjects
+    .map((member) => ({
+      ...member,
+      environmentLabel:
+        member.environmentLabel ??
+        (member.environmentId === props.primaryEnvironmentId ? "This machine" : "Remote"),
+    }))
     .sort((a, b) => a.environmentLabel.localeCompare(b.environmentLabel));
-  const first = remoteMembers[0];
+  const first =
+    members.find((member) => member.environmentId === props.primaryEnvironmentId) ?? members[0];
   if (!first) return null;
-  const labels = remoteMembers
+  const labels = members
     .map((member) => member.environmentLabel)
     .filter((label, index, all) => all.indexOf(label) === index)
     .join(", ");
-  const alsoHere = remoteMembers.length < props.group.memberProjects.length;
-  const description = `${alsoHere ? "Also on" : "On"} ${labels}`;
+  const description = `On ${labels}`;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -28,7 +32,7 @@ export function ProjectEnvironmentBadge(props: {
           <span
             role="img"
             aria-label={description}
-            className="ml-auto inline-flex shrink-0 items-center text-muted-foreground"
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
           />
         }
       >

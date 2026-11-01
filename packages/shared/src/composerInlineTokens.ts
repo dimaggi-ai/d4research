@@ -1,3 +1,5 @@
+import { markdownMathRanges } from "./markdownMath.ts";
+
 export type ComposerInlineToken =
   | {
       readonly type: "mention";
@@ -24,13 +26,7 @@ const SKILL_MENTION_SOURCE =
 const SKILL_TOKEN_REGEX = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s)`, "gu");
 export const SKILL_MENTION_PATTERN = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s|$)`, "gu");
 const MENTION_TOKEN_REGEX = /(^|\s)@(?:"((?:\\.|[^"\\])*)"|([^\s@"]+))(?=\s)/g;
-/**
- * Unbounded, every whitespace in the composer is a candidate start: the engine scans the rest
- * of the text for a closing `]`, fails, and rescans from the next whitespace — quadratic on
- * input like " [[[[[…". Only a basename ever survives the `label !== basename` check below, so
- * this cannot reject a link a user could meaningfully write; the longest filename any common
- * filesystem allows is 255.
- */
+// Bound unmatched-bracket rescans to avoid quadratic work; only basenames survive, and common filesystems cap them at 255.
 const MAX_FILE_LINK_LABEL_LENGTH = 512;
 const FILE_LINK_TOKEN_REGEX = new RegExp(
   `(^|\\s)\\[((?:\\\\.|[^\\]\\\\]){0,${MAX_FILE_LINK_LABEL_LENGTH}})\\]\\(([^)\\s]+)\\)(?=\\s)`,
@@ -42,6 +38,7 @@ const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 // Only two-segment lowercase text is ambiguous with an npm scope (`@expo/ui`,
 // `@jane/foo.js`); deeper paths cannot name a package, so they stay mentions.
 const SCOPED_PACKAGE_REFERENCE_REGEX = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+const DECORATOR_CALL_REFERENCE_REGEX = /^[\p{ID_Start}_$][\p{ID_Continue}.$\u200c\u200d]*\(/u;
 
 function collectMentionTokens(text: string): ComposerInlineToken[] {
   const matches: ComposerInlineToken[] = [];
@@ -77,7 +74,11 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
     const prefix = match[1] ?? "";
     const quotedPath = match[2];
     const path = quotedPath !== undefined ? quotedPath.replace(/\\(.)/g, "$1") : (match[3] ?? "");
-    if (!path || (quotedPath === undefined && SCOPED_PACKAGE_REFERENCE_REGEX.test(path))) {
+    if (
+      !path ||
+      (quotedPath === undefined &&
+        (SCOPED_PACKAGE_REFERENCE_REGEX.test(path) || DECORATOR_CALL_REFERENCE_REGEX.test(path)))
+    ) {
       continue;
     }
     const start = (match.index ?? 0) + prefix.length;
@@ -92,6 +93,30 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
   }
 
   return matches;
+}
+
+/**
+ * Formulas in composer text, ignoring `$` and `\[` inside file links such as `posts.$postId.tsx`.
+ * Links are masked with letters, not spaces, so a leading link cannot become an indented code
+ * block. Bare `@path` mentions stay unmasked so `@README.md$` can still close a formula.
+ */
+export function composerMathRanges(
+  text: string,
+  mentions: ReadonlyArray<ComposerInlineToken> = collectMentionTokens(text),
+) {
+  let masked = text;
+  for (const mention of mentions) {
+    if (mention.type !== "mention" || !mention.source.startsWith("[")) continue;
+    masked =
+      masked.slice(0, mention.start) +
+      "x".repeat(mention.end - mention.start) +
+      masked.slice(mention.end);
+  }
+  return markdownMathRanges(masked).map(({ start, end }) => ({
+    start,
+    end,
+    source: text.slice(start, end),
+  }));
 }
 
 export function collectComposerInlineTokens(
@@ -131,5 +156,13 @@ export function collectComposerInlineTokens(
     }
   }
 
-  return [...matches].sort((left, right) => left.start - right.start);
+  // TeX can contain literal skill and file tokens, especially inside \text{}.
+  // They remain formula source rather than becoming composer context chips.
+  // Confirmed trailing file links are masked too, so a kept chip is not read as TeX.
+  const math = matches.length > 0 ? composerMathRanges(text, matches) : [];
+  return matches
+    .filter(
+      (match) => !math.some((formula) => match.start < formula.end && match.end > formula.start),
+    )
+    .sort((left, right) => left.start - right.start);
 }

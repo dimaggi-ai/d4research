@@ -72,6 +72,7 @@ const make = Effect.gen(function* () {
   const settings = yield* ServerSettingsService;
   const threads = yield* Threads.ThreadManagementService;
   const threadLaunch = yield* Effect.serviceOption(ThreadLaunch.ThreadLaunchService);
+  // @effect-diagnostics-next-line redundantMapError:off -- d4research code predating this style rule.
   const list = Effect.fn("D4AgentPipelines.list")(function* (context: D4BrainContext) {
     const config = (yield* settings.getSettings.pipe(Effect.mapError(unavailable))).d4Agent;
     const entries = yield* catalog.list().pipe(Effect.mapError(unavailable));

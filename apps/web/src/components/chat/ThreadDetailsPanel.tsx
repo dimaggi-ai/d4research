@@ -4,6 +4,7 @@ import type {
   ProjectScript,
   ResolvedKeybindingsConfig,
   ThreadId,
+  ProjectId,
 } from "@d4research/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
@@ -21,6 +22,7 @@ import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { AgentCommunicationControl } from "./AgentCommunicationControl";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -31,6 +33,9 @@ export interface ThreadDetailsPanelProps extends Pick<
   forceNewWorktree?: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
+  projectId: ProjectId;
+  worktreePath: string | null;
+  isServerThread: boolean;
   draftId?: DraftId;
   activeProjectName: string | undefined;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
@@ -73,6 +78,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
     threadId: props.threadId,
+    projectId: props.projectId,
+    worktreePath: props.worktreePath,
+    isServerThread: props.isServerThread,
     ...(props.draftId ? { draftId: props.draftId } : {}),
     onEnvModeChange: props.onEnvModeChange,
     startFromOrigin: props.startFromOrigin,
@@ -159,7 +167,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 ) : null}
                 {props.activeProjectName ? (
                   <GitActionsControl
-                    displayMode="panel"
                     compact={density !== "full"}
                     gitCwd={props.gitCwd}
                     activeThreadRef={activeThreadRef}
@@ -168,6 +175,20 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   />
                 ) : null}
               </div>
+            </ThreadDetailsSection>
+          ) : null}
+
+          {!props.draftId ? (
+            <ThreadDetailsSection
+              headingId="thread-details-communication-heading"
+              title="Agent communication"
+              showHeading={false}
+            >
+              <AgentCommunicationControl
+                key={`${props.environmentId}:${props.threadId}`}
+                environmentId={props.environmentId}
+                threadId={props.threadId}
+              />
             </ThreadDetailsSection>
           ) : null}
 

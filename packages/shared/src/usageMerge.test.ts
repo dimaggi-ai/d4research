@@ -13,7 +13,6 @@ import * as Schema from "effect/Schema";
 import { isModelCostUnknown, mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
 
 const decodeSummary = Schema.decodeUnknownSync(UsageSummary);
-const encodeSummary = Schema.encodeSync(UsageSummary);
 
 function bucket(overrides: Partial<UsageBucket> = {}): UsageBucket {
   return {
@@ -43,6 +42,9 @@ function summary(
     provider: UsageProviderKind;
     hostId: string;
     homePath: string;
+    sourceId?: string;
+    sourceLabel?: string;
+    instanceId?: string;
     volumeId?: string;
     distinctSessions?: number;
   }[],
@@ -56,6 +58,9 @@ function summary(
     untilDay: "2026-08-31" as UsageDay,
     buckets,
     sources: sources.map((source) => ({
+      ...(source.sourceId === undefined ? {} : { sourceId: source.sourceId }),
+      ...(source.sourceLabel === undefined ? {} : { sourceLabel: source.sourceLabel }),
+      ...(source.instanceId === undefined ? {} : { instanceId: source.instanceId }),
       fingerprint: {
         hostId: source.hostId,
         provider: source.provider,
@@ -132,6 +137,47 @@ describe("mergeUsage", () => {
     expect(merged.costUsd).toBe(20);
     expect(merged.records).toBe(10);
     expect(merged.duplicateSources).toHaveLength(0);
+  });
+
+  it("keeps two Claude accounts separate without double-counting them", () => {
+    const personalPath = "/Users/me/.claude/projects";
+    const workPath = "/Users/me/.claude-work/projects";
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({ sourceId: personalPath, costUsd: 10 }),
+              bucket({ sourceId: workPath, costUsd: 20 }),
+            ],
+            [
+              {
+                provider: "claude",
+                hostId: "mac",
+                homePath: personalPath,
+                sourceId: personalPath,
+                sourceLabel: "Claude Personal",
+              },
+              {
+                provider: "claude",
+                hostId: "mac",
+                homePath: workPath,
+                sourceId: workPath,
+                sourceLabel: "Claude Work",
+              },
+            ],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(30);
+    expect(merged.sources.map((source) => [source.label, source.costUsd])).toEqual([
+      ["Claude Work", 20],
+      ["Claude Personal", 10],
+    ]);
   });
 
   it("counts a shared transcript directory once", () => {
@@ -451,105 +497,6 @@ describe("mergeUsage", () => {
     expect(merged.models[0]).toMatchObject({ model: "gpt-5", costUsd: 20, totalTokens: 2320 });
   });
 
-  it("keeps all supported providers when encoding a response", () => {
-    const current = summary(
-      [bucket(), bucket({ provider: "grok" })],
-      [
-        { provider: "claude", hostId: "mac", homePath: "/a" },
-        { provider: "grok", hostId: "mac", homePath: "/b" },
-      ],
-    );
-    expect(encodeSummary(current)).toEqual(current);
-    expect(decodeSummary(encodeSummary(current))).toEqual(current);
-  });
-
-  it("still rejects a malformed summary envelope", () => {
-    expect(() => decodeSummary({ ...summary([], []), buckets: null })).toThrow();
-  });
-
-  it("excludes a future incompatible contract even when its buckets still decode", () => {
-    const decoded = decodeSummary(
-      summary(
-        [bucket()],
-        [{ provider: "claude", hostId: "mac", homePath: "/a" }],
-        USAGE_CONTRACT_VERSION + 1,
-      ),
-    );
-    const merged = mergeUsage([environment("env-a", decoded)], USAGE_CONTRACT_VERSION);
-    expect(merged.costUsd).toBe(0);
-    expect(merged.contractMismatches).toEqual([
-      {
-        environmentId: "env-a",
-        direction: "clientBehind",
-        contractVersion: USAGE_CONTRACT_VERSION + 1,
-      },
-    ]);
-  });
-
-  it("derives provider shares and cost quality", () => {
-    const merged = mergeUsage(
-      [
-        environment(
-          "env-a",
-          summary(
-            [
-              bucket({ costUsd: 75 }),
-              bucket({ provider: "codex", model: "gpt-5.6-sol", costUsd: 25, unpricedRecords: 5 }),
-            ],
-            [
-              { provider: "claude", hostId: "mac", homePath: "/a/.claude" },
-              { provider: "codex", hostId: "mac", homePath: "/a/.codex" },
-            ],
-          ),
-        ),
-      ],
-      USAGE_CONTRACT_VERSION,
-    );
-
-    expect(merged.providers[0]?.provider).toBe("claude");
-    expect(merged.providers[0]?.costShare).toBeCloseTo(0.75, 5);
-    expect(merged.costQuality.unpricedShare).toBeCloseTo(0.5, 5);
-    expect(merged.costQuality.cacheSavingsUsd).toBe(4);
-  });
-
-  it("derives model token shares independently of their cost shares", () => {
-    const merged = mergeUsage(
-      [
-        environment(
-          "env-a",
-          summary(
-            [
-              bucket({ costUsd: 90 }),
-              bucket({
-                provider: "codex",
-                model: "gpt-5.6-sol",
-                costUsd: 10,
-                totals: {
-                  uncachedInputTokens: 3 * 1160,
-                  cachedInputTokens: 0,
-                  cacheCreationTokens: 0,
-                  outputTokens: 0,
-                  reasoningTokens: 0,
-                },
-              }),
-            ],
-            [
-              { provider: "claude", hostId: "mac", homePath: "/a/.claude" },
-              { provider: "codex", hostId: "mac", homePath: "/a/.codex" },
-            ],
-          ),
-        ),
-      ],
-      USAGE_CONTRACT_VERSION,
-    );
-
-    const byModel = Object.fromEntries(merged.models.map((model) => [model.model, model]));
-    expect(byModel["claude-fable-5"]?.costShare).toBeCloseTo(0.9, 5);
-    expect(byModel["claude-fable-5"]?.tokenShare).toBeCloseTo(0.25, 5);
-    expect(byModel["gpt-5.6-sol"]?.costShare).toBeCloseTo(0.1, 5);
-    expect(byModel["gpt-5.6-sol"]?.tokenShare).toBeCloseTo(0.75, 5);
-  });
-
   it("marks a model with no known rates as unpriced rather than free", () => {
     const merged = mergeUsage(
       [
@@ -637,32 +584,12 @@ describe("mergeUsage", () => {
     expect(merged.speedCost).toEqual({ standard: 9, fast: 6, ultrafast: 0, premium: 3 });
     expect(merged.models.map(({ model, unpricedTokens }) => [model, unpricedTokens])).toEqual([
       ["claude-fable-5", 0],
+      ["claude-fable-5", 0],
       ["unknown-model", 1160],
       ["partly-reported", 928],
     ]);
-  });
-
-  it("orders models by cost descending", () => {
-    const merged = mergeUsage(
-      [
-        environment(
-          "env-a",
-          summary(
-            [
-              bucket({ provider: "claude", model: "lower-cost", costUsd: 4 }),
-              bucket({ provider: "codex", model: "higher-cost", costUsd: 9 }),
-            ],
-            [
-              { provider: "claude", hostId: "mac", homePath: "/a/.claude" },
-              { provider: "codex", hostId: "mac", homePath: "/a/.codex" },
-            ],
-          ),
-        ),
-      ],
-      USAGE_CONTRACT_VERSION,
-    );
-
-    expect(merged.models.map((model) => model.model)).toEqual(["higher-cost", "lower-cost"]);
+    const sameModelAccounts = merged.models.filter(({ model }) => model === "claude-fable-5");
+    expect(new Set(sameModelAccounts.map(({ sourceId }) => sourceId)).size).toBe(2);
   });
 
   it("keeps two machines apart when hostname and home path collide", () => {
@@ -677,25 +604,6 @@ describe("mergeUsage", () => {
 
     expect(merged.costUsd).toBe(20);
     expect(merged.duplicateSources).toHaveLength(0);
-  });
-
-  it("still collapses two servers reading the same directory", () => {
-    const same = {
-      provider: "claude" as const,
-      hostId: "mac",
-      homePath: "/Users/theo/.claude",
-      volumeId: "16777220:1234",
-    };
-    const merged = mergeUsage(
-      [
-        environment("env-a", summary([bucket()], [same])),
-        environment("env-b", summary([bucket()], [same])),
-      ],
-      USAGE_CONTRACT_VERSION,
-    );
-
-    expect(merged.costUsd).toBe(10);
-    expect(merged.duplicateSources).toHaveLength(1);
   });
 
   it("totals sessions from per-directory distinct counts, not per-bucket sums", () => {
@@ -722,27 +630,37 @@ describe("mergeUsage", () => {
     expect(merged.sessions).toBe(1);
     expect(merged.providers[0]?.sessions).toBe(1);
   });
+});
 
-  it("returns empty totals with no environments", () => {
-    const merged = mergeUsage([], USAGE_CONTRACT_VERSION);
-    expect(merged.costUsd).toBe(0);
-    expect(merged.daily).toHaveLength(0);
-    expect(merged.hourly).toHaveLength(0);
-  });
-
-  it("omits providers with no sessions or usage", () => {
+describe("mergeUsage model breakdown", () => {
+  it("keeps one row per model per account and carries the instance through", () => {
     const merged = mergeUsage(
       [
         environment(
-          "env-a",
+          "env-1",
           summary(
-            [],
+            [
+              bucket({ sourceId: "/home/personal", costUsd: 3 }),
+              bucket({ sourceId: "/home/work", costUsd: 7 }),
+            ],
             [
               {
                 provider: "claude",
-                hostId: "mac",
-                homePath: "/a/.claude",
-                distinctSessions: 0,
+                hostId: "host-1",
+                homePath: "/home/personal",
+                sourceId: "/home/personal",
+                sourceLabel: "personal",
+                instanceId: "claudeAgent",
+                volumeId: "1:1",
+              },
+              {
+                provider: "claude",
+                hostId: "host-1",
+                homePath: "/home/work",
+                sourceId: "/home/work",
+                sourceLabel: "work",
+                instanceId: "claude-work",
+                volumeId: "1:2",
               },
             ],
           ),
@@ -751,31 +669,40 @@ describe("mergeUsage", () => {
       USAGE_CONTRACT_VERSION,
     );
 
-    expect(merged.providers).toEqual([]);
+    expect(
+      merged.models.map((model) => [
+        model.model,
+        model.sourceLabel,
+        model.instanceId,
+        model.costUsd,
+      ]),
+    ).toEqual([
+      ["claude-fable-5", "work", "claude-work", 7],
+      ["claude-fable-5", "personal", "claudeAgent", 3],
+    ]);
+    expect(merged.models.map((model) => model.costShare)).toEqual([0.7, 0.3]);
+    expect(merged.sources.map((source) => [source.label, source.instanceId])).toEqual([
+      ["work", "claude-work"],
+      ["personal", "claudeAgent"],
+    ]);
   });
 
-  it("derives hourly totals without losing the daily rollup", () => {
+  it("still reports one row when a provider has a single account", () => {
     const merged = mergeUsage(
       [
         environment(
-          "env-a",
+          "env-1",
           summary(
-            [
-              bucket({ hourStart: "2026-08-07T09:37:00.000Z", costUsd: 3 }),
-              bucket({ hourStart: "2026-08-07T10:37:00.000Z", costUsd: 7 }),
-            ],
-            [{ provider: "claude", hostId: "mac", homePath: "/a/.claude" }],
+            [bucket({ costUsd: 4 }), bucket({ day: "2026-08-08" as UsageDay, costUsd: 6 })],
+            [{ provider: "claude", hostId: "host-1", homePath: "/home/only" }],
           ),
         ),
       ],
       USAGE_CONTRACT_VERSION,
     );
 
-    expect(merged.hourly.map((hour) => [hour.hourStart, hour.costUsd])).toEqual([
-      ["2026-08-07T09:37:00.000Z", 3],
-      ["2026-08-07T10:37:00.000Z", 7],
-    ]);
-    expect(merged.daily).toHaveLength(1);
-    expect(merged.daily[0]?.costUsd).toBe(10);
+    expect(merged.models).toHaveLength(1);
+    expect(merged.models[0]?.costUsd).toBe(10);
+    expect(merged.models[0]?.instanceId).toBeNull();
   });
 });

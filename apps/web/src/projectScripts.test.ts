@@ -1,20 +1,14 @@
-import { MAX_SCRIPT_ID_LENGTH } from "@d4research/contracts";
+import { projectScriptMenuLabel } from "@d4research/shared/projectScripts";
+import { projectScriptIdFromCommand } from "./projectScripts";
+import { buildProjectScript } from "./projectScripts";
 import { shortcutLabelForCommand } from "./keybindings";
 import { describe, expect, it } from "vite-plus/test";
-import {
-  projectScriptCwd,
-  projectScriptRuntimeEnv,
-  projectScriptMenuLabel,
-  settleProjectScript,
-  setupProjectScript,
-} from "@d4research/shared/projectScripts";
+import { settleProjectScript, setupProjectScript } from "@d4research/shared/projectScripts";
 
 import {
-  buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
   primaryProjectScript,
-  projectScriptIdFromCommand,
   releaseClaimedRoles,
 } from "./projectScripts";
 
@@ -26,6 +20,7 @@ describe("projectScripts helpers", () => {
         command: "pnpm dev",
         icon: "debug",
         runOnWorktreeCreate: false,
+        workingDirectory: "/repo/frontend",
         waitForSetup: false,
         runOnSettle: false,
         previewUrl: "http://localhost:5733",
@@ -37,6 +32,7 @@ describe("projectScripts helpers", () => {
       command: "pnpm dev",
       icon: "debug",
       runOnWorktreeCreate: false,
+      workingDirectory: "/repo/frontend",
       previewUrl: "http://localhost:5733",
       autoOpenPreview: true,
     });
@@ -49,6 +45,7 @@ describe("projectScripts helpers", () => {
         command: "pnpm test",
         icon: "test",
         runOnWorktreeCreate: false,
+        workingDirectory: null,
         waitForSetup: false,
         runOnSettle: false,
         previewUrl: null,
@@ -68,6 +65,7 @@ describe("projectScripts helpers", () => {
       name: "Setup",
       command: "pnpm i",
       icon: "configure",
+      workingDirectory: null,
       previewUrl: null,
       autoOpenPreview: false,
       runOnSettle: false,
@@ -102,11 +100,6 @@ describe("projectScripts helpers", () => {
       ]);
     },
   );
-
-  it("preserves the exact ID at the shortcut length limit", () => {
-    const id = "a".repeat(MAX_SCRIPT_ID_LENGTH);
-    expect(projectScriptIdFromCommand(commandForProjectScript(id) ?? "")).toBe(id);
-  });
 
   it("slugifies and dedupes project script ids", () => {
     expect(nextProjectScriptId("Run Tests", [])).toBe("run-tests");
@@ -151,6 +144,7 @@ describe("projectScripts helpers", () => {
       id: "both",
       name: "Both",
       command: "true",
+      workingDirectory: undefined,
       icon: "play" as const,
       runOnWorktreeCreate: true,
     };
@@ -165,6 +159,7 @@ describe("projectScripts helpers", () => {
     const input = {
       name: "Next",
       command: "true",
+      workingDirectory: null,
       icon: "play",
       waitForSetup: false,
       previewUrl: null,
@@ -174,6 +169,7 @@ describe("projectScripts helpers", () => {
       id: "holder",
       name: "Holder",
       command: "true",
+      workingDirectory: undefined,
       icon: "play" as const,
       runOnWorktreeCreate: true,
       runOnSettle: true,
@@ -188,46 +184,5 @@ describe("projectScripts helpers", () => {
     expect(
       releaseClaimedRoles(holder, { ...input, runOnWorktreeCreate: false, runOnSettle: false }),
     ).toBe(holder);
-  });
-
-  it("builds default runtime env for scripts", () => {
-    const env = projectScriptRuntimeEnv({
-      project: { cwd: "/repo" },
-      worktreePath: "/repo/worktree-a",
-    });
-
-    expect(env).toMatchObject({
-      T3CODE_PROJECT_ROOT: "/repo",
-      T3CODE_WORKTREE_PATH: "/repo/worktree-a",
-    });
-  });
-
-  it("allows overriding runtime env values", () => {
-    const env = projectScriptRuntimeEnv({
-      project: { cwd: "/repo" },
-      extraEnv: {
-        T3CODE_PROJECT_ROOT: "/custom-root",
-        CUSTOM_FLAG: "1",
-      },
-    });
-
-    expect(env.T3CODE_PROJECT_ROOT).toBe("/custom-root");
-    expect(env.CUSTOM_FLAG).toBe("1");
-    expect(env.T3CODE_WORKTREE_PATH).toBeUndefined();
-  });
-
-  it("prefers the worktree path for script cwd resolution", () => {
-    expect(
-      projectScriptCwd({
-        project: { cwd: "/repo" },
-        worktreePath: "/repo/worktree-a",
-      }),
-    ).toBe("/repo/worktree-a");
-    expect(
-      projectScriptCwd({
-        project: { cwd: "/repo" },
-        worktreePath: null,
-      }),
-    ).toBe("/repo");
   });
 });

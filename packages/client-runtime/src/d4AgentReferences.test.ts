@@ -7,6 +7,7 @@ import {
   agentMentionQuery,
   insertAgentMention,
   niaSystemTextSegments,
+  niaThreadReferenceMarkdown,
 } from "./d4AgentReferences.ts";
 
 it("offers only active references in the bound scope and current environment", () => {
@@ -105,5 +106,29 @@ it("links URLs and server-validated thread tokens in Nia system text, nothing el
   ]);
   expect(niaSystemTextSegments("javascript:alert(1)", [])).toEqual([
     { kind: "text", text: "javascript:alert(1)" },
+  ]);
+});
+
+it("links Nia's prose thread references and leaves code, other links and unknown ids alone", () => {
+  const environmentId = EnvironmentId.make("local");
+  const known = new Set(["0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71"]);
+  const action = "d4-action:abc12345-6789";
+  const markdown = niaThreadReferenceMarkdown(
+    [
+      `Started ${action}.`,
+      "Known 0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71 and unknown 1a2b3c4d-0000-4000-8000-000000000000.",
+      "Open https://app.host/local/0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71, [Fix](https://app.host/local/d4-action%3Aabc12345-6789).",
+      "Other https://app.host/remote/0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71 [Docs](https://x.dev/a)",
+      `Code \`${action}\` and <t3-thread://v2/local/${action}>`,
+    ].join("\n"),
+    environmentId,
+    known,
+  );
+  expect(markdown.split("\n")).toEqual([
+    "Started [Thread abc12345](t3-thread://v2/local/d4-action:abc12345-6789).",
+    "Known [Thread 0f6c2a1e](t3-thread://v2/local/0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71) and unknown 1a2b3c4d-0000-4000-8000-000000000000.",
+    "Open [Thread 0f6c2a1e](t3-thread://v2/local/0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71), [Fix](t3-thread://v2/local/d4-action:abc12345-6789).",
+    "Other https://app.host/remote/0f6c2a1e-7d4b-4c11-9a2e-5b8f3c0d9e71 [Docs](https://x.dev/a)",
+    `Code \`${action}\` and <t3-thread://v2/local/${action}>`,
   ]);
 });

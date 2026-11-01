@@ -86,7 +86,6 @@ describe("Nia provider decision context", () => {
         {
           ...provider,
           supportedRuntimeModes: ["approval-required"],
-          requiresNewThreadForModelChange: true,
           models: [
             { ...provider.models[0]!, capabilities },
             { slug: "blocked", name: "Blocked", isCustom: false, capabilities: null },
@@ -102,7 +101,6 @@ describe("Nia provider decision context", () => {
     );
     assert.deepEqual(result?.models[0]?.capabilities, capabilities);
     assert.deepEqual(result?.supportedRuntimeModes, ["approval-required"]);
-    assert.equal(result?.requiresNewThreadForModelChange, true);
   });
 
   it("preserves reported quota, timestamp and reset without exposing credential fingerprints", () => {

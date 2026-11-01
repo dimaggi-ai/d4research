@@ -776,6 +776,7 @@ export const layer: Layer.Layer<
               }),
         }),
       );
+      // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
       const settleStartFailure = (failed: {
         readonly signal: string;
         readonly title: string;
@@ -815,6 +816,7 @@ export const layer: Layer.Layer<
         return;
       }
       const session = sessionResult.success;
+      // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
       const loadFromProvider = (
         load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapter.ProviderAdapterV2Error>,
       ) =>
@@ -1431,6 +1433,7 @@ export const layer: Layer.Layer<
       const brainText = brainContext ? SecondBrainService.formatTurnContext(brainContext) : "";
       const recovery = makeHandoffCompactionRecovery(session);
       let recoveredNativeContext = false;
+      // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
       const startWithHandoffs = (
         turnInput: Parameters<typeof session.startTurn>[0],
         compact = false,
@@ -1533,6 +1536,7 @@ export const layer: Layer.Layer<
                         ...history,
                       }),
                   }),
+              // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
               persist: (handoff) =>
                 Effect.gen(function* () {
                   const updatedAt = yield* DateTime.now;
@@ -1555,6 +1559,7 @@ export const layer: Layer.Layer<
             });
           const delivery = yield* deliver().pipe(
             Effect.catchTags({
+              // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
               ContextHandoffBudgetError: (error) =>
                 Effect.gen(function* () {
                   if (

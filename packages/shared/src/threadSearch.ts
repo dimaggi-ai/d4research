@@ -1,9 +1,3 @@
-interface ThreadSearchTextPart {
-  readonly text: string;
-  readonly highlighted: boolean;
-  readonly start: number;
-}
-
 function foldThreadSearchCase(text: string): string {
   const lowered = text.toLowerCase().replace(/ς/g, "σ");
   if (lowered.length === text.length) return lowered;
@@ -67,4 +61,10 @@ export function splitThreadSearchText(text: string, query: string): ThreadSearch
     parts.push({ text: text.slice(cursor), highlighted: false, start: cursor });
   }
   return parts;
+}
+
+interface ThreadSearchTextPart {
+  readonly text: string;
+  readonly highlighted: boolean;
+  readonly start: number;
 }

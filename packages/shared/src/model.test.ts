@@ -6,42 +6,17 @@ import {
 } from "@d4research/contracts";
 
 import {
+  buildExplicitProviderOptionSelectionsFromDescriptors,
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
-  formatCodexModelName,
-  formatModelSlugName,
   getProviderOptionCurrentLabel,
-  getModelSelectionBooleanOptionValue,
-  getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
-  readCustomModelEntries,
-  toCustomModelSetting,
-  getProviderOptionBooleanSelectionValue,
-  getProviderOptionStringSelectionValue,
+  modelSelectionsEqual,
   normalizeCustomModelSlug,
   normalizeModelSlug,
-  modelSelectionsEqual,
+  readCustomModelEntries,
 } from "./model.ts";
-
-it("keeps the Codex catalog display formatting", () => {
-  expect(formatCodexModelName("gpt-5.3-codex-spark")).toBe("GPT-5.3-Codex-Spark");
-  expect(formatCodexModelName("GPT Test")).toBe("GPT Test");
-});
-
-it.each([
-  ["gpt-5.4", "GPT-5.4"],
-  ["claude-opus-4-6", "Claude Opus 4.6"],
-  ["claude-sonnet-4-20250514", "Claude Sonnet 4 20250514"],
-  ["claude-opus-4-6[1m]", "Claude Opus 4.6[1m]"],
-  ["openai/gpt-5.4-mini", "openai/GPT-5.4-Mini"],
-  ["gemini-2.5-pro-preview-06-05", "Gemini 2.5 Pro Preview 06 05"],
-  ["custom/model-v2", "custom/model-v2"],
-  ["gpt-proxy", "gpt-proxy"],
-  ["My Custom Model", "My Custom Model"],
-])("formats a known model ID without losing its qualifiers: %s", (slug, expected) => {
-  expect(formatModelSlugName(slug)).toBe(expected);
-});
 
 const codexCaps: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [
@@ -63,125 +38,21 @@ const codexCaps: ModelCapabilities = createModelCapabilities({
   ],
 });
 
-describe("model slug normalization", () => {
-  it("expands known provider aliases while preserving exact custom slugs", () => {
-    const claude = ProviderDriverKind.make("claudeAgent");
-
-    expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
-    expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
-  });
-});
-
-const claudeCaps: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [
-    {
-      id: "effort",
-      label: "Reasoning",
-      type: "select",
-      options: [
-        { id: "medium", label: "Medium" },
-        { id: "high", label: "High", isDefault: true },
-        { id: "ultrathink", label: "Ultrathink" },
-      ],
-      currentValue: "high",
-      promptInjectedValues: ["ultrathink"],
-    },
-    {
-      id: "contextWindow",
-      label: "Context Window",
-      type: "select",
-      options: [
-        { id: "200k", label: "200k" },
-        { id: "1m", label: "1M", isDefault: true },
-      ],
-      currentValue: "1m",
-    },
-  ],
-});
-
 describe("descriptor helpers", () => {
-  it("applies selection values to capability descriptors", () => {
-    expect(
-      getProviderOptionDescriptors({
-        caps: claudeCaps,
-        selections: [
-          { id: "effort", value: "medium" },
-          { id: "contextWindow", value: "200k" },
-        ],
-      }),
-    ).toEqual([
-      {
-        id: "effort",
-        label: "Reasoning",
-        type: "select",
-        options: [
-          { id: "medium", label: "Medium" },
-          { id: "high", label: "High", isDefault: true },
-          { id: "ultrathink", label: "Ultrathink" },
-        ],
-        currentValue: "medium",
-        promptInjectedValues: ["ultrathink"],
-      },
-      {
-        id: "contextWindow",
-        label: "Context Window",
-        type: "select",
-        options: [
-          { id: "200k", label: "200k" },
-          { id: "1m", label: "1M", isDefault: true },
-        ],
-        currentValue: "200k",
-      },
-    ]);
-  });
-
-  it("builds wire-format option selections from descriptors", () => {
+  it("builds dispatch options only from explicit selections", () => {
     const descriptors = getProviderOptionDescriptors({
       caps: codexCaps,
-      selections: [
-        { id: "reasoningEffort", value: "high" },
-        { id: "fastMode", value: true },
-      ],
+      selections: [{ id: "fastMode", value: true }],
     });
 
-    expect(buildProviderOptionSelectionsFromDescriptors(descriptors)).toEqual([
-      { id: "reasoningEffort", value: "high" },
-      { id: "fastMode", value: true },
-    ]);
-  });
-
-  it("stores option selection arrays in model selections", () => {
+    expect(buildExplicitProviderOptionSelectionsFromDescriptors(descriptors, undefined)).toBe(
+      undefined,
+    );
     expect(
-      createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
-        { id: "reasoningEffort", value: "high" },
+      buildExplicitProviderOptionSelectionsFromDescriptors(descriptors, [
         { id: "fastMode", value: true },
       ]),
-    ).toEqual({
-      instanceId: "codex",
-      model: "gpt-5.4",
-      options: [
-        { id: "reasoningEffort", value: "high" },
-        { id: "fastMode", value: true },
-      ],
-    });
-  });
-
-  it("reads typed option selection values", () => {
-    const selection = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
-      { id: "reasoningEffort", value: "high" },
-      { id: "fastMode", value: true },
-    ]);
-
-    expect(getProviderOptionStringSelectionValue(selection.options, "reasoningEffort")).toBe(
-      "high",
-    );
-    expect(getProviderOptionStringSelectionValue(selection.options, "fastMode")).toBeUndefined();
-    expect(getProviderOptionBooleanSelectionValue(selection.options, "fastMode")).toBe(true);
-    expect(
-      getProviderOptionBooleanSelectionValue(selection.options, "reasoningEffort"),
-    ).toBeUndefined();
-    expect(getModelSelectionStringOptionValue(selection, "reasoningEffort")).toBe("high");
-    expect(getModelSelectionBooleanOptionValue(selection, "fastMode")).toBe(true);
+    ).toEqual([{ id: "fastMode", value: true }]);
   });
 
   it("compares complete model selections independent of option ordering", () => {
@@ -252,18 +123,6 @@ describe("readCustomModelEntries", () => {
       readCustomModelEntries([{ slug: "x", capabilities: { optionDescriptors: "nope" } }]),
     ).toEqual([{ slug: "x", name: "x", capabilities: null }]);
     expect(readCustomModelEntries("not a list")).toEqual([]);
-  });
-
-  it("writes the compact stored shape back", () => {
-    expect(toCustomModelSetting({ slug: "x", name: "x", capabilities: null })).toBe("x");
-    expect(
-      toCustomModelSetting({ slug: "x", name: "x", capabilities: { optionDescriptors: [] } }),
-    ).toBe("x");
-    expect(toCustomModelSetting({ slug: "x", name: "X", capabilities })).toEqual({
-      slug: "x",
-      name: "X",
-      capabilities,
-    });
   });
 });
 

@@ -4,17 +4,28 @@ Open **Usage** from the sidebar or the command palette, or press `mod+u` on web 
 desktop when the terminal is not focused. Customize `usage.open` in
 **Settings → Keybindings**.
 
+On mobile, choose **Usage** in the workspace navigation.
+
 ## Understand your usage
 
-**Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, and Cursor history
+**Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, Muse Code, and Cursor history
 from your connected environments. It shows token use, cache savings, model breakdowns, and estimated API-equivalent
 cost, split by token type and by speed. These estimates are not your subscription bill.
 **Premium** is what Fast and Ultrafast requests cost above standard rates. Cost that cannot be
 split, such as a provider-reported cost for a model without public rates, shows as **Other**.
 Select a model under **Breakdown** to see its trend, cache hit rate, and cost per million tokens.
 
-Totals depend on the history available on each server. Grok turns without a saved completed-turn
-record are missing from the totals.
+Ask an agent to check usage or remaining account limits. Claude, Codex and other agents connected
+to T3 can read the same data through `t3_usage_read` and `t3_usage_limits_read`, without relying
+on their provider's native usage tools. Limits stay separate for each configured account and hub;
+agents can request a fresh probe and see when a reading is missing or unavailable. History defaults
+to today in UTC unless you ask for another date range or time zone. History reads the environment
+where the agent runs. Limits include connected environments by default, with each reading labelled
+by machine. Keep the desktop/web app open and connected to both machines. Unreachable machines
+are reported as incomplete coverage, so an agent cannot treat their missing quotas as safe. Set
+`includeConnected:false` only when you explicitly want this server's limits alone.
+
+## Model breakdown
 
 OpenCode reads its SQLite database and older JSON history. Antigravity reads local conversation
 databases, including d4research-managed profiles. Set `OPENCODE_DATA_DIR` or `ANTIGRAVITY_DATA_DIR` on the
@@ -34,9 +45,16 @@ variable. Pi reads `~/.pi/agent/sessions`, or the `sessions` directory under
 `PI_CODING_AGENT_DIR`. Set `PI_CODING_AGENT_SESSION_DIR` to read a different session directory.
 To include sessions saved through `--session-dir` or Pi's `sessionDir` setting, set this environment
 variable to the same directory. Pi includes recorded tool and summary costs under `Tools/summaries`.
+Muse Code reads native session history, including child sessions, from the home reported by the
+configured Muse CLI. Its environment settings, including `XDG_DATA_HOME`, apply. Models without
+known prices still contribute tokens and appear as unpriced; set custom prices to estimate their cost.
 Use absolute paths or `~/` paths in the account's environment settings; relative environment paths
 depend on each project's working directory and cannot be reliably discovered by Usage. Accounts
 sharing a history directory count once.
+
+The server saves its first hostname in `<T3 home>/usage-host-id`, so a recreated container keeps
+its usage identity when T3 home is persisted. Set `T3CODE_HOST_ID` to choose the identity
+explicitly.
 
 When your app and server support different providers, usage totals may cover only the providers
 your app understands. Update the app to include newly supported providers.
@@ -45,6 +63,9 @@ On web and desktop, use the environment dropdown to filter costs, tokens, and li
 environments are selected by default. The dropdown shows which environments are still scanning;
 results appear as each one responds, and figures still updating are dimmed. Cursor shows its last
 saved totals first, then updates them when Cursor's API responds.
+
+The breakdown shows model usage and estimated spend. The past-24-hours table includes every
+hour in chronological order, including hours without activity.
 
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
@@ -79,10 +100,10 @@ the dialog.
 ## Track subscription limits
 
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
-or Claude accounts across your environments and hubs you read one number per window rather than a
+or Claude accounts across your enabled environments and hubs you read one number per window rather than a
 list. Each window card shows how much of the pool is left and a bar with one segment per account,
-kept in the same column across windows. Accounts are ordered by their 5-hour reset, soonest
-first, or by the first available window when no account reports a 5-hour limit. A gap means the
+kept in the same column across windows. Named accounts keep alphabetical order instead of
+moving when usage or reset times change. A gap means the
 account does not report that window. When the provider reports reset times, the card also says
 when the next reset lands and how much it hands back. The hatched
 part of a segment is what that reset restores. Tap a segment or account row for the account's plan,
@@ -95,14 +116,44 @@ the bar show each account's quota, countdown, and credits. Tap a row to open its
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
 Filter with the environment dropdown to see what a single machine has.
 
+When a Claude or Codex account has no overall weekly quota left, its pooled session contribution
+shows 0% left. The next refill depends on both reset times: an exhausted session must also reset,
+and a partly spent session may only regain its unused portion when the week resets. Missing or
+stale reset times have no refill estimate; refresh Limits for a new reading. Claude's
+model-specific weekly allowances keep their reported values.
+
 Opening Limits checks the selected connected environments automatically. Each client waits at
 least five minutes between automatic checks of an environment, including after a failed check.
 If a window still looks stale, refresh Limits to re-check every provider and hub.
+
+### View limit history
+
+On desktop or mobile web, open **Usage → Limits → Trends**. Choose 24 hours, 7 days,
+30 days, or 90 days to see remaining quota for each account and limit window. Personal and
+work accounts stay separate and keep their configured colors. Expand **Measurements** for
+timestamps and values.
+
+The server samples the latest provider and hub readings at startup and every five minutes,
+even with the Usage page closed. It uses the existing provider health checks; disabling or
+pausing those checks also pauses fresh measurements. Cached readings keep their original
+timestamp. Charts break across missing readings and resets instead of connecting them as
+continuous consumption. Longer ranges show the last reading in each larger time bucket.
+
+History is saved on the environment, survives app restarts, and expires after 90 days.
+It starts when this version runs; past subscription limits cannot be reconstructed from
+token logs. **Refresh history** reloads saved measurements, while the page's refresh button
+requests fresh limits from providers. Allow up to five minutes for a new reading to be saved.
 
 Pick `/usage-limits` from the composer's command menu, or send it as a message, to check the
 current model's limits without leaving the conversation. The result opens above the composer and
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
 anything. The command is offered only for providers that appear under **Usage → Limits**.
+
+To keep them in view on web and desktop, turn on **Usage** in **Settings → Appearance → Thread details**, or right-click the thread details card.
+The bottom of the thread details card then shows how much is left in each limit window of the
+current provider account and in the thread's context window. Some windows, such as a weekly Opus
+limit, count only one model. Hover a row to see when it resets, your pace, or
+the token count.
 
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
 the environment. d4research cannot report limits for external OpenCode servers because their credentials

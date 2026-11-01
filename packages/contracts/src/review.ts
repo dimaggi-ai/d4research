@@ -3,22 +3,26 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { GitCommandError } from "./git.ts";
 import { VcsError } from "./vcs.ts";
 
+export const ReviewDiffPreviewSourceKind = Schema.Literals(["working-tree", "branch-range"]);
+export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
+
 export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  /** Compute only this source. A `file` request uses its own `sourceKind`. */
+  sourceKind: Schema.optionalKey(ReviewDiffPreviewSourceKind),
+  /** Return file statistics without patch bodies. Ignored for a `file` request. */
+  includePatch: Schema.optionalKey(Schema.Boolean),
   file: Schema.optionalKey(
     Schema.Struct({
       path: Schema.NonEmptyString,
       previousPath: Schema.NullOr(Schema.NonEmptyString),
-      sourceKind: Schema.Literals(["working-tree", "branch-range"]),
+      sourceKind: ReviewDiffPreviewSourceKind,
     }),
   ),
 });
 export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
-
-export const ReviewDiffPreviewSourceKind = Schema.Literals(["working-tree", "branch-range"]);
-export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
 
 export const ReviewDiffFileStat = Schema.Struct({
   path: Schema.String,

@@ -98,7 +98,7 @@ vi.mock("./server", async () => {
         Atom.make(
           state.agentThreadId === null
             ? AsyncResult.initial()
-            : AsyncResult.success({ threadId: state.agentThreadId }),
+            : AsyncResult.success({ threadId: state.agentThreadId, brainContext: "Global" }),
         ),
     },
   };
@@ -207,9 +207,10 @@ describe("mobile task permissions", () => {
     expect(state.sendAgent).not.toHaveBeenCalled();
     state.grantedEnvironments.add("secondary");
     await useThreadComposerState().onSendMessage();
+    // The server refuses the message if Nia's context or thread changed after it was written.
     expect(state.sendAgent).toHaveBeenCalledWith({
       environmentId: "secondary",
-      input: { text: "Keep my draft" },
+      input: { text: "Keep my draft", expectedContext: "Global", expectedThreadId: "thread" },
     });
     expect(state.enqueue).not.toHaveBeenCalled();
     expect(state.clearDraft).toHaveBeenCalledOnce();

@@ -2,6 +2,7 @@ import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
   ExecutionEnvironmentDescriptor,
+  OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ServerSettings,
   ServerSettingsPatch,
@@ -15,6 +16,10 @@ import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const PreferenceFields = {
+  idleCompactionEnabled: ServerSettings.fields.idleCompactionEnabled,
+  idleCompactionAllowBackgroundWork: ServerSettings.fields.idleCompactionAllowBackgroundWork,
+  idleCompactionMinutes: ServerSettings.fields.idleCompactionMinutes,
+  idleCompactionTokens: ServerSettings.fields.idleCompactionTokens,
   defaultThreadEnvMode: ServerSettings.fields.defaultThreadEnvMode,
   newWorktreesStartFromOrigin: ServerSettings.fields.newWorktreesStartFromOrigin,
   enableProviderUpdateChecks: ServerSettings.fields.enableProviderUpdateChecks,
@@ -40,7 +45,8 @@ const shared = {
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
   ...shared,
   description:
-    "Read this server's identity and selected environment preferences. Provider/model availability is exposed by orchestrator_capabilities. Writing instructions are limited to 4,000 characters.",
+    "Read this server's identity and preferences. Providers and models: `orchestrator_capabilities`.",
+  parameters: Schema.Struct({ environmentId: OrchestratorMcpEnvironmentTarget }),
   success: Schema.Struct({
     environmentId: ExecutionEnvironmentDescriptor.fields.environmentId,
     label: Schema.String,
@@ -54,8 +60,13 @@ const EnvironmentReadTool = Tool.make("t3_environment_read", {
 const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update", {
   ...shared,
   description:
-    "Update selected environment-wide preferences through normal settings persistence and notifications. Requires a live full-access/default calling thread. Omitted fields are preserved; empty customInstructions clears them.",
+    "Update selected environment-wide preferences through normal settings persistence and notifications. Requires a live full-access/default calling thread. Omitted fields are preserved; empty customInstructions clears them. Idle compaction is opt-in for Claude/Codex: set idleCompactionEnabled, idleCompactionMinutes (1–1440), and idleCompactionTokens (1000–10000000). Set idleCompactionAllowBackgroundWork (default true) to compact between replies while native monitors, background commands, and provider subagents continue. False waits for all work to finish. Active replies, queues, pending questions, other tools, and T3-managed delegations still wait. Project overrides take precedence.",
   parameters: Schema.Struct({
+    idleCompactionEnabled: ServerSettingsPatch.fields.idleCompactionEnabled,
+    idleCompactionAllowBackgroundWork: ServerSettingsPatch.fields.idleCompactionAllowBackgroundWork,
+    idleCompactionMinutes: ServerSettingsPatch.fields.idleCompactionMinutes,
+    idleCompactionTokens: ServerSettingsPatch.fields.idleCompactionTokens,
+    environmentId: OrchestratorMcpEnvironmentTarget,
     defaultThreadEnvMode: ServerSettingsPatch.fields.defaultThreadEnvMode,
     newWorktreesStartFromOrigin: ServerSettingsPatch.fields.newWorktreesStartFromOrigin,
     enableProviderUpdateChecks: ServerSettingsPatch.fields.enableProviderUpdateChecks,

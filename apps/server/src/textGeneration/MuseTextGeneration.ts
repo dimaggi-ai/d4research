@@ -37,6 +37,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   // the approval ceiling and emits nothing after `turn/start` is accepted,
   // so the turn text never arrives. Instead remove exactly the durable log
   // Muse returned, and only when it sits under Muse's own session store.
+  // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
   const removeSessionLog = (museHome: string, sessionId: string, sessionPath: string) =>
     Effect.gen(function* () {
       if (!sessionPath) return;
@@ -78,6 +79,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
         spawner,
         cwd,
         clientInfo: { name: "t3_code", version: "0.0.1" },
+        // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
         onEvent: (method, params) =>
           Effect.gen(function* () {
             const event = yield* Effect.try(() => decodeMspNotification(method, params)).pipe(

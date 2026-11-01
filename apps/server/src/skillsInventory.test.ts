@@ -276,7 +276,10 @@ it.layer(NodeServices.layer)("readSkillsInventory", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skills-inventory-" });
+      // macOS temp directories live under the /var -> /private/var symlink.
+      const tempDir = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "t3-skills-inventory-" }),
+      );
       const homeDir = path.join(tempDir, "home");
       const cwd = path.join(tempDir, "workspace");
 

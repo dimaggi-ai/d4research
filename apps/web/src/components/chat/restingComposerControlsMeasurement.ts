@@ -47,8 +47,7 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
   for (const label of block.querySelectorAll<HTMLElement>("[data-composer-control-label]")) {
     const labelStyle = getComputedStyle(label);
     const inFlow = labelStyle.position !== "absolute";
-    // Phone widths already hide the build label with sr-only. Its clipping
-    // remains in effect even when compact styles replace its one-pixel width.
+    // Phone sr-only clipping survives compact styles overriding the label width.
     if (!inFlow && (!compact || labelStyle.clip !== "auto")) continue;
     const labelWidth = label.scrollWidth;
     const renderedWidth = inFlow ? label.getBoundingClientRect().width : 0;
@@ -65,11 +64,7 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
   return { natural, iconOnly: Math.min(natural, iconOnly) };
 }
 
-/**
- * Both the composer (deciding which blocks move into overflow) and the
- * context strip (deciding whether its labels may expand) read the same
- * numbers, so neither decision depends on what the other one hid last render.
- */
+/** Measure independently of controls hidden by the previous render. */
 export function measureRestingComposerControls(
   controls: HTMLElement,
 ): RestingComposerControlsMeasurement | null {
@@ -82,27 +77,16 @@ export function measureRestingComposerControls(
   const separatorWidth = separator ? elementOuterWidth(separator) : 0;
   const overflow = controls.querySelector<HTMLElement>("[data-resting-controls-overflow]");
   const separatorAndGapWidth = separatorWidth > 0 ? separatorWidth + gap : 0;
-  // d4's session skills and pipeline controls stay together rather than
-  // moving individual actions into upstream's traits overflow. Reserve their
-  // full width in both layouts so context labels cannot reclaim their space.
-  const fixedControlsWidth = Array.from(
-    controls.querySelectorAll<HTMLElement>("[data-resting-fixed-control]"),
-  ).reduce((total, element) => {
-    const width = elementOuterWidth(element);
-    return total + (width > 0 ? width + gap : 0);
-  }, 0);
   const blocks = Array.from(controls.querySelectorAll<HTMLElement>("[data-resting-block]"));
   const widths = blocks.map(controlBlockWidths);
   return {
     gap,
     naturalFixedWidth:
       (picker ? providerModelPickerNaturalWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth +
-      fixedControlsWidth,
+      separatorAndGapWidth,
     minimumFixedWidth:
       (picker ? providerModelPickerMinimumWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth +
-      fixedControlsWidth,
+      separatorAndGapWidth,
     blockWidths: widths.map((width) => width.natural),
     iconOnlyBlockWidths: widths.map((width) => width.iconOnly),
     overflowWidth: overflow ? elementOuterWidth(overflow) : 0,

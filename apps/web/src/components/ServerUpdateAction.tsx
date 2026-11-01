@@ -1,3 +1,6 @@
+import { useEnvironment } from "~/state/environments";
+import type { BundledServerRuntime, DesktopSshEnvironmentTarget } from "@d4research/contracts";
+import { updateBundledServer, useResolveBundledServerUpdate } from "~/state/bundledServerUpdate";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthEnvironmentMaintainScope,
@@ -7,6 +10,7 @@ import {
 import type { AsyncResult } from "effect/reactivity";
 import { environmentSession } from "~/state/session";
 import type {
+  DesktopUpdateChannel,
   EnvironmentId,
   ServerInstallation,
   ServerSelfUpdateCapability,
@@ -22,11 +26,12 @@ import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand } from "~/versionSkew";
+import { useServerConfigs } from "~/state/entities";
+import { crossesReleaseTrack } from "@d4research/shared/cliRelease";
 import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -42,19 +47,60 @@ function serverUpdateStageLabel(stage: ServerUpdateStage): string {
   return UPDATE_STAGE_LABELS[stage];
 }
 
+const CROSS_TRACK_NOTE = "Switch tracks in About → Update track";
+
+/** Hosts refuse a Stable/Nightly crossing outside a track switch, which checks the database first. */
+function refusedCrossing(
+  target: {
+    readonly selfUpdate: ServerSelfUpdateCapability | null;
+    readonly targetVersion: string;
+    readonly channel?: DesktopUpdateChannel | undefined;
+  },
+  serverVersion: string | undefined,
+): boolean {
+  return (
+    target.channel === undefined &&
+    target.selfUpdate !== null &&
+    serverVersion !== undefined &&
+    crossesReleaseTrack(serverVersion, target.targetVersion)
+  );
+}
+
+function CrossTrackNote() {
+  return <span className="text-muted-foreground text-xs">{CROSS_TRACK_NOTE}</span>;
+}
+
 function updateFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Server update failed.";
 }
 
 export interface ServerUpdateTarget {
+  readonly threadContinuation?: boolean;
+  readonly continueThreadsAfterServerUpdate?: boolean;
+  readonly bundledRuntime?: {
+    readonly runtime: BundledServerRuntime;
+    readonly target: DesktopSshEnvironmentTarget;
+    readonly fromVersion: string;
+  };
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
   readonly selfUpdate: ServerSelfUpdateCapability | null;
   readonly installation?: ServerInstallation | undefined;
   readonly desktopAppUpdate?: boolean;
-  readonly threadContinuation?: boolean;
   readonly targetVersion: string;
-  readonly continueThreadsAfterServerUpdate?: boolean;
+  /** Set only by a track switch; the host's desktop app moves to this track. */
+  readonly channel?: DesktopUpdateChannel;
+  /** A track switch's checked release migration; the host re-checks its own database. */
+  readonly targetDatabaseMigration?: number;
+  /** The host already runs its track's newest build and only saves the track. */
+  readonly trackOnly?: boolean;
+}
+
+function isExplicitReleaseTarget(
+  channel: DesktopUpdateChannel | undefined,
+  targetDatabaseMigration: number | undefined,
+): boolean {
+  return channel !== undefined || targetDatabaseMigration !== undefined;
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -68,27 +114,47 @@ export type ServerUpdateOutcome =
 
 /** Toasts its success or failure unless `quiet`; never rejects. */
 export function useServerUpdate() {
+  const resolveBundled = useResolveBundledServerUpdate();
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
+  const updateBundled = useAtomCommand(updateBundledServer, { reportFailure: false });
   return async (
     target: ServerUpdateTarget,
     { quiet = false }: { readonly quiet?: boolean } = {},
   ): Promise<ServerUpdateOutcome> => {
-    const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
+    const bundledRuntime =
+      target.bundledRuntime ??
+      (isExplicitReleaseTarget(target.channel, target.targetDatabaseMigration)
+        ? null
+        : resolveBundled(target.environmentId));
+    const { environmentId, serverLabel, selfUpdate } = target;
+    const targetVersion = bundledRuntime?.runtime.version ?? target.targetVersion;
     if (
       !canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))) ||
       pendingUpdateEnvironmentIds.has(environmentId)
     )
       return { status: "skipped" };
     pendingUpdateEnvironmentIds.add(environmentId);
-    const result = await updateServer({
-      environmentId,
-      input: {
-        targetVersion,
-        ...(target.threadContinuation && target.continueThreadsAfterServerUpdate
-          ? { continueRunningThreads: true }
-          : {}),
-      },
-    });
+    const result = bundledRuntime
+      ? await updateBundled({
+          target: bundledRuntime.target,
+          environmentId,
+          buildId: bundledRuntime.runtime.buildId,
+          version: bundledRuntime.runtime.version,
+          fromVersion: bundledRuntime.fromVersion,
+        })
+      : await updateServer({
+          environmentId,
+          input: {
+            targetVersion,
+            ...(target.channel === undefined ? {} : { channel: target.channel }),
+            ...(target.targetDatabaseMigration === undefined
+              ? {}
+              : { targetDatabaseMigration: target.targetDatabaseMigration }),
+            ...(target.threadContinuation && target.continueThreadsAfterServerUpdate
+              ? { continueRunningThreads: true }
+              : {}),
+          },
+        });
     pendingUpdateEnvironmentIds.delete(environmentId);
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) return { status: "skipped" };
@@ -106,10 +172,11 @@ export function useServerUpdate() {
       toastManager.add({
         type: "success",
         title: `${serverLabel} updated`,
-        description:
-          selfUpdate === "desktop-managed"
-            ? `Desktop app relaunched on ${result.value.targetVersion}.`
-            : `Reconnected on d4research@${result.value.targetVersion}.`,
+        description: bundledRuntime
+          ? `Reconnected on this app's bundled server ${targetVersion}.`
+          : selfUpdate === "desktop-managed"
+            ? `Desktop app relaunched on ${targetVersion}.`
+            : `Reconnected on t3@${targetVersion}.`,
       });
     }
     return { status: "updated" };
@@ -126,13 +193,29 @@ export function ServerUpdatesAction({
   readonly targets: ReadonlyArray<ServerUpdateTarget>;
 }) {
   const update = useServerUpdate();
+  const resolveBundled = useResolveBundledServerUpdate();
+  const serverConfigs = useServerConfigs();
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
-  const eligible = targets.filter(
-    (target) =>
-      target.selfUpdate !== null &&
-      (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
-  );
+  const eligible = targets
+    .map((target) => {
+      const bundledRuntime =
+        target.bundledRuntime ??
+        (isExplicitReleaseTarget(target.channel, target.targetDatabaseMigration)
+          ? null
+          : resolveBundled(target.environmentId));
+      return bundledRuntime ? { ...target, bundledRuntime } : target;
+    })
+    .filter(
+      (target) =>
+        target.bundledRuntime !== undefined ||
+        (target.selfUpdate !== null &&
+          (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate) &&
+          !refusedCrossing(
+            target,
+            serverConfigs.get(target.environmentId)?.environment.serverVersion,
+          )),
+    );
   const handleUpdate = async () => {
     if (pending.current) return;
     pending.current = true;
@@ -141,7 +224,9 @@ export function ServerUpdatesAction({
       const available = eligible.filter(
         (target) => !pendingUpdateEnvironmentIds.has(target.environmentId),
       );
-      const desktopTargets = available.filter((target) => target.selfUpdate === "desktop-managed");
+      const desktopTargets = available.filter(
+        (target) => !target.bundledRuntime && target.selfUpdate === "desktop-managed",
+      );
       if (desktopTargets.length > 0) {
         const confirmed =
           (await requestConfirmDialog(
@@ -198,31 +283,37 @@ export function ServerUpdateProgress({
   );
 }
 
-/**
- * Self-updates delegate their full lifecycle to client-runtime so this component can unmount
- * during reconnect without losing operation state.
- */
+/** client-runtime owns self-updates so unmounting during reconnect preserves operation state. */
 export function ServerUpdateAction({
   environmentId,
   serverLabel,
   selfUpdate,
   installation,
   desktopAppUpdate = false,
+  bundledRuntime: suppliedBundledRuntime,
   threadContinuation = false,
   targetVersion,
+  channel,
+  targetDatabaseMigration,
   label = "Update",
   variant = "outline",
   size = "xs",
   className,
   appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
-  const isDesktopAppUpdate = selfUpdate === "desktop-managed";
+  const environment = useEnvironment(environmentId);
+  const continueThreadsAfterServerUpdate =
+    environment?.serverConfig?.settings.continueThreadsAfterServerUpdate ?? false;
+  const resolveBundled = useResolveBundledServerUpdate();
+  const bundledRuntime =
+    suppliedBundledRuntime ??
+    (isExplicitReleaseTarget(channel, targetDatabaseMigration)
+      ? null
+      : resolveBundled(environmentId));
+  const isDesktopAppUpdate = !bundledRuntime && selfUpdate === "desktop-managed";
+  const serverVersion = useServerConfigs().get(environmentId)?.environment.serverVersion;
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
-  const continueThreadsAfterServerUpdate = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings.continueThreadsAfterServerUpdate,
-  );
   const update = useServerUpdate();
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
     target: installation?.kind === "npm-global" ? "update command" : "relaunch command",
@@ -268,13 +359,16 @@ export function ServerUpdateAction({
       serverLabel,
       selfUpdate,
       desktopAppUpdate,
-      threadContinuation,
       targetVersion,
+      ...(channel === undefined ? {} : { channel }),
+      ...(targetDatabaseMigration === undefined ? {} : { targetDatabaseMigration }),
+      threadContinuation,
       continueThreadsAfterServerUpdate,
+      ...(bundledRuntime ? { bundledRuntime } : {}),
     });
   };
 
-  if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
+  if (isDesktopAppUpdate && !desktopAppUpdate) {
     return (
       <span className="text-muted-foreground text-xs">
         Update the desktop app on that machine to update this server.
@@ -282,8 +376,14 @@ export function ServerUpdateAction({
     );
   }
 
+  if (!bundledRuntime && refusedCrossing({ selfUpdate, targetVersion, channel }, serverVersion)) {
+    return <CrossTrackNote />;
+  }
+
   const manualCommand =
-    selfUpdate === null ? manualServerUpdateCommand(targetVersion, installation) : null;
+    selfUpdate === null && !bundledRuntime
+      ? manualServerUpdateCommand(targetVersion, installation)
+      : null;
   const actionLabel =
     manualCommand !== null
       ? installation?.kind === "npm-global"
@@ -330,9 +430,7 @@ export function ServerUpdateAction({
   );
 }
 
-/**
- * Its version comes from the host descriptor because the host never delivers a server config.
- */
+/** Read the host descriptor's version because the host never delivers server config. */
 export function OutdatedServerUpdateAction({
   environmentId,
   serverLabel,
@@ -368,9 +466,12 @@ export function OutdatedServerUpdateAction({
     toastManager.add({
       type: "success",
       title: `${serverLabel} updated`,
-      description: `Reconnected on d4research@${result.value.targetVersion}.`,
+      description: `Reconnected on t3@${targetVersion}.`,
     });
   };
+  if (fromVersion !== undefined && crossesReleaseTrack(fromVersion, targetVersion)) {
+    return <CrossTrackNote />;
+  }
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}

@@ -9,8 +9,8 @@ const Catalog = Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.St
 
 const decodeCatalog = Schema.decodeUnknownEffect(Schema.fromJsonString(Catalog));
 
-export const probeDeepSeek = (config: Pick<DeepSeekSettings, "endpoint" | "model">) =>
-  Effect.gen(function* () {
+export const probeDeepSeek = Effect.fn("DeepSeekHealth.probeDeepSeek")(
+  function* (config: Pick<DeepSeekSettings, "endpoint" | "model">) {
     if (!isLoopbackEndpoint(config.endpoint)) return false;
     const client = yield* HttpClient.HttpClient;
     const response = yield* client
@@ -21,7 +21,7 @@ export const probeDeepSeek = (config: Pick<DeepSeekSettings, "endpoint" | "model
     if (body.truncated || body.invalidUtf8) return false;
     const catalog = yield* decodeCatalog(body.text);
     return catalog.data.some((model) => model.id === config.model);
-  }).pipe(
-    Effect.timeout(2000),
-    Effect.catch(() => Effect.succeed(false)),
-  );
+  },
+  Effect.timeout(2000),
+  Effect.catch(() => Effect.succeed(false)),
+);

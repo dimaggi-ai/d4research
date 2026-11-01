@@ -1,3 +1,4 @@
+// @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { createOrchestrationV2TurnItemVisibility } from "@d4research/shared/orchestrationV2Timeline";
 import { SecondBrainError, BrainNoteKind, ThreadId } from "@d4research/contracts";

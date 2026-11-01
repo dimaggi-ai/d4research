@@ -54,7 +54,7 @@ import Migration0044 from "./Migrations/044_ProjectionTurnsKeysetIndex.ts";
 // already shipped for the retired queued-message projection and stay reserved.
 import Migration0045 from "./Migrations/041_AuthSessionClientConnection.ts";
 import Migration0046 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
-import Migration0047 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
+import Migration0047 from "./Migrations/045_ProjectionThreadsUnsettledAt.ts";
 import Migration0048 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
 import Migration0049 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
 import Migration0050 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
@@ -79,6 +79,23 @@ import Migration0070 from "./Migrations/063_DropUnusedV1Projections.ts";
 import Migration0074 from "./Migrations/074_RouteTelemetry.ts";
 
 import Migration0075 from "./Migrations/075_ScheduledTaskRunCorrelation.ts";
+// Migrations from the upstream and pilshchikov fork histories that d4research
+// had not shipped. Their ids follow d4's released ledger; see
+// reconcileForkMigrationHistory.ts for databases written by the fork.
+import Migration0076 from "./Migrations/041_ProjectionProjectWorkspaceRoots.ts";
+import Migration0077 from "./Migrations/052_ProjectMemories.ts";
+import Migration0078 from "./Migrations/054_UsageLimitHistory.ts";
+import Migration0079 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
+import Migration0080 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
+import Migration0081 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
+import Migration0082 from "./Migrations/067_WebhookDedupe.ts";
+import Migration0083 from "./Migrations/068_ShellStopRequestIndex.ts";
+import Migration0084 from "./Migrations/069_ThreadMessageSearch.ts";
+import Migration0085 from "./Migrations/070_PeerLinks.ts";
+import Migration0086 from "./Migrations/071_PeerLinkFence.ts";
+import Migration0087 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0088 from "./Migrations/073_ActiveTurnItemIndexes.ts";
+import { reconcileForkMigrationHistory } from "./reconcileForkMigrationHistory.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -152,6 +169,19 @@ export const migrationEntries = [
   [73, "AgentMonitorEpisodes", Migration0073],
   [74, "RouteTelemetry", Migration0074],
   [75, "ScheduledTaskRunCorrelation", Migration0075],
+  [76, "ProjectionProjectWorkspaceRoots", Migration0076],
+  [77, "ProjectMemories", Migration0077],
+  [78, "UsageLimitHistory", Migration0078],
+  [79, "CanonicalizeThreadPullRequestLinks", Migration0079],
+  [80, "CodexUsageNativeTurnIndex", Migration0080],
+  [81, "RepairClientSettlementTimestamps", Migration0081],
+  [82, "WebhookDedupe", Migration0082],
+  [83, "ShellStopRequestIndex", Migration0083],
+  [84, "ThreadMessageSearch", Migration0084],
+  [85, "PeerLinks", Migration0085],
+  [86, "PeerLinkFence", Migration0086],
+  [87, "WaitingLinkRequestIndex", Migration0087],
+  [88, "ActiveTurnItemIndexes", Migration0088],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -226,6 +256,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   // incompatible historical slot is rejected before any schema can change.
   yield* run({ loader: makeMigrationLoader(0) });
   const sql = yield* SqlClient.SqlClient;
+  const reconciled = yield* reconcileForkMigrationHistory(migrationEntries);
   const applied = yield* sql<{ readonly migration_id: number; readonly name: string }>`
     SELECT migration_id, name FROM effect_sql_migrations
   `;
@@ -243,7 +274,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   if (toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
-  const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  const executedMigrations = [
+    ...reconciled,
+    ...(yield* run({ loader: makeMigrationLoader(toMigrationInclusive) })),
+  ];
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")

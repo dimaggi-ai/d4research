@@ -19,6 +19,7 @@ import {
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
+  ThreadWorkspaceSelection,
 } from "@d4research/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -27,13 +28,24 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as Metric from "effect/Metric";
+import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import {
+  orchestrationCommandDuration,
+  orchestrationCommandsTotal,
+} from "../observability/Metrics.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as DelegatedTaskQuestionReactor from "./DelegatedTaskQuestionReactor.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
@@ -51,120 +63,329 @@ const layerDatabase = SqlitePersistence.layerMemory;
 const layerTest = Layer.mergeAll(
   layerDatabase,
   ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
+  ProjectStore.layer.pipe(Layer.provide(layerDatabase)),
+  EffectOutbox.layer.pipe(Layer.provide(layerDatabase)),
   ProviderReplayHarness.layerWithRegistry(
     { name: "control-reads" },
     ProviderAdapterRegistry.layerFromAdapters([adapter]),
-    { layerDatabase: layerDatabase, runEffectWorker: false },
+    { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
 );
 
-it.effect("persists server skill snapshots for web, mobile, research and queued messages", () =>
-  Effect.scoped(
+const decodeWorkspaceSelections = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(ThreadWorkspaceSelection)),
+);
+
+it.effect(
+  "records approval feedback and targets only its runtime request without dispatching a parent turn",
+  () =>
     Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "d4-accepted-skills-" });
-      for (const name of ["global-proof", "chat-proof"]) {
-        const folder = path.join(cwd, ".agents", "skills", name);
-        yield* fs.makeDirectory(folder, { recursive: true });
-        yield* fs.writeFileString(
-          path.join(folder, "SKILL.md"),
-          `---\nname: ${name}\ndescription: Test\n---\nRead only.`,
-        );
-      }
-      const threadId = ThreadId.make("accepted-skills");
-      const settingsLayer = ServerSettings.layerTest({
-        skills: {
-          enabledByDefault: ["global-proof"],
-          enabledByThread: { [threadId]: ["chat-proof"] },
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const threadId = ThreadId.make("thread:approval-feedback");
+      const sessionId = ProviderSessionId.make("session:approval-feedback");
+      const now = yield* DateTime.now;
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("create-approval-feedback"),
+        threadId,
+        projectId: ProjectId.make("project:approval-feedback"),
+        title: "Parent",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* projections.apply({
+        id: EventId.make("session:approval-feedback"),
+        type: "provider-session.attached",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: sessionId,
+          driver: adapter.driver,
+          providerInstanceId: instanceId,
+          status: "ready",
+          cwd: "/repo",
+          model: modelSelection.model,
+          capabilities: CodexProviderCapabilitiesV2,
+          createdAt: now,
+          updatedAt: now,
+          lastError: null,
         },
-      }).pipe(Layer.orDie);
-      const db = Layer.fresh(SqlitePersistence.layerMemory);
-      const layer = Layer.mergeAll(
-        settingsLayer,
-        ProjectionStore.layer.pipe(Layer.provide(db)),
-        ProviderReplayHarness.layerWithRegistry(
-          { name: "accepted-skills" },
-          ProviderAdapterRegistry.layerFromAdapters([adapter]),
-          { layerDatabase: db, runEffectWorker: false, layerServerSettings: settingsLayer },
+      });
+      for (const name of ["child", "other"]) {
+        yield* projections.apply({
+          id: EventId.make(`request:${name}`),
+          type: "runtime-request.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: RuntimeRequestId.make(name),
+            nodeId: NodeId.make(`node:${name}`),
+            providerTurnId: null,
+            nativeRequestRef: null,
+            kind: "command",
+            status: "pending",
+            responseCapability: {
+              type: "live",
+              providerSessionId: sessionId,
+              supportsFeedback: name === "child",
+            },
+            createdAt: now,
+            resolvedAt: null,
+          },
+        });
+      }
+      const commandId = CommandId.make("respond:approval-feedback");
+      const feedback = "Run it in a safer manner.";
+      for (const [index, invalid] of [
+        { requestId: RuntimeRequestId.make("other"), decision: "decline" as const, feedback },
+        { requestId: RuntimeRequestId.make("child"), decision: "accept" as const, feedback },
+        { requestId: RuntimeRequestId.make("child"), decision: "decline" as const, feedback: "  " },
+      ].entries()) {
+        const rejectedId = CommandId.make(`invalid-feedback:${index}`);
+        const rejected = yield* orchestrator
+          .dispatch({
+            type: "runtime-request.respond",
+            commandId: rejectedId,
+            threadId,
+            ...invalid,
+          })
+          .pipe(Effect.result);
+        assert.isTrue(Result.isFailure(rejected));
+        assert.deepEqual(yield* outbox.listByCommandId(rejectedId), []);
+      }
+      yield* orchestrator.dispatch({
+        type: "runtime-request.respond",
+        commandId,
+        threadId,
+        requestId: RuntimeRequestId.make("child"),
+        decision: "decline",
+        feedback,
+      });
+      const projection = yield* projections.getThreadProjection(threadId);
+      assert.equal(
+        projection.runtimeRequests.find((request) => request.id === "child")?.feedback,
+        feedback,
+      );
+      assert.equal(
+        projection.runtimeRequests.find((request) => request.id === "other")?.status,
+        "pending",
+      );
+      assert.equal(projection.messages.at(-1)?.text, feedback);
+      const feedbackMessageId = MessageId.make("approval-feedback:child");
+      assert.ok(
+        projection.visibleTurnItems.some(
+          ({ item }) =>
+            item.type === "user_message" &&
+            item.messageId === feedbackMessageId &&
+            item.text === feedback,
         ),
       );
-      yield* Effect.gen(function* () {
-        const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const projections = yield* ProjectionStore.ProjectionStoreV2;
-        const settings = yield* ServerSettings.ServerSettingsService;
-        yield* orchestrator.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make("skills-create"),
-          threadId,
-          projectId: ProjectId.make("skills-project"),
-          title: "Skills",
-          modelSelection,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: cwd,
-          createdBy: "user",
-          creationSource: "web",
-        });
-        for (const [index, text] of [
-          "Normal message",
-          "!research:audit Review",
-          "!codex:gpt-5.1-codex Advise",
-        ].entries()) {
-          yield* orchestrator.dispatch({
-            type: "message.dispatch",
-            commandId: CommandId.make(`skills-send-${index}`),
-            threadId,
-            messageId: MessageId.make(`skills-message-${index}`),
-            text,
-            attachments: [],
-            dispatchMode:
-              index === 0 ? { type: "start_immediately" } : { type: "queue_after_active" },
-            createdBy: "user",
-            creationSource: index === 1 ? "mobile" : "web",
-          });
-        }
-        const before = yield* projections.getThreadProjection(threadId);
-        for (const message of before.messages) {
-          const snapshot = extractTrailingEnabledSkillsContext(message.text);
-          assert.deepEqual(snapshot.globalSkills, ["global-proof"]);
-          assert.deepEqual(snapshot.sessionSkills, ["chat-proof"]);
-          const item = before.turnItems.find(
-            (item) => item.type === "user_message" && item.messageId === message.id,
-          );
-          // Queued messages gain a user turn item only when the run starts.
-          if (item?.type === "user_message") assert.equal(item.text, message.text);
-        }
-        yield* settings.updateSettings({ skills: { enabledByDefault: [], enabledByThread: {} } });
-        const after = yield* projections.getThreadProjection(threadId);
-        assert.deepEqual(
-          after.messages.map((message) => message.text),
-          before.messages.map((message) => message.text),
-        );
-        const queued = after.runs.find((run) => run.status === "queued")!;
-        const accepted = after.messages.find((message) => message.id === queued.userMessageId)!;
-        assert.deepEqual(
-          extractTrailingEnabledSkillsContext(
-            withPersistedSkillsContext("Expanded task", accepted.text),
-          ).skills,
-          ["global-proof", "chat-proof"],
-        );
-        yield* orchestrator.dispatch({
-          type: "queued-run.edit",
-          commandId: CommandId.make("skills-edit"),
-          threadId,
-          runId: queued.id,
-          text: "Edited after disabling skills",
-        });
-        const edited = yield* projections.getThreadProjection(threadId);
-        assert.equal(
-          edited.messages.find((message) => message.id === queued.userMessageId)?.text,
-          "Edited after disabling skills",
-        );
-      }).pipe(Effect.provide(layer));
-    }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+      const history = yield* projections.getTimelinePage(threadId, { limit: 20, view: "messages" });
+      assert.ok(
+        history.items.some(
+          ({ item }) =>
+            item.type === "user_message" &&
+            item.messageId === feedbackMessageId &&
+            item.text === feedback,
+        ),
+      );
+      assert.equal(projection.runs.length, 0);
+      assert.deepEqual(
+        (yield* outbox.listByCommandId(commandId)).map((effect) => effect.request),
+        [
+          {
+            type: "runtime-request.respond",
+            providerSessionId: sessionId,
+            requestId: RuntimeRequestId.make("child"),
+            decision: "decline",
+            feedback,
+          },
+        ],
+      );
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("marks a never-visited thread's first completion unread", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:completion-watermark");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-completion-watermark"),
+      threadId,
+      projectId: ProjectId.make("project:completion-watermark"),
+      title: "Background task",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    assert.isNull((yield* projections.getThreadShell(threadId))?.lastVisitedAt);
+    const dispatch = (id: string) =>
+      orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(id),
+        threadId,
+        messageId: MessageId.make(id),
+        text: "Run in the background",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    yield* TestClock.adjust("1 second");
+    const dispatchedAt = yield* DateTime.now;
+    yield* dispatch("first-completion-watermark");
+    yield* orchestrator.dispatch({
+      type: "run.interrupt",
+      commandId: CommandId.make("interrupt-completion-watermark"),
+      threadId,
+      runId: (yield* projections.getThreadProjection(threadId)).runs[0]!.id,
+    });
+    // The run ends in the dispatch's millisecond and must still be unread.
+    const ended = yield* projections.getThreadShell(threadId);
+    assert.ok(ended?.lastVisitedAt && ended.latestRunCompletedAt);
+    assert.equal(
+      DateTime.toEpochMillis(ended.lastVisitedAt),
+      DateTime.toEpochMillis(dispatchedAt) - 1,
+    );
+    assert.isAbove(
+      DateTime.toEpochMillis(ended.latestRunCompletedAt),
+      DateTime.toEpochMillis(ended.lastVisitedAt),
+    );
+
+    yield* TestClock.adjust("1 second");
+    yield* dispatch("second-completion-watermark");
+    assert.deepEqual(
+      (yield* projections.getThreadShell(threadId))?.lastVisitedAt,
+      ended.lastVisitedAt,
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+const completeAndSnoozeThread = Effect.fn("test.completeAndSnoozeThread")(function* (
+  name: string,
+  snoozeMinutes: number,
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const threadId = ThreadId.make(`thread:${name}`);
+  yield* orchestrator.dispatch({
+    type: "thread.create",
+    commandId: CommandId.make(`create-${name}`),
+    threadId,
+    projectId: ProjectId.make(`project:${name}`),
+    title: "Snoozed completion",
+    modelSelection,
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdBy: "user",
+    creationSource: "web",
+  });
+  yield* orchestrator.dispatch({
+    type: "message.dispatch",
+    commandId: CommandId.make(`dispatch-${name}`),
+    threadId,
+    messageId: MessageId.make(`dispatch-${name}`),
+    text: "Run in the background",
+    attachments: [],
+    dispatchMode: { type: "defer_start" },
+    createdBy: "agent",
+    creationSource: "mcp",
+  });
+  yield* orchestrator.dispatch({
+    type: "run.interrupt",
+    commandId: CommandId.make(`interrupt-${name}`),
+    threadId,
+    runId: (yield* projections.getThreadProjection(threadId)).runs[0]!.id,
+  });
+  const completedAt = (yield* projections.getThreadProjection(threadId)).runs.at(-1)?.completedAt;
+  assert.ok(completedAt);
+  yield* TestClock.adjust("1 second");
+  const snoozedUntil = DateTime.add(yield* DateTime.now, { minutes: snoozeMinutes });
+  yield* orchestrator.dispatch({
+    type: "thread.snooze",
+    commandId: CommandId.make(`snooze-${name}`),
+    threadId,
+    snoozedUntil: DateTime.formatIso(snoozedUntil),
+  });
+  return { threadId, completedAt, snoozedUntil };
+});
+
+it.effect("mark unread retires an expired snooze so a dismissed wake stays dismissed", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const { threadId, completedAt, snoozedUntil } = yield* completeAndSnoozeThread(
+      "mark-unread-expired-snooze",
+      1,
+    );
+    yield* TestClock.adjust("2 minutes");
+    yield* orchestrator.dispatch({
+      type: "thread.visit",
+      commandId: CommandId.make("dismiss-woke"),
+      threadId,
+      visitedAt: DateTime.formatIso(snoozedUntil),
+    });
+    const dismissed = yield* projections.getThread(threadId);
+    assert.deepEqual(dismissed.lastVisitedAt, snoozedUntil);
+
+    yield* orchestrator.dispatch({
+      type: "thread.mark-unread",
+      commandId: CommandId.make("mark-unread-expired-snooze"),
+      threadId,
+    });
+    assert.deepEqual(yield* projections.getThread(threadId), {
+      ...dismissed,
+      lastVisitedAt: DateTime.subtract(completedAt, { milliseconds: 1 }),
+      snoozedUntil: null,
+      snoozedAt: null,
+      lastSnoozeWakeAt: snoozedUntil,
+    });
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("mark unread leaves a future snooze untouched", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const { threadId, completedAt } = yield* completeAndSnoozeThread(
+      "mark-unread-future-snooze",
+      60,
+    );
+    yield* TestClock.adjust("1 minute");
+    yield* orchestrator.dispatch({
+      type: "thread.visit",
+      commandId: CommandId.make("visit-snoozed"),
+      threadId,
+      visitedAt: DateTime.formatIso(yield* DateTime.now),
+    });
+    const visited = yield* projections.getThread(threadId);
+    assert.isNotNull(visited.snoozedUntil);
+
+    yield* orchestrator.dispatch({
+      type: "thread.mark-unread",
+      commandId: CommandId.make("mark-unread-future-snooze"),
+      threadId,
+    });
+    assert.deepEqual(yield* projections.getThread(threadId), {
+      ...visited,
+      lastVisitedAt: DateTime.subtract(completedAt, { milliseconds: 1 }),
+    });
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect(
@@ -174,6 +395,7 @@ it.effect(
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const sql = yield* SqlClient.SqlClient;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
       const threadId = ThreadId.make("thread:control-dispatch");
       const now = yield* DateTime.now;
       yield* orchestrator.dispatch({
@@ -320,6 +542,37 @@ it.effect(
             questions: [],
           },
         });
+        const answers = { text: "Blue", list: ["Red"], codex: { answers: ["Green"] } };
+        const normalizedAnswers = { ...answers, codex: ["Green"] };
+        if (mode === "live") {
+          const pending = yield* projections.getRuntimeResponseContext(threadId, requestId);
+          const sequence = yield* orchestrator.getThreadEventSequence(threadId);
+          for (const [index, value] of [
+            null,
+            42,
+            { choice: "Blue" },
+            ["Blue", 42],
+            { answers: [42] },
+          ].entries()) {
+            const commandId = CommandId.make(`invalid-answer:${index}`);
+            const result = yield* orchestrator
+              .dispatch({
+                type: "runtime-request.respond",
+                commandId,
+                threadId,
+                requestId,
+                answers: { ...answers, invalid: value },
+              })
+              .pipe(Effect.result);
+            assert.isTrue(Result.isFailure(result));
+            assert.deepEqual(
+              yield* projections.getRuntimeResponseContext(threadId, requestId),
+              pending,
+            );
+            assert.equal(yield* orchestrator.getThreadEventSequence(threadId), sequence);
+            assert.deepEqual(yield* outbox.listByCommandId(commandId), []);
+          }
+        }
         yield* orchestrator.dispatch(
           mode === "live"
             ? {
@@ -327,7 +580,7 @@ it.effect(
                 commandId: CommandId.make(`respond:${mode}`),
                 threadId,
                 requestId,
-                decision: "accept",
+                answers,
               }
             : {
                 type: "thread.user-input.dismiss",
@@ -343,6 +596,25 @@ it.effect(
         const response = yield* projections.getRuntimeResponseContext(threadId, requestId);
         assert.equal(response.node?.status, mode === "live" ? "completed" : "cancelled");
         assert.equal(response.item?.status, mode === "live" ? "completed" : "cancelled");
+        if (mode === "live") {
+          assert.deepEqual(response.request?.answers, normalizedAnswers);
+          assert.equal(response.item?.type, "user_input_request");
+          if (response.item?.type === "user_input_request") {
+            assert.deepEqual(response.item.questionAnswer?.answers, normalizedAnswers);
+          }
+          const effects = yield* outbox.listByCommandId(CommandId.make(`respond:${mode}`));
+          assert.deepEqual(
+            effects.map((effect) => effect.request),
+            [
+              {
+                type: "runtime-request.respond",
+                providerSessionId: sessionId,
+                requestId,
+                answers: normalizedAnswers,
+              },
+            ],
+          );
+        }
       }
       yield* orchestrator.dispatch({
         type: "thread.metadata.update",
@@ -736,6 +1008,99 @@ it.effect("keeps delegated child pull-request links independent of the parent", 
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("persists independent workspace selections and rejects stale writes", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const projects = yield* ProjectStore.ProjectStoreV2;
+    const threadId = ThreadId.make("thread:workspaces");
+    const projectId = ProjectId.make("project:workspaces");
+    const occurredAt = "2026-10-02T00:00:00.000Z";
+    yield* projects.apply({
+      sequence: 1,
+      eventId: EventId.make("project:workspaces"),
+      aggregateKind: "project",
+      aggregateId: projectId,
+      occurredAt,
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      type: "project.created",
+      payload: {
+        projectId,
+        title: "Repos",
+        workspaceRoot: "/frontend",
+        workspaceRoots: [{ path: "/frontend" }, { path: "/backend" }, { path: "/tools" }],
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+      },
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-workspaces"),
+      threadId,
+      projectId,
+      title: "Workspaces",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "ui",
+      worktreePath: "/worktrees/frontend",
+      createdBy: "user",
+      creationSource: "web",
+    });
+    for (const root of ["backend", "tools"])
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(`select-${root}`),
+        threadId,
+        workspaceSelection: {
+          workspaceRoot: `/${root}`,
+          cwd: `/worktrees/${root}`,
+          branch: "task",
+        },
+        expectedWorkspaceCwd: `/${root}`,
+      });
+    const shell = yield* projections.getThreadShell(threadId);
+    assert.deepStrictEqual(shell?.workspaceSelections, [
+      { workspaceRoot: "/backend", cwd: "/worktrees/backend", branch: "task" },
+      { workspaceRoot: "/tools", cwd: "/worktrees/tools", branch: "task" },
+    ]);
+    const sql = yield* SqlClient.SqlClient;
+    const persisted = yield* sql<{
+      selections: string;
+    }>`SELECT json_extract(payload_json, '$.workspaceSelections') AS selections FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}`;
+    assert.deepStrictEqual(
+      yield* decodeWorkspaceSelections(persisted[0]?.selections),
+      shell?.workspaceSelections,
+    );
+    assert.equal(shell?.worktreePath, "/worktrees/frontend");
+    assert.deepStrictEqual(
+      (yield* projections.getThreadProjection(threadId)).thread.workspaceSelections,
+      shell?.workspaceSelections,
+    );
+    for (const root of ["backend", "frontend", "unknown"]) {
+      const result = yield* Effect.exit(
+        orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`stale-${root}`),
+          threadId,
+          workspaceSelection: { workspaceRoot: `/${root}`, cwd: "/bad", branch: "bad" },
+          expectedWorkspaceCwd: `/${root}`,
+        }),
+      );
+      assert.equal(result._tag, "Failure");
+    }
+    assert.deepStrictEqual(
+      (yield* projections.getThreadShell(threadId))?.workspaceSelections,
+      shell?.workspaceSelections,
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("wakes the parent once when its delegated task asks a question", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -1069,6 +1434,201 @@ it.effect("wakes the parent once when its delegated task asks a question", () =>
   }).pipe(Effect.provide(DelegatedTaskQuestionReactor.layer.pipe(Layer.provideMerge(layerTest)))),
 );
 
+it.effect.each([false, true])("rejects thread.create for an existing id (deleted: %s)", (deleted) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make(`thread:duplicate-create:${deleted}`);
+    const create = {
+      type: "thread.create",
+      commandId: CommandId.make(`create:${threadId}`),
+      threadId,
+      projectId: ProjectId.make("project:duplicate-create"),
+      title: "Original",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+      importedNativeThread: {
+        ref: { driver: adapter.driver, nativeId: "native-original", strength: "strong" },
+      },
+    } as const;
+    yield* orchestrator.dispatch(create);
+    if (deleted) {
+      yield* orchestrator.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make(`delete:${threadId}`),
+        threadId,
+      });
+    }
+    const before = yield* projections.getThread(threadId);
+    assert.isNotNull(before.activeProviderThreadId);
+    assert.equal(before.deletedAt !== null, deleted);
+    const sequence = yield* orchestrator.getThreadEventSequence(threadId);
+    yield* TestClock.adjust("1 second");
+    const duplicate = {
+      ...create,
+      commandId: CommandId.make(`duplicate:${threadId}`),
+      title: "Replacement",
+      importedNativeThread: undefined,
+    };
+    const outcome = yield* orchestrator.dispatch(duplicate).pipe(Effect.result);
+    assert.ok(Result.isFailure(outcome), "duplicate create must be rejected");
+    const refused = outcome.failure;
+    assert.equal(refused._tag, "OrchestratorThreadAlreadyExistsError");
+    assert.equal(refused.message, `Thread ${threadId} already exists. Use a new thread id.`);
+    assert.deepEqual(yield* projections.getThread(threadId), before);
+    assert.equal(yield* orchestrator.getThreadEventSequence(threadId), sequence);
+    const retried = yield* orchestrator.dispatch(duplicate).pipe(Effect.flip);
+    assert.equal(retried._tag, "OrchestratorCommandPreviouslyRejectedError");
+    assert.include(retried.message, refused.message);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("replays a thread.create receipt without changing the thread", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:create-receipt-replay");
+    const create = {
+      type: "thread.create",
+      commandId: CommandId.make("create:receipt-replay"),
+      threadId,
+      projectId: ProjectId.make("project:duplicate-create"),
+      title: "Original",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    } as const;
+    const original = yield* orchestrator.dispatch(create);
+    const before = yield* projections.getThread(threadId);
+    const replayed = yield* orchestrator.dispatch(create);
+    assert.equal(replayed.sequence, original.sequence);
+    // Marked so client analytics do not count the retry again.
+    assert.deepEqual(replayed, { ...original, replayed: true });
+    assert.deepEqual(yield* projections.getThread(threadId), before);
+    assert.equal(yield* orchestrator.getThreadEventSequence(threadId), original.sequence);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("explicit settle clears snooze atomically and stays idempotent after re-snoozing", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const events = yield* EventSink.EventSinkV2;
+    const threadId = ThreadId.make("thread:settle-snoozed");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-settle-snoozed"),
+      threadId,
+      projectId: ProjectId.make("project:settle-snoozed"),
+      title: "Snoozed thread",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const now = yield* DateTime.now;
+    const settledAt = DateTime.add(now, { seconds: 1 });
+    const snoozedUntil = DateTime.add(now, { hours: 1 });
+    for (const round of [1, 2]) {
+      yield* orchestrator.dispatch({
+        type: "thread.snooze",
+        commandId: CommandId.make(`snooze-before-settle-${round}`),
+        threadId,
+        snoozedUntil: DateTime.formatIso(snoozedUntil),
+      });
+      assert.deepInclude(yield* projections.getThread(threadId), {
+        snoozedUntil,
+        snoozedAt: yield* DateTime.now,
+      });
+      yield* TestClock.adjust("1 second");
+      const commandId = CommandId.make(`settle-snoozed-${round}`);
+      yield* orchestrator.dispatch({ type: "thread.settle", commandId, threadId });
+      const expected = {
+        settledOverride: "settled",
+        settledAt,
+        snoozedUntil: null,
+        snoozedAt: null,
+        updatedAt: yield* DateTime.now,
+      } as const;
+      const committed = yield* events.readByCommandId({ commandId }).pipe(Stream.runCollect);
+      assert.lengthOf(committed, 1);
+      assert.equal(committed[0]?.event.type, "thread.settled");
+      assert.deepInclude(committed[0]?.event.payload, expected);
+      const settled = yield* projections.getThreadShell(threadId);
+      assert.deepInclude(settled, expected);
+      assert.deepInclude((yield* projections.getThreadProjection(threadId)).thread, expected);
+
+      yield* TestClock.adjust("1 second");
+      yield* orchestrator.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make(`settle-again-${round}`),
+        threadId,
+      });
+      assert.deepEqual(yield* projections.getThreadShell(threadId), settled);
+    }
+    yield* orchestrator.dispatch({
+      type: "thread.unsettle",
+      commandId: CommandId.make("unsettle-after-snooze"),
+      threadId,
+      reason: "user",
+    });
+    const active = {
+      settledOverride: "active",
+      settledAt: null,
+      snoozedUntil: null,
+      snoozedAt: null,
+    } as const;
+    assert.deepInclude(yield* projections.getThreadShell(threadId), active);
+    assert.deepInclude((yield* projections.getThreadProjection(threadId)).thread, active);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("dispatch records the command outcome and its duration", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const successes = Metric.value(
+      Metric.withAttributes(orchestrationCommandsTotal, {
+        commandType: "thread.create",
+        outcome: "success",
+      }),
+    );
+    const durations = Metric.value(
+      Metric.withAttributes(orchestrationCommandDuration, { commandType: "thread.create" }),
+    );
+    const successesBefore = (yield* successes).count;
+    const durationsBefore = (yield* durations).count;
+
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-dispatch-metrics"),
+      threadId: ThreadId.make("thread:dispatch-metrics"),
+      projectId: ProjectId.make("project:dispatch-metrics"),
+      title: "Dispatch metrics",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+
+    assert.strictEqual((yield* successes).count - successesBefore, 1);
+    assert.strictEqual((yield* durations).count - durationsBefore, 1);
+  }).pipe(Effect.provide(layerTest)),
+);
 it.effect("guarded agent archive refuses a user reply committed after the eligibility read", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

@@ -17,6 +17,20 @@ On Android 12 or newer, choose the **Material You** theme in Appearance to use c
 your wallpaper. Selecting another theme replaces those colors. Like other themes, Material You
 can be selected separately for light and dark appearances.
 
+## Thread dashboard
+
+On web and desktop, open **Dashboard** above All projects in the project rail, or choose
+**Open dashboard** in the command palette. On deck combines active turns, background monitoring
+and unread results from all your projects and environments. Opening a card selects its project
+and conversation; the normal thread read tracking moves its completed result out of Ready.
+Settled project shortcuts still appear here. Offline environments are labeled with their last
+known activity.
+
+Choose **Status board** or **Project lanes** under **Settings → Appearance → Dashboard layout**.
+The choice is saved on this device. Filter by project or environment, search threads, and enable
+**Recently reviewed** to include completed results from the last 24 hours that you already opened.
+Unread results remain available until read.
+
 ## Composer context
 
 Git-backed projects show branch and worktree controls below the composer while you create a thread.
@@ -24,6 +38,18 @@ The controls retreat as the composer docks after you send the first message.
 
 Turn on **Composer context** to keep those controls visible after the thread starts. This preference
 applies to the web and desktop clients.
+
+## Math
+
+Turn on **Render math** in **Settings → Appearance** to typeset LaTeX in messages and Markdown
+previews on web, desktop, and mobile. It reads `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`, outside of code.
+Fenced `math` blocks also render. Formulas work in tables, including absolute-value bars.
+Dollar amounts such as `$5 and $10` stay text; write `\$` to keep any other dollar sign literal.
+Wide formulas scroll horizontally while the surrounding text wraps. Copying a formula or
+exporting a table preserves the TeX.
+
+The composer keeps TeX source editable, including when rich text is enabled. The Render math
+preference is saved separately on each device.
 
 ## Motion
 

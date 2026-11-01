@@ -2,7 +2,7 @@ import { observeResize } from "../../lib/observeResize";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { useAssetUrl } from "../../assets/assetUrls";
 import { useEnvironmentQuery } from "../../state/query";
-import { useThreadShell } from "../../state/entities";
+import { useEnvironmentThreadRefs, useThreadShell } from "../../state/entities";
 import {
   type ChatAttachment,
   type D4AgentState,
@@ -17,6 +17,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
 import {
   niaSystemTextSegments,
+  niaThreadReferenceMarkdown,
   type NiaTextSegment,
 } from "@d4research/client-runtime/d4-agent-references";
 import { D4AgentPanel } from "./D4Agent";
@@ -121,6 +122,8 @@ export function D4AgentChat({
   });
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS);
   const transcript = (state.transcript ?? []).filter((entry) => !isSessionNotice(entry));
+  const threadRefs = useEnvironmentThreadRefs(environmentId);
+  const knownThreadIds = new Set<string>(threadRefs.map((ref) => ref.threadId));
   const conversation = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLElement | null>(null);
@@ -268,7 +271,11 @@ export function D4AgentChat({
                         {/* Nia quotes other threads, so their HTML is shown as text, never rendered. */}
                         <ChatMarkdown
                           headingLevelOffset={3}
-                          text={entry.text}
+                          text={niaThreadReferenceMarkdown(
+                            entry.text,
+                            environmentId,
+                            knownThreadIds,
+                          )}
                           cwd={undefined}
                           environmentId={environmentId}
                           lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}

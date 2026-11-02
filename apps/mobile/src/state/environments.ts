@@ -1,15 +1,14 @@
+import { useEnvironmentQuery } from "./query";
 import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
-  hasRelayRoute,
   type EnvironmentPresentation as BaseEnvironmentPresentation,
 } from "@d4research/client-runtime/connection";
-import type { EnvironmentId } from "@d4research/contracts";
-import { useMemo } from "react";
+import type { ComposerEnvironmentCandidate } from "@d4research/client-runtime/composerThreadItems";
+import { type EnvironmentId, resolveEnvironmentMachineKind } from "@d4research/contracts";
 
 import { environmentCatalog } from "../connection/catalog";
 import { environmentPresentations } from "./presentation";
-import { useEnvironmentQuery } from "./query";
 
 export interface EnvironmentPresentation extends BaseEnvironmentPresentation {
   readonly environmentId: EnvironmentId;
@@ -36,12 +35,8 @@ export function useEnvironments() {
   const networkStatus = useAtomValue(environmentCatalog.networkStatusValueAtom);
   const presentationById = useAtomValue(environmentPresentations.presentationsAtom);
 
-  const environments = useMemo(
-    () =>
-      [...presentationById.entries()].map(([environmentId, presentation]) =>
-        projectEnvironmentPresentation(environmentId, presentation),
-      ),
-    [presentationById],
+  const environments = [...presentationById.entries()].map(([environmentId, presentation]) =>
+    projectEnvironmentPresentation(environmentId, presentation),
   );
 
   return {
@@ -50,6 +45,16 @@ export function useEnvironments() {
     environments,
     presentationById,
   };
+}
+
+/** The user's machines as `@` mention candidates, drawn with their machine kind. */
+export function useMentionableEnvironments(): ReadonlyArray<ComposerEnvironmentCandidate> {
+  const { environments } = useEnvironments();
+  return environments.map((environment) => ({
+    environmentId: environment.environmentId,
+    label: environment.label,
+    machine: resolveEnvironmentMachineKind(environment.serverConfig),
+  }));
 }
 
 export function useEnvironmentConnectionState(environmentId: EnvironmentId) {

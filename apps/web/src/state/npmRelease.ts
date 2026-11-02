@@ -1,49 +1,66 @@
-import { npmReleaseDatabaseMigration } from "@d4research/shared/cliRelease";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { type ServerConfig, ServerNpmReleaseError } from "@d4research/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
-import { Atom } from "effect/reactivity";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { Atom, AtomRegistry } from "effect/reactivity";
 
-export interface NpmRelease {
-  readonly version: string;
-  /** Absent on releases published before npm manifests carried it. */
-  readonly databaseMigration: number | undefined;
+import { environmentSummaries } from "./presentation";
+import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
+import { serverEnvironment } from "./server";
+
+const isServerNpmReleaseError = Schema.is(ServerNpmReleaseError);
+
+function unsupportedLookup(config: ServerConfig | null): ServerNpmReleaseError | null {
+  if (config === null) {
+    return new ServerNpmReleaseError({ reason: "Connect to this server to check releases." });
+  }
+  return config.environment.capabilities.npmReleaseLookup === true
+    ? null
+    : new ServerNpmReleaseError({
+        reason: "This server does not support registry lookups. Update it before switching tracks.",
+      });
 }
 
-/** `spec` is an exact version or dist-tag; missing releases return null. */
-const loadNpmRelease = Effect.fn("npm.loadRelease")(
-  function* (spec: string) {
-    const response = yield* HttpClient.get(
-      `https://registry.npmjs.org/t3/${encodeURIComponent(spec)}`,
-    );
-    if (response.status === 404) return null;
-    const body = yield* HttpClientResponse.filterStatusOk(response).pipe(
-      Effect.flatMap((ok) => ok.json),
-    );
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      !("version" in body) ||
-      typeof body.version !== "string"
-    ) {
-      return null;
-    }
-    return {
-      version: body.version,
-      databaseMigration: npmReleaseDatabaseMigration(body),
-    } satisfies NpmRelease;
-  },
-  Effect.provideService(HttpClient.TracerPropagationEnabled, false),
-  Effect.provide(FetchHttpClient.layer),
-);
+export function npmReleaseFailureMessage(cause: Cause.Cause<unknown>): string {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  return isServerNpmReleaseError(error)
+    ? error.message
+    : "Could not check this environment's npm registry. Check the connection and registry settings.";
+}
 
 export const npmReleaseAtom = Atom.family((spec: string) =>
-  Atom.make(loadNpmRelease(spec)).pipe(
-    Atom.withRefresh("5 minutes"),
-    Atom.withLabel(`npm-release:${spec}`),
-  ),
+  Atom.make((get) => {
+    const primary = get(primaryEnvironmentIdAtom);
+    // With the desktop's local server turned off there is no primary, so a connected server answers.
+    const candidates =
+      primary === null ? get(environmentSummaries.connectedEnvironmentIdsAtom) : [primary];
+    const environmentId =
+      candidates.find(
+        (id) => unsupportedLookup(get(serverEnvironment.configValueAtom(id))) === null,
+      ) ?? candidates[0];
+    if (environmentId === undefined) {
+      return Effect.fail(
+        new ServerNpmReleaseError({ reason: "Connect to a server to check releases." }),
+      );
+    }
+    const unsupported = unsupportedLookup(get(serverEnvironment.configValueAtom(environmentId)));
+    if (unsupported !== null) return Effect.fail(unsupported);
+    return get
+      .result(serverEnvironment.npmRelease({ environmentId, input: { spec } }))
+      .pipe(
+        Effect.map((release) =>
+          release === null
+            ? null
+            : { version: release.version, databaseMigration: release.databaseMigration },
+        ),
+      );
+  }).pipe(Atom.withLabel(`npm-release:${spec}`)),
 );
 
-/** Publication checks run only when the user starts an update. */
 export function isNpmReleasePublished(version: string): Promise<boolean> {
-  return Effect.runPromise(loadNpmRelease(version)).then((release) => release?.version === version);
+  return Effect.runPromise(
+    AtomRegistry.getResult(appAtomRegistry, npmReleaseAtom(version), { suspendOnWaiting: true }),
+  ).then((release) => release?.version === version);
 }

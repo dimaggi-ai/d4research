@@ -1,4 +1,5 @@
 import { doctorCommand } from "./cli/doctor.ts";
+import { policyCommand } from "./cli/policy.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -29,6 +30,7 @@ import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
+import { statusCommand, upCommand } from "./cli/up.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -54,6 +56,8 @@ export const makeCli = () =>
       browserCommand,
       projectCommand,
       threadCommand,
+      upCommand,
+      statusCommand,
       serviceCommand,
       updateCommand,
       uninstallCommand,
@@ -65,6 +69,7 @@ export const makeCli = () =>
       themeCommand,
       traceCommand,
       doctorCommand,
+      policyCommand,
       triageCommand,
     ]),
   );

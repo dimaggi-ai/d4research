@@ -55,6 +55,10 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   devPipelines: ReadonlyArray<string>;
   activeDevPipeline: string | null;
   traitsMenuContent?: ReactNode;
+  showPermissions?: boolean;
+  size?: "sm" | "xs";
+  /** Close the portaled popup when its trigger hides. */
+  hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onPipelineTargetPolicyChange: (policy: PipelineTargetPolicy) => void;
@@ -62,7 +66,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onSelectDevPipeline: (scenarioName: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  if (props.disabled && open) setOpen(false);
+  if ((props.disabled || props.hidden) && open) setOpen(false);
   return (
     <Menu
       open={open}

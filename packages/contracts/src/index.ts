@@ -28,6 +28,7 @@ export * from "./model.ts";
 export * from "./keybindings.ts";
 export * from "./server.ts";
 export * from "./settings.ts";
+export * from "./managedPolicy.ts";
 export * from "./git.ts";
 export * from "./multiwork.ts";
 export * from "./projectMemory.ts";
@@ -80,6 +81,8 @@ export * from "./usageLimitHistory.ts";
 export * from "./projectMemory.ts";
 export * from "./threadWorkspace.ts";
 export * from "./secretRequest.ts";
+export * from "./secretReference.ts";
+export * from "./settingsSecretValue.ts";
 export * from "./clientRpcPermissions.ts";
 
 export * from "./secondBrain.ts";

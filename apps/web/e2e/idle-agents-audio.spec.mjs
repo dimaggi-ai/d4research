@@ -168,6 +168,15 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
       };
       const nativeFetch = window.fetch.bind(window);
       window.fetch = async (...args) => {
+        // Fixture transforms require explicit IDs and complete item bodies.
+        const input = args[0];
+        const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+        if (/\/api\/orchestration\/threads\/[^/]+\/bounded$/.test(url.pathname)) {
+          for (const key of ["compactIds", "compactTurnItems", "dedupeBodies"]) {
+            url.searchParams.delete(key);
+          }
+          args[0] = input instanceof Request ? new Request(url, input) : url.toString();
+        }
         const response = await nativeFetch(...args);
         if (!response.headers.get("content-type")?.includes("application/json")) return response;
         return new Response(JSON.stringify(transform(await response.clone().json())), {
@@ -180,7 +189,10 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
       window.WebSocket = class extends NativeWebSocket {
         send(message) {
           const packet = JSON.parse(String(message));
-          if (packet.payload?.threadId === threadId && "afterSequence" in packet.payload) {
+          if (packet.payload?.threadId === threadId) {
+            delete packet.payload.acceptCompactIds;
+            delete packet.payload.acceptCompactTurnItems;
+            delete packet.payload.acceptDedupedBodies;
             // Fixture mode changes are not persisted server events. Request a
             // full snapshot instead of resuming the unchanged real event cursor.
             delete packet.payload.afterSequence;

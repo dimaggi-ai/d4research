@@ -151,7 +151,7 @@ function SettingsIndexSections() {
         <SettingsRow
           icon="text.bubble"
           label="New threads"
-          target="SettingsEnvironmentNewThreads"
+          target="SettingsThreads"
           disabled={noServerTargets}
         />
         <SettingsRow
@@ -163,7 +163,7 @@ function SettingsIndexSections() {
         <SettingsRow
           icon="text.alignleft"
           label="Agent behavior"
-          target="SettingsEnvironmentAgentBehavior"
+          target="SettingsThreads"
           disabled={noServerTargets}
         />
         <SettingsRow

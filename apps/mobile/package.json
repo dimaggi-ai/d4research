@@ -44,12 +44,13 @@
     "measure-renders": "node scripts/measure-renders.mts",
     "generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-uniwind-themes.mts",
     "test": "vp test run --config ../../vite.config.ts --dir .",
-    "typecheck": "tsc-rs --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@callstack/liquid-glass": "0.3.0",
     "@d4research/client-runtime": "workspace:*",
     "@d4research/contracts": "workspace:*",
+    "@d4research/mobile-highlights-native": "file:./modules/t3-highlights",
     "@d4research/mobile-review-diff-native": "file:./modules/t3-review-diff",
     "@d4research/mobile-source-text": "file:./modules/t3-source-text",
     "@d4research/mobile-terminal-native": "file:./modules/t3-terminal",
@@ -69,6 +70,7 @@
     "@legendapp/list": "catalog:",
     "@material/material-color-utilities": "0.3.0",
     "@pierre/diffs": "catalog:",
+    "@pierre/highlights": "catalog:",
     "@react-native-ai/apple": "0.12.0",
     "@react-native-menu/menu": "^2.0.0",
     "@react-navigation/elements": "2.9.45",
@@ -121,13 +123,13 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
-    "react-native-enriched-markdown": "file:deps/react-native-enriched-markdown-1.2.0-t3.15.tgz",
+    "react-native-enriched-markdown": "file:deps/react-native-enriched-markdown-1.2.0-t3.16-29ddd424.tgz",
     "react-native-gesture-handler": "~3.3.0",
     "react-native-image-viewing": "^0.2.2",
     "react-native-keyboard-controller": "1.22.7",
     "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "~5.10.1",
-    "react-native-screens": "file:deps/react-native-screens-5.0.0-t3.27.tgz",
+    "react-native-screens": "file:deps/react-native-screens-5.0.0-t3.48.tgz",
     "react-native-shiki-engine": "^0.3.12",
     "react-native-svg": "15.16.0",
     "react-native-webview": "14.0.1",
@@ -173,7 +175,10 @@
         "react-native-screens",
         "react-native-reanimated",
         "@react-native-menu/menu",
-        "expo-audio"
+        "expo-audio",
+        "expo-video",
+        "expo-network",
+        "expo-sharing"
       ]
     }
   },

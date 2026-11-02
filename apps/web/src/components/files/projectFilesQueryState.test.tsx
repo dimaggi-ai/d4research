@@ -55,14 +55,6 @@ const reactHooks = vi.hoisted(() => {
     b !== undefined &&
     a.length === b.length &&
     a.every((v, i) => Object.is(v, b[i]));
-  let states: unknown[] = [];
-  let effects: Array<{ deps?: readonly unknown[]; cleanup?: () => void }> = [];
-  let callbacks: Array<{ deps?: readonly unknown[]; value: unknown }> = [];
-  const same = (a?: readonly unknown[], b?: readonly unknown[]) =>
-    a !== undefined &&
-    b !== undefined &&
-    a.length === b.length &&
-    a.every((v, i) => Object.is(v, b[i]));
   const nextIndex = () => cursor++;
 
   return {
@@ -73,12 +65,8 @@ const reactHooks = vi.hoisted(() => {
       effects.forEach((effect) => effect?.cleanup?.());
       effects = [];
       callbacks = [];
-      effects.forEach((effect) => effect?.cleanup?.());
-      effects = [];
-      callbacks = [];
       cursor = 0;
       refs = [];
-      states = [];
       states = [];
     },
     useCallback<A>(callback: A, deps?: readonly unknown[]): A {
@@ -162,7 +150,6 @@ vi.mock("~/state/queries", () => ({
   useProjectPathSearch: vi.fn(),
 }));
 
-import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { appAtomRegistry, resetAppAtomRegistryForTests } from "~/rpc/atomRegistry";
 import { useT3ProjectFileState } from "~/hooks/useT3ProjectFileScripts";
@@ -438,7 +425,6 @@ describe("project query refresh", () => {
     projectMocks.optimisticFile.mockReturnValue(Atom.make(null));
     atomHooks.registry = registry;
     let renderedContents: string | null = null;
-    let unmountMetadata = () => {};
     let unmountMetadata = () => {};
 
     const render = (mutationId: string | null) => {
@@ -828,7 +814,7 @@ describe("project query refresh", () => {
         return { ...file(reads === 1 ? "cached" : "fresh"), revision: String(reads) };
       }),
     );
-    const metadataAtom = Atom.make(
+    const _metadataAtom = Atom.make(
       Effect.promise(() => {
         const request = deferred<ProjectReadFileResult>();
         requests.push(request);

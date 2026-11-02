@@ -1,11 +1,13 @@
 import {
-  OnePasswordSecretProviderConfig,
   SecretProviderId,
   SecretProviderKind,
   SecretProviderLabel,
-  type OnePasswordAccount,
   type SecretProviderConfig,
 } from "@d4research/contracts";
+import {
+  OnePasswordSecretProviderConfig,
+  type OnePasswordAccount,
+} from "@d4research/secret-provider-onepassword/shared/definition";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";

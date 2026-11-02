@@ -9,7 +9,11 @@ export function isAppModalPage(pathname: string) {
 
 export function isSidebarUtilityPage(pathname: string) {
   return (
-    pathname.startsWith("/projects/") || pathname === "/pull-requests" || pathname === "/system"
+    isAppModalPage(pathname) ||
+    pathname === "/dashboard" ||
+    pathname.startsWith("/projects/") ||
+    pathname === "/pull-requests" ||
+    pathname === "/system"
   );
 }
 

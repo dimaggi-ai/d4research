@@ -23,7 +23,7 @@ included, and `#1234` without a space still looks up a pull request.
 
 Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
 on an empty line moves out one level, then leaves it; **Tab** nests a list item
-under the one above. In a code block, Enter
+under the one above and **Shift+Tab** moves it back out. In a code block, Enter
 starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
 the selected lines, and a closing ` ``` ` followed by Enter, or two blank lines
 at the end, leave the block. **Backspace** at the start of a code block turns it
@@ -76,7 +76,19 @@ does not delete them. Sequentially reattaching unchanged content with the same n
 title reuses the committed document; duplicate copies can still arise across simultaneous sends or
 after a project rename, and deleting that document removes every copy with its exact document key.
 
-## Follow-up messages
+## Upload attachments
+
+Uploads begin when you add an attachment. All uploads must finish before the
+message can send. Retry or remove a failed upload. On web and desktop, reloading
+before an upload finishes requires you to attach that file again.
+
+You can drag or paste images into the web or desktop composer. On web and desktop, HEIC and HEIF photos are converted to JPEG. Photos selected from the mobile photo library are converted too, and photos over the image limit are resized to fit. On mobile, you can also send files to T3 Code through another app's system share sheet. On Android, you can drag images from another app into the message input in split screen.
+
+See [images and videos](#images-and-videos-in-messages) for previewing and saving media.
+
+<a id="follow-up-messages"></a>
+
+## Send while the agent is working
 
 On web and desktop, choose **Settings → Chat → Follow-up behavior** to queue
 new messages for a later turn or steer the running turn immediately. The setting
@@ -295,20 +307,22 @@ transcription or cancellation; only the message text is sent when you submit.
 ## Queued messages
 
 On web and desktop, the composer shows **Interrupt** while the agent is working and the draft is
-empty. Adding text or attachments shows the send action selected in **Follow-up behavior**.
-Hold `Cmd` on macOS or `Ctrl` on Windows and Linux to use the opposite action for that message.
-See [Follow-up messages](#follow-up-messages) for the shortcuts and steering requirements.
+empty. Adding text or attachments replaces it with a send button for the action selected in [Follow-up behavior](#send-while-the-agent-is-working): a queue icon for Queue or a steer arrow for Steer. Click it or press your send shortcut to use that action. Hold `Cmd` on macOS or `Ctrl` on
+Windows and Linux to switch the button to the opposite action, then click, or use the opposite-action
+shortcut described above.
 
-Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
-the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
-to a steer, or remove it.
+On web and desktop, queued messages appear at the end of the thread as dashed messages that have
+not been sent yet. On mobile they appear above the composer. Each shows its text and any attached
+images. **Send now** sends a message right away, into the running turn if there is one. You can
+also edit or remove it.
 
-If the server restarts, saved queued messages keep their order and are held. Press
-**Resume** in an empty composer on web or desktop, or **Resume queue** in the queue
-sheet on mobile, to continue. You can edit, reorder, or remove held messages without starting them.
+If you stop the agent, or if the server restarts, queued messages keep their order and are held.
+Press **Resume** in an empty composer, or **Resume queue** in the mobile queue sheet, to continue. **Resume** also continues a stopped
+run or one that hit a usage limit, even with nothing queued. Sending a new message also resumes the queue, unless it steers a turn that is already
+running. You can edit or remove held messages without starting them.
 
-The pencil on a queued row opens that message in the composer for editing. The original message
-stays in the queue until you save, and its row is highlighted while you edit. The message's
+The pencil on a queued message opens it in the composer for editing. The original message
+stays in the queue until you save, and it is highlighted while you edit. The message's
 attachments appear above the text with a remove control, and new images can be added the usual way.
 The checkmark saves the queued message in place; **Cancel** next to it leaves it unchanged. Whatever
 you had typed in the composer before starting the edit is restored afterwards. If the queued
@@ -332,7 +346,12 @@ Provider commands must start the message to run. d4research commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 
 Send `/compact` in an existing conversation to reduce context usage when the
-provider supports it. Web and desktop also offer compaction from the context meter.
+provider supports it, even with the context meter turned off.
+
+On web and desktop, turn on **Settings → Labs → Legacy → Context
+window indicator (legacy)** to see context usage. The meter is off by default
+and appears once the provider reports usage. Open it for usage details and
+**Compact context** when the provider supports compaction.
 
 ### Compact sessions automatically
 

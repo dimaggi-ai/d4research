@@ -4,7 +4,6 @@ import { createEnvironmentServerConfigsAtom } from "@d4research/client-runtime/s
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentSession } from "./session";
-import { createThreadListEnvironmentsAtom } from "./thread-list-environments";
 
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
@@ -15,7 +14,3 @@ export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,
 });
-
-export const threadListEnvironmentsAtom = createThreadListEnvironmentsAtom(
-  environmentServerConfigsAtom,
-);

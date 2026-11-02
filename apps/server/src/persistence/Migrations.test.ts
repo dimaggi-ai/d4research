@@ -155,6 +155,9 @@ describe("runMigrations", () => {
         [86, "PeerLinkFence"],
         [87, "WaitingLinkRequestIndex"],
         [88, "ActiveTurnItemIndexes"],
+        [89, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [90, "SubagentDeliveryState"],
+        [91, "ProjectionProjectsPinArchive"],
       ]);
       assert.deepStrictEqual(yield* history, migrationManifest);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

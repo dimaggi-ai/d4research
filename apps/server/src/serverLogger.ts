@@ -1,4 +1,3 @@
-import * as HostProcess from "@d4research/shared/HostProcess";
 import * as SharedObservability from "@d4research/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -9,9 +8,15 @@ import * as References from "effect/References";
 
 import * as ServerConfig from "./config.ts";
 
+// HTTP errors logged with --log-ws-events carry the request URL and its connection ticket.
+const redactingCredentials = <Output>(logger: Logger.Logger<unknown, Output>) =>
+  Logger.make<unknown, Output>((options) =>
+    logger.log({ ...options, cause: SharedObservability.redactCauseCredentials(options.cause) }),
+  );
+
 // consolePretty collapses Cause fields via util.inspect; render them with Cause.pretty like standalone arguments.
 const consolePretty = (): Logger.Logger<unknown, void> => {
-  const pretty = Logger.consolePretty();
+  const pretty = redactingCredentials(Logger.consolePretty());
   return Logger.make((options) =>
     pretty.log({
       ...options,
@@ -42,12 +47,11 @@ function prettyCauseFields(value: unknown): unknown {
 
 export const layer = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
-  const hostName = yield* HostProcess.Hostname;
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
   // Historical exporter settings do not opt this local-first fork into network export.
   // Logger.layer replaces the logger set, so name every local logger here.
-  const layerLogger = Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
+  const layerLogger = Logger.layer([consolePretty(), Logger.tracerLogger], {
     mergeWithExisting: false,
   });
 

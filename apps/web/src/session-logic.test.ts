@@ -276,6 +276,7 @@ describe("V2 session presentation", () => {
     }));
 
     const targets = deriveRevertTurnCountByUserMessageId({
+      threadStartCheckpointReady: true,
       timelineEntries,
       checkpoints: [
         {

@@ -1,3 +1,4 @@
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 // @effect-diagnostics nodeBuiltinImport:off - Temporary Node HTTP servers exercise actual WebSocket upgrades.
 import * as NodeHttp from "node:http";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -42,6 +43,7 @@ const hostId = EnvironmentId.make("gateway-host");
 const remoteId = EnvironmentId.make("gateway-mini");
 const authLayer = (id: EnvironmentId) =>
   EnvironmentAuth.layer.pipe(
+    Layer.provide(ManagedPolicy.layerTest()),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSecretStore.layer),
     Layer.provideMerge(

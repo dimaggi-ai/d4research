@@ -1,5 +1,7 @@
-import { type RunId } from "@d4research/contracts";
-import { type MouseEvent, memo, useState } from "react";
+import { observeResize } from "~/lib/observeResize";
+import { useSyncLayout } from "@legendapp/list/react";
+import { type OrchestrationV2CheckpointFileTotals, type RunId } from "@d4research/contracts";
+import { type MouseEvent, type ReactNode, memo, useLayoutEffect, useRef, useState } from "react";
 import { type TurnDiffFileChange } from "../../types";
 import {
   buildTurnDiffTree,
@@ -13,22 +15,28 @@ import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { selectChangedFilePreview, summarizeChangedFileScopes } from "./changedFilesPresentation";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { MorphIcon } from "~/components/MorphIcon";
 
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
+const VIRTUALIZE_AFTER_ROWS = 250;
+const ROW_OVERSCAN = 8;
+interface ChangedFileRow {
+  node: TurnDiffTreeNode;
+  depth: number;
+}
 
 export type ChangedFileContextMenuHandler = (filePath: string, event: MouseEvent) => void;
 
 export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   runId: RunId;
   files: ReadonlyArray<TurnDiffFileChange>;
-  expanded: boolean;
-  showCompactPreview: boolean;
+  totals?: OrchestrationV2CheckpointFileTotals;
+  expanded?: boolean;
+  showCompactPreview?: boolean;
   allDirectoriesExpanded: boolean;
   resolvedTheme: "light" | "dark";
-  onExpandedChange: (expanded: boolean) => void;
+  onExpandedChange?: (expanded: boolean) => void;
   onToggleAllDirectories: () => void;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
@@ -36,20 +44,19 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   const {
     runId,
     files,
-    expanded,
-    showCompactPreview,
+    expanded = true,
+    showCompactPreview = false,
     allDirectoriesExpanded,
     resolvedTheme,
-    onExpandedChange,
+    onExpandedChange = () => {},
     onToggleAllDirectories,
     onOpenTurnDiff,
     onFileContextMenu,
   } = props;
   const summaryStat = summarizeTurnDiffStats(files);
-  const scopeSummary = summarizeChangedFileScopes(files);
-  const previewFiles = selectChangedFilePreview(files);
+
   const compactPreviewVisible = showCompactPreview && !expanded;
-  const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
+  const syncTimelineLayout = useSyncLayout();
 
   return (
     <div
@@ -94,7 +101,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                 />
               )}
             </span>
-            <span className="ml-1 hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground group-hover:text-foreground/80 @[24rem]/changed-files:inline">
+            <span className="ml-1 hidden min-w-0 flex-1 truncate text-[11px] leading-4 text-muted-foreground group-hover:text-foreground/80 @[24rem]/changed-files:inline">
               {expanded ? "Hide files" : "Show files"}
             </span>
           </span>
@@ -113,7 +120,10 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                       allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
                     }
                     data-scroll-anchor-ignore
-                    onClick={onToggleAllDirectories}
+                    onClick={() => {
+                      onToggleAllDirectories();
+                      syncTimelineLayout();
+                    }}
                   />
                 }
               >
@@ -169,13 +179,12 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
 }) {
   const { files, allDirectoriesExpanded, onOpenTurnDiff, resolvedTheme, runId, onFileContextMenu } =
     props;
-  // Overrides apply only while their key matches the current one, so starting from no key is
-  // the same as starting with no overrides. That lets this hook run before the tree is built,
-  // and the compiler caches the tree on `files`.
+  // Place state before tree derivation to preserve its compiler cache.
   const [directoryExpansionState, setDirectoryExpansionState] = useState<{
     key: string | null;
     overrides: Record<string, boolean>;
   }>({ key: null, overrides: {} });
+  const syncTimelineLayout = useSyncLayout();
   const treeNodes = buildTurnDiffTree(files);
   const directoryPathsKey = collectDirectoryPaths(treeNodes).join("\u0000");
   const hasDirectoryNodes = directoryPathsKey.length > 0;
@@ -196,48 +205,47 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         },
       };
     });
+    // Measure before paint instead of waiting for LegendList's deferred shrink measurement.
+    syncTimelineLayout();
   };
 
-  const renderTreeNode = (node: TurnDiffTreeNode, depth: number) => {
+  const rows = collectExpandedRows(treeNodes, expandedDirectories, allDirectoriesExpanded);
+  const virtualized = rows.length > VIRTUALIZE_AFTER_ROWS;
+
+  const renderRow = ({ node, depth }: ChangedFileRow) => {
     const leftPadding = 8 + depth * 14;
     if (node.kind === "directory") {
       const isExpanded = expandedDirectories[node.path] ?? allDirectoriesExpanded;
       return (
-        <div key={`dir:${node.path}`}>
-          <button
-            type="button"
-            data-scroll-anchor-ignore
-            aria-expanded={isExpanded}
-            className="group flex w-full items-center gap-1.5 rounded-xl py-1 pr-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-            style={{ paddingLeft: `${leftPadding}px` }}
-            onClick={() => toggleDirectory(node.path)}
-          >
-            <ChevronRightIcon
-              aria-hidden="true"
-              className={cn(
-                "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:text-foreground/80",
-                isExpanded && "rotate-90",
-              )}
-            />
-            <MorphIcon
-              className="size-3.5 shrink-0 text-muted-foreground/75"
-              icon={isExpanded ? Folder : FolderClosed}
-            />
-            <span className="truncate font-mono text-2xs text-muted-foreground/90 group-hover:text-foreground/90">
-              {node.name}
-            </span>
-            {hasNonZeroStat(node.stat) && (
-              <span className="ml-auto shrink-0 font-mono text-3xs tabular-nums">
-                <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
-              </span>
+        <button
+          key={`dir:${node.path}`}
+          type="button"
+          data-scroll-anchor-ignore
+          aria-expanded={isExpanded}
+          className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+          style={{ paddingLeft: `${leftPadding}px` }}
+          onClick={() => toggleDirectory(node.path)}
+        >
+          <ChevronRightIcon
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:text-foreground/80",
+              isExpanded && "rotate-90",
             )}
-          </button>
-          {isExpanded && (
-            <div className="space-y-0.5">
-              {node.children.map((childNode) => renderTreeNode(childNode, depth + 1))}
-            </div>
+          />
+          <MorphIcon
+            className="size-3.5 shrink-0 text-muted-foreground/75"
+            icon={isExpanded ? Folder : FolderClosed}
+          />
+          <span className="truncate font-mono text-2xs text-muted-foreground/90 group-hover:text-foreground/90">
+            {node.name}
+          </span>
+          {hasNonZeroStat(node.stat) && (
+            <span className="ml-auto shrink-0 font-mono text-3xs tabular-nums">
+              <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
+            </span>
           )}
-        </div>
+        </button>
       );
     }
 
@@ -245,7 +253,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
       <button
         key={`file:${node.path}`}
         type="button"
-        className="group flex w-full items-center gap-1.5 rounded-xl py-1 pr-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+        className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         style={{ paddingLeft: `${leftPadding}px` }}
         onClick={() => onOpenTurnDiff(runId, node.path)}
         onContextMenu={
@@ -278,8 +286,149 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
     );
   };
 
-  return <div className="space-y-0.5">{treeNodes.map((node) => renderTreeNode(node, 0))}</div>;
+  return <ChangedFilesRows rows={rows} renderRow={renderRow} virtualized={virtualized} />;
 });
+
+function ChangedFilesRows({
+  rows,
+  renderRow,
+  virtualized,
+}: {
+  rows: ReadonlyArray<ChangedFileRow>;
+  renderRow: (row: ChangedFileRow) => ReactNode;
+  virtualized: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rowSizeRef = useRef<HTMLDivElement>(null);
+  const [range, setRange] = useState({ start: 0, end: 40, rowHeight: 28 });
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes scroll, window resize and ancestor resizes to compute the virtualized row range
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const rowSize = rowSizeRef.current;
+    if (!virtualized || !container || !rowSize) return;
+
+    // The card is inside a virtualized timeline item, so its own scrollTop is always zero.
+    // Observe its ancestors too: streaming text and timeline layout can move the card.
+    const ancestors: HTMLElement[] = [container, rowSize];
+    let scrollElement: HTMLElement | null = null;
+    for (let parent = container.parentElement; parent; parent = parent.parentElement) {
+      ancestors.push(parent);
+      if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+        scrollElement = parent;
+        break;
+      }
+    }
+
+    const measure = () => {
+      const rowHeight = rowSize.getBoundingClientRect().height;
+      if (rowHeight <= 0) return;
+      const listTop = container.getBoundingClientRect().top;
+      const viewportTop = scrollElement
+        ? scrollElement.getBoundingClientRect().top + scrollElement.clientTop
+        : 0;
+      const viewportHeight = scrollElement?.clientHeight ?? document.documentElement.clientHeight;
+      const start = Math.max(
+        0,
+        Math.min(rows.length, Math.floor((viewportTop - listTop) / rowHeight) - ROW_OVERSCAN),
+      );
+      const end = Math.max(
+        start,
+        Math.min(
+          rows.length,
+          Math.ceil((viewportTop + viewportHeight - listTop) / rowHeight) + ROW_OVERSCAN,
+        ),
+      );
+      setRange((current) =>
+        current.start === start && current.end === end && current.rowHeight === rowHeight
+          ? current
+          : { start, end, rowHeight },
+      );
+    };
+    measure();
+    const scrollTarget = scrollElement ?? globalThis.window;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+    globalThis.window.addEventListener("resize", onScroll);
+    const stopObserving = observeResize(ancestors, measure);
+    return () => {
+      scrollTarget.removeEventListener("scroll", onScroll);
+      globalThis.window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+      stopObserving();
+    };
+  }, [virtualized, rows.length]);
+
+  const focusedIndex =
+    focusedPath === null ? -1 : rows.findIndex((row) => row.node.path === focusedPath);
+  const start = virtualized ? range.start : 0;
+  const end = virtualized ? Math.min(rows.length, range.end) : rows.length;
+  const indices = Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index);
+  // Keep keyboard focus on its row when mouse scrolling moves it outside the render window.
+  if (focusedIndex >= 0 && focusedIndex < start) indices.unshift(focusedIndex);
+  if (focusedIndex >= end) indices.push(focusedIndex);
+  return (
+    <div className="p-2">
+      <div
+        ref={containerRef}
+        className="relative"
+        style={virtualized ? { height: rows.length * range.rowHeight } : undefined}
+        onFocusCapture={(event) => {
+          const row = event.target.closest<HTMLElement>("[data-changed-file-row]");
+          setFocusedPath(row?.dataset.changedFileRow ?? null);
+        }}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setFocusedPath(null);
+        }}
+      >
+        {virtualized && (
+          <div
+            ref={rowSizeRef}
+            aria-hidden="true"
+            className="pointer-events-none invisible absolute h-7"
+          />
+        )}
+        {indices.map((index) => {
+          const row = rows[index]!;
+          return (
+            <div
+              key={`${row.node.kind}:${row.node.path}`}
+              data-changed-file-row={row.node.path}
+              className={virtualized ? "absolute inset-x-0" : undefined}
+              style={virtualized ? { top: index * range.rowHeight } : undefined}
+            >
+              {renderRow(row)}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function collectExpandedRows(
+  nodes: ReadonlyArray<TurnDiffTreeNode>,
+  overrides: Readonly<Record<string, boolean>>,
+  allDirectoriesExpanded: boolean,
+  depth = 0,
+  rows: ChangedFileRow[] = [],
+): ChangedFileRow[] {
+  for (const node of nodes) {
+    rows.push({ node, depth });
+    if (node.kind === "directory" && (overrides[node.path] ?? allDirectoriesExpanded)) {
+      collectExpandedRows(node.children, overrides, allDirectoriesExpanded, depth + 1, rows);
+    }
+  }
+  return rows;
+}
 
 function collectDirectoryPaths(nodes: ReadonlyArray<TurnDiffTreeNode>): string[] {
   const paths: string[] = [];

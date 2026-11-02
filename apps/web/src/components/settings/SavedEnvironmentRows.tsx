@@ -7,26 +7,18 @@ import {
   RouteIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useEffectEvent, useState } from "react";
-import {
-  AuthRelayWriteScope,
-  type EnvironmentId,
-  connectReachabilityHelpUrl,
-  formatConnectReachable,
-  resolveEnvironmentMachineKind,
-} from "@d4research/contracts";
+import { useState } from "react";
+import { type EnvironmentId, resolveEnvironmentMachineKind } from "@d4research/contracts";
 import {
   connectionRoutes,
   hasSavedBearerRoute,
   connectionStatusText,
   environmentMcpUrl,
 } from "@d4research/client-runtime/connection";
-import * as Option from "effect/Option";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
-import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import {
@@ -40,20 +32,21 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/men
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Button, InlineButton } from "../ui/button";
+import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
-import { isElectron } from "~/env";
+
 import { environmentCatalog } from "~/connection/catalog";
-import { readEnvironmentScope } from "~/state/session";
-import { type EnvironmentPresentation, usePrimaryEnvironmentId } from "~/state/environments";
+
+import { type EnvironmentPresentation } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
 import { useBundledServerRuntime } from "~/state/desktopUpdate";
 import { resolveBundledServerUpdate } from "~/state/bundledServerUpdate.logic";
+
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
 import {

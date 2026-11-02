@@ -1,9 +1,10 @@
-import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import {
   resolveProviderSkillSourceKind,
   type ProviderSkillSourceKind,
 } from "@d4research/client-runtime/providerSkills";
 import type {
+  EnvironmentId,
+  EnvironmentMachineKind,
   PullRequestContextMetadata,
   ScopedThreadRef,
   ServerProviderSkill,
@@ -11,10 +12,11 @@ import type {
 } from "@d4research/contracts";
 import type { ComposerTriggerKind } from "@d4research/shared/composerTrigger";
 import { memo } from "react";
-import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../components/EnvironmentMachineSymbol";
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
@@ -43,6 +45,14 @@ export type ComposerCommandItem =
     }
   | {
       readonly id: string;
+      readonly type: "environment";
+      readonly environmentId: EnvironmentId;
+      readonly machine: EnvironmentMachineKind;
+      readonly label: string;
+      readonly description: string;
+    }
+  | {
+      readonly id: string;
       readonly type: "slash-command";
       readonly command: string;
       readonly label: string;
@@ -61,16 +71,6 @@ export type ComposerCommandItem =
       readonly skill: ServerProviderSkill;
       readonly label: string;
       readonly description: string;
-    }
-  | {
-      readonly id: string;
-      readonly type: "directive";
-      /** Full replacement for the `!` token, e.g. `!codex:` or `!codex:sol`. */
-      readonly insert: string;
-      /** True once the insert names a model, so the composer adds the space. */
-      readonly complete: boolean;
-      readonly label: string;
-      readonly description: string;
     };
 
 interface ComposerCommandPopoverProps {
@@ -81,60 +81,48 @@ interface ComposerCommandPopoverProps {
   readonly onSelect: (item: ComposerCommandItem) => void;
 }
 
-function PopoverSurface(props: {
-  readonly children: React.ReactNode;
-  readonly isDarkMode: boolean;
-  readonly style?: ViewStyle;
-}) {
+function PopoverSurface(props: { readonly children: React.ReactNode; readonly style?: ViewStyle }) {
   const baseStyle: ViewStyle = {
     borderRadius: 16,
     overflow: "hidden",
     ...props.style,
   };
 
-  if (isLiquidGlassSupported) {
-    return (
-      <LiquidGlassView
-        effect="clear"
-        interactive={false}
-        tintColor={props.isDarkMode ? "rgba(30,30,32,0.95)" : "rgba(255,255,255,0.92)"}
-        colorScheme={props.isDarkMode ? "dark" : "light"}
-        style={baseStyle}
-      >
-        {props.children}
-      </LiquidGlassView>
-    );
-  }
-
   return (
-    <View
-      style={[
-        baseStyle,
-        {
-          backgroundColor: props.isDarkMode ? "rgba(44,44,46,0.96)" : "rgba(255,255,255,0.96)",
-          borderWidth: 1,
-          borderColor: props.isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-        },
-      ]}
+    <GlassSurface
+      glassEffectStyle="clear"
+      tintColorClassName="accent-glass-surface"
+      style={baseStyle}
     >
       {props.children}
-    </View>
+    </GlassSurface>
   );
 }
 
-function itemIcon(item: ComposerCommandItem) {
+const SKILL_SOURCE_SYMBOL_BY_KIND: Record<ProviderSkillSourceKind, AppSymbolName> = {
+  app: "square.grid.2x2",
+  repo: "folder",
+  project: "folder",
+  personal: "person.crop.circle",
+  system: "gearshape",
+  other: "cube",
+};
+
+function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
   switch (item.type) {
     case "pull-request":
       return pullRequestStatus(item.pullRequest).icon;
     case "slash-command":
     case "provider-slash-command":
-      return "terminal" as const;
+      return "terminal";
     case "skill":
-      return "cube" as const;
+      return SKILL_SOURCE_SYMBOL_BY_KIND[resolveProviderSkillSourceKind(item.skill)];
     case "path":
       return null;
     case "thread":
       return "text.bubble";
+    case "environment":
+      return ENVIRONMENT_MACHINE_SYMBOLS[item.machine];
   }
 }
 
@@ -175,23 +163,16 @@ const CommandRow = memo(function CommandRow(props: {
   readonly item: ComposerCommandItem;
   readonly onPress: () => void;
   readonly isLast: boolean;
+  readonly isSlashSkill: boolean;
 }) {
   const iconName = itemIcon(props.item);
-  const iconColor = "#a1a1aa";
 
   return (
     <Pressable
+      accessibilityRole="button"
       onPress={props.onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        gap: 10,
-        opacity: pressed ? 0.6 : 1,
-        borderBottomWidth: props.isLast ? 0 : 0.5,
-        borderBottomColor: "rgba(255,255,255,0.1)",
-      })}
+      className="flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60"
+      style={{ borderBottomWidth: props.isLast ? 0 : StyleSheet.hairlineWidth }}
     >
       {props.item.type === "path" ? (
         <PierreEntryIcon path={props.item.path} kind={props.item.kind} size={16} />
@@ -208,10 +189,17 @@ const CommandRow = memo(function CommandRow(props: {
         />
       ) : null}
       <Text className="shrink-0 text-base font-t3-medium text-foreground" numberOfLines={1}>
-        {props.item.label}
+        {props.isSlashSkill && props.item.type === "skill" ? (
+          <>
+            <Text className="text-foreground-muted">skill:</Text>
+            {props.item.skill.name}
+          </>
+        ) : (
+          props.item.label
+        )}
       </Text>
       {props.item.description ? (
-        <Text className="min-w-0 flex-1 text-xs text-zinc-400" numberOfLines={1}>
+        <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
           {props.item.description}
         </Text>
       ) : null}
@@ -222,11 +210,10 @@ const CommandRow = memo(function CommandRow(props: {
 export const ComposerCommandPopover = memo(function ComposerCommandPopover(
   props: ComposerCommandPopoverProps,
 ) {
-  const isDarkMode = useColorScheme() === "dark";
   const label = groupLabel(props.triggerKind);
 
   return (
-    <PopoverSurface isDarkMode={isDarkMode}>
+    <PopoverSurface>
       {label ? (
         <View className="px-3.5 pt-2.5 pb-1">
           <Text className="text-3xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
@@ -246,6 +233,7 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
               item={item}
               onPress={() => props.onSelect(item)}
               isLast={index === props.items.length - 1}
+              isSlashSkill={props.triggerKind === "slash-command" && item.type === "skill"}
             />
           ))}
         </ScrollView>

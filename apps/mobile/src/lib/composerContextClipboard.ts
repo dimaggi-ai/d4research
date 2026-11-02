@@ -13,6 +13,7 @@ import {
   decodeComposerContextFragment,
   encodeComposerContextFragment,
 } from "@d4research/shared/composerContextClipboard";
+import { threadContextsOutsideEnvironment } from "@d4research/shared/composerContextReferences";
 import {
   executeAtomQuery,
   squashAtomCommandFailure,
@@ -68,19 +69,33 @@ export async function importComposerContextClipboard(
   existingCount: number,
   signal: AbortSignal,
   existingContextCount = 0,
+  destinationEnvironmentId?: EnvironmentId,
+  /** The machines the destination links to, whose threads its agent can read too. */
+  linkedEnvironments: ReadonlyMap<EnvironmentId, string> = new Map(),
 ) {
   const fragment =
     decodeComposerContextFragment(input.fragment) ?? decodeComposerContextClipboardHtml(input.html);
   if (!fragment) return null;
   const selected = referencedComposerContext(input.text, { version: 1, records: fragment.records });
-  if (existingContextCount + (selected?.records.length ?? 0) > COMPOSER_CONTEXT_MAX_RECORDS)
-    throw new Error("Remove some context items from the draft before pasting more.");
   const imported = reidentifyComposerContext(input.text, selected?.records ?? [], uuidv4);
+  const skippedThreads =
+    destinationEnvironmentId === undefined
+      ? []
+      : threadContextsOutsideEnvironment({
+          text: imported.text,
+          records: imported.context.records,
+          environmentId: destinationEnvironmentId,
+          linkedEnvironments,
+        });
+  const skippedIds = new Set(skippedThreads.map((record) => record.contextId));
+  const retained = imported.context.records.filter((record) => !skippedIds.has(record.contextId));
+  if (existingContextCount + retained.length > COMPOSER_CONTEXT_MAX_RECORDS)
+    throw new Error("Remove some context items from the draft before pasting more.");
   const attachments: DraftComposerAttachment[] = [];
   const records: ComposerContextRecord[] = [];
   const failures: string[] = [];
   try {
-    for (const record of imported.context.records) {
+    for (const record of retained) {
       checkAborted(signal);
       if (!("attachmentId" in record)) {
         records.push(record);
@@ -97,11 +112,14 @@ export async function importComposerContextClipboard(
         failures.push(record.name);
       }
     }
+    // The last copy can be cancelled after its own check; a cancelled import must not return files nobody will release.
+    checkAborted(signal);
     return {
       text: imported.text,
       context: { version: 1 as const, records },
       attachments,
       failures,
+      skippedThreads: skippedThreads.map((record) => record.title),
     };
   } catch (error) {
     await Promise.all(

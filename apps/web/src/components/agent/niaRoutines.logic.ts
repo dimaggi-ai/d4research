@@ -14,6 +14,7 @@ export function routineInContext(
 }
 
 export function routineScheduleLabel(schedule: ScheduledTaskSchedule): string {
+  if (schedule.type === "once") return `Once at ${schedule.runAt}`;
   if (schedule.type === "webhook") return "On webhook";
   if (schedule.type === "interval") return `Every ${schedule.everyMs / 1000} seconds`;
   const days = schedule.weekdays?.length

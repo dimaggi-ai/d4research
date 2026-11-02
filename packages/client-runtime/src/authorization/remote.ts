@@ -10,6 +10,7 @@ import {
 } from "@d4research/contracts";
 import { encodeOAuthScope } from "@d4research/shared/oauthScope";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import {
   executeEnvironmentHttpRequest,
@@ -218,7 +219,7 @@ export const resolveRemoteWebSocketConnectionUrl = Effect.fn(
   });
 
   const url = rpcSocketUrl(input.wsBaseUrl);
-  url.searchParams.set("wsTicket", issued.ticket);
+  url.searchParams.set("wsTicket", Redacted.value(issued.ticket));
   appendClientConnectionParams(
     url,
     input.clientMetadata,

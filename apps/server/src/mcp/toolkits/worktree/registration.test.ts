@@ -1,16 +1,11 @@
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as D4AgentModule from "../../../d4Agent/D4Agent.ts";
 import * as ProjectStoreModule from "../../../orchestration-v2/ProjectStore.ts";
 import { ResearchDelegationBudget } from "../research/budget.ts";
 import * as SecondBrainCaptureModule from "../../../second-brain/SecondBrainCapture.ts";
 import * as SecondBrainServiceModule from "../../../second-brain/SecondBrainService.ts";
-import * as D4Agent from "../../../d4Agent/D4Agent.ts";
-import * as D4AgentContext from "../../../d4Agent/D4AgentContext.ts";
 import * as HandoffMemory from "../../../handoffMemory.ts";
-import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
-import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
-import { ResearchDelegationBudgetLive } from "../research/budget.ts";
-import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
 import { RemoteDelegation } from "../../../peer/RemoteDelegation.ts";
 import { PeerLinkRequests } from "../../../peer/PeerLinkRequests.ts";
 import { PeerLinks } from "../../../peer/PeerLinks.ts";
@@ -222,6 +217,7 @@ it.effect("production mcp layer lists worktree tools over http", () =>
   ).pipe(
     Effect.provide(
       Layer.mergeAll(
+        Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
         NodeHttpServer.layerTest,
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-worktree-mcp-" }).pipe(
           Layer.provide(NodeServices.layer),

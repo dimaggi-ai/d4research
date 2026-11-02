@@ -1,10 +1,19 @@
+import { D4AgentSettings } from "@d4research/contracts";
+import * as Schema from "effect/Schema";
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { openProject } from "./harness.mjs";
 
-async function savedChange(app, label, change, matches, section = "agentMonitor") {
+async function savedChange(
+  app,
+  label,
+  change,
+  matches,
+  section = "agentMonitor",
+  decode = (value) => value,
+) {
   const directory = NodePath.join(app.baseDir, "userdata");
   let watcher;
   let timer;
@@ -15,7 +24,7 @@ async function savedChange(app, label, change, matches, section = "agentMonitor"
         const settings = JSON.parse(
           await NodeFSP.readFile(NodePath.join(directory, "settings.json"), "utf8"),
         );
-        lastValue = settings[section] ?? {};
+        lastValue = decode(settings[section] ?? {});
         if (matches(lastValue)) resolve(lastValue);
       } catch {}
     };
@@ -145,6 +154,8 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
       (value.modelSelection.model !== selected.modelSelection.model ||
         value.modelSelection.instanceId !== selected.modelSelection.instanceId),
     "d4Agent",
+    // The writer omits a model equal to its default; verify the persisted value as the server reads it.
+    Schema.decodeUnknownSync(D4AgentSettings),
   );
   await page.waitForFunction((previous) => {
     const picker = document.querySelector(

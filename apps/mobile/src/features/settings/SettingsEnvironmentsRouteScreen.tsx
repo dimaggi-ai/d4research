@@ -37,10 +37,7 @@ export function SettingsEnvironmentsRouteScreen() {
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
   const openEnvironment = (environmentId: EnvironmentId) => {
-    navigation.navigate("SettingsSheet", {
-      screen: "SettingsContent",
-      params: { screen: "SettingsEnvironmentDetail", params: { environmentId } },
-    });
+    navigation.navigate("SettingsEnvironmentDetail", { environmentId });
   };
   const handleUpdateEnvironment = (
     environmentId: EnvironmentId,
@@ -73,11 +70,7 @@ export function SettingsEnvironmentsRouteScreen() {
         {
           accessibilityLabel: "Add environment",
           icon: "plus",
-          onPress: () =>
-            navigation.navigate("SettingsSheet", {
-              screen: "SettingsContent",
-              params: { screen: "SettingsEnvironmentNew" },
-            }),
+          onPress: () => navigation.navigate("SettingsEnvironmentNew"),
         },
       ]}
     >
@@ -85,12 +78,7 @@ export function SettingsEnvironmentsRouteScreen() {
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
             icon="plus"
-            onPress={() =>
-              navigation.navigate("SettingsSheet", {
-                screen: "SettingsContent",
-                params: { screen: "SettingsEnvironmentNew" },
-              })
-            }
+            onPress={() => navigation.navigate("SettingsEnvironmentNew")}
             separateBackground
             tintColor={headerIconColor}
           />

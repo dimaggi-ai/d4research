@@ -170,12 +170,13 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 ### Group threads by project (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
-threads in a folder for each project. A project with no active threads has no folder until you
-pick it in the project filter. Click a folder to open or close it. A closed folder shows how
-many threads it holds, and a dot when one of them needs you. Use the pen button on a folder, or
-right-click it, to start a thread in that project. Pinned threads stay above the folders, and
-Snoozed and Settled stay below them. In this mode you cannot drag threads, and the Working section
-is off. Each device keeps its own choice.
+threads in a folder for each project. Pinned projects come first. A project with no active
+threads has no folder unless it is pinned and unarchived, or you pick it in the project filter.
+An archived project's folder comes last and shows while it has active threads or is selected in the project filter. Click a folder to open or
+close it. A closed folder shows how many threads it holds, and a dot when one of them
+needs you. Use the pen button on a folder, or right-click it, to start a thread in that project.
+Pinned threads stay above the folders, and Snoozed and Settled stay below them. In this mode you
+cannot drag threads, and the Working section is off. Each device keeps its own choice.
 
 ## Settle finished work
 
@@ -274,8 +275,9 @@ from its context menu, or **Copy thread** from its long-press menu on mobile.
 **Limited** means the provider stopped on a usage or rate limit. The conversation
 keeps the provider's explanation. Retry after the limit resets, or switch to
 another provider instance.
-On web and desktop, press **Resume** in an empty composer to continue a limited
-or interrupted turn manually.
+Press **Resume** in an empty composer to continue a limited or interrupted turn
+manually. Do this when the provider reports no reset time, because nothing
+continues the turn on its own.
 Queued messages stay saved while the limit blocks the thread. They run after
 the continuation finishes. If the queue was held by a restart, resume it then.
 
@@ -344,17 +346,39 @@ To generate a fresh title from the conversation, open a thread's context menu an
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
 be selected again. The option is hidden when the connected environment needs a server update.
 
-On web and desktop, the thread details card lists the web servers that the
-thread's terminals or its Claude agent started, with their ports. A server the
-agent started stays listed after the agent's turn ends.
-Select a server to open it in the browser panel. **Stop** ends the server's job
-and keeps the agent, the terminal, and T3 Code running. Stop needs terminal
-access to the environment and is not available on Windows.
+On web and desktop, the browser panel lists discovered servers under **Local servers**,
+with their ports. Not every one
+serves a web page. A server the agent started stays listed after the agent's
+turn ends.
+Select a server to open it in the browser panel.
 
 To choose what the thread details card shows, right-click the card or open
 **Settings → Appearance → Thread details**. Hidden rows keep their keyboard
 shortcuts, such as Open in editor and project scripts. **Reset to default** brings
 back the standard rows.
+
+## Side chats
+
+A side chat lets you ask a question about a thread without adding to it. It starts
+with what the thread knows, and the thread keeps working while you ask.
+
+On web and desktop, start a message with `/side` or `/btw`, then your question.
+You can also choose **Side chat** from the **+** menu in the right panel. The side
+chat opens as a tab there, with its own composer. Side chats do not show in the
+sidebar. Find one again under **Side chats** in thread details.
+
+A side chat works in the same folder as the thread. Its first reply asks before it
+edits files or runs commands. After that, it uses the permission mode you choose
+in its composer.
+
+To use what you learned, choose **Bring back**. It adds the side chat to your next message in the thread. Bring back is available while the thread is idle.
+
+Closing a side chat you never sent a message in deletes it. To delete one you used,
+choose **Delete** at the top of the side chat. Deleting a thread also deletes its
+side chats.
+
+On mobile, a thread lists its side chats above the composer. Tap one to open it and
+answer its questions.
 
 ## Snooze until later
 

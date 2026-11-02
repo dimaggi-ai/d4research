@@ -696,6 +696,8 @@ export const layer: Layer.Layer<
                 }),
               ];
             }
+            case "background_work.updated":
+              return [];
             case "command_output.delta":
               // Live output is routed to the command output hub before ingestion.
               return [];
@@ -850,7 +852,6 @@ export const layer: Layer.Layer<
                   ),
                 ),
               ),
-              // @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off - The predicate narrows the captured event for the subagent update.
               Effect.flatMap((storedEvents) =>
                 storedEvents.length === 0 || input.event.type !== "subagent.updated"
                   ? Effect.succeed(storedEvents)

@@ -573,6 +573,7 @@ it("restores the selected PR tab when switching threads and remounting the right
     const selected = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, ref);
     return (
       <RightPanelSurfaceContent
+        sideChatParentPanel={{ openToolDiff: vi.fn(), runShellCommand: vi.fn() }}
         surface={selected}
         activeSurfaceId={selected?.id ?? null}
         threadRef={ref}

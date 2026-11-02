@@ -102,3 +102,10 @@ describe("Personal Team entitlement cleanup", () => {
     );
   });
 });
+
+it.each(["prod", ""])("rejects APP_VARIANT=%j before selecting production IDs", async (value) => {
+  vi.stubEnv("APP_VARIANT", value);
+  await expect(loadConfig()).rejects.toThrow(
+    "APP_VARIANT must be development, preview, or production.",
+  );
+});

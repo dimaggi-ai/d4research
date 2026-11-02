@@ -1,15 +1,21 @@
 import { useAtomCommand } from "~/state/use-atom-command";
 import { capitalizeTerm } from "@d4research/client-runtime/source-control-clients";
-import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@d4research/contracts";
+import type {
+  EnvironmentId,
+  PullRequestRef,
+  PullRequestReviewVerdict,
+} from "@d4research/contracts";
 import { CheckIcon, MessageSquareIcon, XCircleIcon } from "lucide-react";
 import { useState, type ReactNode, type RefObject } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
+import { readableFailure } from "./pullRequestDetail.logic";
 import {
   pullRequestReviewKey,
   usePendingReviewComments,
@@ -95,7 +101,14 @@ export function PullRequestReviewForm({
     });
     onPendingChange(false);
     if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "The review could not be submitted" });
+      toastManager.add({
+        type: "error",
+        title: "The review could not be submitted",
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          "The host refused the review. Your draft is still here to try again.",
+        ),
+      });
       return;
     }
     // Preserve comments and summary edits made during submission.

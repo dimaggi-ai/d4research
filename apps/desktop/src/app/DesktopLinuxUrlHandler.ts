@@ -261,15 +261,16 @@ export const make = Effect.gen(function* () {
           stdin: "ignore",
           stdout: "ignore",
           stderr: "ignore",
+          forceKillAfter: "1 second",
         },
       );
       const handle = yield* spawner.spawn(command);
-      const exitCode = yield* handle.exitCode;
+      const exitCode = yield* handle.exitCode.pipe(Effect.timeout("5 seconds"));
       if ((exitCode as number) !== 0) {
         return yield* new DesktopLinuxUrlHandlerRegistrationError({
           step: "set-default-handler",
           scheme,
-          exitCode: Number(exitCode),
+          exitCode,
         });
       }
     }),

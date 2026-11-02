@@ -1,3 +1,4 @@
+import { formatFilePathForClipboard } from "@d4research/client-runtime/media-actions";
 import { fileBasename } from "@d4research/shared/path";
 import type { ThreadId } from "@d4research/contracts";
 import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
@@ -6,15 +7,22 @@ import { hostPreviewMimeTypeFromExtension } from "@d4research/shared/filePreview
 
 import {
   isAbsolutePath,
+  resolveFileLinkPath,
   resolveWorkspaceFilePath,
   resolveWorkspaceRelativeFilePath,
 } from "../files/filePath";
 
-export type FileChipAction = "copy-full-path" | "copy-relative-path" | "open-file" | "save";
-
 export interface FileChipTarget {
   readonly fullPath?: string;
   readonly relativePath?: string;
+}
+
+export function fileChipClipboardPath(
+  target: FileChipTarget,
+  action: "copy-full-path" | "copy-relative-path",
+): string | undefined {
+  const path = action === "copy-full-path" ? target.fullPath : target.relativePath;
+  return path === undefined ? undefined : formatFilePathForClipboard(path, target.fullPath);
 }
 
 export function resolveFileChipTarget(
@@ -23,9 +31,11 @@ export function resolveFileChipTarget(
 ): FileChipTarget | null {
   const presentation = resolveMarkdownLinkPresentation(href);
   if (presentation.kind !== "file") return null;
-  const relativePath = resolveWorkspaceRelativeFilePath(workspaceRoot, presentation.path);
-  const fullPath = isAbsolutePath(presentation.path)
-    ? presentation.path
+  const path = resolveFileLinkPath(workspaceRoot, presentation.path);
+  if (path === null) return null;
+  const relativePath = resolveWorkspaceRelativeFilePath(workspaceRoot, path);
+  const fullPath = isAbsolutePath(path)
+    ? path
     : workspaceRoot && relativePath
       ? resolveWorkspaceFilePath(workspaceRoot, relativePath)
       : undefined;

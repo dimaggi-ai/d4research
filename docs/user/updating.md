@@ -61,6 +61,14 @@ choose **Update** to install it. If not, the window links to the last version
 that started on your computer. Download and install it to go back. Use **Copy
 details** to include the error in a bug report.
 
+## Registries and proxies
+
+Release metadata checks and npm-installed provider checks use the server's own npm, including its configured registry, authentication, and proxy settings. d4research metadata lookups use the d4research package, not upstream T3 Code. Providers installed with Homebrew or pnpm check through those
+tools.
+Configure npm on the server's machine. If that registry cannot be reached, the update shows as unavailable. T3 Code does not try the public registry instead.
+Machines without npm check the public npm registry directly. These are metadata checks;
+the d4research CLI updater installs fork release archives.
+
 ## Update providers
 
 On web and desktop, **Settings → Providers** shows provider updates for the selected environment.

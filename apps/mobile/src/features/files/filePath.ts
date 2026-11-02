@@ -1,3 +1,6 @@
+import type { FilesystemEntryMetadata } from "@d4research/contracts";
+import { filePreviewDelimiter } from "@d4research/shared/delimitedPreview";
+import { resolvePathLinkTarget } from "@d4research/shared/fileLinks";
 import {
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
@@ -134,6 +137,23 @@ export function fileBreadcrumbs(projectName: string, relativePath: string): File
   ];
 }
 
+export function needsWorkspaceFileContents(input: {
+  readonly relativePath: string | null;
+  readonly metadataKind: FilesystemEntryMetadata["kind"] | undefined;
+  readonly activeMode: "preview" | "source";
+}): boolean {
+  const path = input.relativePath;
+  return (
+    input.metadataKind !== "directory" &&
+    path !== null &&
+    !isVideoPreviewFile(path) &&
+    !isAudioPreviewFile(path) &&
+    (input.activeMode === "source" ||
+      isMarkdownPreviewFile(path) ||
+      filePreviewDelimiter({ name: path }) !== null)
+  );
+}
+
 export function fileHeaderSubtitle(projectName: string, relativePath: string): string {
   const parentDir = relativePath.slice(
     0,
@@ -142,4 +162,16 @@ export function fileHeaderSubtitle(projectName: string, relativePath: string): s
   return isAbsolutePath(relativePath)
     ? parentDir
     : [projectName, parentDir].filter(Boolean).join(" · ");
+}
+
+export function resolveFileLinkPath(
+  workspaceRoot: string | null | undefined,
+  targetPath: string,
+): string | null {
+  if (targetPath.startsWith("~/") || targetPath.startsWith("~\\")) {
+    if (!workspaceRoot) return null;
+    const expanded = resolvePathLinkTarget(targetPath, workspaceRoot);
+    return isAbsolutePath(expanded) ? expanded : null;
+  }
+  return isAbsolutePath(targetPath) ? targetPath : normalizeRelativePath(targetPath);
 }

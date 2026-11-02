@@ -1,3 +1,4 @@
+import { CHATGPT_USAGE_URL } from "@d4research/shared/usageLimits";
 import { act, render } from "../../../test/render";
 import {
   EnvironmentId,
@@ -7,7 +8,7 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 import type { LimitPresentations } from "@d4research/shared/usageLimits";
-import { expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 // Real pointer clicks need the dialog's stacking styles to land above Base UI's modal overlay.
@@ -305,4 +306,58 @@ it("closes an open source-account popover when reset availability replaces its t
   await expect.poll(() => popup()?.textContent).toContain("Use reset");
   await click("Use reset");
   await expect.poll(() => document.querySelector('[role="alertdialog"]')).not.toBeNull();
+});
+
+const checkedAt = "2026-10-25T16:00:00.000Z";
+
+function managedChatGpt(instanceId: string, displayName: string): ServerProvider {
+  return {
+    instanceId: ProviderInstanceId.make(instanceId),
+    driver: ProviderDriverKind.make("codex"),
+    displayName,
+    enabled: true,
+    installed: true,
+    version: "0.164.0",
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt,
+    models: [],
+    slashCommands: [],
+    skills: [],
+    usageLimits: {
+      checkedAt,
+      windows: [],
+      unavailable: { reason: "unsupported", message: "Track usage in ChatGPT." },
+      externalUsage: { label: "ChatGPT usage", url: CHATGPT_USAGE_URL },
+    },
+  };
+}
+
+describe("UsageLimitsPooled ChatGPT usage card", () => {
+  it("names the managed connections it covers", async () => {
+    const presentations = new Map([
+      [
+        EnvironmentId.make("desk"),
+        {
+          entry: { target: { label: "Desk" } },
+          serverConfig: {
+            providers: [
+              managedChatGpt("chatgpt_work", "ChatGPT Work"),
+              managedChatGpt("chatgpt_personal", "ChatGPT Personal"),
+            ],
+          },
+        },
+      ],
+    ]);
+    await using screen = await render(
+      <UsageLimitsPooled presentations={presentations} now={Date.parse(checkedAt)} />,
+    );
+
+    await expect
+      .element(screen.getByText("ChatGPT Work on Desk, ChatGPT Personal on Desk"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("View usage in ChatGPT with your connected account."))
+      .toBeVisible();
+  });
 });

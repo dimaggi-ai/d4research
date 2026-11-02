@@ -46,16 +46,31 @@ offers to compact the conversation before you continue. You can also select **Co
 from the context meter. On every client, you can enter `/compact` in the message composer, and
 Claude can show its own resume prompt when you continue an old session.
 
-## Where Claude Skills Are Loaded
-
 You can also send `/compact` in an existing conversation. Web and desktop offer
-**Compact context** from the context meter. When you return to a large thread
-after Claude's prompt cache expires, a **Compact** chip with the thread's token count shows
+**Compact context** from the context meter. The meter is off by default; see
+[commands and skills](./composer.md#commands-and-skills) to enable it. Claude Code
+compacts automatically whether the meter is on or off.
+
+When you return to a large thread after Claude's prompt cache expires, a
+**Compact** chip with the thread's token count shows
 next to the send button. While it is on, Enter summarizes the history first, then
-sends your message. Click the chip to switch it to **Full** and keep the full
+sends your message. Click the chip to switch it to **Keep** and keep the full
 history for that message. The cache lasts about an hour on a Claude
 subscription and 5 minutes with an API key, Bedrock, or Vertex. See [commands and skills](./composer.md#commands-and-skills) for using
 composer commands.
+
+In **Settings → Providers → Advanced**, **Compact idle threads** controls when this happens:
+
+- **When you return** shows the **Compact** chip described above.
+- **Before the cache expires (beta)** tries to compact an idle thread shortly before its
+  prompt cache expires, while the history is still cached.
+  The compaction appears in the thread as a `/compact` turn sent by T3 Code.
+  If the window is missed, such as when you enable this mode after the cache has
+  expired or the server restarts before compaction runs, it falls back to
+  **When you return**. Switch the chip to **Keep** to keep the full history for that message.
+- With **Never**, T3 Code skips idle compaction and Claude's resume prompt. **Auto-compact after** still applies, and you can still compact by hand.
+
+## Where Claude Skills Are Loaded
 
 If the same skill name exists in more than one folder, the one in the Claude config directory
 wins, the same way Claude Code resolves it.

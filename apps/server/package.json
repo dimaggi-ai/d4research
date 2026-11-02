@@ -63,6 +63,7 @@
     "character-entities": "2.0.2",
     "diff": "8.0.3",
     "effect": "catalog:",
+    "ffi-rs": "1.3.2",
     "jose": "catalog:",
     "node-pty": "1.2.0-beta.15",
     "playwright-core": "1.60.0",
@@ -78,6 +79,9 @@
   "devDependencies": {
     "@d4research/contracts": "workspace:*",
     "@d4research/provider-testing": "workspace:*",
+    "@d4research/secret-provider-core": "workspace:*",
+    "@d4research/secret-provider-definitions": "workspace:*",
+    "@d4research/secret-provider-onepassword": "workspace:*",
     "@d4research/shared": "workspace:*",
     "@d4research/source-control-testing": "workspace:*",
     "@d4research/ssh": "workspace:*",

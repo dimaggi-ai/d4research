@@ -56,6 +56,15 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
     };
     const nativeFetch = window.fetch.bind(window);
     window.fetch = async (...args) => {
+      // Fixture transforms require explicit IDs and complete item bodies.
+      const input = args[0];
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (/\/api\/orchestration\/threads\/[^/]+\/bounded$/.test(url.pathname)) {
+        for (const key of ["compactIds", "compactTurnItems", "dedupeBodies"]) {
+          url.searchParams.delete(key);
+        }
+        args[0] = input instanceof Request ? new Request(url, input) : url.toString();
+      }
       const response = await nativeFetch(...args);
       if (!response.headers.get("content-type")?.includes("application/json")) return response;
       return new Response(JSON.stringify(runningSnapshot(await response.clone().json())), {

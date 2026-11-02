@@ -23,10 +23,10 @@ export function resolveLegacyPlanModeEnabled(input: {
 }
 
 export function resolvePendingTaskInteractionMode(input: {
-  readonly preferenceLoaded: boolean;
+  readonly preferenceLoaded?: boolean;
   readonly planModeEnabled: boolean;
   readonly draftInteractionMode: ProviderInteractionMode | undefined;
-  readonly queuedInteractionMode: ProviderInteractionMode | undefined;
+  readonly queuedInteractionMode?: ProviderInteractionMode;
   readonly provider?: InteractionModeProvider | null;
 }): ProviderInteractionMode {
   if (input.provider?.showInteractionModeToggle === false) {
@@ -35,7 +35,7 @@ export function resolvePendingTaskInteractionMode(input: {
   if (input.planModeEnabled) {
     return input.draftInteractionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
   }
-  if (!input.preferenceLoaded) {
+  if (input.preferenceLoaded === false) {
     return input.queuedInteractionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
   }
   return DEFAULT_PROVIDER_INTERACTION_MODE;

@@ -30,6 +30,7 @@ const policy = {
 it.effect("Codex agent disables inherited MCP endpoints and exposes only bounded agent tools", () =>
   Effect.gen(function* () {
     const params = codexThreadRuntimeParams({
+      threadId: null,
       mcpSession: session,
       runtimePolicy: policy,
       modelSelection: { model: "selected" },
@@ -116,6 +117,7 @@ it("Claude agent cannot inherit native tools, external MCP, or bypass launch fla
 
 it("a normal Codex thread does not inherit a restricted session's deny list", () => {
   const params = codexThreadRuntimeParams({
+    threadId: null,
     mcpSession: session,
     disabledMcpServers: ["ordinary-server"],
     runtimePolicy: { runtimeMode: "approval-required", interactionMode: "default", cwd: "/normal" },

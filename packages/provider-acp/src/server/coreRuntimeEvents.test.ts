@@ -151,7 +151,10 @@ describe("AcpCoreRuntimeEvents", () => {
         payload: {
           nativePlanId: "plan-1",
           kind: "items",
-          plan: [{ step: "Inspect state", status: "inProgress" }],
+          plan: [
+            { step: "Inspect state", status: "inProgress" },
+            { step: "Abandoned work", status: "cancelled" },
+          ],
         },
         source: "acp.cursor.extension",
         method: "cursor/update_todos",
@@ -159,6 +162,7 @@ describe("AcpCoreRuntimeEvents", () => {
       }),
     ).toMatchObject({
       type: "turn.plan.updated",
+      payload: { plan: [{ step: "Inspect state", status: "inProgress" }] },
       raw: {
         method: "cursor/update_todos",
       },

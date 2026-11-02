@@ -1,6 +1,9 @@
 # Permission Modes
 
-A permission mode controls how much the agent acts independently and when it pauses to ask for input.
+Permission modes control when an agent needs your approval to act. Choose a mode in the message
+composer; it applies to that thread. A new thread shows its mode under the composer. In a thread
+on your default mode, open the model picker and choose **Permissions** at its bottom, or press
+`mod+shift+a`. A thread on another mode shows the mode next to the model.
 
 Set the default for new threads in **Settings → Threads → New threads → Permissions**.
 Projects can override the environment default. New threads use this setting rather than the
@@ -9,8 +12,13 @@ and modes you choose in a draft keep their permissions.
 
 ## The Modes
 
-**Supervised**: ask before commands and file changes. The agent pauses and shows you what it
-wants to run or edit, and waits for approval. Work outside the workspace is restricted.
+An administrator can cap the modes available on a machine with a
+[managed policy](./managed-policy.md#permission-modes); modes above the cap show who manages them.
+
+**Supervised**: approve or reject requests in the conversation. The agent can continue after
+you respond, subject to its provider's behavior. Permission modes do
+not prevent the agent from asking questions about the task. Subagent approval requests appear in
+the parent conversation with the subagent's name, so you can respond without switching threads.
 
 **Auto-accept edits**: auto-approve file changes; ask before other actions. Edits go through
 without prompting, while commands and anything else still stop for approval.
@@ -35,15 +43,11 @@ session-wide choice, because Grok would remember that command for the whole proj
 ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
 by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
-Approvals appear inline in the conversation. Approve or reject one and the agent continues from
-there.
-
-## Choosing a Mode
-
-Use **Full access** for work in a worktree or a sandbox you can throw away.
-
-Use **Supervised** on a repository where an unwanted command is expensive, or the first time you
-run an unfamiliar task.
+Claude can still ask in **Full access** when its settings disable bypass permissions or require
+approval for an action. Dangerous-removal safety checks in bypass mode reject the command and show the original warning. Claude can use a safe rewrite when the warning supplies one; otherwise it
+continues without the removal and tells you what it skipped.
+While a Claude approval is pending, type a text reply to decline that request and give feedback
+directly to the agent that asked, including a subagent. Other pending requests stay unanswered.
 
 **Auto-accept edits** suits refactors where the edits are the point and you only care about the
 shell commands.

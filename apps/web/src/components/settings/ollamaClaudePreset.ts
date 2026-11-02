@@ -303,7 +303,9 @@ export function removeOllamaClaudePreset(
 
 export function isOllamaClaudePresetConfigured(instance: ProviderInstanceConfig): boolean {
   const values = new Map((instance.environment ?? []).map(({ name, value }) => [name, value]));
-  const baseUrl = values.get("ANTHROPIC_BASE_URL")?.trim().replace(/\/+$/u, "");
+  const rawBaseUrl = values.get("ANTHROPIC_BASE_URL");
+  const baseUrl =
+    typeof rawBaseUrl === "string" ? rawBaseUrl.trim().replace(/\/+$/u, "") : undefined;
   return (
     instance.driver === ProviderDriverKind.make("claudeAgent") &&
     values.get("ANTHROPIC_AUTH_TOKEN") === "ollama" &&

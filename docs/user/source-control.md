@@ -39,6 +39,15 @@ terminal commands, and Git locks. Idle sessions and terminal tabs in an eligible
 closed. Configured project directories, worktrees outside T3's managed directory, and independent
 multiwork clones are retained.
 
+On web and desktop, open the Diff pane source picker and choose **Commits** to review one local
+commit at a time. The list shows the newest 100 commits in the branch comparison. A merge commit
+shows its changes against its first parent.
+
+With **Open pull requests in T3 Code** enabled in **Settings → Diffs**, a commit link from a supported code host opens in the Diff pane when the thread's repository has
+that commit locally, on any branch. Otherwise a pull request commit link opens the pull request. Other
+commit links follow your **Open links in** setting; on web, when that opens a new tab, T3 Code first
+shows an **Open link** button. Command/Ctrl+Click always opens the link in your browser.
+
 ## Connect an account
 
 Install Git and configure authentication on the machine running your d4research server. For a remote

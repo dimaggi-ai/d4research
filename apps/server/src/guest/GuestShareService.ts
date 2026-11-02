@@ -15,6 +15,7 @@ import {
   type OrchestrationV2CommandOutputFrame,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2GetTurnItemResult,
+  type OrchestrationV2ThreadHistoryPage,
   type OrchestrationV2TurnItem,
   ThreadId,
   TurnItemId,
@@ -183,6 +184,11 @@ export class GuestShareService extends Context.Service<
       session: string,
       itemId: string,
     ) => Effect.Effect<OrchestrationV2GetTurnItemResult, GuestShareAccessError>;
+    /** Older turns of the shared thread, as the owner's client pages them. */
+    readonly history: (
+      session: string,
+      cursor: string,
+    ) => Effect.Effect<OrchestrationV2ThreadHistoryPage, GuestShareAccessError>;
     /** A command's output frames, as the owner's expanded row gets them, until the link ends. */
     readonly commandOutput: (
       session: string,
@@ -655,6 +661,21 @@ const make = Effect.gen(function* () {
     };
   });
 
+  const history = Effect.fn("GuestShareService.history")(function* (
+    session: string,
+    cursor: string,
+  ) {
+    const { thread, share } = yield* authorize(session, "session");
+    const page = yield* orchestrator
+      .getThreadHistoryPage(thread.id, cursor)
+      .pipe(Effect.mapError(() => unavailable));
+    rememberSent(
+      share.id,
+      page.items.map((row) => row.item),
+    );
+    return page;
+  });
+
   const commandOutput = Effect.fn("GuestShareService.commandOutput")(function* (
     session: string,
     itemId: string,
@@ -729,6 +750,7 @@ const make = Effect.gen(function* () {
     stream,
     render,
     item,
+    history,
     commandOutput,
     attachment,
     media,

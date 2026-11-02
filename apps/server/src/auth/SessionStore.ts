@@ -429,6 +429,7 @@ export class SessionStore extends Context.Service<
     ) => Effect.Effect<boolean, SessionCredentialInternalError>;
     readonly awaitInvalidation: (
       sessionId: AuthSessionId,
+      proofKeyThumbprint?: string,
       expectedScopes?: ReadonlyArray<AuthEnvironmentScope>,
     ) => Effect.Effect<void, SessionCredentialVerificationError>;
     readonly revoke: (
@@ -517,6 +518,9 @@ const make = Effect.gen(function* () {
   const connectedSessionsRef = yield* Ref.make(new Map<AuthSessionId, number>());
   const changesPubSub = yield* PubSub.unbounded<SessionCredentialChange>();
   const scopeChanges = yield* PubSub.unbounded<AuthSessionId>();
+  // Newest session per DPoP key. A live socket moves to it at expiry, so a
+  // client that renews its short-lived token keeps its socket.
+  const latestSessionByProofKey = new Map<string, AuthSessionId>();
   const cookieInput = {
     mode: serverConfig.mode,
     port: serverConfig.port,
@@ -723,6 +727,7 @@ const make = Effect.gen(function* () {
             })
           : authSessions.create(sessionRecord).pipe(Effect.as([] as ReadonlyArray<AuthSessionId>))
       ).pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ sessionId, cause })));
+      if (claims.jkt) latestSessionByProofKey.set(claims.jkt, sessionId);
       if (replacedSessionIds.length > 0) {
         yield* Ref.update(connectedSessionsRef, (current) => {
           const next = new Map(current);
@@ -1077,6 +1082,7 @@ const make = Effect.gen(function* () {
 
   const awaitInvalidation = Effect.fn(function* (
     sessionId: AuthSessionId,
+    proofKeyThumbprint?: string,
     expectedScopes?: ReadonlyArray<AuthEnvironmentScope>,
   ) {
     return yield* Effect.scoped(
@@ -1084,38 +1090,77 @@ const make = Effect.gen(function* () {
         // Subscribe before reading: revocation can race with the WebSocket upgrade.
         const subscription = yield* PubSub.subscribe(changesPubSub);
         const scopeSubscription = yield* PubSub.subscribe(scopeChanges);
-        const row = yield* authSessions
-          .getById({ sessionId })
-          .pipe(
-            Effect.mapError(
-              (cause) => new SessionCredentialVerificationError({ sessionId, cause }),
-            ),
-          );
-        if (Option.isNone(row) || row.value.revokedAt !== null) return;
-        // A grant edit can race with upgrade before the watcher subscribes.
+        const readRow = (id: AuthSessionId) =>
+          authSessions
+            .getById({ sessionId: id })
+            .pipe(
+              Effect.mapError(
+                (cause) => new SessionCredentialVerificationError({ sessionId: id, cause }),
+              ),
+            );
+        const original = yield* readRow(sessionId);
+        if (Option.isNone(original)) return;
         if (
           expectedScopes !== undefined &&
-          (row.value.scopes.length !== expectedScopes.length ||
-            row.value.scopes.some((scope) => !expectedScopes.includes(scope)))
+          (original.value.scopes.length !== expectedScopes.length ||
+            original.value.scopes.some((scope) => !expectedScopes.includes(scope)))
         )
           return;
-        const now = yield* DateTime.now;
-        const remaining = row.value.expiresAt.epochMilliseconds - now.epochMilliseconds;
-        if (remaining <= 0) return;
-        yield* Effect.raceFirst(
-          Stream.fromSubscription(subscription).pipe(
-            Stream.filter(
-              (change) => change.type === "clientRemoved" && change.sessionId === sessionId,
-            ),
-            Stream.merge(
-              Stream.fromSubscription(scopeSubscription).pipe(
-                Stream.filter((changedId) => changedId === sessionId),
-              ),
-            ),
-            Stream.runHead,
-          ),
-          Effect.sleep(Duration.millis(remaining)),
+        // Revoking any session the socket has used closes it. Events only wake this loop
+        // and the rows decide: revocations are written before they are published, and
+        // clientRemoved also reports an expired session losing its last socket.
+        const chain = [sessionId];
+        const nextRemoval = Effect.gen(function* () {
+          while (true) {
+            const change = yield* PubSub.take(subscription);
+            if (change.type === "clientRemoved" && chain.includes(change.sessionId)) return;
+          }
+        });
+        const nextScopeChange = Stream.fromSubscription(scopeSubscription).pipe(
+          Stream.filter((id) => chain.includes(id)),
+          Stream.runHead,
         );
+        let current = original.value;
+        while (true) {
+          const rows = yield* Effect.forEach(chain, readRow);
+          if (
+            rows.some(
+              (row) =>
+                Option.isNone(row) ||
+                row.value.revokedAt !== null ||
+                !original.value.scopes.every((scope) => row.value.scopes.includes(scope)),
+            )
+          )
+            return;
+          const now = yield* DateTime.now;
+          const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
+          if (remaining > 0) {
+            const scopeChanged = yield* Effect.raceFirst(
+              nextScopeChange.pipe(Effect.as(true)),
+              Effect.raceFirst(nextRemoval, Effect.sleep(Duration.millis(remaining))).pipe(
+                Effect.as(false),
+              ),
+            );
+            if (scopeChanged) return;
+            continue;
+          }
+          const successorId =
+            proofKeyThumbprint === undefined
+              ? undefined
+              : latestSessionByProofKey.get(proofKeyThumbprint);
+          if (successorId === undefined || successorId === current.sessionId) return;
+          const successor = yield* readRow(successorId);
+          // The socket keeps its original scopes, so the renewal must still grant all of them.
+          if (
+            Option.isNone(successor) ||
+            successor.value.subject !== original.value.subject ||
+            !original.value.scopes.every((scope) => successor.value.scopes.includes(scope))
+          ) {
+            return;
+          }
+          chain.push(successorId);
+          current = successor.value;
+        }
       }),
     );
   });

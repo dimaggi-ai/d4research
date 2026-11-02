@@ -1,3 +1,6 @@
+import { ThreadId, MessageId } from "@d4research/contracts";
+import { requestThreadMessageJump } from "../threads/threadMessageJump";
+import { scopedThreadKey } from "../../lib/scopedEntities";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { BrainLintIssue, EnvironmentId, SecondBrainSettings } from "@d4research/contracts";
@@ -515,13 +518,13 @@ function ProposalDetail({
           <Text selectable>{evidence.quote}</Text>
           <SettingsActionRow
             label={`Source message ${evidence.messageId}`}
-            onPress={() =>
-              navigation.navigate("Thread", {
-                environmentId,
-                threadId: evidence.threadId,
-                messageId: evidence.messageId,
-              })
-            }
+            onPress={() => {
+              requestThreadMessageJump(
+                scopedThreadKey(environmentId, ThreadId.make(evidence.threadId)),
+                MessageId.make(evidence.messageId),
+              );
+              navigation.navigate("Thread", { environmentId, threadId: evidence.threadId });
+            }}
           />
         </View>
       ))}

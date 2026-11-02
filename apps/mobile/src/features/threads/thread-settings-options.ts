@@ -1,11 +1,9 @@
-import type { ProviderOptionDescriptor, RuntimeMode } from "@d4research/contracts";
-
-/**
- * Prompt-injected values (ultrathink and friends) are filtered from the
- * descriptor metadata; ultracode is a real option but a workflow trigger, not a
- * reasoning level.
- */
-const HIDDEN_EFFORT_OPTION_IDS: ReadonlySet<string> = new Set(["ultracode"]);
+import {
+  managedRuntimeModeDenial,
+  type ManagedPolicySummary,
+  type RuntimeMode,
+  type ProviderOptionDescriptor,
+} from "@d4research/contracts";
 
 export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   readonly mode: RuntimeMode;
@@ -42,6 +40,41 @@ export function runtimeModeChoicesForSupportedModes(
     : RUNTIME_MODE_CHOICES;
 }
 
+export type RuntimeModeChoice = (typeof RUNTIME_MODE_CHOICES)[number] & {
+  /** Set when a target environment's managed policy caps runtime modes below this one. */
+  readonly disabledReason?: string;
+};
+
+/**
+ * Marks modes above a managed runtime ceiling. A control acting on several environments is
+ * managed when any of them is, so the first target that refuses a mode supplies its reason.
+ */
+export function withManagedRuntimeModeLimits(
+  choices: ReadonlyArray<RuntimeModeChoice>,
+  policies: ReadonlyArray<ManagedPolicySummary | undefined>,
+): ReadonlyArray<RuntimeModeChoice> {
+  return choices.map((choice) => {
+    const reason = policies
+      .map((policy) => managedRuntimeModeDenial(policy, choice.mode))
+      .find((denial) => denial !== undefined);
+    return reason === undefined ? choice : { ...choice, disabledReason: reason };
+  });
+}
+
+/**
+ * A new thread's mode: the draft's choice unless the managed ceiling refuses it, then the
+ * default, which the server already reads back at or below the ceiling.
+ */
+export function resolveNewThreadRuntimeMode(
+  draftMode: RuntimeMode | undefined,
+  defaultMode: RuntimeMode,
+  policy: ManagedPolicySummary | undefined,
+): RuntimeMode {
+  return draftMode !== undefined && managedRuntimeModeDenial(policy, draftMode) === undefined
+    ? draftMode
+    : defaultMode;
+}
+
 export function compatibleRuntimeModeForChoices(
   runtimeMode: RuntimeMode,
   choices: ReadonlyArray<{ readonly mode: RuntimeMode }>,
@@ -55,7 +88,5 @@ export function selectableChoices(
   descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
 ) {
   const injected = new Set(descriptor.promptInjectedValues ?? []);
-  return descriptor.options.filter(
-    (option) => !injected.has(option.id) && !HIDDEN_EFFORT_OPTION_IDS.has(option.id),
-  );
+  return descriptor.options.filter((option) => !injected.has(option.id));
 }

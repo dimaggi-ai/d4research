@@ -5,6 +5,7 @@ import {
   getCloneDestinationPath,
   getCloneDirectoryName,
 } from "@d4research/client-runtime/operations/projects";
+import { resolvePastedPath } from "@d4research/shared/path";
 import {
   type EnvironmentId,
   type ProjectIgnoredFile,
@@ -316,7 +317,9 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
               <Input
                 id={`${id}-path`}
                 value={destinationPath}
-                onChange={(event) => setPathOverride(event.target.value)}
+                onChange={(event) =>
+                  setPathOverride(resolvePastedPath(destinationPath, event.target.value))
+                }
                 spellCheck={false}
                 autoComplete="off"
               />

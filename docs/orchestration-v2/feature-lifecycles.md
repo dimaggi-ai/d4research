@@ -410,8 +410,7 @@ rollback.toRun(threadId, targetRunOrdinal)
   -> delete or mark stale later checkpoint refs
 ```
 
-The current Codex adapter uses `thread/revert` for paginated history and rejects legacy-history
-rollback. Other providers may require a synthetic provider thread restart from context.
+Codex `thread/revert` returns updated loaded thread metadata with an empty `turns` array. Retained history must be hydrated through `thread/turns/list`. Other providers may require a synthetic provider thread restart from context.
 
 Nested rollback:
 

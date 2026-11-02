@@ -1,6 +1,5 @@
 import { AuthAdministrativeScopes } from "@d4research/contracts";
 import {
-  AuthStandardClientScopes,
   CommandId,
   EnvironmentHttpApi,
   EnvironmentHttpCommonError,
@@ -37,6 +36,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import { projectMutationOperation } from "../project/ProjectMutation.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import {
   clearPersistedServerRuntimeState,
   readPersistedServerRuntimeState,
@@ -211,7 +211,11 @@ const layerProjectCliRuntime = RuntimeLayer.layerProjectService.pipe(
     ),
   ),
   Layer.provideMerge(WorkspacePaths.layer),
-  Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(
+    ServerSettings.layer.pipe(
+      Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layer)),
+    ),
+  ),
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );
 

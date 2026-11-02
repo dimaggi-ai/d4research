@@ -10,7 +10,6 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Redactable from "effect/Redactable";
 import * as Path from "effect/Path";
 import * as Tracer from "effect/Tracer";
 import * as HttpClient from "effect/http/HttpClient";
@@ -133,7 +132,10 @@ const logInSpanThrough = (
     return { requests, spans };
   });
 
-const printThroughConsole = (fields: object) =>
+const printThroughConsole = (
+  fields: object,
+  program = Effect.logWarning("pull request watch check failed", fields),
+) =>
   Effect.gen(function* () {
     const printed: Array<string> = [];
     const testConsole = {
@@ -142,7 +144,7 @@ const printThroughConsole = (fields: object) =>
         printed.push(NodeUtil.format(...args));
       },
     } satisfies Console.Console;
-    yield* Effect.logWarning("pull request watch check failed", fields).pipe(
+    yield* program.pipe(
       Effect.provide(
         ServerLogger.layer.pipe(Layer.provide(layerConfig({})), Layer.provide(layerCollector([]))),
       ),
@@ -152,7 +154,7 @@ const printThroughConsole = (fields: object) =>
   });
 
 describe("ServerLoggerLive", () => {
-  it.effect("exports the operator's service instance id instead of a generated one", () =>
+  it.effect("keeps logs local when an endpoint and service instance id are configured", () =>
     Effect.gen(function* () {
       const { requests } = yield* logInSpanThrough({
         otlpLogsUrl: "https://collector.example.com/v1/logs",
@@ -162,21 +164,34 @@ describe("ServerLoggerLive", () => {
         },
       });
 
-      const body = requests.map((request) => request.body).join("\n");
-      assert.include(body, '"key":"service.instance.id","value":{"stringValue":"pod-7"}');
+      assert.lengthOf(requests, 0);
     }),
   );
 
-  it.effect("exports a resource that names whether the desktop app launched the server", () =>
+  it.effect("keeps desktop-managed server logs local when an endpoint is configured", () =>
     Effect.gen(function* () {
       const { requests } = yield* logInSpanThrough({
         otlpLogsUrl: "https://collector.example.com/v1/logs",
         mode: "desktop",
       });
 
-      const body = requests.map((request) => request.body).join("\n");
-      assert.include(body, '"key":"t3code.server.managed_by","value":{"stringValue":"desktop"}');
-      assert.notInclude(body, "service.mode");
+      assert.lengthOf(requests, 0);
+    }),
+  );
+
+  it.effect("prints request failures without their connection tickets", () =>
+    Effect.gen(function* () {
+      const body = yield* printThroughConsole(
+        {},
+        Effect.logError(
+          Cause.die(
+            new Error("RequestParseError (GET /ws?wsTicket=ticket-secret&dpop=proof-secret)"),
+          ),
+        ),
+      );
+      assert.include(body, "wsTicket=<redacted>&dpop=<redacted>");
+      assert.notInclude(body, "ticket-secret");
+      assert.notInclude(body, "proof-secret");
     }),
   );
 

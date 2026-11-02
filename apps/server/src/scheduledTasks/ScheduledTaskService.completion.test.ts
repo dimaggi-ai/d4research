@@ -1,3 +1,4 @@
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
@@ -56,6 +57,7 @@ it.effect.each(
     const sql = yield* SqlClient.SqlClient;
     const events = yield* Queue.unbounded<never>();
     const dependencies = Layer.mergeAll(
+      ManagedPolicy.layerTest(),
       NodeCrypto.layer,
       Scheduler.layer,
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
@@ -175,6 +177,7 @@ it.effect(
         VALUES (${messageId}, 'task:deleted', ${recent}, 'project:original', 'Original task', ${recent}, ${status}, ${completedAt})`;
       }
       const dependencies = Layer.mergeAll(
+        ManagedPolicy.layerTest(),
         NodeCrypto.layer,
         Scheduler.layer,
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
@@ -219,6 +222,7 @@ it.effect.each(["deleted-task", "settled-before-read-error"] as const)(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const dependencies = Layer.mergeAll(
+        ManagedPolicy.layerTest(),
         NodeCrypto.layer,
         Scheduler.layer,
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),

@@ -136,7 +136,9 @@ export function makeAcpPlanUpdatedEvent(input: {
   const payload =
     input.payload.kind === "items"
       ? {
-          plan: input.payload.plan,
+          plan: input.payload.plan.flatMap((step) =>
+            step.status === "cancelled" ? [] : [{ ...step, status: step.status }],
+          ),
           ...(input.payload.explanation == null ? {} : { explanation: input.payload.explanation }),
         }
       : input.payload.kind === "removed"

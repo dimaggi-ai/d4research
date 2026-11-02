@@ -32,6 +32,7 @@ import * as ShellSnapshotLoader from "./shellSnapshotHttp.ts";
 import type { DeferredShellSnapshot } from "./shellPullRequests.ts";
 import {
   createShellStreamEventReducer,
+  type ShellStreamEvent,
   mergeShellSnapshotProjects,
   reuseUnchangedThreadShells,
   sameThreadPullRequests,
@@ -214,11 +215,68 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   ) {
     const initial = yield* SubscriptionRef.get(state);
     let waiting = yield* Ref.get(awaitingCompletion);
-    /* oxlint-disable oxc/no-accumulating-spread -- This copies a fixed-shape state record, not a growing collection. */
     let next = initial;
     let receivedSnapshot = false;
     let monitorResyncRequired = false;
+    let deltas: Array<ShellStreamEvent> = [];
+    const flushDeltas = () => {
+      if (deltas.length > 0 && Option.isSome(next.snapshot)) {
+        let sequence = next.snapshot.value.snapshotSequence;
+        let removedAt: Map<ThreadId, number> | undefined;
+        for (const delta of deltas) {
+          if (delta.sequence <= sequence) continue;
+          switch (delta.kind) {
+            case "thread.removed":
+              removedAt ??= new Map(next.removedAt);
+              removedAt.set(delta.threadId, delta.sequence);
+              break;
+            case "thread.updated":
+            case "project.updated":
+            case "project.removed":
+              break;
+            default:
+              continue;
+          }
+          sequence = delta.sequence;
+        }
+        next = {
+          ...next,
+          removedAt: removedAt ?? next.removedAt,
+          snapshot: Option.some(shellEvents.applyBatch(next.snapshot.value, deltas)),
+          status: waiting ? "synchronizing" : "live",
+          error: Option.none(),
+        };
+      }
+      deltas = [];
+    };
     for (const item of items) {
+      if (item.kind === "monitor.snapshot" || item.kind === "monitor.updated") {
+        flushDeltas();
+        if (Option.isNone(next.snapshot)) continue;
+        const beforeSnapshot = next.snapshot.value;
+        const applied = shellEvents.apply(beforeSnapshot, item);
+        monitorResyncRequired ||= applied.resyncRequired;
+        if (applied.snapshot === beforeSnapshot) continue;
+        if (activeFillRows !== undefined) {
+          const before = new Map(beforeSnapshot.threads.map((thread) => [thread.id, thread]));
+          const pending = new Set(pendingLinkRows);
+          for (const thread of applied.snapshot.threads) {
+            const previous = before.get(thread.id);
+            if (previous === undefined || previous === thread) continue;
+            if (activeFillRows.delete(previous)) activeFillRows.add(thread);
+            if (pending.delete(previous)) pending.add(thread);
+          }
+          pendingLinkRows = pending;
+        }
+        next = { ...next, snapshot: Option.some(applied.snapshot) };
+        continue;
+      }
+      if (item.kind !== "snapshot" && item.kind !== "synchronized") {
+        deltas.push(item);
+        continue;
+      }
+      // Snapshots can reset the cursor; completion markers change the sync status.
+      flushDeltas();
       if (item.kind === "synchronized") {
         waiting = false;
         if (Option.isSome(next.snapshot)) {
@@ -226,63 +284,24 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         }
         continue;
       }
-      const authoritative =
-        item.kind === "snapshot" && item.resolvedRepositoryIdentityRoots === undefined;
-      const nextSnapshot =
-        item.kind === "snapshot"
-          ? mergeShellSnapshotProjects(
-              Option.getOrNull(next.snapshot),
-              item.snapshot,
-              item.resolvedRepositoryIdentityRoots === undefined
-                ? undefined
-                : {
-                    resolvedRepositoryIdentityRoots: item.resolvedRepositoryIdentityRoots,
-                  },
-            )
-          : Option.match(next.snapshot, {
-              onNone: () => null,
-              onSome: (snapshot) => {
-                const applied = shellEvents.apply(snapshot, item);
-                monitorResyncRequired ||= applied.resyncRequired;
-                return applied.snapshot;
-              },
-            });
-      if (nextSnapshot === null) continue;
-      if (
-        activeFillRows !== undefined &&
-        (item.kind === "monitor.snapshot" || item.kind === "monitor.updated") &&
-        Option.isSome(next.snapshot)
-      ) {
-        // Monitor-only copies must still receive the links their original HTTP rows await.
-        const before = new Map(next.snapshot.value.threads.map((thread) => [thread.id, thread]));
-        const pending = new Set(pendingLinkRows);
-        for (const thread of nextSnapshot.threads) {
-          const previous = before.get(thread.id);
-          if (previous === undefined || previous === thread) continue;
-          if (activeFillRows.delete(previous)) activeFillRows.add(thread);
-          if (pending.delete(previous)) pending.add(thread);
-        }
-        pendingLinkRows = pending;
-      }
-      receivedSnapshot ||= item.kind === "snapshot";
-      const removal =
-        item.kind === "thread.removed" &&
-        Option.exists(next.snapshot, (snapshot) => item.sequence > snapshot.snapshotSequence)
-          ? item
-          : null;
+      const authoritative = item.resolvedRepositoryIdentityRoots === undefined;
+      const nextSnapshot = mergeShellSnapshotProjects(
+        Option.getOrNull(next.snapshot),
+        item.snapshot,
+        item.resolvedRepositoryIdentityRoots === undefined
+          ? undefined
+          : { resolvedRepositoryIdentityRoots: item.resolvedRepositoryIdentityRoots },
+      );
+      receivedSnapshot = true;
       next = {
         snapshot: Option.some(nextSnapshot),
         status: waiting ? "synchronizing" : "live",
         error: Option.none(),
         generation: authoritative ? ++lastShellGeneration : next.generation,
-        removedAt: authoritative
-          ? EMPTY_REMOVALS
-          : removal === null
-            ? next.removedAt
-            : new Map(next.removedAt).set(removal.threadId, removal.sequence),
+        removedAt: authoritative ? EMPTY_REMOVALS : next.removedAt,
       };
     }
-    /* oxlint-enable oxc/no-accumulating-spread */
+    flushDeltas();
     yield* Ref.set(awaitingCompletion, waiting);
     if (next === initial) return;
     if (pendingLinkIds !== undefined && Option.isSome(next.snapshot)) {

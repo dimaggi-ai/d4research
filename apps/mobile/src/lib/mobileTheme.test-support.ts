@@ -1,11 +1,17 @@
-/// <reference types="node" />
 import * as NodeFS from "node:fs";
 
 import {
-  MOBILE_THEME_VARIABLE_NAMES,
+  createMobileThemeVariables,
+  type MobileThemeVariable,
   type MobileThemeAppearance,
   type MobileThemeVariables,
 } from "./mobileTheme";
+
+import { T3_CHAT_THEME } from "@d4research/shared/themePalettes";
+
+const MOBILE_THEME_VARIABLE_NAMES = Object.keys(
+  createMobileThemeVariables(T3_CHAT_THEME.colors, "light"),
+) as ReadonlyArray<MobileThemeVariable>;
 
 export function readDefaultMobileThemeVariables(
   appearance: MobileThemeAppearance,

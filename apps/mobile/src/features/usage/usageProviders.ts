@@ -12,10 +12,15 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "muse",
 ];
 
+export function usageProviderKind(driver: string): UsageProviderKind | null {
+  if (driver === "claudeAgent") return "claude";
+  return PROVIDER_ORDER.find((kind) => kind === driver) ?? null;
+}
+
 export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
-  grok: "Grok",
+  grok: "Grok Build",
   cursor: "Cursor",
   opencode: "OpenCode",
   antigravity: "Antigravity",
@@ -28,7 +33,7 @@ export function useProviderColors(): Record<UsageProviderKind, string> {
   return {
     claude: "#d97757",
     codex: scheme === "dark" ? "#e6e6e6" : "#3c3c43",
-    grok: "#1d9bf0",
+    grok: scheme === "dark" ? "#a1a1aa" : "#52525b",
     cursor: "#8b8b8b",
     opencode: "#5b9bbd",
     antigravity: "#8c7bd1",

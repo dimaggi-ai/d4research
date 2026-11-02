@@ -227,9 +227,9 @@ This hook checks pending context transfers targeting the thread/run and chooses 
 
 Provider adapters own native details. The orchestrator owns the relationship, source point, durable transfer record, and command receipts.
 
-For Codex, native `thread/fork` accepts an inclusive `lastTurnId` boundary. When the app source point is a completed provider turn with a native turn reference, the adapter passes that native id directly. Otherwise it forks the latest native state and trims the later terminal turns using the paginated history API. This fallback fails explicitly for legacy-history threads, which the current adapter cannot revert. The orchestrator passes a provider-neutral source point and source provider-turn history; the adapter owns Codex boundary policy.
+For Codex, native `thread/fork` accepts an inclusive `lastTurnId` boundary. When the app source point is a completed provider turn with a native turn reference, the Codex adapter passes that native id so the provider creates the fork at the requested point directly. If no native turn reference is available, the adapter falls back to forking the latest native state and rolling back the fork by the number of later terminal provider turns, using `thread/revert` on paginated history and reporting an explicit failure on legacy history, which Codex 0.156 cannot revert. The orchestrator still passes a provider-neutral source point and source provider-turn history; it does not encode Codex boundary or rollback policy.
 
-Direct checkpoint rollback also requires paginated Codex history. The adapter probes `historyMode`, loads an unloaded thread, pages `thread/turns/list` to locate the first removed turn, and calls `thread/revert` with `beforeTurnId`. It rejects legacy-history rollback instead of calling the removed `thread/rollback` endpoint.
+Direct checkpoint rollback also requires paginated Codex history. The V2 adapter checks `historyMode` before rolling back and fails explicitly on legacy history, which Codex 0.156 cannot revert. On paginated history, it pages `thread/turns/list` to find the first removed turn, then sends `thread/revert` with `beforeTurnId`.
 
 ## Data Ownership
 
@@ -240,6 +240,8 @@ type AppThreadLineage = {
   parentThreadId: ThreadId | null;
   relationshipToParent: "fork" | "subagent" | null;
   rootThreadId: ThreadId;
+  // A side chat: a fork shown only inside its parent. The fork planner sets it from `thread.fork`.
+  sideChat?: boolean;
 };
 ```
 

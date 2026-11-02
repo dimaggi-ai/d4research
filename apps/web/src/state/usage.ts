@@ -8,7 +8,11 @@ import {
   type UsageProviderKind,
   type UsageSummaryInput,
 } from "@d4research/contracts";
-import { needsCursorKeychainAccess, refreshUsage } from "@d4research/client-runtime/state/usage";
+import {
+  needsCursorKeychainAccess,
+  refreshUsage,
+  usageSummaryInput,
+} from "@d4research/client-runtime/state/usage";
 import { resolveUsageAccess } from "@d4research/client-runtime/state/usage-access";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useState } from "react";
@@ -55,7 +59,15 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         });
         continue;
       }
-      const result = get(serverEnvironment.usageSummary({ environmentId, input }));
+      const result = get(
+        serverEnvironment.usageSummary({
+          environmentId,
+          input: usageSummaryInput(
+            input,
+            get(serverEnvironment.usageModelFilterAtom(environmentId)),
+          ),
+        }),
+      );
       const summary = AsyncResult.getOrElse(result, () => null);
       statuses.push({
         environmentId,

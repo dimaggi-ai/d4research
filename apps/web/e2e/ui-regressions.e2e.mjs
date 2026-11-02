@@ -15,6 +15,7 @@ import { panelCloseReachability } from "./panel-close.spec.mjs";
 import { sidebarHeaderSafeArea } from "./sidebar-header.spec.mjs";
 import { pwaRecoverySpecs } from "./pwa-recovery.e2e.mjs";
 import { runProductionBrowserSuite } from "./production-browser-harness.mjs";
+import { settingsScopeLayout } from "./settings-scope-layout.spec.mjs";
 
 function authenticated(run) {
   return async (fixture) => {
@@ -44,4 +45,5 @@ await runProductionBrowserSuite([
   { name: "sidebar-footer-surface", run: authenticated(sidebarFooterSurface) },
   { name: "onboarding-d4-branding", run: authenticated(onboardingBranding) },
   { name: "notes-settings-and-artifacts", run: notesFlows },
+  { name: "settings-scope-responsive-layout", run: authenticated(settingsScopeLayout) },
 ]);

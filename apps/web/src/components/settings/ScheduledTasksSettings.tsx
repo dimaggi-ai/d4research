@@ -1367,13 +1367,13 @@ function ScheduledTaskEditorForm({
     <>
       <DialogHeader>
         <DialogTitle>{draft.editingId ? "Edit task" : "New task"}</DialogTitle>
+      </DialogHeader>
+
+      <DialogPanel>
         <DialogDescription>
           Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a
           webhook is called.
         </DialogDescription>
-      </DialogHeader>
-
-      <DialogPanel>
         {/* Fieldsets default to min-width: min-content, which lets one wide control widen the form past the dialog. */}
         <fieldset disabled={saving} className="min-w-0 space-y-5">
           {!connected ? (
@@ -1467,7 +1467,7 @@ function ScheduledTaskEditorForm({
             threadId={draft.threadId ? (draft.threadId as ThreadId) : null}
           />
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Project" htmlFor="scheduled-task-project">
               <Select
                 value={selectedProjectId}
@@ -1597,6 +1597,7 @@ function ScheduledTaskEditorForm({
               <Label>Schedule</Label>
               <ToggleGroup
                 aria-label="Schedule type"
+                className="max-w-full flex-wrap"
                 value={[draft.scheduleMode]}
                 onValueChange={(values) => {
                   const mode = values[0] as ScheduleMode | undefined;

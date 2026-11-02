@@ -1,3 +1,4 @@
+import { memoryInstructions } from "../../project/ProjectMemory.ts";
 import { setToolGuardRuntimeEnabled } from "../../provider/toolGuardRuntime.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
@@ -595,6 +596,8 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       d4AgentOnly: true,
     });
     const expected = [
+      "d4_agent_overview",
+      "d4_agent_overview_update",
       "d4_agent_resolve",
       "d4_agent_pipelines",
       "d4_agent_research",
@@ -602,7 +605,9 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       "d4_agent_list",
       "d4_agent_environment",
       "d4_agent_read_tail",
+      "d4_agent_read_host",
       "d4_agent_system_health",
+      "d4_agent_tasks",
       "d4_agent_action",
       "d4_agent_memory_search",
       "d4_agent_memory_read",
@@ -5350,7 +5355,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   it.effect("completes a turn after the resume dialog without a failed tool row", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const harness = yield* makeWakeHarness;
+        const harness = yield* makeWakeHarnessWithOptions({
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, idleCompaction: "onReturn" },
+        });
         yield* harness.runtime.startTurn(
           makeClaudeTestTurnInput({
             threadId: harness.threadId,
@@ -8027,7 +8034,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               type: "prompt.offer",
               message: {
                 type: "user",
-                message: { role: "user", content: prompt },
+                message: {
+                  role: "user",
+                  content: `${memoryInstructions([])}\n\n${prompt}`.trimStart(),
+                },
                 parent_tool_use_id: null,
               },
             },

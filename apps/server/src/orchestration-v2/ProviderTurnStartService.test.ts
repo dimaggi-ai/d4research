@@ -288,6 +288,7 @@ function makeLocalCommandHarness(input: {
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
   readonly logoutFailure?: string;
+  readonly startFailureTag?: string;
   readonly openFailure?: unknown;
   readonly ensureThreadFailure?: unknown;
   readonly historyReadFailureAfterFallback?: unknown;
@@ -793,7 +794,19 @@ function makeLocalCommandHarness(input: {
     updatedAt: now,
     lastError: null,
   };
-  const startTurn = vi.fn((_turn: ProviderAdapter.ProviderAdapterV2TurnInput) => Effect.void);
+  const startTurn = vi.fn((_turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+    input.startFailureTag === undefined
+      ? Effect.void
+      : Effect.fail(
+          new ProviderAdapter.ProviderAdapterTurnStartError({
+            driver: providerThread.driver,
+            threadId,
+            providerThreadId,
+            runId,
+            cause: { _tag: input.startFailureTag },
+          }),
+        ),
+  );
   const sideChatThread = {
     ...providerThread,
     nativeThreadRef: {
@@ -2079,3 +2092,40 @@ effectIt.effect("agent-started task with no approved scope fails fast with a rea
     ]);
   }),
 );
+
+for (const failureTag of [
+  "ClaudeBackgroundWorkBlocksQueryReplacementError",
+  "ClaudeAppendSystemPromptFileError",
+  "ClaudeAppendSystemPromptMissingValueError",
+  "ClaudeSettingsLaunchArgError",
+  "ClaudeMcpRegistrationTimeoutError",
+  "UncertainProviderAcceptance",
+]) {
+  effectIt.effect(`preserves handoff retry safety after ${failureTag}`, () =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        sideChat: { contextRun: "current" },
+        startFailureTag: failureTag,
+      });
+      const before = harness.projection();
+      harness.setProjection({
+        ...before,
+        thread: { ...before.thread, lineage: { ...before.thread.lineage, sideChat: false } },
+      });
+      yield* Effect.exit(harness.start);
+      expect(harness.startTurn).toHaveBeenCalledTimes(1);
+      const deliveries = harness.events.flatMap((event) =>
+        event.type === "context-handoff.updated" ? [event.payload.delivery?.status] : [],
+      );
+      expect(deliveries[0]).toBe("pending");
+      const handoff = harness.projection().contextHandoffs[0];
+      if (failureTag === "UncertainProviderAcceptance") {
+        expect(handoff?.delivery?.status).toBe("pending");
+      } else {
+        expect(deliveries).toEqual(["pending", undefined]);
+        expect(handoff?.delivery).toBeUndefined();
+      }
+    }),
+  );
+}

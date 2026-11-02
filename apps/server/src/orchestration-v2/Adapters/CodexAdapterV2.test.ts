@@ -1,3 +1,4 @@
+import { memoryInstructions } from "../../project/ProjectMemory.ts";
 import * as NodeOS from "node:os";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Path from "effect/Path";
@@ -3071,9 +3072,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           const fs = yield* FileSystem.FileSystem;
           const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-capacity-retry-" });
           const localTranscript = yield* decodeReplayTranscriptJson(
-            (yield* encodeReplayTranscriptJson(
-              makeCodexReplayTranscript({ scenario, entries }),
-            )).replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd)),
+            (yield* encodeReplayTranscriptJson(makeCodexReplayTranscript({ scenario, entries })))
+              .replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd))
+              .replaceAll(
+                yield* encodeStringJson(prompt),
+                yield* encodeStringJson(`${memoryInstructions([])}\n\n${prompt}`),
+              ),
           );
           const driver = yield* CodexReplay.makeReplayDriver(localTranscript);
           yield* Effect.gen(function* () {
@@ -4232,10 +4236,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         const fs = yield* FileSystem.FileSystem;
         const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-bg-stop-workspace-" });
         const localTranscript = yield* decodeReplayTranscriptJson(
-          (yield* encodeReplayTranscriptJson(transcript)).replaceAll(
-            yield* encodeStringJson("/workspace"),
-            yield* encodeStringJson(cwd),
-          ),
+          (yield* encodeReplayTranscriptJson(transcript))
+            .replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd))
+            .replaceAll(
+              yield* encodeStringJson(BG_PROMPT),
+              yield* encodeStringJson(`${memoryInstructions([])}\n\n${BG_PROMPT}`),
+            ),
         );
         const replayDriver = yield* CodexReplay.makeReplayDriver(localTranscript);
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -4366,10 +4372,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           ],
         });
         const localTranscript = yield* decodeReplayTranscriptJson(
-          (yield* encodeReplayTranscriptJson(staleTranscript)).replaceAll(
-            yield* encodeStringJson("/workspace"),
-            yield* encodeStringJson(cwd),
-          ),
+          (yield* encodeReplayTranscriptJson(staleTranscript))
+            .replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd))
+            .replaceAll(
+              yield* encodeStringJson(BG_PROMPT),
+              yield* encodeStringJson(`${memoryInstructions([])}\n\n${BG_PROMPT}`),
+            ),
         );
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         for (const args of [
@@ -8674,6 +8682,8 @@ it("d4 Agent exposes exactly the bounded tools and keeps native capabilities dis
     },
   });
   const expected = [
+    "d4_agent_overview",
+    "d4_agent_overview_update",
     "d4_agent_resolve",
     "d4_agent_pipelines",
     "d4_agent_research",
@@ -8681,7 +8691,9 @@ it("d4 Agent exposes exactly the bounded tools and keeps native capabilities dis
     "d4_agent_list",
     "d4_agent_environment",
     "d4_agent_read_tail",
+    "d4_agent_read_host",
     "d4_agent_system_health",
+    "d4_agent_tasks",
     "d4_agent_action",
     "d4_agent_memory_search",
     "d4_agent_memory_read",
@@ -8690,20 +8702,17 @@ it("d4 Agent exposes exactly the bounded tools and keeps native capabilities dis
     "d4_agent_cto_brief",
     "d4_agent_cto_ask",
   ];
-  const servers = params.config.mcp_servers as Record<
-    string,
-    {
-      enabled?: boolean;
-      enabled_tools?: string[];
-      tools?: Record<string, { approval_mode: string }>;
-    }
-  >;
-  assert.deepEqual(servers["t3-code"]?.enabled_tools, expected);
+  const server = params.config["mcp_servers.t3-code"] as {
+    enabled?: boolean;
+    enabled_tools?: string[];
+    tools?: Record<string, { approval_mode: string }>;
+  };
+  assert.deepEqual(server.enabled_tools, expected);
   assert.deepEqual(
-    servers["t3-code"]?.tools,
+    server.tools,
     Object.fromEntries(expected.map((name) => [name, { approval_mode: "approve" }])),
   );
-  assert.deepEqual(servers["unrelated-memory"], { enabled: false });
+  assert.equal(params.config["mcp_servers.unrelated-memory.enabled"], false);
   for (const feature of [
     "shell_tool",
     "multi_agent",

@@ -103,6 +103,9 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
         [86, "PeerLinkFence"],
         [87, "WaitingLinkRequestIndex"],
         [88, "ActiveTurnItemIndexes"],
+        [89, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [90, "SubagentDeliveryState"],
+        [91, "ProjectionProjectsPinArchive"],
       ]);
       assert.deepStrictEqual(yield* sql`PRAGMA table_info(projection_turns)`, []);
     }),
@@ -174,6 +177,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [86, "PeerLinkFence"],
           [87, "WaitingLinkRequestIndex"],
           [88, "ActiveTurnItemIndexes"],
+          [89, "ExcludeAttachmentPlaceholdersFromSearch"],
+          [90, "SubagentDeliveryState"],
+          [91, "ProjectionProjectsPinArchive"],
         ],
       );
 
@@ -235,6 +241,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [86, "PeerLinkFence"],
           [87, "WaitingLinkRequestIndex"],
           [88, "ActiveTurnItemIndexes"],
+          [89, "ExcludeAttachmentPlaceholdersFromSearch"],
+          [90, "SubagentDeliveryState"],
+          [91, "ProjectionProjectsPinArchive"],
         ],
       );
     }),
@@ -275,7 +284,8 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
         executed.map(([id]) => id),
         [
           47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
-          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+          90, 91,
         ],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;

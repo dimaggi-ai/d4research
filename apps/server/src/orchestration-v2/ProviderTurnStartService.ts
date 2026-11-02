@@ -127,9 +127,17 @@ const isProviderAdapterOpenSessionError = Schema.is(
 );
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 
-/** Claude refuses to replace a process running background work before it reads the prompt. */
+/** These failures happen before Claude reads the prompt, so retry can reuse its session. */
+const PROMPT_REFUSAL_TAGS = [
+  "ClaudeBackgroundWorkBlocksQueryReplacementError",
+  "ClaudeAppendSystemPromptFileError",
+  "ClaudeAppendSystemPromptMissingValueError",
+  "ClaudeSettingsLaunchArgError",
+  "ClaudeMcpRegistrationTimeoutError",
+] as const;
+
 const refusedBeforePrompt = (error: unknown): boolean =>
-  Predicate.isTagged(error, "ClaudeBackgroundWorkBlocksQueryReplacementError") ||
+  PROMPT_REFUSAL_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
   (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
 
 export interface ProviderTurnStartServiceV2Shape {

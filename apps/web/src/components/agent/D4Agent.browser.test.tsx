@@ -125,6 +125,7 @@ vi.mock("../../assets/assetUrls", () => ({
 vi.mock("../../hooks/useSettings", () => ({
   getClientSettings: vi.fn(),
   ensureClientSettingsHydrated: vi.fn(),
+  isClientSettingsHydrated: () => true,
   useEnvironmentIdentificationMode: () => "none",
   useMergedSettings: (settings: object) => ({ ...DEFAULT_CLIENT_SETTINGS, ...settings }),
   useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
@@ -220,6 +221,9 @@ vi.mock("../../state/query", () => ({
   }),
 }));
 vi.mock("../../state/entities", () => ({
+  readProject: () => null,
+  readProjects: () => [],
+  readThreadShell: () => null,
   useEnvironmentSupportsServerBrowser: vi.fn(),
   readEnvironmentSupportsServerBrowser: vi.fn(),
   useEnvironmentThreadRefs: () => [],
@@ -325,6 +329,7 @@ vi.mock("../../state/shell", () => ({
 }));
 vi.mock("../../state/environments", () => ({
   usePrimaryEnvironmentId: vi.fn(),
+  readPrimaryEnvironmentId: () => environmentId,
   useEnvironmentProviders: () => new Map([[environmentId, mocks.providers]]),
   useEnvironment: () => ({ connection: { phase: mocks.connectionPhase } }),
   useEnvironments: () => ({
@@ -644,6 +649,13 @@ it("removes Nia from the sidebar when agent chat is disabled", async () => {
   expect(container.textContent).toBe("");
   expect(mocks.navigate).not.toHaveBeenCalled();
   expect(mocks.resolve).not.toHaveBeenCalled();
+});
+
+it("does not show Nia before the environment configuration is available", async () => {
+  mocks.configLoaded = false;
+  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label="MacBook" />));
+  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).toBe("");
 });
 
 it("waits for a connection before opening Nia with cached configuration", async () => {

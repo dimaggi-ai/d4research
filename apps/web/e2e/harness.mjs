@@ -17,6 +17,34 @@ const repoRoot = NodePath.resolve(
 
 const BOOT_TIMEOUT_MS = 120_000;
 
+// Fixtures that decorate wire projections need records rather than interned IDs and omitted bodies.
+export async function useUncompressedSnapshots(context) {
+  await context.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.searchParams.has("compactIds")) {
+        for (const key of ["compactIds", "compactTurnItems", "dedupeBodies"])
+          url.searchParams.delete(key);
+        input = input instanceof Request ? new Request(url, input) : url.toString();
+      }
+      return nativeFetch(input, init);
+    };
+    const NativeWebSocket = window.WebSocket;
+    window.WebSocket = class extends NativeWebSocket {
+      send(data) {
+        const packet = JSON.parse(String(data));
+        if (packet.payload?.acceptBoundedSnapshot) {
+          packet.payload.acceptCompactIds = false;
+          packet.payload.acceptCompactTurnItems = false;
+          packet.payload.acceptDedupedBodies = false;
+        }
+        super.send(JSON.stringify(packet));
+      }
+    };
+  });
+}
+
 function findFreePort() {
   return new Promise((resolve, reject) => {
     const server = NodeNet.createServer();
@@ -208,7 +236,7 @@ async function completeOnboarding(page) {
  * renders inside a thread route. Callers own a stack whose only project is
  * `workspacePath`, so any mounted composer belongs to it.
  */
-export async function openProject(page, workspacePath) {
+export async function openProject(page, workspacePath, { create = false } = {}) {
   const composer = page.locator('[data-chat-composer-form="true"]');
   const expandComposer = page.getByRole("button", { name: "Expand composer", exact: true });
   const threadReady = composer.or(expandComposer).filter({ visible: true }).first();
@@ -237,7 +265,7 @@ export async function openProject(page, workspacePath) {
       .waitFor({ state: "visible", timeout: 5_000 })
       .then(() => true)
       .catch(() => false));
-  if (empty) {
+  if (empty || create) {
     // The sidebar button only renders in this empty state and can sit under a
     // toast; the palette is the entry point that is always reachable.
     await page.keyboard.press("ControlOrMeta+k");

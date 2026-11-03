@@ -5,7 +5,7 @@ import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { D4AgentEntry, D4AgentPanel } from "./D4Agent";
+import { D4AgentEntries, D4AgentEntry, D4AgentPanel } from "./D4Agent";
 import { D4AgentSessions } from "./D4AgentSessions";
 import * as Cause from "effect/Cause";
 import {
@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => ({
   allowed: true,
   enabled: true,
   configLoaded: true,
+  environmentEnabled: true,
   connectionPhase: "connected",
   monitorEnabled: true,
   threads: [] as Array<{
@@ -93,6 +94,7 @@ vi.mock("@d4research/client-runtime/state/server", async (importOriginal) => {
   };
 });
 vi.mock("../../state/threads", () => ({
+  useEnvironmentThread: () => null,
   environmentThreadShells: { threadShellAtom: () => "shell" },
 }));
 vi.mock("../../lib/attachmentUploadQueue", () => ({
@@ -134,7 +136,10 @@ vi.mock("../../hooks/useSettings", () => ({
   useEnvironmentModelPreferences: () => ({ favorites: [], hiddenModels: [] }),
   useToggleEnvironmentModelFavorite: () => vi.fn(),
 }));
-vi.mock("../../rpc/atomRegistry", () => ({ appAtomRegistry: {} }));
+vi.mock("../../rpc/atomRegistry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../rpc/atomRegistry")>()),
+  appAtomRegistry: { get: () => [] },
+}));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
@@ -167,6 +172,7 @@ vi.mock("../../state/server", () => ({
   EMPTY_SERVER_PROVIDERS: [],
   primaryServerKeybindingsAtom: "keybindings",
   primaryServerConfigAtom: "config",
+  primaryServerEnvironmentThemesAtom: "themes",
   serverEnvironment: {
     updateSettings: { permissionAtom: () => "permission", kind: "settings" },
     configValueAtom: () => "config",
@@ -327,16 +333,24 @@ vi.mock("../../state/shell", () => ({
   environmentSnapshotAtom: vi.fn(),
   useEnvironmentShellStatus: () => "live",
 }));
-vi.mock("../../state/environments", () => ({
+vi.mock("../../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/environments")>()),
   usePrimaryEnvironmentId: vi.fn(),
   readPrimaryEnvironmentId: () => environmentId,
   useEnvironmentProviders: () => new Map([[environmentId, mocks.providers]]),
   useEnvironment: () => ({ connection: { phase: mocks.connectionPhase } }),
   useEnvironments: () => ({
-    environments: [{ environmentId: "test-environment", label: "Local" }],
+    environments: [
+      {
+        environmentId: "test-environment",
+        label: "Local",
+        entry: { enabled: mocks.environmentEnabled },
+      },
+    ],
   }),
 }));
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   Link: ({
     children,
     params,
@@ -410,6 +424,7 @@ beforeEach(() => {
   mocks.allowed = true;
   mocks.enabled = true;
   mocks.configLoaded = true;
+  mocks.environmentEnabled = true;
   mocks.monitorEnabled = true;
   mocks.threads = [];
   mocks.navigate.mockClear();
@@ -658,6 +673,17 @@ it("does not show Nia before the environment configuration is available", async 
   expect(container.textContent).toBe("");
 });
 
+it("removes Nia when its saved connection is disabled and restores it on re-enable", async () => {
+  await act(() => root.render(<D4AgentEntries />));
+  expect(container.textContent).toContain("Nia");
+  mocks.environmentEnabled = false;
+  await act(() => root.render(<D4AgentEntries />));
+  expect(container.textContent).not.toContain("Nia");
+  mocks.environmentEnabled = true;
+  await act(() => root.render(<D4AgentEntries />));
+  expect(container.textContent).toContain("Nia");
+});
+
 it("waits for a connection before opening Nia with cached configuration", async () => {
   mocks.state = { ...mocks.state!, threadId: null, projectId: null };
   mocks.connectionPhase = "connecting";
@@ -680,8 +706,7 @@ it("waits for configuration before allowing the first pinned-entry click", async
   mocks.configLoaded = false;
   await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
   const pending = container.querySelector("button")!;
-  expect(pending.disabled).toBe(true);
-  await act(async () => pending.click());
+  expect(pending).toBeNull();
   expect(mocks.navigate).not.toHaveBeenCalled();
   expect(mocks.resolve).not.toHaveBeenCalled();
   mocks.configLoaded = true;

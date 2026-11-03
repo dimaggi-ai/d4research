@@ -39,6 +39,9 @@ export async function sidebarFooterSurface({ page, webUrl, screenshotDir }) {
             buttons: [...element.querySelectorAll('[data-sidebar="menu-button"]')].map(
               (button) => ({
                 width: button.getBoundingClientRect().width,
+                top: button.getBoundingClientRect().top,
+                left: button.getBoundingClientRect().left,
+                right: button.getBoundingClientRect().right,
                 color: getComputedStyle(button).color,
               }),
             ),
@@ -67,7 +70,14 @@ export async function sidebarFooterSurface({ page, webUrl, screenshotDir }) {
         NodeAssert.equal(metrics.border, "1px", "Footer has a subtle top separator");
         NodeAssert.ok(metrics.buttons.length >= 3);
         for (const button of metrics.buttons) {
-          NodeAssert.equal(button.width, metrics.width - 16, "Footer actions fill the padded row");
+          NodeAssert.ok(
+            Math.abs(button.width - 32) <= 0.01,
+            "Footer utilities use consistent icon buttons",
+          );
+          NodeAssert.ok(
+            Math.abs(button.top - metrics.buttons[0].top) <= 1,
+            "Footer utilities share one row",
+          );
           NodeAssert.equal(
             button.color,
             metrics.expectedText,

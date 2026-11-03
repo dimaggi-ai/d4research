@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { openProject } from "./harness.mjs";
+import { DEFAULT_D4_AGENT_SETTINGS } from "@d4research/contracts";
 
 async function savedChange(app, label, change, matches, section = "agentMonitor") {
   const directory = NodePath.join(app.baseDir, "userdata");
@@ -15,7 +16,10 @@ async function savedChange(app, label, change, matches, section = "agentMonitor"
         const settings = JSON.parse(
           await NodeFSP.readFile(NodePath.join(directory, "settings.json"), "utf8"),
         );
-        lastValue = settings[section] ?? {};
+        lastValue =
+          section === "d4Agent"
+            ? { ...DEFAULT_D4_AGENT_SETTINGS, ...settings[section] }
+            : (settings[section] ?? {});
         if (matches(lastValue)) resolve(lastValue);
       } catch {}
     };
@@ -94,7 +98,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await NodeFSP.mkdir(workspace, { recursive: true });
   await NodeFSP.writeFile(NodePath.join(workspace, "README.md"), "# fixture\n");
   await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
-  await openProject(page, workspace);
+  await openProject(page, workspace, { create: true });
   await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
   const sidebar = page.locator('[data-slot="sidebar-inner"]');
   const agent = sidebar.getByRole("button", { name: "Nia", exact: true });

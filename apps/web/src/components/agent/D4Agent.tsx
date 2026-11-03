@@ -59,13 +59,15 @@ export function D4AgentEntries({ children }: { children?: ReactNode }) {
   return (
     <>
       <SidebarMenu>
-        {environments.map((environment) => (
-          <D4AgentEntry
-            key={environment.environmentId}
-            environmentId={environment.environmentId}
-            label={environments.length > 1 ? environment.label : null}
-          />
-        ))}
+        {environments
+          .filter((environment) => environment.entry.enabled)
+          .map((environment) => (
+            <D4AgentEntry
+              key={environment.environmentId}
+              environmentId={environment.environmentId}
+              label={environments.length > 1 ? environment.label : null}
+            />
+          ))}
       </SidebarMenu>
       {children}
     </>

@@ -1,4 +1,5 @@
 import { agentMonitorSettings } from "./agent-monitor.spec.mjs";
+import { systemMonitor } from "./system-monitor.spec.mjs";
 import { notesFlows } from "./notes.spec.mjs";
 import { handoffSettings } from "./handoff-settings.spec.mjs";
 import { createPairingUrl } from "./harness.mjs";
@@ -29,6 +30,7 @@ function authenticated(run) {
 await runProductionBrowserSuite([
   { name: "consistent-branding-and-loading", run: branding },
   { name: "agent-monitor-settings", run: authenticated(agentMonitorSettings) },
+  { name: "system-monitor-macos-and-failure", run: authenticated(systemMonitor) },
   { name: "handoff-modes-and-local-judges", run: authenticated(handoffSettings) },
   ...pwaRecoverySpecs,
   { name: "missing-thread-redirects-to-draft", run: missingThreadRedirect },

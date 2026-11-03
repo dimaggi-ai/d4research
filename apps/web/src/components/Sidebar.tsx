@@ -3542,14 +3542,23 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               )}
             </div>
           ) : null}
-          {!isSearchingThreads && scopedProjectGroup ? (
+          {!isSearchingThreads ? (
             <ResumeSessionsSection
-              projects={scopedProjectGroup.memberProjects.map((project) => ({
-                environmentId: project.environmentId,
-                cwd: project.workspaceRoot,
-                projectRef: scopeProjectRef(project.environmentId, project.id),
-                label: project.title,
-              }))}
+              projects={projectGroups
+                .flatMap((group) => group.memberProjects)
+                .filter(
+                  (project) =>
+                    chosenScopeProjectKeys === null ||
+                    chosenScopeProjectKeys.has(`${project.environmentId}:${project.id}`),
+                )
+                .map((project) => ({
+                  environmentId: project.environmentId,
+                  cwd: project.workspaceRoot,
+                  projectRef: scopeProjectRef(project.environmentId, project.id),
+                  label: project.environmentLabel
+                    ? `${project.title} · ${project.environmentLabel}`
+                    : project.title,
+                }))}
             />
           ) : null}
         </SidebarGroup>

@@ -40,6 +40,29 @@ const decodeJsonRecord = Schema.decodeUnknownEffect(
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 
+it.effect("persists a changed Nia model on the default provider and can disable it afterward", () =>
+  Effect.gen(function* () {
+    const settings = yield* ServerSettingsModule.ServerSettingsService;
+    const config = yield* ServerConfig.ServerConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const modelSelection = {
+      ...DEFAULT_SERVER_SETTINGS.d4Agent.modelSelection!,
+      model: "different-model",
+    };
+    yield* settings.updateSettings({
+      d4Agent: { ...DEFAULT_SERVER_SETTINGS.d4Agent, enabled: true, modelSelection },
+    });
+    const persisted = yield* decodeServerSettingsJson(
+      yield* fs.readFileString(config.settingsPath),
+    );
+    assert.deepEqual(persisted.d4Agent.modelSelection, modelSelection);
+    yield* settings.updateSettings({ d4Agent: { ...persisted.d4Agent, enabled: false } });
+    const disabled = yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath));
+    assert.equal(disabled.d4Agent.enabled, false);
+    assert.deepEqual(disabled.d4Agent.modelSelection, modelSelection);
+  }).pipe(Effect.provide(layerServerSettings().pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 const layerServerSettings = () =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),

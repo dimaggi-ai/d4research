@@ -391,7 +391,7 @@ function SidebarControl() {
     <div
       ref={appShellCommandsRef}
       className={cn(
-        "pointer-events-none fixed left-[calc(var(--workspace-controls-left)+var(--project-rail-width,0px))] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
+        "pointer-events-none fixed left-[calc(var(--workspace-controls-left)+var(--project-rail-width,0px))] top-[var(--workspace-fixed-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
         isMobile && mobileSheetMounted && "hidden",
       )}
       data-sidebar-control=""

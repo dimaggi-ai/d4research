@@ -101,7 +101,7 @@ export async function notesFlows({ page, context, app, screenshotDir }) {
     };
     return [await create("Notes populated fixture"), await create("Notes empty fixture")];
   }, workspace);
-  await page.getByRole("button", { name: /^Notes empty fixture,/ }).click();
+  await page.locator('[data-testid="sidebar-row-card"]').filter({ hasText: "Notes empty fixture" }).click();
   await page.getByRole("button", { name: "Open thread notes", exact: true }).waitFor();
   const environmentId = new URL(page.url()).pathname.split("/")[1];
   const route = (id) => `${app.webUrl}/${environmentId}/${id}`;

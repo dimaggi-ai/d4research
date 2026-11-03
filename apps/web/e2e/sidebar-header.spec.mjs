@@ -18,6 +18,15 @@ export async function sidebarHeaderSafeArea({ page, webUrl, screenshotDir }) {
       });
       for (const route of ["/", "/settings/general"]) {
         await page.goto(`${webUrl}${route}`, { waitUntil: "domcontentloaded" });
+        if (route.startsWith("/settings/")) {
+          const close = page
+            .getByRole("dialog", { name: "Settings", exact: true })
+            .getByRole("button", { name: "Close", exact: true });
+          await close.waitFor();
+          const bounds = await close.boundingBox();
+          NodeAssert.ok(bounds && bounds.y >= top, "Settings close clears the status bar");
+          await close.click();
+        }
         const toggle = page.getByRole("button", { name: "Toggle main sidebar", exact: true });
         await toggle.waitFor();
         const mobile = width < 768;

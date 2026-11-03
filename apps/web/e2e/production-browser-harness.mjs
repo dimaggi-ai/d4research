@@ -30,12 +30,22 @@ export async function runProductionBrowserSuite(specs) {
         });
       });
   const bin = process.env.T3_PWA_TEST_SERVER_BIN ?? NodePath.join(root, "apps/server/dist/bin.mjs");
-  await NodeFSP.access(bin);
+  const executable = process.env.T3_UI_TEST_SERVER_EXECUTABLE;
+  await NodeFSP.access(executable ?? bin);
   const app = { baseDir, serverPort: port, webUrl: `http://127.0.0.1:${port}` };
   const serverLog = NodeFS.createWriteStream(NodePath.join(artifactDir, "server.log"));
   const server = NodeChildProcess.spawn(
-    process.execPath,
-    [bin, "--base-dir", baseDir, "--port", String(port), "--host", "127.0.0.1", "--no-browser"],
+    executable ?? process.execPath,
+    [
+      ...(executable ? [] : [bin]),
+      "--base-dir",
+      baseDir,
+      "--port",
+      String(port),
+      "--host",
+      "127.0.0.1",
+      "--no-browser",
+    ],
     {
       cwd: baseDir,
       env: { ...process.env, T3CODE_HOME: baseDir },
@@ -100,6 +110,7 @@ export async function runProductionBrowserSuite(specs) {
           "t3code:client-settings:v1",
           JSON.stringify({
             onboardingCompletedAt: "2026-09-09T00:00:00.000Z",
+            followUpBehavior: "queue",
           }),
         );
       });

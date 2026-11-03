@@ -34,7 +34,7 @@ async function savedChange(app, change, matches) {
 }
 
 export async function handoffSettings({ page, app, screenshotDir }) {
-  await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${app.webUrl}/settings/threads`, { waitUntil: "domcontentloaded" });
   const mode = page.getByRole("combobox", { name: "Automatic handoff", exact: true });
   await mode.waitFor();
   NodeAssert.match(await mode.innerText(), /Bounded history/);

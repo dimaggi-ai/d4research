@@ -2,9 +2,10 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
-import { createPairingUrl, openProject } from "./harness.mjs";
+import { createPairingUrl, openProject, useUncompressedSnapshots } from "./harness.mjs";
 
 export async function mobileQueueWhileRunning({ page, context, app, screenshotDir }) {
+  await useUncompressedSnapshots(context);
   await context.addInitScript(() => {
     let runningThreadId = sessionStorage.getItem("queue-fixture-thread");
     let deferredSeedDispatches = 0;

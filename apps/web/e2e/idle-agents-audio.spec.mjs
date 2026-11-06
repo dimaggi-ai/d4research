@@ -2,9 +2,10 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
-import { createPairingUrl } from "./harness.mjs";
+import { createPairingUrl, useUncompressedSnapshots } from "./harness.mjs";
 
 export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) {
+  await useUncompressedSnapshots(context);
   // The preceding queue case creates this persisted thread without invoking a provider.
   const db = new NodeSqlite.DatabaseSync(NodePath.join(app.baseDir, "userdata/statev2.sqlite"), {
     readOnly: true,

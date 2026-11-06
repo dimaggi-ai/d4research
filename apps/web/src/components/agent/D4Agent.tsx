@@ -59,13 +59,15 @@ export function D4AgentEntries({ children }: { children?: ReactNode }) {
   return (
     <>
       <SidebarMenu>
-        {environments.map((environment) => (
-          <D4AgentEntry
-            key={environment.environmentId}
-            environmentId={environment.environmentId}
-            label={environments.length > 1 ? environment.label : null}
-          />
-        ))}
+        {environments
+          .filter((environment) => environment.entry.enabled)
+          .map((environment) => (
+            <D4AgentEntry
+              key={environment.environmentId}
+              environmentId={environment.environmentId}
+              label={environments.length > 1 ? environment.label : null}
+            />
+          ))}
       </SidebarMenu>
       {children}
     </>
@@ -89,7 +91,9 @@ export function D4AgentEntry({
   const agentShell = useThreadShell(
     state.data?.threadId ? { environmentId, threadId: state.data.threadId } : null,
   );
-  if (config && !config.settings.d4Agent.enabled) return null;
+  // Environment settings are authoritative. Do not advertise Nia while that environment's
+  // configuration is unavailable, because a disconnected machine may have Nia disabled.
+  if (config?.settings.d4Agent.enabled !== true) return null;
   const presence = config?.settings.d4Agent.enabled
     ? niaPresence(
         agentActivityLabel({

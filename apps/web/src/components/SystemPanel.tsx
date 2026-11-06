@@ -9,11 +9,14 @@ import {
 } from "lucide-react";
 import { resolveEnvironmentMachineKind } from "@d4research/contracts";
 import { useEffect, useRef, useState } from "react";
+import { useStableCallback } from "../hooks/useStableCallback";
 
 import { Button } from "./ui/button";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useEnvironments } from "../state/environments";
 import { cn } from "~/lib/utils";
+import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary/target";
+import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 
 export const SYSTEM_MONITOR_POLL_INTERVAL_MS = 2_000;
 const SYSTEM_MONITOR_URL = "/api/system-monitor";
@@ -35,8 +38,8 @@ export function startSystemMonitorPolling(
 }
 
 interface SystemSnapshot {
-  cpu: { overall: number; load: number[]; temp: number | null };
-  mem: { total: number; used: number; pct: number; available: number; swap_pct: number };
+  cpu: { overall: number | null; load: number[]; temp: number | null };
+  mem: { total: number; used: number; pct: number; available: number; swap_pct: number | null };
   gpu: {
     name: string;
     util: number;
@@ -49,7 +52,7 @@ interface SystemSnapshot {
   disks: { mount: string; total_gb: number; used_gb: number; pct: number }[];
   services: { name: string; active: boolean; state: string }[];
   procs: { pid: number; comm: string; cpu: number; mem: number; rss_mb: number; user: string }[];
-  procsum: { total: number; running: number; threads: number };
+  procsum: { total: number; running: number; threads: number } | null;
   uptime: number;
 }
 
@@ -131,41 +134,56 @@ export function SystemPanel() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [toolGuard, setToolGuard] = useState<ToolGuardSnapshot | null>(null);
   const toolGuardReadAtRef = useRef(0);
+  const refreshingRef = useRef(false);
 
-  const refresh = async () => {
-    const now = Date.now();
-    const toolGuardRequest =
-      now - toolGuardReadAtRef.current >= TOOL_GUARD_POLL_INTERVAL_MS
-        ? (() => {
-            toolGuardReadAtRef.current = now;
-            return fetch(TOOL_GUARD_STATUS_URL, {
-              signal: AbortSignal.timeout(3_000),
-              credentials: "include",
-              cache: "no-store",
-            })
-              .then((response) => {
-                if (!response.ok) {
-                  throw new Error(`Tool Guard status returned ${response.status}`);
-                }
-                return response.json() as Promise<ToolGuardSnapshot>;
-              })
-              .then(setToolGuard)
-              .catch(() => setToolGuard(null));
-          })()
-        : Promise.resolve();
+  const refresh = useStableCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
     try {
-      const response = await fetch(SYSTEM_MONITOR_URL, {
-        signal: AbortSignal.timeout(3_000),
-      });
-      requireSuccessfulResponse(response, `Mission Control returned ${response.status}`);
-      setSnapshot((await response.json()) as SystemSnapshot);
-      setError(null);
-      setUpdatedAt(new Date());
+      const bearerToken = await readDesktopPrimaryBearerToken();
+      const requestOptions: RequestInit = {
+        credentials: bearerToken ? "omit" : "include",
+        headers: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {},
+        cache: "no-store",
+      };
+      const now = Date.now();
+      const toolGuardRequest =
+        now - toolGuardReadAtRef.current >= TOOL_GUARD_POLL_INTERVAL_MS
+          ? (() => {
+              toolGuardReadAtRef.current = now;
+              return fetch(resolvePrimaryEnvironmentHttpUrl(TOOL_GUARD_STATUS_URL), {
+                ...requestOptions,
+                signal: AbortSignal.timeout(3_000),
+              })
+                .then((response) => {
+                  if (!response.ok) {
+                    throw new Error(`Tool Guard status returned ${response.status}`);
+                  }
+                  return response.json() as Promise<ToolGuardSnapshot>;
+                })
+                .then(setToolGuard)
+                .catch(() => setToolGuard(null));
+            })()
+          : Promise.resolve();
+      try {
+        const response = await fetch(resolvePrimaryEnvironmentHttpUrl(SYSTEM_MONITOR_URL), {
+          ...requestOptions,
+          signal: AbortSignal.timeout(6_000),
+        });
+        requireSuccessfulResponse(response, `Mission Control returned ${response.status}`);
+        setSnapshot((await response.json()) as SystemSnapshot);
+        setError(null);
+        setUpdatedAt(new Date());
+      } catch {
+        setError("System status is unavailable. Check the environment connection and try again.");
+      }
+      await toolGuardRequest;
     } catch {
-      setError("Mission Control is unavailable. Check mission-control.service.");
+      setError("System status is unavailable. Check the environment connection and try again.");
+    } finally {
+      refreshingRef.current = false;
     }
-    await toolGuardRequest;
-  };
+  });
 
   // Keep the system snapshot in step with the local monitor while this panel is mounted.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polling synchronizes React state with the system monitor endpoint
@@ -173,9 +191,45 @@ export function SystemPanel() {
     return startSystemMonitorPolling(() => void refresh());
   }, [refresh]);
 
+  const environmentSummary = (
+    <section className="mb-5">
+      <h3 className="mb-2 text-xs font-medium text-muted-foreground">Environments</h3>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {environments.map((environment) => {
+          const connected = environment.connection.phase === "connected";
+          return (
+            <div
+              key={environment.environmentId}
+              className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 p-3"
+            >
+              <EnvironmentMachineIcon
+                className="size-4 shrink-0 text-muted-foreground"
+                kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium">{environment.label}</div>
+                <div className="truncate text-3xs text-muted-foreground">
+                  {environment.serverConfig?.environment.serverVersion ?? "Version unavailable"}
+                </div>
+              </div>
+              <span
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  connected ? "bg-emerald-500" : "bg-amber-500",
+                )}
+                aria-label={connected ? "Connected" : environment.connection.phase}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+
   if (!snapshot) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {environmentSummary}
         <ToolGuardMonitor snapshot={toolGuard} />
         <div className="flex flex-col items-center justify-center gap-3 text-center">
           <Activity className="size-6 text-muted-foreground" />
@@ -215,38 +269,7 @@ export function SystemPanel() {
         <p className="mb-4 rounded-md bg-amber-500/10 p-2 text-xs text-amber-600">{error}</p>
       ) : null}
 
-      <section className="mb-5">
-        <h3 className="mb-2 text-xs font-medium text-muted-foreground">Environments</h3>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {environments.map((environment) => {
-            const connected = environment.connection.phase === "connected";
-            return (
-              <div
-                key={environment.environmentId}
-                className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 p-3"
-              >
-                <EnvironmentMachineIcon
-                  className="size-4 shrink-0 text-muted-foreground"
-                  kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium">{environment.label}</div>
-                  <div className="truncate text-3xs text-muted-foreground">
-                    {environment.serverConfig?.environment.serverVersion ?? "Version unavailable"}
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "size-2 shrink-0 rounded-full",
-                    connected ? "bg-emerald-500" : "bg-amber-500",
-                  )}
-                  aria-label={connected ? "Connected" : environment.connection.phase}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {environmentSummary}
 
       <ToolGuardMonitor snapshot={toolGuard} />
 
@@ -256,8 +279,12 @@ export function SystemPanel() {
             <Cpu className="size-3.5" /> CPU
           </div>
           <Meter
-            label={`${snapshot.cpu.overall}% utilization`}
-            value={snapshot.cpu.overall}
+            label={
+              snapshot.cpu.overall === null
+                ? "CPU utilization unavailable"
+                : `${snapshot.cpu.overall}% utilization`
+            }
+            value={snapshot.cpu.overall ?? 0}
             detail={`load ${snapshot.cpu.load.join(" / ")}`}
           />
           <p className="mt-2 text-xs text-muted-foreground">
@@ -274,7 +301,8 @@ export function SystemPanel() {
             detail={`${gib(snapshot.mem.used)} / ${gib(snapshot.mem.total)}`}
           />
           <p className="mt-2 text-xs text-muted-foreground">
-            {gib(snapshot.mem.available)} available · swap {snapshot.mem.swap_pct}%
+            {gib(snapshot.mem.available)} available ·{" "}
+            {snapshot.mem.swap_pct === null ? "swap unavailable" : `swap ${snapshot.mem.swap_pct}%`}
           </p>
         </div>
         {snapshot.gpu ? (
@@ -340,7 +368,9 @@ export function SystemPanel() {
 
       <section className="mt-5">
         <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-          Top processes · {snapshot.procsum.running} running / {snapshot.procsum.total}
+          {snapshot.procsum
+            ? `Top processes · ${snapshot.procsum.running} running / ${snapshot.procsum.total}`
+            : "Process metrics unavailable"}
         </h3>
         <div className="overflow-hidden rounded-lg border border-border/70">
           <table className="w-full text-left text-xs">

@@ -1,7 +1,5 @@
-// @effect-diagnostics nodeBuiltinImport:off
 import * as HandoffMemory from "./handoffMemory.ts";
-import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
+import { SystemMonitor } from "./resourceTelemetry/SystemMonitor.ts";
 import { MekoReadInput } from "@d4research/contracts/settings";
 import * as Mime from "effect/http/Mime";
 import {
@@ -106,53 +104,6 @@ const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
 const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
-
-async function readLocalSystemSnapshot() {
-  const cpuCount = Math.max(1, NodeOS.cpus().length);
-  const load = NodeOS.loadavg();
-  const overall = Math.min(100, Math.round(((load[0] ?? 0) / cpuCount) * 100));
-  const totalBytes = NodeOS.totalmem();
-  const availableBytes = NodeOS.freemem();
-  const usedBytes = totalBytes - availableBytes;
-  const root = await NodeFSP.statfs("/");
-  const totalDiskBytes = Number(root.blocks) * Number(root.bsize);
-  const availableDiskBytes = Number(root.bavail) * Number(root.bsize);
-  const usedDiskBytes = totalDiskBytes - availableDiskBytes;
-  const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-
-  return {
-    cpu: { overall, load, temp: null },
-    mem: {
-      total: Math.round(totalBytes / 1024),
-      used: Math.round(usedBytes / 1024),
-      pct: Math.round((usedBytes / totalBytes) * 100),
-      available: Math.round(availableBytes / 1024),
-      swap_pct: 0,
-    },
-    gpu: null,
-    disks: [
-      {
-        mount: "/",
-        total_gb: Math.round((totalDiskBytes / 1024 ** 3) * 10) / 10,
-        used_gb: Math.round((usedDiskBytes / 1024 ** 3) * 10) / 10,
-        pct: Math.round((usedDiskBytes / totalDiskBytes) * 100),
-      },
-    ],
-    services: [{ name: "d4research server", active: true, state: "running" }],
-    procs: [
-      {
-        pid: process.pid,
-        comm: "d4research server",
-        cpu: 0,
-        mem: Math.round((process.memoryUsage().rss / totalBytes) * 10_000) / 100,
-        rss_mb: rssMb,
-        user: process.env.USER ?? "local",
-      },
-    ],
-    procsum: { total: 1, running: 1, threads: 1 },
-    uptime: NodeOS.uptime(),
-  };
-}
 
 // A decoded JSON body must be a plain object before we read named fields off it.
 // `typeof` alone is not enough: arrays and `null` are also `"object"`, and a
@@ -493,6 +444,7 @@ export const missionControlSystemRouteLayer = HttpRouter.add(
   MISSION_CONTROL_SYSTEM_PATH,
   Effect.gen(function* () {
     const httpClient = yield* HttpClient.HttpClient;
+    const monitor = yield* SystemMonitor;
     return yield* httpClient.get(MISSION_CONTROL_SYSTEM_URL).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),
       Effect.flatMap((response) => response.text),
@@ -504,12 +456,9 @@ export const missionControlSystemRouteLayer = HttpRouter.add(
           },
         }),
       ),
-      Effect.timeout("4 seconds"),
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Mission Control service unavailable; using local system metrics", {
-          cause,
-        }).pipe(
-          Effect.flatMap(() => Effect.tryPromise(() => readLocalSystemSnapshot())),
+      Effect.timeout("1 second"),
+      Effect.catchCause(() =>
+        monitor.read.pipe(
           Effect.map((snapshot) =>
             HttpServerResponse.jsonUnsafe(snapshot, {
               headers: { "cache-control": "no-store" },

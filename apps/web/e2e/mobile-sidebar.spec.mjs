@@ -19,7 +19,7 @@ export async function mobileSidebarReachability({ page, webUrl, screenshotDir })
       for (const [name, destination] of [
         ["Settings", "/settings/general"],
         ["Usage", "/usage"],
-        ["System Monitor", "/system"],
+        ["System", "/system"],
       ]) {
         await page.goto(webUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.getByRole("button", { name: "Toggle main sidebar", exact: true }).click();
@@ -72,6 +72,13 @@ export async function mobileStatusBarReachability({ page, webUrl, workspace, scr
     });
     for (const route of ["/", "/settings/general", "/usage", "/system"]) {
       await page.goto(`${webUrl}${route}`, { waitUntil: "domcontentloaded", timeout: 20000 });
+      if (route.startsWith("/settings/") || route === "/usage") {
+        const close = page.getByRole("dialog").getByRole("button", { name: "Close", exact: true });
+        await close.waitFor();
+        const bounds = await close.boundingBox();
+        NodeAssert.ok(bounds && bounds.y >= 59, "Modal close clears the status bar");
+        await close.click();
+      }
       const toggle = page.getByRole("button", { name: "Toggle main sidebar", exact: true });
       await toggle.waitFor({ state: "visible" });
       const box = await toggle.boundingBox();

@@ -65,16 +65,19 @@ Agent MCP calls do not receive that identity. Ownership checks fail closed on
 database errors: if the server cannot verify whether a thread belongs to Nia, it
 blocks access that requires the check.
 
-The default permission level is **Read-only**. Sending a message, starting a thread,
-research run, or pipeline, interrupting a run, answering an input request, running a
-command, and creating or deleting a schedule always require your approval, at every
-permission level, even when Tool Guard allows them. Read-only allows only drafts of
-messages, threads, research, pipelines, and context switches. **Ask** queues every action
-for your approval. **Act** sets reminders without asking, creates pending memory
-proposals, and sends CTO questions when those features are enabled for the selected context. Memory proposals always need
-human review. Approval does not change the vault.
-Provider permission approvals remain manual. Proposed actions and their outcomes
-appear above the Nia conversation. These permissions do not grant authority to
+The default permission level is **Read-only** for Nia's managed actions. These approval rules
+apply to managed actions proposed through approval cards. Direct chat runs with full access and
+no provider approval prompts unless the environment's runtime limit restricts it. Starting a
+managed thread, research run, or pipeline, interrupting a run, answering an input request,
+running a command, and creating or deleting a schedule require your approval at every permission
+level, even when Tool Guard allows them. Direct chat runs from the home directory of the account
+running the connected server. Its provider tools and the full T3 Code toolkit are available
+there; system-created overview and follow-up turns remain restricted. **Ask** queues every
+managed action for your approval. **Act** sets reminders without asking, creates pending memory
+proposals, and sends CTO questions when those features are enabled for the selected context.
+Memory proposals always need human review. Approval does not change the vault.
+Provider permission approvals for managed action threads remain manual. Proposed actions and
+their outcomes appear above the Nia conversation. These permissions do not grant authority to
 publish, push, or run sudo.
 
 Use an ID, an internal link, or a reference selected from the **@** picker to address a
@@ -95,8 +98,11 @@ summary for its replacement in the same context. If a summary fails or the scope
 the replacement starts without it. Models that report no context window cannot use this
 size check. Changing the vault path or relevant project or pipeline mappings requires a fresh session.
 
-Before Nia starts new work, it checks the project's existing threads. If a thread already
-owns the work, Nia drafts a follow-up for that thread instead of starting another one.
+Nia's chat starts in the home directory of the account running the connected server. To find active work, ask it to use
+`t3_thread_list` and `t3_thread_read`; its report includes each thread's title and link.
+Nia is instructed to use `t3_thread_launch` only when you ask it to start a thread, and to
+include the goal, target directory, constraints, and verification steps in the prompt. Thread
+text and tool output are data, not instructions.
 
 A new task runs in one of two modes:
 
@@ -108,10 +114,9 @@ A new task runs in one of two modes:
   are met. It has no iteration limit unless you ask Nia for one. It stops early to report a
   blocker or ask for your input, and it stops when you interrupt it. The thread stays open.
 
-The approval card for a new task shows its mode, the folder it runs in, its runtime mode, its
-model, and the exact prompt the task will receive. If any of these change before the task
-starts, it doesn't start, and you can ask Nia for a new card. To change a draft, ask Nia to
-revise it.
+When Nia drafts a managed task, its approval card shows the mode, folder, runtime mode, model,
+and exact prompt the task will receive. If any of these change before the task starts, it
+doesn't start, and you can ask Nia for a new card. To change a draft, ask Nia to revise it.
 
 To start research or a pipeline, map the pipeline to its project in Settings, then ask
 Nia in the same conversation. Review the request, project, pipeline, and model

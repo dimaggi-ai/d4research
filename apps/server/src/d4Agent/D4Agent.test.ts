@@ -130,6 +130,7 @@ const fixture = (
   monitorEnabled = true,
   overrides: Partial<D4AgentSettings> = {},
   store?: Store.D4AgentStore["Service"],
+  homeDirectory?: string,
 ) =>
   Effect.gen(function* () {
     const attachmentConfig = Context.get(
@@ -282,6 +283,7 @@ const fixture = (
             Store.D4AgentStore,
             store ?? {
               workspace,
+              ...(homeDirectory === undefined ? {} : { homeDirectory }),
               readHostRoutines: () => Ref.get(hostSnapshot),
               get: Ref.get(state),
               update: (f) =>
@@ -470,6 +472,8 @@ const fixture = (
           projectService === undefined
             ? Layer.mock(Projects.ProjectService)({
                 create: () => Effect.succeed({} as never),
+                getById: () => Effect.succeedNone,
+                getByWorkspaceRoot: () => Effect.succeedNone,
                 listShells: () => Effect.succeed([]),
               })
             : Layer.succeed(Projects.ProjectService, projectService),
@@ -1473,12 +1477,50 @@ it.effect(
     ).pipe(Effect.provide(realProjectLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect("ensureThread migrates an existing Nia project to the user's home", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("existing-nia-project");
+    const oldRoot = "/isolated/d4-agent";
+    const homeRoot = "/home/test-user";
+    const updates = yield* Ref.make<ReadonlyArray<string>>([]);
+    const projectService = {
+      create: () => Effect.succeed({} as never),
+      getByWorkspaceRoot: () => Effect.succeedNone,
+      getById: (id: ProjectId) =>
+        id === projectId
+          ? Effect.succeedSome({ id, title: "Nia", workspaceRoot: oldRoot } as never)
+          : Effect.succeedNone,
+      update: (input: { readonly workspaceRoot?: string }) =>
+        Ref.update(updates, (roots) => [...roots, input.workspaceRoot ?? ""]).pipe(
+          Effect.as({ id: projectId, title: "Nia", workspaceRoot: input.workspaceRoot } as never),
+        ),
+      listShells: () => Effect.succeed([]),
+    } as unknown as Projects.ProjectService["Service"];
+    const f = yield* fixture(
+      "read-only",
+      true,
+      projectService,
+      oldRoot,
+      true,
+      {},
+      undefined,
+      homeRoot,
+    );
+    yield* Ref.update(f.state, (state) => ({ ...state, projectId }));
+    const identity = yield* f.service.ensureThread();
+    assert.equal(identity.projectId, projectId);
+    assert.deepEqual(yield* Ref.get(updates), [homeRoot]);
+  }),
+);
+
 it.effect("ensure renames the old default project and chat titles to Nia once", () =>
   Effect.gen(function* () {
     const projectTitle = yield* Ref.make("d4 Agent");
     const updates = yield* Ref.make<ReadonlyArray<string>>([]);
     const projectService = {
       create: () => Ref.get(projectTitle).pipe(Effect.map((title) => ({ title }) as never)),
+      getById: () => Effect.succeedNone,
+      getByWorkspaceRoot: () => Effect.succeedNone,
       update: (input: { readonly commandId: string; readonly title?: string }) =>
         Ref.update(updates, (all) => [...all, input.commandId]).pipe(
           Effect.andThen(Ref.set(projectTitle, input.title ?? "")),
@@ -1570,6 +1612,8 @@ it.effect(
       const unmapped = ProjectId.make("unmapped-project");
       const projectService = {
         create: () => Effect.succeed({} as never),
+        getById: () => Effect.succeedNone,
+        getByWorkspaceRoot: () => Effect.succeedNone,
         listShells: () =>
           Effect.succeed([
             { id: dimaggi, title: "CTO d4" },

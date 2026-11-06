@@ -35,7 +35,11 @@ export interface McpSessionRegistryShape {
   /** Refresh exactly one provider credential without reviving retired tokens. */
   readonly touchProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   /** Attach turn metadata to the credential for the committed provider session. */
-  readonly setActiveTurn: (providerSessionId: string, turnId: TurnId) => Effect.Effect<void>;
+  readonly setActiveTurn: (
+    providerSessionId: string,
+    turnId: TurnId,
+    turnMode?: "user" | "restricted",
+  ) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   /** Revoke every credential for a thread except the committed one. */
   readonly revokeThreadExcept: (
@@ -201,13 +205,27 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     });
   });
 
-  const setActiveTurn: McpSessionRegistryShape["setActiveTurn"] = (providerSessionId, turnId) =>
+  const setActiveTurn: McpSessionRegistryShape["setActiveTurn"] = (
+    providerSessionId,
+    turnId,
+    turnMode,
+  ) =>
     SynchronizedRef.update(state, ({ records }) => ({
       records: new Map(
         Array.from(records, ([key, record]) => [
           key,
           record.scope.thread.providerSessionId === providerSessionId
-            ? { ...record, scope: { ...record.scope, thread: { ...record.scope.thread, turnId } } }
+            ? {
+                ...record,
+                scope: {
+                  ...record.scope,
+                  thread: {
+                    ...record.scope.thread,
+                    turnId,
+                    ...(turnMode === undefined ? {} : { turnMode }),
+                  },
+                },
+              }
             : record,
         ]),
       ),
@@ -297,9 +315,13 @@ export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
     : Effect.void;
 };
 
-export const setActiveMcpTurn = (providerSessionId: string, turnId: TurnId): Effect.Effect<void> =>
+export const setActiveMcpTurn = (
+  providerSessionId: string,
+  turnId: TurnId,
+  turnMode?: "user" | "restricted",
+): Effect.Effect<void> =>
   activeMcpSessionRegistry
-    ? activeMcpSessionRegistry.setActiveTurn(providerSessionId, turnId)
+    ? activeMcpSessionRegistry.setActiveTurn(providerSessionId, turnId, turnMode)
     : Effect.void;
 
 export const __testing = {

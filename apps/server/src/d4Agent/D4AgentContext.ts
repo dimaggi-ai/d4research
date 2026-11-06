@@ -26,6 +26,8 @@ export class D4AgentContext extends Context.Service<
       providerSessionId?: string,
     ) => Effect.Effect<string | null, D4AgentError>;
     readonly owns: (threadId: ThreadId) => Effect.Effect<boolean>;
+    readonly isChatThread?: (threadId: ThreadId) => Effect.Effect<boolean>;
+    readonly homeDirectory?: string;
   }
 >()("d4research/d4Agent/D4AgentContext") {}
 export const layer = Layer.effect(
@@ -39,6 +41,11 @@ export const layer = Layer.effect(
     const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
     return D4AgentContext.of({
       owns,
+      homeDirectory: store.homeDirectory ?? store.workspace,
+      isChatThread: Effect.fn("D4AgentContext.isChatThread")(function* (threadId) {
+        const state = yield* store.get;
+        return state.threadId === threadId || state.chatThreadIds?.includes(threadId) === true;
+      }),
       prepare: Effect.fn("D4AgentContext.prepare")(
         function* (threadId, selection, providerSessionId) {
           const stored = yield* store.get;

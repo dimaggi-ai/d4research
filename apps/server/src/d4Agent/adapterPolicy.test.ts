@@ -9,7 +9,7 @@ import {
   claudeMcpQueryOverrides,
   makeClaudeQueryOptions,
 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "./policy.ts";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS, NIA_USER_INSTRUCTIONS } from "./policy.ts";
 const session = {
   environmentId: EnvironmentId.make("environment"),
   threadId: ThreadId.make("agent"),
@@ -124,4 +124,37 @@ it("a normal Codex thread does not inherit a restricted session's deny list", ()
   });
   assert.isFalse(Object.keys(params.config.mcp_servers ?? {}).includes("ordinary-server"));
   assert.isUndefined(params.config["features.apps"]);
+});
+
+it("normal provider adapters append Nia's short home-chat instructions", () => {
+  const runtimePolicy = {
+    runtimeMode: "full-access" as const,
+    interactionMode: "default" as const,
+    cwd: "/home/nia",
+    approvalPolicy: "never",
+    sandboxPolicy: { type: "dangerFullAccess" },
+    additionalInstructions: NIA_USER_INSTRUCTIONS,
+  };
+  const codex = codexThreadRuntimeParams({
+    threadId: null,
+    mcpSession: session,
+    runtimePolicy,
+    modelSelection: { model: "selected" },
+  });
+  assert.equal(codex.developerInstructions, NIA_USER_INSTRUCTIONS);
+  const claude = makeClaudeQueryOptions({
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    },
+    nativeThreadId: "native",
+    resume: false,
+    cwd: "/home/nia",
+    additionalInstructions: NIA_USER_INSTRUCTIONS,
+  });
+  assert.equal(claude.systemPrompt?.type, "preset");
+  assert.include(
+    (claude.systemPrompt as { readonly append?: string }).append,
+    NIA_USER_INSTRUCTIONS,
+  );
 });

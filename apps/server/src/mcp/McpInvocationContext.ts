@@ -33,6 +33,8 @@ export interface McpThreadCaller {
   readonly providerInstanceId: ProviderInstanceId;
   /** Current orchestrator turn using this long-lived MCP credential. */
   readonly turnId?: TurnId;
+  /** The active turn's Nia policy boundary; absent means restricted. */
+  readonly turnMode?: "user" | "restricted";
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
 }

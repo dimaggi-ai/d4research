@@ -215,10 +215,16 @@ it.effect("updates a long-lived credential with the current orchestrator turn", 
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
-    yield* registry.setActiveTurn(issued.config.providerSessionId, TurnId.make("turn-a"));
+    yield* registry.setActiveTurn(
+      issued.config.providerSessionId,
+      TurnId.make("turn-a"),
+      "user",
+    );
     expect((yield* registry.resolve(token))?.thread.turnId).toBe(TurnId.make("turn-a"));
+    expect((yield* registry.resolve(token))?.thread.turnMode).toBe("user");
     yield* registry.setActiveTurn(issued.config.providerSessionId, TurnId.make("turn-b"));
     expect((yield* registry.resolve(token))?.thread.turnId).toBe(TurnId.make("turn-b"));
+    expect((yield* registry.resolve(token))?.thread.turnMode).toBe("user");
   }),
 );
 

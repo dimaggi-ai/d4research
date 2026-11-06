@@ -267,7 +267,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
       request.method === "POST"
     ) {
       const payload = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null)));
-      if (!isAllowedAgentMcpRequest(payload))
+      if (!isAllowedAgentMcpRequest(payload, invocation.thread.turnMode === "user"))
         return HttpServerResponse.jsonUnsafe({ error: "d4_agent_tool_denied" }, { status: 403 });
     }
     const asked = withModeLimit(invocation, request);

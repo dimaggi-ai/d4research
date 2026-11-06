@@ -309,7 +309,7 @@ const SETTINGS_SCREENS = {
   SettingsThreads: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
     linking: "settings/thread-preferences",
-    options: { ...SETTINGS_PAGE_OPTIONS, title: "Threads" },
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Nia and threads" },
   }),
   SettingsAbout: createNativeStackScreen({
     screen: SettingsAboutRouteScreen,

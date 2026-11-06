@@ -15,7 +15,8 @@ import {
 } from "./d4AgentPresentation";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
-import { useLinkTo } from "@react-navigation/native";
+import { useLinkTo, useNavigation } from "@react-navigation/native";
+import { openSettings } from "../settings/settings-navigation";
 import {
   ProjectId,
   type D4AgentActionSummary,
@@ -100,6 +101,7 @@ export function D4AgentEntry({
   const ensure = useAtomCommand(serverEnvironment.ensureD4AgentThread);
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
   const linkTo = useLinkTo();
+  const navigation = useNavigation();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
   return (
@@ -117,7 +119,7 @@ export function D4AgentEntry({
         onPress={async () => {
           if (!config) return;
           if (!config.settings.d4Agent.enabled) {
-            linkTo("/settings/thread-preferences");
+            openSettings(navigation, "SettingsThreads");
             return;
           }
           if (state.data?.threadId && !allowed) {

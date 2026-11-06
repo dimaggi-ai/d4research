@@ -215,6 +215,7 @@ vi.mock("./useD4AgentState", () => ({
 }));
 vi.mock("@react-navigation/native", () => ({
   useLinkTo: () => mocks.navigate,
+  useNavigation: () => ({}),
   useFocusEffect: () => undefined,
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: (text: string) => mocks.copy(text) }));

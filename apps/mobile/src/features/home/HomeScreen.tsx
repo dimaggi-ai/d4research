@@ -670,10 +670,13 @@ export function HomeScreen(props: HomeScreenProps) {
   if (!hasAnyThreads) {
     return (
       <View className={containerClassName}>
-        <D4AgentHomeHeader
-          environments={props.environments}
-          selectedEnvironmentId={props.selectedEnvironmentId}
-        />
+        {/* The transparent glass header overlays this column, so the entry sits below it. */}
+        <View style={{ paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top : 0 }}>
+          <D4AgentHomeHeader
+            environments={props.environments}
+            selectedEnvironmentId={props.selectedEnvironmentId}
+          />
+        </View>
         <View
           className={cn(
             "flex-1 items-center justify-center px-8",
@@ -682,7 +685,6 @@ export function HomeScreen(props: HomeScreenProps) {
           )}
           style={{
             paddingBottom: Platform.OS === "ios" ? iosBottomClearance : Math.max(insets.bottom, 24),
-            paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0,
             paddingLeft: 32 + (contentSideInsets?.left ?? 0),
             paddingRight: 32 + (contentSideInsets?.right ?? 0),
           }}

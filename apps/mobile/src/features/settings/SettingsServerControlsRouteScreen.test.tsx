@@ -17,6 +17,7 @@ const { Children, mocks } = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("./AgentMonitorSettings", () => ({ AgentMonitorSettings: () => null }));
 vi.mock("react-native", () => ({
   View: Children,
   Alert: { alert: mocks.alert },

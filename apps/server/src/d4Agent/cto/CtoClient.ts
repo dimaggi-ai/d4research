@@ -1,7 +1,7 @@
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
+
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -63,7 +63,7 @@ export class CtoClient extends Context.Service<
   }
 >()("d4research/d4Agent/cto/CtoClient") {}
 
-export function isLocalCtoHost(host: string): boolean {
+function isLocalCtoHost(host: string): boolean {
   if (host === "localhost" || host === "[::1]") return true;
   const parts = host.split(".").map(Number);
   return (
@@ -181,5 +181,3 @@ export function createCtoClient(): CtoClient["Service"] {
       ),
   });
 }
-
-export const layer = Layer.sync(CtoClient, createCtoClient);

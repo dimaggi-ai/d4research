@@ -87,39 +87,6 @@ const layerConnectivity = Connectivity.layer({
   ),
 });
 
-interface NetworkInformationLike extends EventTarget {
-  readonly type?: string;
-}
-
-/**
- * `change` also fires for bandwidth and latency estimates on the same network,
- * so only a type change counts.
- */
-const networkPathChanges = Stream.callback<"network-changed">((queue) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const connection =
-        typeof navigator === "undefined"
-          ? undefined
-          : (navigator as Navigator & { readonly connection?: NetworkInformationLike }).connection;
-      if (connection?.type === undefined) return undefined;
-      let previous = connection.type;
-      const listener = () => {
-        const type = connection.type;
-        if (type === undefined || type === previous) return;
-        previous = type;
-        Queue.offerUnsafe(queue, "network-changed");
-      };
-      connection.addEventListener("change", listener);
-      return { connection, listener };
-    }),
-    (subscription) =>
-      Effect.sync(() =>
-        subscription?.connection.removeEventListener("change", subscription.listener),
-      ),
-  ).pipe(Effect.asVoid),
-);
-
 const layerWakeups = Wakeups.layer({
   changes: Stream.callback<"application-active">((queue) =>
     Effect.acquireRelease(
@@ -400,14 +367,14 @@ const loadSecondaryConnectionRegistration = Effect.fn(
 const PLATFORM_POLL_INTERVAL = "3 seconds";
 const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
 
-export function secondaryBearerExpiresAtEpochMs(
+function secondaryBearerExpiresAtEpochMs(
   issuedAtEpochMs: number,
   expiresInSeconds: number,
 ): number {
   return issuedAtEpochMs + Math.max(0, expiresInSeconds * 1_000);
 }
 
-export function secondaryBearerRefreshAtEpochMs(
+function secondaryBearerRefreshAtEpochMs(
   issuedAtEpochMs: number,
   expiresInSeconds: number,
 ): number {
@@ -436,7 +403,7 @@ export type PrimaryEnvironmentTargetRead =
       readonly cause: unknown;
     };
 
-export function readPrimaryEnvironmentTargetResult(
+function readPrimaryEnvironmentTargetResult(
   readTarget: () => PrimaryEnvironmentTarget | null = readPrimaryEnvironmentTarget,
 ): PrimaryEnvironmentTargetRead {
   try {
@@ -485,13 +452,8 @@ export interface RejectedSecondaryBootstrap {
   readonly delayMs: number;
 }
 
-/**
- * A backend that rejected a bootstrap token will usually keep rejecting it, so
- * the poll backs off on that exact signature instead of re-presenting a dead
- * credential every few seconds. It still retries on a capped backoff: a backend
- * that restarts on the same port seeds a fresh grant for the same token, and
- * nothing in the topology says it restarted.
- */
+// Back off rejected bootstrap signatures, but keep bounded retries: a restarted
+// backend can issue a fresh grant for the same token without changing its address.
 export function isRejectedSecondaryBootstrap(
   rejected: RejectedSecondaryBootstrap | undefined,
   signature: string,

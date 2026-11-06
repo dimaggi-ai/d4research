@@ -1,7 +1,7 @@
 import { CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS } from "@d4research/contracts";
 import { PREVIEW_URL_MAX_LENGTH } from "@d4research/contracts";
 import { isLoopbackHost } from "@d4research/shared/preview";
-import type { DiscoveredLocalServer, EnvironmentId, ThreadId } from "@d4research/contracts";
+import type { DiscoveredLocalServer, EnvironmentId } from "@d4research/contracts";
 
 import { previewEnvironment } from "./state/preview";
 import { useEnvironmentQuery } from "./state/query";
@@ -36,13 +36,6 @@ export function boundConfiguredLocalServerUrls(
   return bounded;
 }
 
-function useDiscoveredPorts(
-  environmentId: EnvironmentId | null,
-  configuredUrls?: ReadonlyArray<string>,
-): ReadonlyArray<DiscoveredLocalServer> {
-  return useDiscoveredPortsState(environmentId, configuredUrls).servers;
-}
-
 export function useDiscoveredPortsState(
   environmentId: EnvironmentId | null,
   configuredUrls?: ReadonlyArray<string>,
@@ -60,17 +53,4 @@ export function useDiscoveredPortsState(
     servers: query.data?.servers ?? EMPTY_PORTS,
     configuredUrlProbing: query.data?.configuredUrlProbing === true,
   };
-}
-
-export function useThreadDiscoveredPorts(input: {
-  readonly environmentId: EnvironmentId | null;
-  readonly threadId: ThreadId | null;
-}): ReadonlyArray<DiscoveredLocalServer> {
-  const ports = useDiscoveredPorts(input.environmentId);
-  return input.threadId
-    ? ports.filter(
-        (port) =>
-          port.terminal?.threadId === input.threadId || port.agent?.threadId === input.threadId,
-      )
-    : EMPTY_PORTS;
 }

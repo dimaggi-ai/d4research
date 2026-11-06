@@ -6,14 +6,6 @@ import * as Option from "effect/Option";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
 
-export const isWebLink = (value: string) => {
-  if (!URL.canParse(value)) return false;
-  const { protocol } = new URL(value);
-  return protocol === "http:" || protocol === "https:";
-};
-
-export const isWebPageFile = (path: string) => /\.x?html?$/i.test(path);
-
 export class DesktopWebLinks extends Context.Service<
   DesktopWebLinks,
   {

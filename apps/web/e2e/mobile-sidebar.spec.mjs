@@ -19,7 +19,7 @@ export async function mobileSidebarReachability({ page, webUrl, screenshotDir })
       for (const [name, destination] of [
         ["Settings", "/settings/general"],
         ["Usage", "/usage"],
-        ["System", "/system"],
+        ["System Monitor", "/system"],
       ]) {
         await page.goto(webUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.getByRole("button", { name: "Toggle main sidebar", exact: true }).click();

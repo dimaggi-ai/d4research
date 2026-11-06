@@ -1249,13 +1249,9 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
 
 const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_PATH]);
 
-// Skips the HTTP server span for UNTRACED_REQUEST_PATHS. That span starts
-// before routing, so a route handler cannot skip it. TracerDisabledWhen is one
-// predicate for the whole server, and HttpRouter.serve builds its routes
-// privately, so it is provided to the served layer, never merged into the
-// routes. Add paths here instead of providing it again. The query string is
-// ignored, as in routing.
-export const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
+// Provide TracerDisabledWhen on the served layer because the span starts before routing.
+// Match paths without query strings; route-local overrides are too late.
+const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
   const queryIndex = request.url.indexOf("?");
   const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
   // Signed URLs carry bearer tokens in the path, so they never reach a trace.

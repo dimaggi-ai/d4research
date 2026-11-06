@@ -32,7 +32,7 @@ export interface ThreadFindState {
   readonly localSelection: ThreadFindLocalSelection | null;
 }
 
-export const CLOSED_THREAD_FIND: ThreadFindState = {
+const CLOSED_THREAD_FIND: ThreadFindState = {
   threadKey: null,
   query: "",
   offset: 0,
@@ -158,12 +158,6 @@ export function retainThreadFindForRoute(route: {
   const { threadKey } = useThreadFindStore.getState();
   const shownKey = route.threadRef ? scopedThreadKey(route.threadRef) : null;
   if (threadKey !== null && threadKey !== shownKey) closeThreadFind();
-}
-
-/** Whether find is open in `thread`, as long as find is available there. */
-export function useThreadFindOpen(thread: ScopedThreadRef | null, enabled: boolean): boolean {
-  const openThreadKey = useThreadFindStore((state) => state.threadKey);
-  return enabled && thread !== null && openThreadKey === scopedThreadKey(thread);
 }
 
 /**

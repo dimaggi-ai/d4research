@@ -31,7 +31,7 @@ export interface ThreadLivenessResult {
 }
 
 export const THREAD_LIVENESS_SLOW_AFTER_MS = 300_000;
-export const THREAD_LIVENESS_STALE_AFTER_MS = 600_000;
+const THREAD_LIVENESS_STALE_AFTER_MS = 600_000;
 
 export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLivenessResult {
   const result = (

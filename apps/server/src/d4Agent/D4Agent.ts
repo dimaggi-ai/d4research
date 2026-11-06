@@ -281,6 +281,9 @@ export interface D4AgentEnvironment {
   };
 }
 
+const decodeStoredAgentThread = Schema.decodeUnknownOption(D4AgentStore.StoredAgentThread);
+const decodeBrainContext = Schema.decodeUnknownEffect(D4BrainContext);
+
 const validateAction = Schema.decodeUnknownEffect(D4AgentAction);
 const encodeDigest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const storageError = (cause: unknown) => new D4AgentError({ reason: "storage", cause });
@@ -361,11 +364,11 @@ const OVERVIEW_JUDGEMENT_REPEAT_MS = 86_400_000;
 const PENDING_ACTION_TTL_MS = 86_400_000;
 const isoOrNull = (value: unknown): string | null =>
   DateTime.isDateTime(value) ? DateTime.formatIso(value) : typeof value === "string" ? value : null;
-export const pcResultText = (result: Pc.PcCommandResult) =>
+const pcResultText = (result: Pc.PcCommandResult) =>
   `${result.timedOut ? "Timed out after 60 s" : `Exit ${result.exitCode ?? "unknown"}`}${
     result.output.trim() === "" ? "" : `\n${result.output.trimEnd()}`
   }`;
-export function actionSummaries(
+function actionSummaries(
   actions: ReadonlyArray<D4AgentActionRecord>,
 ): ReadonlyArray<D4AgentActionSummary> {
   return [
@@ -4098,10 +4101,7 @@ export const layer = Layer.effect(
                 entry.status === "executed" &&
                 entry.action.type === "auto-archive",
             );
-            const entry =
-              record === undefined
-                ? undefined
-                : Schema.decodeUnknownOption(D4AgentStore.StoredAgentThread)(record.result);
+            const entry = record === undefined ? undefined : decodeStoredAgentThread(record.result);
             const legacy = state.agentThreads?.find(
               (entry) =>
                 `archive:${entry.actionId}` === actionId && entry.context === state.brainContext,
@@ -4193,7 +4193,7 @@ export const layer = Layer.effect(
       switchContext: (input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
-            const context = yield* Schema.decodeUnknownEffect(D4BrainContext)(input.context).pipe(
+            const context = yield* decodeBrainContext(input.context).pipe(
               Effect.mapError(() => new D4AgentError({ reason: "context" })),
             );
             yield* selected;
@@ -4203,40 +4203,38 @@ export const layer = Layer.effect(
             return yield* ensure();
           }),
         ),
-      memorySearch: (input) =>
-        Effect.gen(function* () {
-          const { state, config } = yield* lock.withPermits(1)(bound(input.context));
-          if (!config.memoryEnabled)
-            return yield* new D4AgentError({ reason: "memory-unavailable" });
-          const all = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
-          const result = yield* Effect.tryPromise({
-            try: () =>
-              brain.search({
-                root: config.brainVaultPath,
-                context: state.brainContext,
-                query: input.query,
-                ...(input.limit === undefined ? {} : { limit: input.limit }),
-                embeddings: {
-                  enabled: config.embeddingsEnabled,
-                  baseUrl: config.embeddingBaseUrl ?? all.secondBrain.embeddings.baseUrl,
-                  model: config.embeddingModel ?? all.secondBrain.embeddings.model,
-                },
-              }),
-            catch: () => new D4AgentError({ reason: "context" }),
-          }).pipe(Effect.tapError(memoryFailure));
-          return yield* lock.withPermits(1)(
-            Effect.gen(function* () {
-              const current = yield* bound(input.context);
-              if (
-                current.state.threadId !== state.threadId ||
-                !current.config.memoryEnabled ||
-                current.state.contextScopeHash !== state.contextScopeHash
-              )
-                return yield* new D4AgentError({ reason: "context" });
-              return result;
+      memorySearch: Effect.fn("D4Agent.memorySearch")(function* (input) {
+        const { state, config } = yield* lock.withPermits(1)(bound(input.context));
+        if (!config.memoryEnabled) return yield* new D4AgentError({ reason: "memory-unavailable" });
+        const all = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
+        const result = yield* Effect.tryPromise({
+          try: () =>
+            brain.search({
+              root: config.brainVaultPath,
+              context: state.brainContext,
+              query: input.query,
+              ...(input.limit === undefined ? {} : { limit: input.limit }),
+              embeddings: {
+                enabled: config.embeddingsEnabled,
+                baseUrl: config.embeddingBaseUrl ?? all.secondBrain.embeddings.baseUrl,
+                model: config.embeddingModel ?? all.secondBrain.embeddings.model,
+              },
             }),
-          );
-        }),
+          catch: () => new D4AgentError({ reason: "context" }),
+        }).pipe(Effect.tapError(memoryFailure));
+        return yield* lock.withPermits(1)(
+          Effect.gen(function* () {
+            const current = yield* bound(input.context);
+            if (
+              current.state.threadId !== state.threadId ||
+              !current.config.memoryEnabled ||
+              current.state.contextScopeHash !== state.contextScopeHash
+            )
+              return yield* new D4AgentError({ reason: "context" });
+            return result;
+          }),
+        );
+      }),
       memoryRead: (input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
@@ -4308,15 +4306,14 @@ export const layer = Layer.effect(
               ) ?? null,
           ),
         ),
-      getSystemHealth: () =>
-        Effect.gen(function* () {
-          const state = yield* store.get;
-          const config = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
-          return {
-            threadId: state.identityReady ? state.threadId : null,
-            systemHealth: cachedHealth(state, config),
-          };
-        }),
+      getSystemHealth: Effect.fn("D4Agent.getSystemHealth")(function* () {
+        const state = yield* store.get;
+        const config = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
+        return {
+          threadId: state.identityReady ? state.threadId : null,
+          systemHealth: cachedHealth(state, config),
+        };
+      }),
       getState,
       claimSystemAttention,
       ensureThread: () => lock.withPermits(1)(ensure()),
@@ -4416,53 +4413,51 @@ export const layer = Layer.effect(
             } satisfies D4AgentThreadTail;
           }),
         ),
-      readHost: (commandText) =>
-        Effect.gen(function* () {
-          const { state, config } = yield* lock.withPermits(1)(bound());
-          if (!config.systemProbeEnabled)
+      readHost: Effect.fn("D4Agent.readHost")(function* (commandText) {
+        const { state, config } = yield* lock.withPermits(1)(bound());
+        if (!config.systemProbeEnabled)
+          return yield* new D4AgentError({
+            reason: "action-unavailable",
+            detail: "Host reads are off while the system probe is disabled in Nia settings.",
+          });
+        const verdict = classifyHostReadOnly(commandText);
+        if (!verdict.ok)
+          return yield* new D4AgentError({
+            reason: "action-unavailable",
+            detail: `Not a read-only command: ${verdict.reason}. Draft a pc action instead; the user approves it.`,
+          });
+        const id = yield* randomUUID;
+        if (config.toolGuardUrl !== null) {
+          const guard = yield* guardGate.evaluate(config.toolGuardUrl, {
+            envelope_id: id,
+            agent_id: "nia",
+            session_id: state.threadId ?? "nia",
+            org_id: "d4research",
+            tool_name: "d4_agent_action",
+            tool_group: "d4_agent",
+            parameters: {
+              action_type: "read-host",
+              permission_mode: config.permissionMode,
+              context: state.brainContext,
+              text: commandText,
+            },
+          });
+          if (guard.decision === "denied")
+            return yield* new D4AgentError({ reason: "guard-denied" });
+          if (guard.decision !== "allowed" && guard.decision !== "flagged")
             return yield* new D4AgentError({
               reason: "action-unavailable",
-              detail: "Host reads are off while the system probe is disabled in Nia settings.",
+              detail: "Tool Guard held this read. Draft a pc action instead; the user approves it.",
             });
-          const verdict = classifyHostReadOnly(commandText);
-          if (!verdict.ok)
-            return yield* new D4AgentError({
-              reason: "action-unavailable",
-              detail: `Not a read-only command: ${verdict.reason}. Draft a pc action instead; the user approves it.`,
-            });
-          const id = yield* randomUUID;
-          if (config.toolGuardUrl !== null) {
-            const guard = yield* guardGate.evaluate(config.toolGuardUrl, {
-              envelope_id: id,
-              agent_id: "nia",
-              session_id: state.threadId ?? "nia",
-              org_id: "d4research",
-              tool_name: "d4_agent_action",
-              tool_group: "d4_agent",
-              parameters: {
-                action_type: "read-host",
-                permission_mode: config.permissionMode,
-                context: state.brainContext,
-                text: commandText,
-              },
-            });
-            if (guard.decision === "denied")
-              return yield* new D4AgentError({ reason: "guard-denied" });
-            if (guard.decision !== "allowed" && guard.decision !== "flagged")
-              return yield* new D4AgentError({
-                reason: "action-unavailable",
-                detail:
-                  "Tool Guard held this read. Draft a pc action instead; the user approves it.",
-              });
-          }
-          const result = yield* pc.run(commandText, `read-host:${id}`);
-          return {
-            command: commandText,
-            exitCode: result.exitCode,
-            timedOut: result.timedOut,
-            output: result.output,
-          } satisfies D4AgentHostRead;
-        }),
+        }
+        const result = yield* pc.run(commandText, `read-host:${id}`);
+        return {
+          command: commandText,
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          output: result.output,
+        } satisfies D4AgentHostRead;
+      }),
       start: () =>
         withDocumentText(tick).pipe(
           Effect.catch(() => Effect.logWarning("d4 Agent heartbeat unavailable")),

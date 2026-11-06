@@ -4,7 +4,6 @@ import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { makeThreadShellFixture } from "../../test-fixtures";
 import { HomeScreen } from "../home/HomeScreen";
 import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
-// @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -125,6 +124,11 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
           : null
         : mocks.allowed,
 }));
+vi.mock("../../state/olderSettledShelf", () => ({
+  useOlderSettledShelf: () => ({ isListed: () => true, unloadedCount: () => 0 }),
+  useOlderSettledShelfGrowth: () => undefined,
+}));
+vi.mock("../../state/presentation", () => ({ threadListEnvironmentsAtom: "list-environments" }));
 vi.mock("../../state/server", async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
   mocks.identityAtom = Atom.make(
@@ -213,10 +217,21 @@ vi.mock("./useD4AgentState", () => ({
     error: null,
   }),
 }));
+vi.mock("@react-navigation/native-stack", () => ({ useHeaderHeight: () => 0 }));
 vi.mock("@react-navigation/native", () => ({
+  createNavigationContainerRef: () => ({ current: null }),
   useLinkTo: () => mocks.navigate,
   useNavigation: () => ({}),
   useFocusEffect: () => undefined,
+}));
+vi.mock("../../lib/runtime", async () => {
+  const Layer = await import("effect/Layer");
+  return { layer: Layer.empty, runtime: {} };
+});
+vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(),
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: (text: string) => mocks.copy(text) }));
 vi.mock("../../lib/openExternalUrl", () => ({ tryOpenExternalUrl: mocks.openExternal }));
@@ -343,8 +358,27 @@ vi.mock("react-native", () => ({
   ),
 }));
 
-vi.mock("@legendapp/list/react-native", () => ({
-  LegendList: ({
+vi.mock("expo-haptics", () => ({
+  impactAsync: () => Promise.resolve(),
+  selectionAsync: () => Promise.resolve(),
+  ImpactFeedbackStyle: { Light: "light" },
+}));
+vi.mock("expo-glass-effect", () => ({
+  isLiquidGlassAvailable: () => false,
+  isGlassEffectAPIAvailable: () => false,
+}));
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardController: { dismiss: () => undefined },
+  KeyboardProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+vi.mock("react-native-reanimated", () => ({
+  default: { createAnimatedComponent: (component: unknown) => component },
+  Easing: { bezier: () => undefined, out: () => undefined, cubic: () => undefined },
+  ReduceMotion: { System: "system" },
+}));
+vi.mock("../threads/threadListAnimations", () => ({ THREAD_SIDEBAR_ROW_LAYOUT: undefined }));
+vi.mock("@legendapp/list/reanimated", () => ({
+  AnimatedLegendList: ({
     ListHeaderComponent,
     ListEmptyComponent,
   }: {
@@ -358,6 +392,7 @@ vi.mock("@legendapp/list/react-native", () => ({
   ),
 }));
 vi.mock("react-native-screens", () => ({ ScrollViewMarker: () => null }));
+vi.mock("react-native-gesture-handler/ReanimatedSwipeable", () => ({ default: () => null }));
 vi.mock("react-native-gesture-handler", () => ({
   GestureDetector: ({ children }: { children: React.ReactNode }) => children,
   useNativeGesture: () => ({}),
@@ -368,7 +403,7 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("../../native/v5-workspace-context", async () => ({
   NativePrimaryColumnContext: (await import("react")).createContext(null),
 }));
-vi.mock("../../native/scrollEdgeEffects", () => ({ nativeHeaderScrollEdgeEffects: {} }));
+vi.mock("../../native/scrollEdgeEffects", () => ({ nativeHeaderScrollEdgeEffects: () => ({}) }));
 vi.mock("../../native/native-layout-metrics", () => ({
   useNativeColumnLayoutMetrics: () => null,
   useNativeLayoutMetrics: () => null,
@@ -378,7 +413,7 @@ vi.mock("../../native/NativeWorkspaceColumns", () => ({
   useNativeWorkspaceColumnsSupported: () => false,
 }));
 vi.mock("../../state/queries", () => ({
-  useThreadSearch: () => ({ matches: [], isPending: false }),
+  useThreadSearch: () => ({ query: "", matches: [], isPending: false }),
 }));
 vi.mock("../keyboard/threadKeyboardShortcuts", () => ({ useThreadJumpShortcuts: () => undefined }));
 vi.mock("../../state/thread-order", () => ({ usePendingThreadOrder: () => null }));
@@ -479,6 +514,18 @@ vi.mock("@d4research/client-runtime/state/projects", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   createProjectEnvironmentAtoms: () => ({}),
 }));
+vi.mock("../threads/thread-inspector-preview", () => ({
+  ThreadInspectorPreview: () => {
+    mocks.nativeRoute();
+    throw new Error("Agent route reached ordinary preview controls");
+  },
+}));
+vi.mock("../threads/NewTaskDraftRouteScreen", () => ({
+  NewTaskDraftRouteScreen: () => {
+    mocks.nativeRoute();
+    throw new Error("Agent route reached ordinary draft controls");
+  },
+}));
 vi.mock("../../state/new-task-draft-key", () => ({ restoredNewTaskDraftKey: vi.fn() }));
 vi.mock("../../state/pending-thread-creation", () => ({
   clearPendingThreadCreationOutcome: vi.fn(),
@@ -542,7 +589,6 @@ vi.mock("../threads/thread-inspector-content-stack", () => ({
   ThreadInspectorContentStack: vi.fn(),
 }));
 vi.mock("../threads/thread-route-hydration", () => ({ threadRouteIsHydrating: vi.fn() }));
-vi.mock("../prompt-links/useThreadPromptLink", () => ({ useThreadPromptLink: vi.fn() }));
 vi.mock("../threads/ThreadHeader", () => ({ ThreadHeader: vi.fn() }));
 vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
   useAndroidWorkspaceBack: vi.fn(),

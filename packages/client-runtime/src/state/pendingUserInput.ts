@@ -39,7 +39,7 @@ function resolvePendingUserInputOptionValue(
 }
 
 /** The draft's selections that name an offered option, deduplicated, in selection order. */
-export function normalizeSelectedOptionValues(
+function normalizeSelectedOptionValues(
   question: PendingUserInputQuestion,
   value: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<string> {

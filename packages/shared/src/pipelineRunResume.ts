@@ -29,7 +29,7 @@ export interface PipelineResumeContext {
   readonly interruption: PipelineInterruption;
 }
 
-export const isPipelineTriggerText = (text: string): boolean => {
+const isPipelineTriggerText = (text: string): boolean => {
   const prompt = extractTrailingEnabledSkillsContext(text).promptText;
   const body = prompt.startsWith("Ultrathink:\n") ? prompt.slice("Ultrathink:\n".length) : prompt;
   return parseResearchTrigger(body) !== null || parseDevTrigger(body) !== null;
@@ -40,7 +40,7 @@ export const isPipelineTriggerText = (text: string): boolean => {
  * only comes from the server stopping or reconciling at startup; a user stop
  * is `interrupted`. Queued runs cancelled before they started do not count.
  */
-export const isResumableRun = (run: Pick<ResumeChainRun, "status" | "startedAt">): boolean =>
+const isResumableRun = (run: Pick<ResumeChainRun, "status" | "startedAt">): boolean =>
   run.startedAt !== null &&
   run.startedAt !== undefined &&
   (run.status === "cancelled" || run.status === "interrupted" || run.status === "failed");

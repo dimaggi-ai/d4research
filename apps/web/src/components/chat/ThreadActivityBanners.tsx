@@ -19,7 +19,6 @@ import * as DateTime from "effect/DateTime";
 import {
   CircleDashedIcon,
   CircleStopIcon,
-  GitBranchIcon,
   MessageCircleIcon,
   ShieldQuestionIcon,
   TargetIcon,
@@ -29,9 +28,8 @@ import {
 import { Fragment } from "react";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { cn } from "~/lib/utils";
-import { Button, InlineButton } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import type { ComposerBannerStackItem } from "./ComposerBannerStack";
+import { InlineButton } from "../ui/button";
+
 import type { ThreadNowItem } from "./ThreadNow";
 
 /** Subagents and side chats waiting on the user, unless the parent is itself waiting on them. */
@@ -238,47 +236,5 @@ export function backgroundWorkNowItem(input: {
         </InlineButton>
       </>
     ),
-  };
-}
-
-/** The local checkout moved off the branch this thread last ran on. */
-export function branchMismatchBannerItem(input: {
-  readonly mismatchKey: string;
-  readonly mismatch: { readonly threadBranch: string; readonly currentBranch: string };
-  readonly restoreDisabled: boolean;
-  readonly restoring: boolean;
-  readonly onRestore: () => void;
-  readonly onDismiss: () => void;
-}): ComposerBannerStackItem {
-  const { mismatch } = input;
-  return {
-    id: `branch-mismatch:${input.mismatchKey}`,
-    variant: "info",
-    icon: <GitBranchIcon />,
-    title: (
-      <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="shrink-0 font-normal text-muted-foreground">Branch changed from</span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <code className="min-w-0 truncate font-medium text-foreground">
-                {mismatch.threadBranch}
-              </code>
-            }
-          />
-          <TooltipPopup side="top">
-            This thread last ran on {mismatch.threadBranch}. Sending will continue on{" "}
-            {mismatch.currentBranch}.
-          </TooltipPopup>
-        </Tooltip>
-      </span>
-    ),
-    actions: (
-      <Button size="xs" variant="ghost" disabled={input.restoreDisabled} onClick={input.onRestore}>
-        {input.restoring ? "Restoring..." : "Restore branch"}
-      </Button>
-    ),
-    dismissLabel: "Dismiss branch change notice",
-    onDismiss: input.onDismiss,
   };
 }

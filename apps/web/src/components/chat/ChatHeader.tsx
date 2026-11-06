@@ -52,7 +52,7 @@ interface ChatHeaderProps {
   onOpenProjectSettings?: (() => void) | undefined;
 }
 
-export function resolveRenameCommit(input: {
+function resolveRenameCommit(input: {
   readonly title: string;
   readonly originalTitle: string;
 }): { action: "commit"; title: string } | { action: "reject-empty" } | { action: "noop" } {
@@ -113,6 +113,7 @@ export const ChatHeader = memo(function ChatHeader({
       ? renaming.title
       : null;
   const isRenamingTitle = renamingTitle !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep breadcrumb layout synchronized with DOM resize measurements.
   useEffect(() => {
     const list = breadcrumbContainerRef.current?.querySelector("ol");
     if (!list || !parentThreadLink) return;
@@ -207,6 +208,7 @@ export const ChatHeader = memo(function ChatHeader({
     clearTimeout(titleMenuTimerRef.current);
     titleMenuTimerRef.current = null;
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the pending menu timer when its owning thread changes or unmounts.
   useEffect(
     () => () => {
       if (titleMenuTimerRef.current === null) return;

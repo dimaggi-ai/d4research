@@ -1,40 +1,34 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodePath from "node:path";
-import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
 async function savedChange(app, change, matches) {
   const directory = NodePath.join(app.baseDir, "userdata");
-  let watcher;
-  let timer;
-  const saved = new Promise((resolve, reject) => {
-    const check = async () => {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]);
+  const watcher = NodeFSP.watch(directory, { signal });
+  const saved = (async () => {
+    for await (const _event of watcher) {
       try {
         const settings = JSON.parse(
           await NodeFSP.readFile(NodePath.join(directory, "settings.json"), "utf8"),
         );
-        if (matches(settings.handoff?.contextCompression ?? {})) resolve();
-      } catch {}
-    };
-    watcher = NodeFS.watch(directory, () => {
-      void check();
-    });
-    timer = setTimeout(
-      () => reject(new Error("Handoff settings were not saved within 10s")),
-      10000,
-    );
-  });
+        if (matches(settings.handoff?.contextCompression ?? {})) return;
+      } catch (error) {
+        if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+      }
+    }
+  })();
   try {
-    await change();
-    await saved;
+    await Promise.all([change(), saved]);
   } finally {
-    clearTimeout(timer);
-    watcher.close();
+    controller.abort();
+    await saved.catch(() => {});
   }
 }
 
 export async function handoffSettings({ page, app, screenshotDir }) {
-  await page.goto(`${app.webUrl}/settings/threads`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   const mode = page.getByRole("combobox", { name: "Automatic handoff", exact: true });
   await mode.waitFor();
   NodeAssert.match(await mode.innerText(), /Bounded history/);

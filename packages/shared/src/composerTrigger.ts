@@ -47,7 +47,7 @@ function isWhitespace(char: string): boolean {
 }
 
 /** A second slash makes the whole word a path, even when the caret precedes that slash. */
-export function isPathWord(
+function isPathWord(
   text: string,
   wordStart: number,
   cursor: number,
@@ -65,7 +65,7 @@ export function isPathWord(
  * token regexes already refuse to render as skills, plus the punctuation prose puts after
  * one (`$10k.`, `($5)`).
  */
-export function isCurrencyAmountQuery(query: string): boolean {
+function isCurrencyAmountQuery(query: string): boolean {
   return /^\.?[0-9][0-9,._]*(?:[kKmMbBtT]|[eE][0-9]+)?[.,;:!?)]*$/.test(query);
 }
 

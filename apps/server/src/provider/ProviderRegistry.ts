@@ -311,30 +311,6 @@ const haveProvidersChanged = (
   nextProviders: ReadonlyArray<ServerProvider>,
 ): boolean => !Equal.equals(previousProviders, nextProviders);
 
-export const mergeProviderSnapshots = (
-  previousProviders: ReadonlyArray<ServerProvider>,
-  nextProviders: ReadonlyArray<ServerProvider>,
-): ReadonlyArray<ServerProvider> => {
-  const mergedProviders = new Map(
-    previousProviders.map((provider) => [snapshotInstanceKey(provider), provider] as const),
-  );
-
-  for (const provider of nextProviders) {
-    mergedProviders.set(
-      snapshotInstanceKey(provider),
-      mergeProviderSnapshot(mergedProviders.get(snapshotInstanceKey(provider)), provider),
-    );
-  }
-
-  return orderProviderSnapshots([...mergedProviders.values()]);
-};
-
-export const selectProvidersByKind = (
-  providers: ReadonlyArray<ServerProvider>,
-  providerKinds: ReadonlySet<ProviderDriverKind>,
-): ReadonlyArray<ServerProvider> =>
-  providers.filter((provider) => providerKinds.has(provider.driver));
-
 const correlateSnapshotWithSource = (
   source: ProviderSnapshotSource,
   snapshot: ServerProvider,

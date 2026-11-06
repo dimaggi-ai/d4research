@@ -90,6 +90,7 @@ it.effect("replaces credentials while withholding preview access", () =>
       "memory",
       "orchestration",
       "pull-requests",
+      "research",
       "workspace",
       "worktree",
     ]);

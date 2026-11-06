@@ -126,20 +126,3 @@ export function resolvePromptLinkModelSelection(
     exact: request.model === null || requested !== null,
   };
 }
-
-/**
- * Callers pass projects most recently active first, so the user lands where they last worked.
- */
-export function findPromptLinkProject<
-  P extends { readonly repositoryIdentity?: RepositoryIdentity | null | undefined },
->(projects: ReadonlyArray<P>, repository: PromptLinkRepository): P | undefined {
-  const key = repositoryKey(repository);
-  return projects.find(
-    (project) =>
-      project.repositoryIdentity != null &&
-      repositoryGroupingKeyOf(project.repositoryIdentity).toLowerCase() === key,
-  );
-}
-
-const repositoryKey = (repository: PromptLinkRepository) =>
-  `github.com/${repository.owner}/${repository.name}`.toLowerCase();

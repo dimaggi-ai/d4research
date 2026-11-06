@@ -1,24 +1,10 @@
 import { type OrchestrationV2ProviderTurn, type RunAttemptId } from "@d4research/contracts";
-import {
-  deriveLatestThreadRun,
-  deriveThreadRuntime,
-} from "@d4research/client-runtime/state/thread-execution";
 
-import { derivePendingBackgroundWork } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
-import {
-  latestUnheldRun,
-  usageLimitRunPresentedAsLatest,
-} from "@d4research/shared/orchestrationV2ThreadError";
 import * as Option from "effect/Option";
 import type { SetStateAction } from "react";
-import {
-  applyClaudePromptEffortPrefix,
-  resolvePromptInjectedEffort,
-} from "@d4research/shared/model";
-import { getProviderModelCapabilities } from "../providerModels";
+
 import { sanitizeThreadErrorMessage } from "@d4research/client-runtime/errors";
 import type {
-  EnvironmentThread,
   ThreadStructure,
   EnvironmentThreadShell,
 } from "@d4research/client-runtime/state/shell";
@@ -80,20 +66,12 @@ import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadShells, environmentThreadDetails } from "../state/threads";
 import { waitForAtomValue } from "../state/waitForAtomValue";
-import {
-  filterTerminalContextsWithText,
-  formatTerminalContextLabel,
-  type TerminalContextDraft,
-} from "../lib/terminalContext";
+import { filterTerminalContextsWithText, type TerminalContextDraft } from "../lib/terminalContext";
 import {
   removeInlineContextReference,
   stripInlineContextReferences,
 } from "~/lib/composerContextReferences";
-import {
-  previewAnnotationContextLabel,
-  reviewCommentContextLabel,
-  terminalContextReference,
-} from "../lib/composerContextRecords";
+import { terminalContextReference } from "../lib/composerContextRecords";
 import type { ComposerDispatchMode } from "@d4research/client-runtime/state/composer-dispatch";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 import { collapseExpandedComposerCursor, type ComposerSubmissionIntent } from "../composer-logic";
@@ -543,24 +521,12 @@ export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by
 
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
-export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
-
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
 export type ThreadPipelineKind = "research" | "dev";
 
-/**
- * The pipeline progress surface belongs to the turn that is actually running,
- * not to any pipeline prompt ever typed in the thread. A pipeline is armed by a
- * `!dev`/`#deep-research` user prompt, and that prompt carries the turnId of the
- * turn it starts. Scoping to the active turn keeps a stale prompt from an
- * earlier — or already completed — turn from lighting the "Building" banner
- * while an ordinary turn runs. A genuine provider handoff continues the same
- * running turn, so its turnId is unchanged and the banner is retained. Steering
- * messages added mid-run are ordinary text but share the running turn's turnId,
- * so matching any pipeline prompt within the turn stays robust to them. This
- * mirrors the server's per-turn `isPipelineOrchestratorTurn`.
- */
+// Scope pipeline progress to the active turn, matching any pipeline prompt in that turn.
+// Handoffs retain the turn id; old completed prompts must not activate the banner.
 export function deriveThreadPipelineKind(
   messages: ReadonlyArray<Pick<ChatMessage, "role" | "text" | "runId">>,
   activeTurnId: RunId | null,
@@ -689,18 +655,6 @@ export function collectAudioArtifactPaths(
     }
   }
   return [...paths];
-}
-
-/**
- * Open-in actions are project actions, not Git-only actions. A repository root
- * is preferable when available, but non-Git projects must still be able to
- * open Files/Finder and embedded tools from their workspace root.
- */
-export function resolveProjectOpenInCwd(
-  gitCwd: string | null | undefined,
-  workspaceRoot: string | null | undefined,
-): string | null {
-  return gitCwd?.trim() || workspaceRoot?.trim() || null;
 }
 
 export function scheduleEnvironmentReconnectWarning(showWarning: () => void): () => void {
@@ -1171,14 +1125,8 @@ export function deriveLockedProvider(input: {
   return narrowedThreadProvider ?? narrowedSelectedProvider ?? null;
 }
 
-/**
- * `requiresNewThreadForModelChange` pins the model of a running provider
- * session. Picking a model on another instance is a handoff: it replaces the
- * session instead of changing its model, so it is never blocked here. The
- * server enforces the same same-instance scope in the provider command
- * reactor; blocking cross-instance picks in the client only hid every handoff
- * into or out of such a provider (Agy, Junie).
- */
+// Provider model locks apply within one instance. Cross-instance picks replace the
+// session through handoff and follow the server reactor scope.
 export function getStartedThreadModelChangeBlockReason(input: {
   providers: ReadonlyArray<
     Pick<ServerProvider, "instanceId"> & { readonly requiresNewThreadForModelChange?: boolean }
@@ -1249,11 +1197,8 @@ export function resolveProviderHandoff(input: {
   const driverKind =
     providers.find((snapshot) => snapshot.instanceId === nextModelSelection.instanceId)?.driver ??
     null;
-  // Whether a handoff is REQUIRED is a fact about the thread and the
-  // outgoing selection alone. Target health must never soften it: the
-  // provider lock only constrains driver kind, so a sibling instance of the
-  // running driver would otherwise resolve to "no handoff" and be
-  // dispatched plain — switching the native session with no Memo proof.
+  // Derive required handoff from the outgoing selection, independently of target health.
+  // A sibling instance must still require Memo proof before switching sessions.
   const requiresHandoff = shouldHandoffModelSelection({
     hasStartedSession,
     currentInstanceId,
@@ -1661,8 +1606,6 @@ export function resolveTerminalWorktreePath(input: {
   if (input.summary !== null) return input.summary.worktreePath;
   return input.threadWorktreePath;
 }
-
-type ThreadProjection = EnvironmentThread["projection"];
 type ThreadStructureRow = ThreadStructure["visibleTurnItems"][number];
 export interface ComposerSendContents {
   readonly prompt: string;
@@ -1769,120 +1712,6 @@ export function withMessageContext(input: {
   return { text, context };
 }
 
-/** The attachments the optimistic user row shows before the server echoes the message. */
-export function optimisticMessageAttachments(
-  attachments: ReadonlyArray<ComposerImageAttachment | ComposerFileAttachment>,
-) {
-  return attachments.map((attachment) =>
-    attachment.type === "image"
-      ? {
-          type: "image" as const,
-          id: attachment.id,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          previewUrl: attachment.previewUrl,
-          ...(attachment.source ? { source: attachment.source } : {}),
-        }
-      : {
-          type: "file" as const,
-          id: attachment.id,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          downloadable: false,
-          ...(attachment.source ? { source: attachment.source } : {}),
-        },
-  );
-}
-
-/** Fallback title sources for a message with no text of its own. */
-export function sendTitleFallbackLabels(snapshot: ComposerSendSnapshot) {
-  const terminalContext = snapshot.terminalContexts[0];
-  const reviewComment = snapshot.reviewComments[0];
-  const previewAnnotation = snapshot.previewAnnotations[0];
-  return [
-    terminalContext ? formatTerminalContextLabel(terminalContext) : undefined,
-    reviewComment ? `Review: ${reviewCommentContextLabel(reviewComment)}` : undefined,
-    previewAnnotation ? previewAnnotationContextLabel(previewAnnotation) : undefined,
-  ];
-}
-
-/**
- * A thread shell built from its loaded detail, for direct links that hydrate the detail first.
- * `updatedAt` and `lastVisitedAt` are passed live: the thread structure leaves them out.
- */
-export function presentThreadShellFromProjection(
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-  projection: ThreadStructure,
-  live: {
-    readonly updatedAt: ThreadProjection["updatedAt"];
-    readonly lastVisitedAt: ThreadProjection["thread"]["lastVisitedAt"];
-  },
-) {
-  const { updatedAt, lastVisitedAt } = live;
-  const latestRun = deriveLatestThreadRun(projection);
-  const runtime = deriveThreadRuntime({ ...projection, updatedAt });
-  const pendingRuntimeRequest =
-    projection.runtimeRequests.findLast((request) => request.status === "pending") ?? null;
-  // Direct links can hydrate detail before the thread enters the shell index.
-  return {
-    ...presentThreadShell(environmentId, {
-      ...projection.thread,
-      lastVisitedAt,
-      latestRunId: latestRun?.runId ?? null,
-      activeRunId: runtime?.activeRunId ?? null,
-      status: runtime?.status ?? "idle",
-      pendingRuntimeRequest,
-      latestVisibleMessage: null,
-      latestUserMessageAt:
-        projection.messages.findLast((message) => message.role === "user")?.updatedAt ?? null,
-      hasActionableProposedPlan: projection.plans.some(
-        (plan) => plan.kind === "proposed_plan" && plan.status === "active",
-      ),
-      providerInstanceHistory: [
-        ...new Set(
-          projection.providerThreads
-            .filter((thread) => thread.appThreadId === threadId && thread.ownerNodeId === null)
-            .map((thread) => thread.providerInstanceId),
-        ),
-      ],
-      goal:
-        projection.providerThreads.find(
-          (thread) => thread.id === projection.thread.activeProviderThreadId,
-        )?.goal ?? null,
-      itemCount: projection.turnItems.length,
-      visibleItemCount: projection.visibleTurnItems.length,
-      updatedAt,
-    }),
-    latestRun,
-    runtime,
-  };
-}
-
-/** Background work the provider still runs after the latest run ended. */
-export function deriveThreadPendingBackgroundTasks(projection: ThreadStructure | null) {
-  if (projection === null) return [];
-  const sessionError =
-    projection.providerSessions.findLast(
-      (session) => session.providerInstanceId === projection.thread.providerInstanceId,
-    )?.lastError ?? null;
-  const latestRun =
-    usageLimitRunPresentedAsLatest(projection.runs, projection.turnItems, sessionError) ??
-    latestUnheldRun(projection.runs);
-  return [
-    ...derivePendingBackgroundWork({
-      latestRun,
-      providerThreads: projection.providerThreads,
-      turnItems: projection.turnItems,
-      activeProviderThreadId: projection.thread.activeProviderThreadId,
-      runs: projection.runs,
-      pullRequests: projection.thread.pullRequests,
-    }),
-  ];
-}
-
 /**
  * Run ordinals the conversation can be reverted to: those whose provider turn belongs to the
  * active provider thread, plus 0 for the thread start. Empty without a live provider session
@@ -1961,12 +1790,6 @@ export function chatActionErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An error occurred.";
 }
 
-export function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
-  current: T,
-): T {
-  return current.messageId === null ? current : { ...current, messageId: null };
-}
-
 // The factories below build functions ChatView calls during render, or hands
 // to ChatComposer, which can call them after an await. They live outside the
 // component so each closure keeps only its inputs, not a whole render scope
@@ -2012,18 +1835,4 @@ export function makeThreadErrorSetter(input: {
       return { ...existing, [localDraftErrorKey]: nextEntry };
     });
   };
-}
-
-/** Why the model picker should disable a model, or null when it can be chosen. */
-
-export function formatOutgoingPrompt(params: {
-  provider: ProviderDriverKind;
-  model: string | null;
-  models: ReadonlyArray<ServerProvider["models"][number]>;
-  effort: string | null;
-  text: string;
-}): string {
-  const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
-  const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  return applyClaudePromptEffortPrefix(params.text, promptEffort);
 }

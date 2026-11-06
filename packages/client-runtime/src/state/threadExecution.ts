@@ -24,7 +24,10 @@ import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
 } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
-import { getProviderOptionCurrentLabel, getProviderOptionStatedValue } from "@d4research/shared/model";
+import {
+  getProviderOptionCurrentLabel,
+  getProviderOptionStatedValue,
+} from "@d4research/shared/model";
 import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 
@@ -236,9 +239,7 @@ export function deriveThreadRuntime(
 }
 
 /** The runtime summary a thread's structure determines: all of it but `updatedAt`. */
-export function deriveThreadStructureRuntime(
-  projection: ThreadStructure,
-): ThreadStructureRuntime | null {
+function deriveThreadStructureRuntime(projection: ThreadStructure): ThreadStructureRuntime | null {
   const latestRun = deriveLatestThreadRun(projection);
   const providerSession = projection.providerSessions.findLast(
     (session) => session.providerInstanceId === projection.thread.providerInstanceId,

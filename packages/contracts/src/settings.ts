@@ -234,7 +234,7 @@ export const DEFAULT_COMPOSER_ORB_SEND_COLOR = "#8b5cff";
 export const DEFAULT_COMPOSER_ORB_STOP_COLOR = "#e2323a";
 export const DashboardLayout = Schema.Literals(["board", "projects"]);
 export type DashboardLayout = typeof DashboardLayout.Type;
-export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = "board";
+const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = "board";
 
 export const ProjectRailGroupStyle = Schema.Literals(["edge", "well", "outline", "label", "solid"]);
 export type ProjectRailGroupStyle = typeof ProjectRailGroupStyle.Type;
@@ -1642,13 +1642,8 @@ export const RESEARCH_SCENARIO_MAX_COUNT = 12;
 /** Scenario names ride inside `!research:<name>` triggers, so they must be directive-safe. */
 export const RESEARCH_SCENARIO_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
-/**
- * One named research scenario: its pipeline prompt and prompt files. Selected
- * in Settings → Research and triggered from the composer as
- * `!research:<name>`. The pipeline always runs on the thread's current model —
- * a scenario deliberately carries no orchestrator model of its own, so the
- * model visible in the composer is always the one that runs.
- */
+// A named scenario supplies prompt files and a pipeline prompt. It always runs on
+// the current thread model, selected by the composer.
 export const ResearchScenario = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isPattern(RESEARCH_SCENARIO_NAME_REGEX)),
   pipelinePrompt: Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)).pipe(
@@ -1713,12 +1708,8 @@ export const ResearchSettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type ResearchSettings = typeof ResearchSettings.Type;
 
-// ── Dev pipelines ────────────────────────────────────────────────────────
-//
-// A dev pipeline is the research engine pointed at code work: the same
-// server-enforced delegation budget, visit caps, target fallback, and honest
-// run reporting. Only the prompt and the trigger differ, so a scenario reuses
-// `ResearchScenario` rather than duplicating its shape.
+// Dev scenarios reuse the research schema and its delegation controls;
+// only their prompt and trigger differ.
 
 export const DEV_SCENARIO_MAX_COUNT = 12;
 
@@ -2253,11 +2244,8 @@ export const ServerSettings = Schema.Struct({
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
-  // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
-  // is `Schema.Unknown` at this layer so envelopes with unknown drivers
-  // (forks, downgrades, in-flight PR branches) round-trip without loss.
-  // See providerInstance.ts for the forward/backward compatibility invariant.
+  // Keep unknown driver configurations lossless using Schema.Unknown envelopes.
+  // See providerInstance.ts for the compatibility invariant.
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),

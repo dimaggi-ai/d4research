@@ -26,19 +26,6 @@ export function resolveSelectionActionPosition(options: {
   };
 }
 
-type SelectionRect = { left: number; top: number; right: number; bottom: number };
-
-export function isSelectionRectVisible(rect: SelectionRect, clips: readonly SelectionRect[]) {
-  let { left, top, right, bottom } = rect;
-  for (const clip of clips) {
-    left = Math.max(left, clip.left);
-    top = Math.max(top, clip.top);
-    right = Math.min(right, clip.right);
-    bottom = Math.min(bottom, clip.bottom);
-  }
-  return right > left && bottom > top;
-}
-
 /**
  * Interactive popovers pass getActionElement to keep editing their fields from replacing the
  * captured source selection.

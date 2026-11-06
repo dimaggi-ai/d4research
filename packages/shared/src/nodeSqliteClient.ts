@@ -396,7 +396,6 @@ const makeReader = Effect.fnUntraced(function* (
           });
           if (pending.size === 1) worker.ref();
           const cached = input.cached && !hasLargeBinding(input.params);
-          // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
           worker.postMessage({
             id,
             safeIntegers,
@@ -455,7 +454,6 @@ const makeReader = Effect.fnUntraced(function* (
         if (current === reader) current = undefined;
         void reader.worker.terminate();
       }
-      // @effect-diagnostics-next-line effectSucceedWithVoid:off - The connection result distinguishes undefined from void.
       if (pool.unavailable) return Effect.succeed(undefined);
       pool.unavailable = true;
       return Effect.logWarning("SQLite reader worker unavailable; reads use the main connection", {
@@ -464,7 +462,6 @@ const makeReader = Effect.fnUntraced(function* (
     });
 
   return Effect.suspend((): Effect.Effect<Connection | undefined> => {
-    // @effect-diagnostics-next-line effectSucceedWithVoid:off - The connection result distinguishes undefined from void.
     if (pool.unavailable) return Effect.succeed(undefined);
     let reader: NonNullable<typeof current>;
     try {
@@ -485,8 +482,7 @@ const makeReader = Effect.fnUntraced(function* (
       (startup): Effect.Effect<Connection | undefined> =>
         // A late ready event must not hand out a worker retired by another acquire timeout.
         pool.unavailable || current !== reader
-          ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - The connection result distinguishes undefined from void.
-            Effect.succeed(undefined)
+          ? Effect.succeed(undefined)
           : Option.isSome(startup) && startup.value.type === "ready"
             ? Effect.succeed(reader.connection)
             : turnOff(
@@ -1292,5 +1288,3 @@ const make = Effect.fn("makeWithDatabase")(function* (
 
 export const layer = (config: SqliteClientConfig): Layer.Layer<Client.SqlClient, SqlError> =>
   Layer.effect(Client.SqlClient, make(config)).pipe(Layer.provide(Reactivity.layer));
-
-export const layerMemory = () => layer({ filename: ":memory:" });

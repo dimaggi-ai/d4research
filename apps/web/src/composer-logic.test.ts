@@ -949,7 +949,7 @@ describe("describeStagedHandoffBanner", () => {
   it("keeps the paused copy regardless of the draft", () => {
     expect(
       describeStagedHandoffBanner({ ...base, paused: true, draftIsInlineDelegate: true }).title,
-    ).toBe("Handoff to Claude Code paused — provider unavailable");
+    ).toBe("Handoff to Claude Code paused: provider unavailable");
   });
 });
 

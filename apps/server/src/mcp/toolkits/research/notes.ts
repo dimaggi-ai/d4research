@@ -26,86 +26,87 @@ import {
 // supplies an install-local default, never a path baked into distributed code.
 export const resolveNotesFolder = (configured: string): string =>
   configured.trim() || process.env.D4RESEARCH_NOTES_DIR?.trim() || "";
-const contextFor = (threadId: ThreadId) =>
-  Effect.gen(function* () {
-    const projections = yield* ProjectionStoreV2;
-    const projects = yield* ProjectStoreV2;
-    const settings = yield* ServerSettingsService;
-    const thread = yield* projections.getThread(threadId);
-    const project = yield* projects.getShell(thread.projectId);
-    if (Option.isNone(project))
-      return yield* Effect.fail(new NotesError({ message: "This thread has no project." }));
-    const config = yield* settings.getSettings;
-    return {
-      folder: resolveNotesFolder(config.research.notesFolder),
-      runDirectory: yield* resolveResearchRunDirectory(project.value.workspaceRoot, threadId),
-    };
-  });
+const contextFor = Effect.fn("notes.contextFor")(function* (threadId: ThreadId) {
+  const projections = yield* ProjectionStoreV2;
+  const projects = yield* ProjectStoreV2;
+  const settings = yield* ServerSettingsService;
+  const thread = yield* projections.getThread(threadId);
+  const project = yield* projects.getShell(thread.projectId);
+  if (Option.isNone(project))
+    return yield* Effect.fail(new NotesError({ message: "This thread has no project." }));
+  const config = yield* settings.getSettings;
+  return {
+    folder: resolveNotesFolder(config.research.notesFolder),
+    runDirectory: yield* resolveResearchRunDirectory(project.value.workspaceRoot, threadId),
+  };
+});
 
-const listThreadNotesImpl = (threadId: ThreadId) =>
-  Effect.gen(function* () {
-    const context = yield* contextFor(threadId);
-    const platform = yield* HostProcess.Platform;
-    const folderError = !context.folder
-      ? null
-      : yield* Effect.tryPromise(async () => {
-          await safeDirectory(context.folder, false, platform);
-          await NodeFSP.access(context.folder, NodeFSP.constants.R_OK | NodeFSP.constants.W_OK);
-        }).pipe(
-          Effect.match({
-            onSuccess: () => null,
-            onFailure: () => "Notes folder is unavailable. Check its path and permissions.",
-          }),
-        );
-    const entries = (yield* readResearchLedger(context.runDirectory)).filter((entry) =>
-      entryBelongsToThread(entry, threadId),
-    );
-    return {
-      folder: context.folder,
-      folderStatus: !context.folder
-        ? ("disabled" as const)
-        : folderError
-          ? ("unavailable" as const)
-          : ("available" as const),
-      error:
-        folderError ?? entries.toReversed().find((entry) => entry.notesError)?.notesError ?? null,
-      // No vault-wide scan or retrieval: the selected thread's ledger is the index.
-      entries: entries.toReversed().map(({ artifact, step, visit, runId, outcome, at, chars }) => ({
-        artifact,
-        step,
-        visit,
-        runId,
-        outcome,
-        at,
-        chars,
-      })),
-    };
-  });
-
-const readThreadNoteImpl = (input: { threadId: ThreadId; artifact: string; offset: number }) =>
-  Effect.gen(function* () {
-    const context = yield* contextFor(input.threadId);
-    const entries = (yield* readResearchLedger(context.runDirectory)).filter((entry) =>
-      entryBelongsToThread(entry, input.threadId),
-    );
-    if (!entries.some((entry) => entry.artifact === input.artifact))
-      return yield* Effect.fail(
-        new NotesError({ message: "Artifact is not in this thread's ledger." }),
+const listThreadNotesImpl = Effect.fn("notes.listThreadNotesImpl")(function* (threadId: ThreadId) {
+  const context = yield* contextFor(threadId);
+  const platform = yield* HostProcess.Platform;
+  const folderError = !context.folder
+    ? null
+    : yield* Effect.tryPromise(async () => {
+        await safeDirectory(context.folder, false, platform);
+        await NodeFSP.access(context.folder, NodeFSP.constants.R_OK | NodeFSP.constants.W_OK);
+      }).pipe(
+        Effect.match({
+          onSuccess: () => null,
+          onFailure: () => "Notes folder is unavailable. Check its path and permissions.",
+        }),
       );
-    const result = yield* readRunArtifact({
-      runDirectory: context.runDirectory,
-      artifact: input.artifact,
-      threadId: input.threadId,
-      offset: Math.max(0, input.offset),
-    });
-    if (!result.ok) return yield* Effect.fail(new NotesError({ message: result.detail }));
-    return {
-      artifact: result.artifact,
-      text: result.text,
-      totalChars: result.totalChars,
-      nextOffset: result.nextOffset,
-    };
+  const entries = (yield* readResearchLedger(context.runDirectory)).filter((entry) =>
+    entryBelongsToThread(entry, threadId),
+  );
+  return {
+    folder: context.folder,
+    folderStatus: !context.folder
+      ? ("disabled" as const)
+      : folderError
+        ? ("unavailable" as const)
+        : ("available" as const),
+    error:
+      folderError ?? entries.toReversed().find((entry) => entry.notesError)?.notesError ?? null,
+    // No vault-wide scan or retrieval: the selected thread's ledger is the index.
+    entries: entries.toReversed().map(({ artifact, step, visit, runId, outcome, at, chars }) => ({
+      artifact,
+      step,
+      visit,
+      runId,
+      outcome,
+      at,
+      chars,
+    })),
+  };
+});
+
+const readThreadNoteImpl = Effect.fn("notes.readThreadNoteImpl")(function* (input: {
+  threadId: ThreadId;
+  artifact: string;
+  offset: number;
+}) {
+  const context = yield* contextFor(input.threadId);
+  const entries = (yield* readResearchLedger(context.runDirectory)).filter((entry) =>
+    entryBelongsToThread(entry, input.threadId),
+  );
+  if (!entries.some((entry) => entry.artifact === input.artifact))
+    return yield* Effect.fail(
+      new NotesError({ message: "Artifact is not in this thread's ledger." }),
+    );
+  const result = yield* readRunArtifact({
+    runDirectory: context.runDirectory,
+    artifact: input.artifact,
+    threadId: input.threadId,
+    offset: Math.max(0, input.offset),
   });
+  if (!result.ok) return yield* Effect.fail(new NotesError({ message: result.detail }));
+  return {
+    artifact: result.artifact,
+    text: result.text,
+    totalChars: result.totalChars,
+    nextOffset: result.nextOffset,
+  };
+});
 
 export class ResearchNotes extends Context.Service<
   ResearchNotes,
@@ -143,7 +144,7 @@ const make = Effect.gen(function* () {
       ),
   });
 });
-export const layer = Layer.effect(ResearchNotes, make);
+const layer = Layer.effect(ResearchNotes, make);
 export const listThreadNotes = (threadId: ThreadId) =>
   Effect.flatMap(ResearchNotes, (service) => service.list(threadId)).pipe(Effect.provide(layer));
 export const readThreadNote = (input: { threadId: ThreadId; artifact: string; offset: number }) =>

@@ -410,23 +410,11 @@ export const EnvironmentConnectReachability = Schema.Union([
 ]);
 export type EnvironmentConnectReachability = typeof EnvironmentConnectReachability.Type;
 
-/** "Tunnel connected · 4 connections · QUIC" for a healthy check. */
-export function formatConnectReachable(
-  result: Extract<EnvironmentConnectReachability, { status: "reachable" }>,
-): string {
-  const count = result.readyConnections;
-  return [
-    "Tunnel connected",
-    ...(count === null ? [] : [`${count} connection${count === 1 ? "" : "s"}`]),
-    ...(result.protocol ? [result.protocol.toUpperCase()] : []),
-  ].join(" · ");
-}
-
 /**
  * Sections of docs/user/t3-connect-troubleshooting.md. Each is the GitHub anchor of a
  * heading there; the test fails when a heading is renamed without updating this list.
  */
-export const T3_CONNECT_TROUBLESHOOTING_SECTIONS = [
+const T3_CONNECT_TROUBLESHOOTING_SECTIONS = [
   "the-hosts-tunnel-is-offline",
   "port-7844-is-blocked-on-the-host",
   "the-tunnel-works-but-t3-code-does-not-answer",
@@ -442,22 +430,6 @@ export type T3ConnectTroubleshootingSection = (typeof T3_CONNECT_TROUBLESHOOTING
 /** Clients, the CLI, and server logs link here as "More info". */
 export function t3ConnectTroubleshootingUrl(section: T3ConnectTroubleshootingSection): string {
   return `https://github.com/dimaggi-ai/d4research/blob/master/docs/user/t3-connect-troubleshooting.md#${section}`;
-}
-
-const REACHABILITY_SECTION = {
-  not_linked: "sign-in-account-or-link-problems",
-  connector_not_running: "the-hosts-tunnel-is-offline",
-  connector_not_ready: "the-hosts-tunnel-is-offline",
-  no_connector: "the-hosts-tunnel-is-offline",
-  edge_unreachable: "port-7844-is-blocked-on-the-host",
-  origin_unreachable: "the-tunnel-works-but-t3-code-does-not-answer",
-  unexpected_response: "the-tunnel-works-but-t3-code-does-not-answer",
-  dns_failed: "the-t3-connect-address-does-not-resolve-or-answer",
-  timeout: "the-t3-connect-address-does-not-resolve-or-answer",
-} satisfies Record<EnvironmentConnectReachabilityCause, T3ConnectTroubleshootingSection>;
-
-export function connectReachabilityHelpUrl(cause: EnvironmentConnectReachabilityCause): string {
-  return t3ConnectTroubleshootingUrl(REACHABILITY_SECTION[cause]);
 }
 
 export const AuthPairingLinkRevokeResult = Schema.Struct({

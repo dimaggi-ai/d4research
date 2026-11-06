@@ -4782,24 +4782,6 @@ export function markPromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
   }
 }
 
-export function restoreFailedDraftThread(
-  draftId: DraftId,
-  draftThread: DraftThreadState,
-  threadId: ThreadId,
-): void {
-  useComposerDraftStore.setState((state) => ({
-    draftThreadsByThreadKey: {
-      ...state.draftThreadsByThreadKey,
-      [draftId]: {
-        ...(state.draftThreadsByThreadKey[draftId] ?? draftThread),
-        threadId,
-        ...(threadId !== draftThread.threadId ? { createdAt: new Date().toISOString() } : {}),
-        promotedTo: null,
-      },
-    },
-  }));
-}
-
 export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
   const draftStore = useComposerDraftStore.getState();
   for (const [draftId, draftThread] of Object.entries(draftStore.draftThreadsByThreadKey)) {
@@ -4880,7 +4862,7 @@ function normalizePersistedElementContextDraft(
 type DraftPromotionShell = Pick<EnvironmentThreadShell, "latestRun" | "latestUserMessageAt">;
 
 /** The server owns a draft's send once its message persisted or its run started or stopped. */
-export function resolveDraftPromotionNavigationTarget(input: {
+function resolveDraftPromotionNavigationTarget(input: {
   serverThreadRef: ScopedThreadRef | null;
   serverThread: DraftPromotionShell | null | undefined;
   backgroundSubmissionPending: boolean;

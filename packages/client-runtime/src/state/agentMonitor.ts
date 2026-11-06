@@ -1,6 +1,6 @@
 import type { AgentMonitorReport, OrchestrationV2ThreadShell } from "@d4research/contracts";
 
-export const AGENT_MONITOR_LABELS: Record<AgentMonitorReport["classification"], string> = {
+const AGENT_MONITOR_LABELS: Record<AgentMonitorReport["classification"], string> = {
   needs_user: "Needs you",
   waiting_background: "Waiting for background work",
   working: "Working",

@@ -1,25 +1,19 @@
 import type {
   ThreadPullRequestSnapshot,
-  OrchestrationV2AppThread,
-  RepositoryIdentity,
-  SourceControlProviderKind,
   ThreadLinkedPullRequest,
   ThreadPullRequestKey,
   ThreadPullRequestLink,
 } from "@d4research/contracts";
 
-import { pullRequestHostOf } from "@d4research/contracts";
 import { parseChangeRequestUrl } from "./changeRequestUrl.ts";
-import { canonicalRepositoryKey, sourceControlRepositorySelector } from "./sourceControl.ts";
+import { canonicalRepositoryKey } from "./sourceControl.ts";
 
 type ThreadPullRequestKeySource = ThreadPullRequestKey & {
   readonly authority?: string;
   readonly url?: string;
 };
 
-export function normalizeThreadPullRequestKey(
-  key: ThreadPullRequestKeySource,
-): ThreadPullRequestKey {
+function normalizeThreadPullRequestKey(key: ThreadPullRequestKeySource): ThreadPullRequestKey {
   const parsed = key.url === undefined ? null : parseChangeRequestUrl(key.url);
   const authority =
     key.authority ??
@@ -35,39 +29,6 @@ export function normalizeThreadPullRequestKey(
     repository: canonical.slice(separator + 1),
     number: key.number,
   };
-}
-
-export function legacyThreadPullRequestKey(
-  linked: Pick<ThreadLinkedPullRequest, "repository" | "number" | "url">,
-  fallbackHost?: string,
-): ThreadPullRequestKey {
-  const parsed = parseChangeRequestUrl(linked.url);
-  if (parsed !== null && parsed.number === linked.number) {
-    const canonical = canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`);
-    if (parsed.authority !== undefined || canonical.startsWith("dev.azure.com/")) {
-      return normalizeThreadPullRequestKey(parsed);
-    }
-  }
-  let host = fallbackHost;
-  if (host === undefined) {
-    try {
-      host = new URL(linked.url).hostname;
-    } catch {
-      host = "unknown";
-    }
-  }
-  return {
-    host: host.trim().toLowerCase() || "unknown",
-    repository: linked.repository.trim().toLowerCase(),
-    number: linked.number,
-  };
-}
-
-export function threadPullRequestKeysEqual(
-  left: ThreadPullRequestKeySource,
-  right: ThreadPullRequestKeySource,
-): boolean {
-  return threadPullRequestKeyOf(left) === threadPullRequestKeyOf(right);
 }
 
 // Clients re-derive chains for every link on each render, and normalizing parses the
@@ -123,7 +84,7 @@ function layersFromTop(chain: ThreadPullRequestChain): Array<ThreadPullRequestLi
     .map((entry) => entry.link);
 }
 
-export function resolveThreadCurrentPullRequest(
+function resolveThreadCurrentPullRequest(
   links: ReadonlyArray<ThreadPullRequestLink>,
 ): ThreadCurrentPullRequest | null {
   const visible = visibleThreadPullRequests(links);
@@ -158,53 +119,6 @@ export function resolveThreadCurrentPullRequestLink(
   const current = resolveThreadCurrentPullRequest(links);
   if (current === null) return null;
   return current.kind === "single" ? current.link : current.top;
-}
-
-export function legacyLinkedPullRequestOf(
-  links: ReadonlyArray<ThreadPullRequestLink>,
-  projectId: ThreadLinkedPullRequest["projectId"],
-  identity: RepositoryIdentity | null | undefined,
-): ThreadLinkedPullRequest | null {
-  if (!identity) return null;
-  const host = pullRequestHostOf(identity, identity.provider as SourceControlProviderKind);
-  if (typeof host !== "string") return null;
-  const repository = sourceControlRepositorySelector(identity);
-  if (repository === null) return null;
-  const azureKey =
-    identity.provider === "azure-devops"
-      ? canonicalRepositoryKey(identity.canonicalKey.toLowerCase())
-      : null;
-  const link = resolveThreadCurrentPullRequestLink(
-    links.filter((link) => {
-      if (azureKey !== null) {
-        const key = legacyThreadPullRequestKey(link, link.host);
-        return canonicalRepositoryKey(`${key.host}/${key.repository}`) === azureKey;
-      }
-      const parsed = parseChangeRequestUrl(link.url);
-      if (parsed?.authority !== undefined) {
-        try {
-          const remote = new URL(identity.locator.remoteUrl);
-          if (remote.protocol === "http:" || remote.protocol === "https:") {
-            return (
-              parsed.authority === remote.host && parsed.repository === repository.toLowerCase()
-            );
-          }
-        } catch {}
-        return parsed.host === host && parsed.repository === repository.toLowerCase();
-      }
-      return (
-        link.host.toLowerCase() === host.toLowerCase() &&
-        link.repository.toLowerCase() === repository.toLowerCase()
-      );
-    }),
-  );
-  if (link === null) return null;
-  return {
-    projectId,
-    repository: azureKey === null ? link.repository : repository,
-    number: link.number,
-    url: link.url,
-  };
 }
 
 export interface ThreadPullRequestChain {
@@ -331,39 +245,6 @@ export function threadPullRequestSearchTerms(thread: {
     ...pullRequest.references,
     ...(pullRequest.title ? [pullRequest.title] : []),
   ]);
-}
-
-/** Older V2 event payloads stored one link; an explicit empty array means it was unlinked. */
-export function threadPullRequestsOf(thread: {
-  readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
-  readonly linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
-}): ReadonlyArray<ThreadPullRequestLink> {
-  if (thread.pullRequests !== undefined) return thread.pullRequests;
-  const linked = thread.linkedPullRequest;
-  return linked == null
-    ? []
-    : [
-        {
-          ...legacyThreadPullRequestKey(linked),
-          url: linked.url,
-          source: "manual",
-          linkedAt: "1970-01-01T00:00:00.000Z",
-          snapshot: null,
-          stack: null,
-        },
-      ];
-}
-
-export function applyThreadPullRequestLinkUpdate(
-  thread: OrchestrationV2AppThread,
-  updated: ThreadPullRequestLink,
-): OrchestrationV2AppThread {
-  return {
-    ...thread,
-    pullRequests: threadPullRequestsOf(thread).map((link) =>
-      threadPullRequestKeysEqual(link, updated) ? updated : link,
-    ),
-  };
 }
 
 export interface PullRequestListLine {

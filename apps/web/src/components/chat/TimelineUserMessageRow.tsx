@@ -348,7 +348,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   );
 }
 
-export function useScheduledTaskTitle(
+function useScheduledTaskTitle(
   environmentId: EnvironmentId,
   scheduledTaskId: ScheduledTaskId | undefined,
 ): string | undefined {
@@ -358,7 +358,7 @@ export function useScheduledTaskTitle(
   return tasksQuery.data?.tasks.find((task) => task.id === scheduledTaskId)?.title;
 }
 
-export function FoldedMessageHeader(props: {
+function FoldedMessageHeader(props: {
   icon: LucideIcon;
   label: string;
   summary: string;

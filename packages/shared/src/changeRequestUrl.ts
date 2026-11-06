@@ -1,4 +1,3 @@
-import type { RepositoryIdentity, ThreadLinkedPullRequest } from "@d4research/contracts";
 import { canonicalRepositoryKey } from "./sourceControl.ts";
 
 /**
@@ -100,39 +99,6 @@ export function changeRequestUrlFor(
   }
 }
 
-export function gitHubPullRequestBrowserUrl(
-  identity: RepositoryIdentity | null | undefined,
-  repository: string,
-  number: number,
-): string | null {
-  if (identity?.provider !== "github" || !Number.isSafeInteger(number) || number < 1) return null;
-  const repositoryPath = repository.split("/");
-  if (
-    repositoryPath.length !== 2 ||
-    repositoryPath.some((segment) => segment.length === 0 || segment === "." || segment === "..")
-  ) {
-    return null;
-  }
-
-  let origin: string | null = null;
-  try {
-    const remoteUrl = new URL(identity.locator.remoteUrl.trim());
-    if (remoteUrl.protocol === "http:" || remoteUrl.protocol === "https:") {
-      origin = remoteUrl.origin;
-    }
-  } catch {}
-  const hostname = identity.canonicalKey.split("/")[0];
-  if (origin === null && !hostname) return null;
-
-  try {
-    const url = new URL(origin ?? `https://${hostname}`);
-    url.pathname = `/${repositoryPath.join("/")}/pull/${number}`;
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
 /**
  * The pull-request URL a GitHub-style `#123` autolink might name. GitHub writes every bare
  * reference through `/issues/`, including pull requests, so this only builds a candidate: the
@@ -158,38 +124,6 @@ export function pullRequestCandidateUrlFromReferenceAutolink(targetUrl: string):
   const match = /^\/([^/]+\/[^/]+)\/issues\/(\d+)(?:\/|$)/u.exec(url.pathname);
   if (match?.[1] === undefined || match[2] === undefined) return null;
   url.pathname = `/${match[1]}/pull/${match[2]}`;
-  return url.toString();
-}
-
-export function matchesLinkedPullRequestUrl(
-  linkedPullRequest: ThreadLinkedPullRequest,
-  targetUrl: string,
-): boolean {
-  const linked = parseChangeRequestUrl(linkedPullRequest.url);
-  const target = parseChangeRequestUrl(targetUrl);
-  return (
-    linked !== null &&
-    target !== null &&
-    linked.host === target.host &&
-    linked.repository === target.repository &&
-    linked.number === target.number &&
-    linked.authority === target.authority
-  );
-}
-
-export function changeRequestRepositoryUrl(targetUrl: string): string | null {
-  const changeRequest = parseChangeRequestUrl(targetUrl);
-  if (changeRequest === null) return null;
-  const url = new URL(targetUrl);
-  const repositoryPath =
-    /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1] ??
-    /^(.*?)(?:\/pulls?\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+)(?:\/|$)/iu.exec(
-      url.pathname,
-    )?.[1];
-  if (!repositoryPath) return null;
-  url.pathname = repositoryPath;
-  url.search = "";
-  url.hash = "";
   return url.toString();
 }
 

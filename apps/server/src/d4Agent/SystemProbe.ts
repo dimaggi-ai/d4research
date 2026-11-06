@@ -54,7 +54,7 @@ export function diskCheck(
   const status = percent >= threshold ? "attention" : "ok";
   return { notificationEligible: false, id, status, reportKey: `${id}:${status}`, value: percent };
 }
-export const probeIds = [
+const probeIds = [
   "user-units",
   "system-units",
   "root-disk",

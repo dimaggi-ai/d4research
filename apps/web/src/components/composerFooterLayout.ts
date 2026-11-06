@@ -194,4 +194,4 @@ export function resolveComposerTimelineInset(input: {
  * 8px of top padding, the prompt clamps from min-h-17.5 (70px) to 32px, and
  * the 48px footer leaves flow.
  */
-export const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;
+const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;

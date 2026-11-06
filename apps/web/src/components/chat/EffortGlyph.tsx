@@ -42,7 +42,7 @@ export function resolveEffortGlyph(descriptor: SelectDescriptor, current: string
 }
 
 /** Bar heights that rise by one whole-pixel step, from about half height up to `maxBar`. */
-export function effortBarHeights(count: number, maxBar: number): number[] {
+function effortBarHeights(count: number, maxBar: number): number[] {
   // Rounding each bar separately mixes 1px and 2px steps, so round the step once.
   const step = Math.max(1, Math.round(maxBar / 2 / Math.max(count - 1, 1)));
   return Array.from({ length: count }, (_, index) => maxBar - (count - 1 - index) * step);

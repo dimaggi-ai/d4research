@@ -40,6 +40,7 @@
         // Manual research-product QA and fixture recorders, run by hand.
         "qa-*.{ts,mjs}",
         "record-claude-fixture.ts",
+        "evaluate-agent-monitor.ts",
       ],
       "ignoreDependencies": ["agent-device", "esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
@@ -130,6 +131,7 @@
       // Fonts are configured as asset paths; Expo autolinks the native packages.
       "ignoreDependencies": [
         "@expo-google-fonts/dm-sans",
+        "@callstack/liquid-glass",
         "@d4research/mobile-highlights-native",
         "@d4research/mobile-review-diff-native",
         "@d4research/mobile-terminal-native",

@@ -34,7 +34,7 @@ export function ThreadFindCanvas({
 }
 
 /** Owns search updates below the chat view so cycling does not rerender the composer and panels. */
-export function ThreadFindProvider({
+function ThreadFindProvider({
   controlsRef,
   onOpenChange,
   children,
@@ -49,6 +49,7 @@ export function ThreadFindProvider({
     find.open,
     find.close,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the owner of imperative search controls informed of automatic closes without lifting per-keystroke search state.
   useLayoutEffect(() => onOpenChange(find.isOpen), [find.isOpen, onOpenChange]);
   return (
     <ThreadFindBarContext value={find.barProps}>

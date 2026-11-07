@@ -85,7 +85,7 @@ it.layer(NodeServices.layer)("skills_search", (it) => {
 
       // Round trip through Claude's own discovery, not just our inventory.
       const claudeSkills = yield* discoverClaudeSkills(
-        { homePath: path.join(homeDir, ".claude") },
+        { homePath: "", configDir: path.join(homeDir, ".claude") },
         undefined,
         { HOME: homeDir },
       );

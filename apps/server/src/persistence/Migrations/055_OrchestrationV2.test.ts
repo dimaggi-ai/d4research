@@ -19,7 +19,7 @@ layer("055_OrchestrationV2", (it) => {
       // 37, 38, 45 and 46 stay reserved for migrations d4research shipped and retired.
       assert.deepStrictEqual(
         ids,
-        Array.from({ length: 91 }, (_, index) => index + 1).filter(
+        Array.from({ length: 95 }, (_, index) => index + 1).filter(
           (id) => id !== 37 && id !== 38 && id !== 45 && id !== 46,
         ),
       );

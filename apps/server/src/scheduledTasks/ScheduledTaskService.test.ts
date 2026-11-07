@@ -405,7 +405,7 @@ it.effect("thread cleanup notifies subscribers and a finishing run cannot recrea
       yield* Deferred.await(started);
       yield* Deferred.await(running);
       const refused = yield* service.runNow({ id: task.id }).pipe(Effect.flip);
-      assert.equal(refused.message, "Schedule task is already running.");
+      assert.equal(refused.message, "The scheduled task is already running.");
       yield* service.deleteForThread(threadId);
       yield* Deferred.await(removed);
       yield* Deferred.succeed(release, undefined);
@@ -537,6 +537,8 @@ it.effect("runs a bound task on its thread's current provider", () =>
 
 it.effect("a fresh-session task launches one thread, then starts each later run fresh in it", () =>
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* TestClock.setTime(Date.parse("2026-11-03T00:00:00.000Z"));
     const launches = yield* Ref.make(0);
     const sends = yield* Ref.make<Array<{ threadId: ThreadId; freshContext?: boolean }>>([]);
     const launched = ThreadId.make("thread:fresh-session-task");
@@ -545,10 +547,18 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
           Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-            launch: () =>
-              Ref.update(launches, (n) => n + 1).pipe(
-                Effect.as({ threadId: launched, resumed: false } as never),
-              ),
+            launch: (input) =>
+              Effect.gen(function* () {
+                yield* Ref.update(launches, (n) => n + 1);
+                const now = "2026-11-03T00:00:00.000Z";
+                yield* sql`INSERT INTO orchestration_v2_projection_runs
+                  (run_id, thread_id, ordinal, provider, status, requested_at, completed_at, payload_json)
+                  VALUES ('run:fresh-session', ${launched}, 1, 'codex', 'completed', ${now}, ${now}, '{}')`;
+                yield* sql`INSERT INTO orchestration_v2_projection_messages
+                  (message_id, thread_id, run_id, role, streaming, created_at, updated_at, payload_json)
+                  VALUES (${input.initialMessage!.messageId}, ${launched}, 'run:fresh-session', 'user', 0, ${now}, ${now}, '{}')`;
+                return { threadId: launched, resumed: false } as never;
+              }).pipe(Effect.orDie),
           }),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: () => Effect.succeed({ deletedAt: null } as never),
@@ -600,6 +610,7 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
       const legacy = yield* service.upsert({ ...input, threadId: null });
       assert.equal(legacy.task.threadId, launched);
       assert.equal(legacy.task.threadMode, "fresh_session");
+      yield* TestClock.setTime(Date.parse("2026-11-03T00:01:00.000Z"));
       yield* service.runNow({ id: input.id });
 
       assert.equal(yield* Ref.get(launches), 1);

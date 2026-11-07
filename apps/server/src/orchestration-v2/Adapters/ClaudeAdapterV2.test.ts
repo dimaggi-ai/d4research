@@ -1973,7 +1973,7 @@ describe("ClaudeAdapterV2 attachments", () => {
           const queued = yield* Deferred.make<void>();
           const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
             instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-            settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath: claudeHome },
+            settings: { ...DEFAULT_CLAUDE_SETTINGS, configDir: claudeHome },
             environment: {},
             attachmentsDir,
             fileSystem,
@@ -4857,7 +4857,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           );
         }
         const harness = yield* makeWakeHarnessWithOptions({
-          settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath },
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, configDir: homePath },
         });
         const input = makeClaudeTestTurnInput({
           threadId: harness.threadId,
@@ -19244,7 +19244,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             Effect.sync(() => setToolGuardRuntimeEnabled(true)),
             () => Effect.sync(() => setToolGuardRuntimeEnabled(false)),
           );
-          const harness = yield* makeWakeHarness;
+          const harness = yield* makeWakeHarnessWithOptions({
+            freshQueueOnReopen: true,
+            close: Queue.shutdown,
+          });
           for (const [index, mode] of (
             ["full-access", "approval-required", "full-access"] as const
           ).entries()) {
@@ -19266,8 +19269,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               mode === "full-access" ? "shadow" : "enforcement",
             );
             assert.equal(harness.getOpenedOptions()?.env?.T3RESEARCH_RUNTIME_MODE, mode);
-            yield* Queue.offer(
-              harness.sdkMessages,
+            yield* harness.offerAndWait(
               makeResultFrame({ uuid: `guard-result-${index}`, result: "Done" }),
             );
             yield* Queue.take(harness.terminalReceipts);

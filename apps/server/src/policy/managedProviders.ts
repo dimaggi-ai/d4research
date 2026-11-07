@@ -1,7 +1,9 @@
 import {
+  AgySettings,
   AntigravitySettings,
   ClaudeSettings,
   CodexSettings,
+  JunieSettings,
   defaultInstanceIdForDriver,
   disallowedProviderMessage,
   type ManagedProviderInstance,
@@ -16,6 +18,7 @@ import {
   type ServerSettings,
 } from "@d4research/contracts";
 import { acpRegistryClient } from "@d4research/provider-acp-registry/client";
+import { deepSeekClient } from "@d4research/provider-deepseek/client";
 import { cursorClient } from "@d4research/provider-cursor/client";
 import { fxClient } from "@d4research/provider-fx/client";
 import { grokClient } from "@d4research/provider-grok/client";
@@ -44,6 +47,7 @@ const known = (
 
 const PACKAGED_CLIENTS: ReadonlyArray<ProviderClientDefinition> = [
   cursorClient,
+  deepSeekClient,
   grokClient,
   fxClient,
   kiroClient,
@@ -72,6 +76,8 @@ const KNOWN_DRIVERS: ReadonlyMap<ProviderDriverKind, KnownDriver> = new Map([
   known("codex", "Codex", CodexSettings),
   known("claudeAgent", "Claude", ClaudeSettings),
   known("antigravity", "Antigravity", AntigravitySettings),
+  known("agy", "Agy", AgySettings),
+  known("junie", "Junie", JunieSettings),
   ...PACKAGED_CLIENTS.map((client) =>
     known(client.driverKind, client.label, client.settingsSchema, client.hasDefaultInstance),
   ),

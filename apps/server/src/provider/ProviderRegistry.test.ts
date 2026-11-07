@@ -3559,7 +3559,7 @@ it.layer(
             JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://state-dir.example" } }),
           );
           const status = yield* checkClaudeProviderStatus(
-            { ...defaultClaudeSettings, homePath: configDir },
+            { ...defaultClaudeSettings, configDir },
             claudeCapabilities({
               tokenSource: "ANTHROPIC_AUTH_TOKEN",
               apiKeySource: "none",

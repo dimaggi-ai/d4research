@@ -812,6 +812,8 @@ describe("subagent worktree ownership", () => {
     "grandchild",
     "immediate",
     "active-parent",
+    "active-settled-parent",
+    "active-settled-child",
     "recent-settle",
     "settle-grace",
     "recent-child-activity",
@@ -828,7 +830,7 @@ describe("subagent worktree ownership", () => {
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW_MS);
       const fixture = yield* cleanupFixture({
-        ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+        ...TEST_WORKTREE_CLEANUP,
         worktreeSettledAfterDays: scenario === "immediate" ? 0 : 8,
       });
       const root = shell({
@@ -840,7 +842,12 @@ describe("subagent worktree ownership", () => {
               : scenario === "immediate"
                 ? at(-120_000)
                 : at(-20 * DAY_MS),
-        settledOverride: scenario === "active-parent" ? null : "settled",
+        settledOverride:
+          scenario === "active-parent"
+            ? null
+            : scenario === "active-settled-parent"
+              ? "active"
+              : "settled",
         updatedAt: scenario === "settle-grace" ? at(-30_000) : at(-10 * DAY_MS),
       });
       const child = shell({
@@ -863,7 +870,9 @@ describe("subagent worktree ownership", () => {
         pendingBackgroundTasks:
           scenario === "pending-child" ? [{ taskId: "task", kind: "command" }] : [],
         latestRunCompletedAt: scenario === "recent-child-activity" ? at(-2 * DAY_MS) : null,
-        settledOverride: scenario === "unsettled-child" ? "active" : null,
+        settledOverride:
+          scenario === "unsettled-child" || scenario === "active-settled-child" ? "active" : null,
+        settledAt: scenario === "active-settled-child" ? at(-20 * DAY_MS) : null,
         pinnedAt: scenario === "pinned-child" ? at(-DAY_MS) : null,
       });
       const middle = shell({
@@ -904,6 +913,7 @@ describe("subagent worktree ownership", () => {
   it.live.each([
     "parent-unsettled",
     "parent-resettled",
+    "parent-reactivated",
     "child-unsettled",
     "intermediate-running",
     "intermediate-pending",
@@ -911,7 +921,7 @@ describe("subagent worktree ownership", () => {
     runCleanupTest(
       Effect.gen(function* () {
         const fixture = yield* pausedMeasurementFixture({
-          ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+          ...TEST_WORKTREE_CLEANUP,
           worktreeSettledAfterDays: 0,
         });
         const root = shell({ settledAt: at(-20 * DAY_MS), settledOverride: "settled" });
@@ -948,9 +958,14 @@ describe("subagent worktree ownership", () => {
             ? root
             : {
                 ...root,
-                settledAt: change === "parent-resettled" ? at(0) : null,
+                settledAt:
+                  change === "parent-resettled"
+                    ? at(0)
+                    : change === "parent-reactivated"
+                      ? root.settledAt
+                      : null,
                 settledOverride: change === "parent-resettled" ? "settled" : "active",
-                updatedAt: at(0),
+                updatedAt: change === "parent-reactivated" ? root.updatedAt : at(0),
               },
         ]);
         yield* Deferred.succeed(fixture.resume, undefined);
@@ -1932,7 +1947,7 @@ describe("storage cleanup reports and local file policies", () => {
       runCleanupTest(
         Effect.gen(function* () {
           const fixture = yield* cleanupFixture({
-            ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+            ...TEST_WORKTREE_CLEANUP,
             worktreeAfterDays: 8,
             worktreeOnDelete,
           });
@@ -2006,11 +2021,11 @@ describe("storage cleanup reports and local file policies", () => {
           // Release removes the live entry before publishing its final error update.
           fixture.setSessionLive(false);
           yield* publish(sessionUpdated("error", ""));
-          expect(fixture.snapshotReads()).toBe(startupReads + Number(worktreeOnDelete));
+          expect(fixture.snapshotReads()).toBe(startupReads + 2 * Number(worktreeOnDelete));
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);
 
           yield* publish(sessionUpdated("stopped", ""));
-          expect(fixture.snapshotReads()).toBe(startupReads + 2 * Number(worktreeOnDelete));
+          expect(fixture.snapshotReads()).toBe(startupReads + 4 * Number(worktreeOnDelete));
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);
 
           fixture.setSessionLive(true);
@@ -2021,7 +2036,7 @@ describe("storage cleanup reports and local file policies", () => {
             occurredAt: at(0),
             payload: { ...shell({ deletedAt: at(0) }), lastVisitedAt: null },
           });
-          expect(fixture.snapshotReads()).toBe(startupReads + 3 * Number(worktreeOnDelete));
+          expect(fixture.snapshotReads()).toBe(startupReads + 6 * Number(worktreeOnDelete));
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);
         }),
       ),

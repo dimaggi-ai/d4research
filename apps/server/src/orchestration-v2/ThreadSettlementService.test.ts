@@ -135,7 +135,7 @@ function persistedLink(
 
 describe("isAutoSettlementCandidate", () => {
   it.each([null, at(-DAY_MS)])(
-    "settles a thread whose only background work is a command left running with pinnedAt %s",
+    "checks settlement with only a background command and pinnedAt %s",
     (pinnedAt) => {
       expect(
         ThreadSettlementService.isAutoSettlementCandidate(
@@ -147,7 +147,7 @@ describe("isAutoSettlementCandidate", () => {
           }),
           NOW_MS,
         ),
-      ).toBe(true);
+      ).toBe(pinnedAt === null);
       expect(
         ThreadSettlementService.isAutoSettlementCandidate(
           shell({ pinnedAt, autoSettleDisabledAt: at(-DAY_MS) }),
@@ -859,7 +859,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* service.drain;
           assert.deepEqual(
             new Set((yield* Ref.get(fixture.commands)).map((command) => command.threadId)),
-            new Set(threads.map((thread) => thread.id)),
+            new Set(threads.filter((thread) => thread.pinnedAt === null).map((thread) => thread.id)),
           );
         }).pipe(Effect.provide(fixture.layer));
       }),

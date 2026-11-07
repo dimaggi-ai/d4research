@@ -284,7 +284,7 @@ function worktreeSettlementChain(
     chain.push(parent);
     current = parent;
   }
-  return chain;
+  return current.settledOverride === "active" ? [] : chain;
 }
 
 /** Squash/rebase merges require the merged PR to name this exact head commit. */
@@ -1144,6 +1144,7 @@ const make = Effect.gen(function* () {
           if (
             latestGroup.length !== group.length ||
             (settled &&
+              settlementChain.length === 1 &&
               (latestOwner?.settledAt == null || latestOwner.settledOverride === "active")) ||
             latestOwner?.id !== thread.id ||
             latestOwner?.branch !== thread.branch ||

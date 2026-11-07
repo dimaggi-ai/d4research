@@ -17,7 +17,7 @@ layer("077_RepairBooleanSettledOverride", (it) => {
   it.effect("canonicalizes boolean settled overrides so recovery can decode them", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 76 });
+      yield* runMigrations({ toMigrationInclusive: 91 });
       const overrides: ReadonlyArray<readonly [string, unknown]> = [
         ["true", true],
         ["false", false],
@@ -64,7 +64,9 @@ layer("077_RepairBooleanSettledOverride", (it) => {
       `;
       const before = new Map((yield* rows).map((row) => [row.thread_id, row.payload_json]));
 
-      yield* runMigrations({ toMigrationInclusive: 77 });
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 92 }), [
+        [92, "RepairBooleanSettledOverride"],
+      ]);
       const after = new Map((yield* rows).map((row) => [row.thread_id, row.payload_json]));
       for (const id of ["settled", "active", "null", "absent"]) {
         assert.strictEqual(after.get(id), before.get(id));

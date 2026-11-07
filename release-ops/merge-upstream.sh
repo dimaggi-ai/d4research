@@ -32,6 +32,7 @@ cd "$REPO_ROOT"
 # t3/ prefix; every other quoted "t3/..." is an Effect service tag we renamed.
 BRANCH_FIXTURE_FILE="apps/web/src/components/BranchToolbar.logic.test.ts"
 VCS_BRANCH_FIXTURE_FILE="apps/server/src/vcs/GitVcsDriverCore.test.ts"
+INGESTOR_BRANCH_FIXTURE_FILE="apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts"
 
 # pingdotgg/t3code is renamed ONLY at these sites. Everywhere else (README
 # attribution, GitManager/PR/sourceControl test fixtures, thread-transfer
@@ -82,7 +83,7 @@ apply_rename_map() { # args: files (text, tracked)
   local f
   for f in "$@"; do
     case "$f" in
-      "$BRANCH_FIXTURE_FILE"|*/"$BRANCH_FIXTURE_FILE"|"$VCS_BRANCH_FIXTURE_FILE"|*/"$VCS_BRANCH_FIXTURE_FILE") ;;
+      "$BRANCH_FIXTURE_FILE"|*/"$BRANCH_FIXTURE_FILE"|"$VCS_BRANCH_FIXTURE_FILE"|*/"$VCS_BRANCH_FIXTURE_FILE"|"$INGESTOR_BRANCH_FIXTURE_FILE"|*/"$INGESTOR_BRANCH_FIXTURE_FILE") ;;
       *) tagfiles+=("$f") ;;
     esac
   done
@@ -195,7 +196,7 @@ leak_grep() { # args: pattern, extra git-grep args...; returns 0 if leaks found
     ':(exclude).repos' ':(exclude)pnpm-lock.yaml' ':(exclude)patches' \
     ':(exclude).plans' ':(exclude)release-ops/merge-upstream.sh' \
     ':(exclude)docs/operations/upstream-merge.md' \
-    ":(exclude)$BRANCH_FIXTURE_FILE" ":(exclude)$VCS_BRANCH_FIXTURE_FILE" \
+    ":(exclude)$BRANCH_FIXTURE_FILE" ":(exclude)$VCS_BRANCH_FIXTURE_FILE" ":(exclude)$INGESTOR_BRANCH_FIXTURE_FILE" \
     "${KNOWN_GAP_EXCLUDES[@]}" || status=$?
   if [ "$status" -gt 1 ]; then
     echo "git grep failed while checking pattern '$pat' (status $status)" >&2

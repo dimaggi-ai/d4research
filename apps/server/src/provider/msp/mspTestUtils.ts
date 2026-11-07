@@ -7,6 +7,8 @@ import { Effect, Schema } from "effect";
 import { MuseSettings } from "@d4research/contracts";
 import { execScriptSource, writeFakeCli } from "@d4research/provider-testing/fakeCli";
 
+const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
+
 const decodeMuseSettings = Schema.decodeUnknownEffect(MuseSettings);
 const sourceRange = {
   first: { id: "r", sequence: 1 },
@@ -55,9 +57,7 @@ export const makeMockMuse = Effect.fn("makeMockMuse")(function* (
   );
   const logPath = NodePath.join(directory, "requests.jsonl");
   const argvPath = NodePath.join(directory, "argv.log");
-  const encodedArgvPath = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.String))(
-    argvPath,
-  );
+  const encodedArgvPath = yield* encodeJsonString(argvPath);
   const binaryPath = writeFakeCli({
     directory,
     name: "fake-muse",

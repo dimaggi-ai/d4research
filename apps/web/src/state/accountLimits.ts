@@ -1,26 +1,12 @@
 import { isHostPrimaryConnectionTarget } from "@d4research/client-runtime/connection";
 /**
- * Multi-environment account-limits state.
- *
- * Every connected environment reports one snapshot per provider instance;
- * the client keeps ONE ROW PER (environment, provider, instance) and never
- * merges across environments: `asOf` comes from each environment's local
- * clock, and clock skew must not let one machine's reading replace another
- * machine's correct one. The one exception: byte-identical rows for the
- * SAME instance id collapse, because identical content under one id is the
- * same underlying reading seen twice (worktree servers sharing a home, two
- * machines seeded from the same transcripts) and carries no extra
- * information. Within a single environment, a server predating
- * instance attribution answers with unkeyed snapshots - those fold onto the
- * driver's default instance, freshest wins, which is exactly what that data
- * meant when it was written.
- *
- * @module state/accountLimits
+ * Keep readings per environment to avoid clock-skew replacement; collapse
+ * only byte-identical rows for the same instance. Legacy unkeyed snapshots
+ * belong to the default driver instance, freshest first within each environment.
  */
 import { useAtomValue } from "@effect/atom-react";
 import {
   ACCOUNT_LIMITS_ACCEPTED_VERSIONS,
-  ProviderInstanceId,
   type AccountLimitsSnapshot,
   type EnvironmentId,
   type ServerProvider,
@@ -77,11 +63,8 @@ export interface AccountLimitsRow {
   readonly environmentLabel: string | null;
   readonly environmentIsPrimary: boolean;
   /**
-   * Instance display name off the provider config already streaming to the
-   * client, else the raw instance id. Never the account email: the provider
-   * UI deliberately blurs emails until clicked, and a caption must not leak
-   * what that redaction protects. Rendering decides when a caption is worth
-   * showing.
+   * Use the configured name or instance ID, never an account email: captions
+   * must preserve the provider UI's email redaction.
    */
   readonly instanceLabel: string;
   /** The accent this account is marked with in provider settings, when it carries one. */
@@ -155,11 +138,9 @@ export function mergeEnvironmentLimits(
     }
   }
   for (const rows of byProvider.values()) {
-    // A display name shared by two DIFFERENT instances identifies nothing -
-    // two unnamed Codex accounts must not both caption as "Codex". Those
-    // rows fall back to their raw instance id, which is unique per
-    // environment. Rows sharing one instance across environments keep the
-    // shared name; the environment label disambiguates them in rendering.
+    // Different instances sharing a name need their IDs to distinguish them.
+    // The same instance across environments keeps its name; the environment
+    // label disambiguates those rows.
     const instancesPerLabel = new Map<string, Set<string>>();
     for (const row of rows) {
       const instanceId = row.snapshot.instanceId ?? legacyInstanceIdFor(row.snapshot.provider);

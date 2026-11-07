@@ -48,7 +48,7 @@ Use one of these per machine:
 
 | OS      | Native policy                                                                                        | Policy file                                       |
 | ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| macOS   | Configuration profile for `ai.dimaggi.d4research`                                                       | `/Library/Application Support/T3Code/policy.json` |
+| macOS   | Configuration profile for `ai.dimaggi.d4research`                                                    | `/Library/Application Support/T3Code/policy.json` |
 | Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\T3Tools\T3Code`) | `C:\Program Files\T3Code\policy.json`             |
 | Linux   |                                                                                                      | `/etc/t3code/policy.json`                         |
 

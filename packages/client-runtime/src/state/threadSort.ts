@@ -1,5 +1,8 @@
 import type { ProjectId } from "@d4research/contracts";
-import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@d4research/contracts/settings";
+import type {
+  SidebarProjectSortOrder,
+  SidebarThreadSortOrder,
+} from "@d4research/contracts/settings";
 import type { EnvironmentThreadShell } from "./models.ts";
 
 export interface ThreadSortInput {

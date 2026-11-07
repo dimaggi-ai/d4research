@@ -82,6 +82,7 @@ export function McpAppFrame(props: {
   const [displayMode, setDisplayMode] = useState<McpAppDisplayMode>("inline");
   const [closed, setClosed] = useState(false);
   const [documentGeneration, setDocumentGeneration] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures and observes the app frame container DOM width.
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (!box) return;
@@ -110,6 +111,7 @@ export function McpAppFrame(props: {
   const minting = useRef(false);
   const cachedUrl = asset._tag === "Success" ? asset.url : null;
   const cachedExpiresAt = asset._tag === "Success" ? asset.expiresAt : 0;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Acquires a usable signed asset URL for the iframe and refreshes expiring URLs.
   useEffect(() => {
     if (src !== null || cachedUrl === null || minting.current) return;
     if (cachedExpiresAt - Date.now() > MIN_URL_LIFE_MS) {
@@ -165,10 +167,12 @@ export function McpAppFrame(props: {
   };
   const hostRef = useRef<McpAppHost | null>(null);
   const latest = useRef(live);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps native iframe message callbacks current with committed host state and commands.
   useEffect(() => {
     latest.current = live;
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Synchronizes the native popover top layer with the app display mode.
   useEffect(() => {
     const box = boxRef.current;
     if (box === null || !fullscreenSupported) return;
@@ -185,6 +189,7 @@ export function McpAppFrame(props: {
     setStepAsideFor(props.awaitingUser);
     if (props.awaitingUser === true) setDisplayMode("inline");
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns fullscreen focus, Escape and resize listeners for the app frame.
   useEffect(() => {
     if (displayMode !== "fullscreen") return;
     const leave = () => setDisplayMode("inline");
@@ -205,6 +210,7 @@ export function McpAppFrame(props: {
     };
   }, [displayMode]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained app tool-definition loading; moving it into an atom requires scoped cancellation and reconnect tests.
   useEffect(() => {
     let cancelled = false;
     void latest.current
@@ -236,6 +242,7 @@ export function McpAppFrame(props: {
     }
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the iframe message bridge and tears down the MCP app host on document replacement.
   useEffect(() => {
     if (src === null) return;
     const hostContext = (): McpAppHostContext => {
@@ -324,7 +331,8 @@ export function McpAppFrame(props: {
       },
       sendMessage: async (text) => {
         const send = latest.current.props.onSendMessage;
-        if (send === undefined) throw new McpAppHostRefusal({ message: "Messages are not available here." });
+        if (send === undefined)
+          throw new McpAppHostRefusal({ message: "Messages are not available here." });
         const approved = await ask(`Send this message from ${app.server}?\n${text}`);
         if (approved !== true) throw new McpAppHostRefusal({ message: "Declined by the user." });
         await send(text);
@@ -410,11 +418,13 @@ export function McpAppFrame(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A reopened document needs a new host.
   }, [src, app, documentGeneration]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Sends updated theme and dimensions to the imperative iframe host.
   useEffect(() => {
     hostRef.current?.updateHostContext();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Context changes trigger a resend.
   }, [theme, width, displayMode, toolDefinition]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Sends the tool call to each newly opened iframe document.
   useEffect(() => {
     if (toolCall !== undefined) hostRef.current?.setToolCall(toolCall);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Each new document needs the call.

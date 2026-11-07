@@ -9,13 +9,8 @@ import {
   type MemorySourceGroup,
 } from "./connectors.ts";
 
-/**
- * The zero-dependency local shared-memory store: one SQLite file inside the
- * server's state directory, searched with FTS5. This is honest keyword
- * search with BM25 ranking, not embedding similarity — for handoff context,
- * findings, and research notes that trade is fine and removes the external
- * Memo service from the critical path entirely.
- */
+// Local SQLite FTS5/BM25 keyword search keeps shared handoff memory available
+// without an external Memo service; it provides no embedding similarity.
 export const BUILTIN_MEMORY_BACKEND = "builtin-sqlite";
 
 const SCHEMA_SQL = `

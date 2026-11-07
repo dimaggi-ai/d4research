@@ -12,6 +12,7 @@ const highlightedTokens: SourceHighlightTokens = [
 ];
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -74,6 +75,7 @@ describe("sourceHighlightingState", () => {
   });
 
   it("recomputes highlighting after the idle cache entry expires", async () => {
+    vi.useFakeTimers();
     const highlight = vi.fn(async () => highlightedTokens);
     const sourceHighlightAtom = createSourceHighlightAtomFamily({ highlight, idleTtlMs: 5 });
     const registry = AtomRegistry.make({ timeoutResolution: 1 });
@@ -88,7 +90,7 @@ describe("sourceHighlightingState", () => {
       expect(AsyncResult.isSuccess(registry.get(atom))).toBe(true);
     });
     firstUnmount();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await vi.advanceTimersByTimeAsync(100);
 
     const secondUnmount = registry.mount(atom);
     await vi.waitFor(() => {

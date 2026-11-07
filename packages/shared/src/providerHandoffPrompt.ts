@@ -1,16 +1,6 @@
-/**
- * The provider-handoff prompt formats. Build and parse live in one module so
- * the clients that fold a handoff into a compact timeline row can never drift
- * from the text the composer actually sends. The full message stays the
- * authoritative content; parsing only powers compact display.
- *
- * Two shapes exist:
- *  - COMBINED (current): the user's instruction with a trailing
- *    `<handoff_context>` block appended, sent as one turn on the new provider.
- *  - LEGACY (historical): a whole context-sync turn that carried nothing but
- *    the handoff. Threads created before staged handoff still hold these, so
- *    the parser stays.
- */
+// Keep builders and parsers together so compact display matches sent context.
+// The full message stays authoritative. Retain legacy context-only parsing
+// for threads created before combined instruction-and-context turns.
 
 export interface ProviderHandoffPromptInput {
   readonly sourceThreadId: string;
@@ -89,13 +79,8 @@ export function buildProviderHandoffPromptText(input: ProviderHandoffPromptInput
   ].join("\n");
 }
 
-/**
- * Recognizes a context-sync prompt produced by buildProviderHandoffPromptText.
- * Anchors on the fixed head and tail so an arbitrary summary body (including a
- * verbatim fallback transcript that quotes these markers) cannot confuse the
- * boundaries. Returns null for anything that is not structurally a handoff
- * prompt; callers then render the message unchanged.
- */
+// Anchor on the fixed head and tail: summaries may quote handoff markers.
+// Nonmatching messages must render unchanged.
 export function parseProviderHandoffPrompt(text: string): ParsedProviderHandoffPrompt | null {
   if (!text.startsWith(HEADLINE_PREFIX)) return null;
   const lines = text.split("\n");
@@ -134,10 +119,15 @@ const HANDOFF_CONTEXT_TAG = "handoff_context";
 const CONTEXT_SUMMARY_HEADER_LINE = "Context summary (reference only):";
 const CONTEXT_TRAILER_LINE = [
   "This provider handoff stays in the same d4research thread; the visible transcript remains authoritative.",
-  "The user's message above this block is the current instruction — act on it.",
+  "The user's message above this block is the current instruction: act on it.",
   'Use memory_search with connector="local" for more shared context.',
   "Do not resume other prior work beyond the user's instruction.",
 ].join(" ");
+// Persisted handoff blocks used an em dash before the current colon separator.
+const LEGACY_CONTEXT_TRAILER_LINE = CONTEXT_TRAILER_LINE.replace(
+  "instruction: act",
+  `instruction ${String.fromCodePoint(0x2014)} act`,
+);
 const SKILLS_PREFIX = "Configured global and chat skills: ";
 const PROJECT_PREFIX = "Project: ";
 const OPEN_TAG = `<${HANDOFF_CONTEXT_TAG}>`;
@@ -190,7 +180,7 @@ export function appendProviderHandoffContext(
 /**
  * Hostile input cannot be allowed to turn a display concern into a hang. Past
  * this many candidates the block simply renders raw, which is a cosmetic
- * degradation — the persisted message is unaffected either way.
+ * degradation: the persisted message is unaffected either way.
  */
 const MAX_HANDOFF_BLOCK_CANDIDATES = 20;
 
@@ -225,7 +215,7 @@ interface ParsedHandoffBlockBody {
 /**
  * Validates one candidate block body. The headline check runs before the split
  * so a candidate opened by user prose dies without walking the rest.
- * CRLF is normalized here only — the caller's `promptText` keeps whatever line
+ * CRLF is normalized here only: the caller's `promptText` keeps whatever line
  * endings the message was stored with.
  */
 function parseHandoffBlockBody(rawBody: string): ParsedHandoffBlockBody | null {
@@ -243,7 +233,11 @@ function parseHandoffBlockBody(rawBody: string): ParsedHandoffBlockBody | null {
   if (!lines[2]?.startsWith(TARGET_MODEL_PREFIX)) return null;
 
   const trailerIndex = lines.length - 1;
-  if (lines[trailerIndex] !== CONTEXT_TRAILER_LINE) return null;
+  if (
+    lines[trailerIndex] !== CONTEXT_TRAILER_LINE &&
+    lines[trailerIndex] !== LEGACY_CONTEXT_TRAILER_LINE
+  )
+    return null;
   if (lines[trailerIndex - 1] !== "") return null;
 
   // `>= trailerIndex - 2` also rejects a header with an empty summary body.
@@ -259,22 +253,9 @@ function parseHandoffBlockBody(rawBody: string): ParsedHandoffBlockBody | null {
   };
 }
 
-/**
- * Peels a trailing handoff block so display shows the user's instruction only.
- * Only a block whose closing tag ends the message counts, so an instruction that
- * merely mentions the tag survives untouched.
- *
- * Candidates are tried from the LAST opener backwards, because the machine
- * block is always appended last: a complete block the user pasted themselves
- * stays in their visible text instead of being swallowed into the real one.
- *
- * Tag-balanced candidates go first. That is what keeps a summary quoting an
- * entire earlier handoff resolving to the OUTER block: read from the inside,
- * the quoted block leaves an unmatched closer behind, while the outer body
- * contains the quote's opener and closer as a matched pair. A second pass drops
- * the balance requirement so a summary that merely happens to contain a stray
- * closing line still folds.
- */
+// Try trailing openers backwards to preserve complete blocks the user pasted.
+// Prefer balanced candidates so quoted handoffs resolve to the outer block;
+// then tolerate stray closing lines in summaries.
 export function extractTrailingProviderHandoffContext(
   text: string,
 ): ExtractedProviderHandoffContext {
@@ -314,7 +295,7 @@ export function extractTrailingProviderHandoffContext(
     if (found) return found;
   }
   // Pass 2, forward: nothing balanced parsed, so the tags are malformed
-  // somewhere. Prefer the OUTERMOST opener — an unbalanced decoy nested in a
+  // somewhere. Prefer the OUTERMOST opener: an unbalanced decoy nested in a
   // summary would otherwise borrow the real block's trailer and win.
   for (let candidate = attemptLimit; candidate < openers.length; candidate += 1) {
     if (balanced[candidate]) continue;

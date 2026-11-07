@@ -4,13 +4,18 @@ import * as Order from "effect/Order";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react";
 
+import { useEnvironments } from "../../state/environments";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useArchivedThreadListActions } from "../home/useThreadListActions";
 import {
   ArchivedThreadsScreen,
   type ArchivedThreadsHeaderEnvironment,
 } from "./ArchivedThreadsScreen";
-import { buildArchivedThreadGroups, type ArchivedThreadSortOrder } from "./archivedThreadList";
+import {
+  buildArchivedThreadGroups,
+  splitArchiveEnvironments,
+  type ArchivedThreadSortOrder,
+} from "./archivedThreadList";
 import {
   refreshArchivedThreadsForEnvironment,
   useArchivedThreadSnapshots,
@@ -34,9 +39,19 @@ export function ArchivedThreadsRouteScreen() {
       ),
     [savedConnectionsById],
   );
-  const environmentIds = useMemo(
-    () => environments.map((environment) => environment.environmentId),
-    [environments],
+  const { environments: connections } = useEnvironments();
+  const connectedIds = useMemo(
+    () =>
+      new Set(
+        connections
+          .filter((entry) => entry.connection.phase === "connected")
+          .map((entry) => entry.environmentId),
+      ),
+    [connections],
+  );
+  const { environmentIds, offlineLabels } = useMemo(
+    () => splitArchiveEnvironments(environments, connectedIds),
+    [connectedIds, environments],
   );
   const environmentLabels = useMemo(
     () =>
@@ -74,6 +89,7 @@ export function ArchivedThreadsRouteScreen() {
 
   return (
     <ArchivedThreadsScreen
+      offlineLabels={offlineLabels}
       environments={environments}
       error={error}
       groups={groups}

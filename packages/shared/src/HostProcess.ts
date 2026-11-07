@@ -5,9 +5,12 @@ import * as NodeDns from "node:dns";
 import * as NodeOS from "node:os";
 import * as NodeSea from "node:sea";
 
-export const Platform = Context.Reference<NodeJS.Platform>("@d4research/shared/HostProcess/Platform", {
-  defaultValue: () => process.platform,
-});
+export const Platform = Context.Reference<NodeJS.Platform>(
+  "@d4research/shared/HostProcess/Platform",
+  {
+    defaultValue: () => process.platform,
+  },
+);
 
 export const Architecture = Context.Reference<NodeJS.Architecture>(
   "@d4research/shared/HostProcess/Architecture",
@@ -89,9 +92,12 @@ export const InvokedAs = Context.Reference<string>("@d4research/shared/HostProce
   defaultValue: () => process.argv0,
 });
 
-export const IsExecutable = Context.Reference<boolean>("@d4research/shared/HostProcess/IsExecutable", {
-  defaultValue: () => NodeSea.isSea(),
-});
+export const IsExecutable = Context.Reference<boolean>(
+  "@d4research/shared/HostProcess/IsExecutable",
+  {
+    defaultValue: () => NodeSea.isSea(),
+  },
+);
 
 export class HostnameLookupError extends Schema.TaggedError<HostnameLookupError>()(
   "HostnameLookupError",

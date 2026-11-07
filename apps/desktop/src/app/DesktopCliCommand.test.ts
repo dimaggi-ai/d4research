@@ -162,7 +162,9 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       expect(error.message).toContain("Another d4research command is already installed");
       yield* command.uninstall;
       expect(yield* fs.readFileString(theirs)).toBe("npm's d4research\n");
-      expect(yield* fs.readLink(path.join(home, "bin", "d4research"))).toBe(path.join(home, "gone"));
+      expect(yield* fs.readLink(path.join(home, "bin", "d4research"))).toBe(
+        path.join(home, "gone"),
+      );
 
       const launcher = path.join(home, ".t3", "bin", "d4research");
       yield* fs.writeFileString(launcher, "npm's d4research\n");
@@ -252,32 +254,34 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("does not treat its own launcher as another d4research when its folder is first on PATH", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped();
-      const launcher = path.join(home, ".t3", "bin", "d4research");
-      const env = { PATH: [path.dirname(launcher), path.join(home, ".local", "bin")].join(":") };
+  it.effect(
+    "does not treat its own launcher as another d4research when its folder is first on PATH",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped();
+        const launcher = path.join(home, ".t3", "bin", "d4research");
+        const env = { PATH: [path.dirname(launcher), path.join(home, ".local", "bin")].join(":") };
 
-      const command = yield* commandIn({ home, env });
-      const installed = yield* command.install;
+        const command = yield* commandIn({ home, env });
+        const installed = yield* command.install;
 
-      expect(yield* fs.exists(launcher)).toBe(true);
-      expect(installed).toMatchObject({
-        onPath: true,
-        installedPath: path.join(home, ".local", "bin", "d4research"),
-      });
-      expect(installed.shadowedBy).toBeUndefined();
-      expect(yield* command.state).toEqual(installed);
+        expect(yield* fs.exists(launcher)).toBe(true);
+        expect(installed).toMatchObject({
+          onPath: true,
+          installedPath: path.join(home, ".local", "bin", "d4research"),
+        });
+        expect(installed.shadowedBy).toBeUndefined();
+        expect(yield* command.state).toEqual(installed);
 
-      const removed = yield* command.uninstall;
-      expect(removed.installedPath).toBeNull();
-      expect(removed.onPath).toBe(true);
-      expect(yield* command.state).toEqual(removed);
-      expect(yield* fs.exists(installed.installedPath!)).toBe(false);
-      expect(yield* fs.exists(launcher)).toBe(true);
-    }).pipe(Effect.scoped),
+        const removed = yield* command.uninstall;
+        expect(removed.installedPath).toBeNull();
+        expect(removed.onPath).toBe(true);
+        expect(yield* command.state).toEqual(removed);
+        expect(yield* fs.exists(installed.installedPath!)).toBe(false);
+        expect(yield* fs.exists(launcher)).toBe(true);
+      }).pipe(Effect.scoped),
   );
 
   it.effect("leaves the Windows PATH alone when it cannot be read", () =>

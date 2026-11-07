@@ -426,12 +426,7 @@ export const runBoundedDelegation = Effect.fn("runBoundedDelegation")(
         : input.resolvedTarget;
       const nowMs = yield* Clock.currentTimeMillis;
 
-      // Run the delegate in the orchestrator thread's workspace, not the
-      // server process dir. Without this the CLI inherits the server's cwd
-      // (e.g. the user's home), loads whatever agent memory/scope lives there,
-      // and can refuse or misjudge work that is in-scope for the actual
-      // project. Falls back to the default cwd when the thread has no
-      // resolvable workspace yet.
+      // Use the thread workspace so the CLI loads that project's agent scope; unresolved threads use the default cwd.
       const projections = yield* ProjectionStoreV2;
       const projects = yield* ProjectStoreV2;
       const orchestrator = yield* projections

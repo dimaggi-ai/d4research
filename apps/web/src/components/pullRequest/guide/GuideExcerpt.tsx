@@ -5,7 +5,10 @@ import type {
   SelectedLineRange,
 } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import type { PullRequestReviewGuideExcerpt, PullRequestReviewPosition } from "@d4research/contracts";
+import type {
+  PullRequestReviewGuideExcerpt,
+  PullRequestReviewPosition,
+} from "@d4research/contracts";
 import { ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
 

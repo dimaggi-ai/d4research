@@ -145,13 +145,8 @@ export type PrepareTurnAttachmentsResult =
   | PreparedTurnAttachments
   | { readonly status: "abandoned" };
 
-/**
- * A picture picked through Files arrives typed as a plain file, often with no usable mime, so it is
- * promoted to the type the provider accepts. Every place that names the attachment on the wire —
- * the upload header, the upload input, and the message reference — has to agree on this one value,
- * or the turn describes bytes that are not what was actually sent and `ChatImageAttachment` rejects
- * it.
- */
+// Files may omit an image MIME type. Upload headers, input, and message references
+// must use the same inferred provider-supported value or ChatImageAttachment rejects it.
 export function composerAttachmentWireMimeType(attachment: DraftComposerAttachment): string {
   if (!isComposerImageAttachment(attachment)) return attachment.mimeType;
   return supportedImageWireMimeType(attachment);

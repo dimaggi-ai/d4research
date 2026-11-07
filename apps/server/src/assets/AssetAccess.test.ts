@@ -102,6 +102,12 @@ const oversizedScreenshotItem = {
   },
 };
 
+const decodeClaims = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+
+const encodeClaims = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
 const layerTest = Layer.mergeAll(
   NodeHttpPlatform.layer,
   Layer.mock(Orchestrator.OrchestratorV2)({
@@ -1261,14 +1267,12 @@ describe("AssetAccess", () => {
           );
           const token = suffix.slice(0, separator);
           const [payload, signature] = token.split(".");
-          const claims = yield* Schema.decodeUnknownEffect(
-            Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-          )(Buffer.from(payload!, "base64url").toString("utf8"));
+          const claims = yield* decodeClaims(Buffer.from(payload!, "base64url").toString("utf8"));
           const tamperedClaims = {
             ...claims,
             renderIntent: claims.renderIntent ? undefined : "mcp-app",
           };
-          const tampered = `${Buffer.from(yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(tamperedClaims)).toString("base64url")}.${signature}`;
+          const tampered = `${Buffer.from(yield* encodeClaims(tamperedClaims)).toString("base64url")}.${signature}`;
           expect(yield* resolveAsset(tampered, suffix.slice(separator + 1))).toBeNull();
         }
       }

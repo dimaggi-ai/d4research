@@ -28,6 +28,8 @@ import {
 import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { tryRunInlineResearchTurn } from "./InlineResearchTurn.ts";
 
+const isDomainEvent = Schema.is(Schema.toType(OrchestrationV2DomainEvent));
+
 const now = DateTime.makeUnsafe("2026-10-02T00:00:00Z");
 const threadId = ThreadId.make("thread");
 const runId = RunId.make("run");
@@ -196,8 +198,7 @@ it.effect.each([
                     (event) => event.type === "run.updated" && event.payload.status === "waiting",
                   ),
                 ).toBe(true);
-              for (const event of next)
-                expect(Schema.is(Schema.toType(OrchestrationV2DomainEvent))(event)).toBe(true);
+              for (const event of next) expect(isDomainEvent(event)).toBe(true);
               events.push(...next);
               return Effect.succeed({ committed: true, storedEvents: [] });
             },

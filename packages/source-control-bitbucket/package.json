@@ -24,9 +24,9 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@d4research/source-control-testing": "workspace:*",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@d4research/source-control-testing": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

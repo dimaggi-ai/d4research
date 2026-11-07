@@ -1,4 +1,4 @@
-import { AuthAdministrativeScopes, AuthStandardClientScopes } from "@d4research/contracts";
+import { AuthStandardClientScopes } from "@d4research/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";

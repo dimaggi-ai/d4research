@@ -17,6 +17,8 @@ export class WorkspaceImagePrefetchError extends Schema.TaggedError<
   uri: Schema.String,
 }) {}
 
+const isWorkspaceImagePrefetchError = Schema.is(WorkspaceImagePrefetchError);
+
 async function prefetchWithNativeImage(uri: string): Promise<boolean> {
   const { Image } = await import("react-native");
   return Image.prefetch(uri);
@@ -39,7 +41,7 @@ export function createWorkspaceFileImageAtomFamily(options?: {
           return key.uri;
         },
         catch: (cause) =>
-          Schema.is(WorkspaceImagePrefetchError)(cause)
+          isWorkspaceImagePrefetchError(cause)
             ? cause
             : new WorkspaceImagePrefetchError({ uri: key.uri, cause }),
       }),

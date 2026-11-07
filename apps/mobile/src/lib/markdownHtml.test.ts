@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { markdownForNativeRendering, markdownWithFileEmbeds, type MarkdownNode, markdownHtmlContent, markdownWithHtml, parseMarkdownDocument } from "./markdownDocument";
+import {
+  markdownForNativeRendering,
+  markdownWithFileEmbeds,
+  type MarkdownNode,
+  markdownHtmlContent,
+  markdownWithHtml,
+  parseMarkdownDocument,
+} from "./markdownDocument";
 import { markdownImageSources } from "./markdownImageSources";
 import { markdownFileEmbedLabel, resolveMarkdownMediaPreview } from "./markdownMedia";
 import { resolveMarkdownLinkPresentation } from "./markdownLinks";

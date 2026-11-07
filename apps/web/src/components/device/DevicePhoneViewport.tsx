@@ -6,7 +6,10 @@ import type {
 } from "@d4research/client-runtime/device/model";
 import type { DeviceShapeProfile } from "@d4research/client-runtime/device/shape-profile";
 import type { createPhoneInteraction } from "@d4research/client-runtime/device/phone-interaction";
-import type { DeviceScreenSize, DeviceStreamClient } from "@d4research/client-runtime/device/stream";
+import type {
+  DeviceScreenSize,
+  DeviceStreamClient,
+} from "@d4research/client-runtime/device/stream";
 import { mountDeviceViewer } from "./mountDeviceViewer";
 
 const loadPhoneViewer = () => import("@d4research/client-runtime/device/phone-viewer");

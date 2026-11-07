@@ -1,6 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -12,12 +13,30 @@ export async function runProductionBrowserSuite(specs) {
   const baseDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d4-browser-test."));
   const artifactDir = process.env.T3_UI_ARTIFACT_DIR ?? NodePath.join(baseDir, "artifacts");
   await NodeFSP.mkdir(artifactDir, { recursive: true });
-  // The server probes the machine's real provider CLIs. An update prompt for
-  // whatever happens to be installed would cover the controls under test.
+  // CI has no provider CLIs. A stub binary and loopback Ollama endpoint make a ready provider.
+  // The server puts the login shell's PATH first, so settings pin the binary.
+  const claudeStub = NodePath.join(baseDir, "claude-stub");
+  await NodeFSP.writeFile(
+    claudeStub,
+    '#!/bin/sh\n[ "$1" = "--version" ] && echo "2.1.100 (Claude Code)" && exit 0\nexit 1\n',
+    { mode: 0o755 },
+  );
+  const ollamaCatalog = NodeHttp.createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ models: [{ name: "e2e-alpha" }, { name: "e2e-beta" }] }));
+  });
+  await new Promise((resolve) => ollamaCatalog.listen(0, "127.0.0.1", resolve));
+  ollamaCatalog.unref();
   await NodeFSP.mkdir(NodePath.join(baseDir, "userdata"), { recursive: true });
   await NodeFSP.writeFile(
     NodePath.join(baseDir, "userdata", "settings.json"),
-    JSON.stringify({ enableProviderUpdateChecks: false }),
+    JSON.stringify({
+      // An update prompt for an installed CLI would cover the controls under test.
+      enableProviderUpdateChecks: false,
+      providerInstances: {
+        claudeAgent: { driver: "claudeAgent", config: { binaryPath: claudeStub } },
+      },
+    }),
   );
   const port = process.env.T3_UI_TEST_PORT
     ? Number(process.env.T3_UI_TEST_PORT)
@@ -48,7 +67,14 @@ export async function runProductionBrowserSuite(specs) {
     ],
     {
       cwd: baseDir,
-      env: { ...process.env, T3CODE_HOME: baseDir },
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(([name]) => !name.startsWith("T3CODE_")),
+        ),
+        T3CODE_HOME: baseDir,
+        ANTHROPIC_BASE_URL: `http://127.0.0.1:${ollamaCatalog.address().port}`,
+        ANTHROPIC_AUTH_TOKEN: "ollama",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { SheetHeader } from "../../components/ui/SheetHeader";
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import {
@@ -45,8 +46,8 @@ export function ThreadPullRequestsSheet(
 
   const content = (
     <View className="flex-1 android:bg-sheet-solid ios:bg-screen">
-      {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sheets sit outside workspace columns and keep their own header handling. */}
       <LegendList
+        renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
         data={lines}
         keyExtractor={linkedPullRequestKey}
         extraData={rowInputs}

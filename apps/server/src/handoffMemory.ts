@@ -131,14 +131,14 @@ const make = Effect.gen(function* () {
     check,
     read,
     save,
-    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-    schedule: (input, onFailure) =>
+    schedule: Effect.fn("handoffMemory.schedule")((input, onFailure) =>
       Effect.gen(function* () {
         if (!(yield* config)) return;
         const result = yield* save(input);
         if ("receipt" in result && result.receipt && !result.ok && onFailure)
           yield* onFailure(result.receipt);
       }).pipe(Effect.forkIn(scope), Effect.asVoid),
+    ),
   });
 });
 export const layer = Layer.effect(HandoffMemory, make);

@@ -168,7 +168,10 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "@d4research/client-runtime/state/thread-sort";
+import {
+  getLatestThreadForProject,
+  sortThreads,
+} from "@d4research/client-runtime/state/thread-sort";
 import {
   cn,
   getLocalFileManagerName,

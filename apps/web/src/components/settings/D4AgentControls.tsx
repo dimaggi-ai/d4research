@@ -169,18 +169,15 @@ export function D4AgentControls({
               }
             />
             <details className="pb-3">
-              <summary
-                aria-label={`${server.title} Setup`}
-                className="cursor-pointer rounded-sm py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-ring"
-              >
-                Setup
+              <summary className="cursor-pointer rounded-sm py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-ring">
+                {server.title} setup
               </summary>
               <div className="pl-3">
                 {server.id === "threads" ? (
                   <>
                     <SettingsRow
                       title="Permission level"
-                      description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context. Sending, starting threads, interrupting, answering, commands and schedules always require your approval. Provider permission approvals remain manual."
+                      description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context."
                       control={
                         <select
                           aria-label="Agent permission level"
@@ -198,7 +195,12 @@ export function D4AgentControls({
                           <option value="act">Act</option>
                         </select>
                       }
-                    />
+                    >
+                      <p className="pb-3 text-xs text-muted-foreground">
+                        Sending, starting threads, interrupting, answering, commands and schedules
+                        always require your approval. Provider permission approvals remain manual.
+                      </p>
+                    </SettingsRow>
                     {projects.map((project) => (
                       <SettingsRow
                         key={project.id}

@@ -40,13 +40,10 @@ export function useAgentOpenedPreviews(input: {
     sheetLayout,
   } = input;
   const autoShowFloatingPreview = useClientSettings(selectAutoShowFloatingPreview);
-  // A device the agent opens floats over chat like an agent-driven browser,
-  // or becomes a panel tab when floating previews are off. Sessions opened by
-  // another client arrive the same way; sheet layouts get neither. The first
-  // snapshot is a baseline: persisted tabs restore themselves, and existing
-  // sessions must not resurrect closed tabs. A session whose device summary
-  // has not arrived yet stays out of the baseline so a later snapshot opens it.
+  // Baseline existing sessions so reloads cannot reopen dismissed tabs. Exclude sessions without
+  // device summaries from that baseline so their later summaries can still trigger an open.
   const previousDeviceSessions = useRef(new Map<string, Set<string>>());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Apply newly received remote device-session events to the imperative preview stores while preserving the initial baseline.
   useEffect(() => {
     if (!threadRef || !deviceStateLoaded) return;
     const threadKey = `${threadRef.environmentId}:${threadRef.threadId}`;
@@ -99,6 +96,7 @@ export function useAgentOpenedPreviews(input: {
   ]);
   // Baseline loaded tabs so reloads never reopen previews the user dismissed.
   const previousServerPreviewTabs = useRef(new Map<string, Map<string, string | undefined>>());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Apply remote browser reveal requests to the imperative preview stores once per request.
   useEffect(() => {
     if (!threadRef || !serverBrowserAvailable || !previewState.listLoaded) return;
     const threadKey = scopedThreadKey(threadRef);
@@ -139,6 +137,7 @@ export function useAgentOpenedPreviews(input: {
   ]);
   // A floating device follows its session: once the agent or another client
   // closes the device there is nothing left to stream.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Close the imperative floating device player when its external streaming session disappears.
   useEffect(() => {
     if (!threadRef || !deviceStateLoaded) return;
     const source = miniPlayerSource;

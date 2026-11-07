@@ -22,7 +22,7 @@ mkdir "$STAGE/content"
 tar -xzf "$STAGE/runtime.tar.gz" --strip-components=1 -C "$STAGE/content"
 [ -x "$STAGE/content/t3" ]
 T3_ACTUAL_VERSION="$("$STAGE/content/t3" --version)"
-case "$T3_ACTUAL_VERSION" in ${quote(runtime.version)}|${quote("t3 v" + runtime.version)}|${quote("t3 " + runtime.version)}) ;; *) echo 'Runtime version mismatch.' >&2; exit 1;; esac
+case "$T3_ACTUAL_VERSION" in ${quote(runtime.version)}|${quote("d4research v" + runtime.version)}|${quote("t3 v" + runtime.version)}|${quote("t3 " + runtime.version)}) ;; *) echo 'Runtime version mismatch.' >&2; exit 1;; esac
 printf '%s\\n' ${quote(runtime.sha256)} > "$STAGE/content/.bundle-sha256"
 mv "$STAGE/content" "$DEST"
 `;

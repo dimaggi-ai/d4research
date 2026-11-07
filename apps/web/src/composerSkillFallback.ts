@@ -1,11 +1,6 @@
 /**
- * Composer skill fallback — what the `$` menu offers on providers that have
- * no native skill support.
- *
- * Claude and Codex report their own skills in the provider snapshot. Agy,
- * Cursor, Grok and OpenCode report none, so the menu falls back to the local
- * skills inventory — every root of it, since the server resolves the thread's
- * workspace and expands project skills too.
+ * Providers without native skills need the local inventory fallback, including
+ * project roots resolved by the server for the thread workspace.
  */
 import type { ServerProvider, ServerProviderSkill } from "@d4research/contracts";
 
@@ -59,10 +54,10 @@ export function providerSkillsToInventoryEntries(
 
 /**
  * Menu copy for a fallback skill. These are attached to the message as
- * reference instructions — the provider does not execute them — and the
+ * reference instructions (the provider does not execute them), and the
  * label has to say so.
  */
 export function describeComposerFallbackSkill(skill: ServerProviderSkill): string {
   const detail = skill.shortDescription ?? skill.description;
-  return detail ? `Attach as instructions — ${detail}` : "Attach as instructions";
+  return detail ? `Attach as instructions: ${detail}` : "Attach as instructions";
 }

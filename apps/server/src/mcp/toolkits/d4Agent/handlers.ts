@@ -10,7 +10,7 @@ import * as Overview from "../../../d4Agent/overview.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { D4AgentToolkit } from "./tools.ts";
-const call = Effect.fn("call")(
+const call = Effect.fn("d4AgentToolkit.call")(
   <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4AgentError>) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

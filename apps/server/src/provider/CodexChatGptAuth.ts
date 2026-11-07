@@ -8,7 +8,6 @@ import {
 } from "@d4research/contracts";
 import { codexCallbackUrl } from "@d4research/shared/codexAuthHandoff";
 import * as Clock from "effect/Clock";
-import * as Cause from "effect/Cause";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";

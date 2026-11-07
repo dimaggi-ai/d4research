@@ -44,7 +44,7 @@ export function BranchNamingSettings(props: {
   };
   // Android Back can unmount the screen without emitting onEndEditing.
   const saveOnUnmount = useEffectEvent(() => saveDrafts());
-  // Flush native input drafts when Android Back removes the screen without an editing event.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Flush native input drafts when Android Back removes the screen without an editing event.
   useEffect(() => () => saveOnUnmount(), []);
   return (
     <SettingsSection

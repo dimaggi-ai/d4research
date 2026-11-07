@@ -1,6 +1,6 @@
 import { useIsFocused } from "@react-navigation/native";
 import type { EnvironmentId, PreviewSessionSnapshot, ThreadId } from "@d4research/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppState, Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
@@ -22,23 +22,31 @@ export function ThreadBrowserFloat(props: {
   readonly onOpen: (tabId: string) => void;
 }) {
   const [tabId, setTabId] = useState<string | null>(null);
-  const known = useRef<ReadonlyMap<string, string | undefined> | null>(null);
-  useEffect(() => {
-    if (!props.loaded) return;
-    const previous = known.current;
-    known.current = new Map(props.tabs.map((tab) => [tab.tabId, tab.revealRequest?.id]));
-    if (previous === null) return;
-    const opened = props.tabs.findLast(
-      (tab) =>
-        tab.reveal === true &&
-        (tab.revealRequest
-          ? previous.get(tab.tabId) !== tab.revealRequest.id
-          : !previous.has(tab.tabId)),
-    );
+  const [known, setKnown] = useState<{
+    tabs: typeof props.tabs;
+    reveals: ReadonlyMap<string, string | undefined>;
+  } | null>(null);
+  if (props.loaded && known?.tabs !== props.tabs) {
+    const previous = known?.reveals;
+    setKnown({
+      tabs: props.tabs,
+      reveals: new Map(props.tabs.map((tab) => [tab.tabId, tab.revealRequest?.id])),
+    });
+    const opened =
+      previous === undefined
+        ? undefined
+        : props.tabs.findLast(
+            (tab) =>
+              tab.reveal === true &&
+              (tab.revealRequest
+                ? previous.get(tab.tabId) !== tab.revealRequest.id
+                : !previous.has(tab.tabId)),
+          );
     if (opened !== undefined) setTabId(opened.tabId);
-  }, [props.loaded, props.tabs]);
+  }
   const focused = useIsFocused();
   const [foreground, setForeground] = useState(AppState.currentState !== "background");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes to native AppState so background views stop streaming.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       setForeground(state !== "background"),

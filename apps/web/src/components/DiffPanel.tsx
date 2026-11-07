@@ -692,7 +692,8 @@ export default function DiffPanel({
       : filesTreeOpen
         ? selectedFileDiffPreview
         : branchDiffPreview;
-  const isLoadingSelectedPatch = selectedPatchQuery.isPending &&
+  const isLoadingSelectedPatch =
+    selectedPatchQuery.isPending &&
     (selectedPatchQuery.data === null ||
       (isGitSelection && preview?.incomplete === true && selectedGitSource?.files?.length === 0));
   const selectedPatchError = toolCallSelection
@@ -803,25 +804,24 @@ export default function DiffPanel({
     [collapseScopeKey, defaultCollapsedDiffFileKeys],
   );
   const renderLoadingBoundary = useCallback(
-    () => remainingFileCount > 0 ? (
-      <DiffFileLoadingBoundary load={loadNextFiles} count={remainingFileCount} />
-    ) : null,
+    () =>
+      remainingFileCount > 0 ? (
+        <DiffFileLoadingBoundary load={loadNextFiles} count={remainingFileCount} />
+      ) : null,
     [remainingFileCount, loadNextFiles],
   );
   const codeViewFiles = useMemo(
     () =>
-      renderableFileEntries
-        .map(({ fileDiff, fileKey, fileVersion }) => {
-          return {
-            fileDiff,
-            filePath: resolveFileDiffPath(fileDiff),
-            fileKey,
-            fileVersion,
-            collapsed:
-              collapsedDiffFileKeys.has(fileKey) ||
-              fileDiff.cacheKey?.endsWith(":pending") === true,
-          };
-        }),
+      renderableFileEntries.map(({ fileDiff, fileKey, fileVersion }) => {
+        return {
+          fileDiff,
+          filePath: resolveFileDiffPath(fileDiff),
+          fileKey,
+          fileVersion,
+          collapsed:
+            collapsedDiffFileKeys.has(fileKey) || fileDiff.cacheKey?.endsWith(":pending") === true,
+        };
+      }),
     [collapsedDiffFileKeys, renderableFileEntries],
   );
   const diffFileKeys = useMemo(
@@ -912,7 +912,7 @@ export default function DiffPanel({
   );
 
   const externalRevealRef = useRef<string | null>(null);
-  // Retry a requested file as metadata arrives without undoing later user navigation.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reveal the requested file in the imperative diff viewer once its metadata arrives.
   useEffect(() => {
     if (!selectedFilePath) {
       externalRevealRef.current = null;
@@ -964,17 +964,20 @@ export default function DiffPanel({
       setCollapsedDiffFiles,
     };
   }, [collapseScopeKey, defaultCollapsedDiffFileKeys, setCollapsedDiffFiles]);
-  const toggleDiffFileCollapsed = useCallback((fileKey: string) => {
-    const file = renderableFileEntries.find((entry) => entry.fileKey === fileKey);
-    if (lazySource && file) requestFile(resolveFileDiffPath(file.fileDiff));
-    const pending = file?.fileDiff.cacheKey?.endsWith(":pending") === true;
-    setCollapsedDiffFiles((current) => {
-      const next = new Set(current.fileKeys);
-      if (pending || next.has(fileKey)) next.delete(fileKey);
-      else next.add(fileKey);
-      return { scopeKey: collapseScopeKey, fileKeys: next };
-    });
-  }, [renderableFileEntries, lazySource, requestFile, setCollapsedDiffFiles, collapseScopeKey]);
+  const toggleDiffFileCollapsed = useCallback(
+    (fileKey: string) => {
+      const file = renderableFileEntries.find((entry) => entry.fileKey === fileKey);
+      if (lazySource && file) requestFile(resolveFileDiffPath(file.fileDiff));
+      const pending = file?.fileDiff.cacheKey?.endsWith(":pending") === true;
+      setCollapsedDiffFiles((current) => {
+        const next = new Set(current.fileKeys);
+        if (pending || next.has(fileKey)) next.delete(fileKey);
+        else next.add(fileKey);
+        return { scopeKey: collapseScopeKey, fileKeys: next };
+      });
+    },
+    [renderableFileEntries, lazySource, requestFile, setCollapsedDiffFiles, collapseScopeKey],
+  );
   const selectDiffFileFromTree = useCallback(
     (filePath: string) => {
       if (!diffTreeFiles.some((candidate) => candidate.path === filePath)) return;
@@ -1705,7 +1708,9 @@ export default function DiffPanel({
             {isSelectedPatchTruncated && !lazySource && (
               <p className="shrink-0 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
                 This preview exceeds the size limit. Changes shown are incomplete.
-                {isGitSelection && selectedGitSource?.files && !preview?.incomplete ? " Totals include all changes." : ""}
+                {isGitSelection && selectedGitSource?.files && !preview?.incomplete
+                  ? " Totals include all changes."
+                  : ""}
               </p>
             )}
             {selectedPatchError && !renderablePatch && (

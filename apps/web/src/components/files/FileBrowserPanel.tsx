@@ -44,6 +44,7 @@ function ExpandedDirectory(props: {
   onEntries: (path: string, entries: readonly ProjectEntry[]) => void;
 }) {
   const query = useProjectEntriesQuery(props.environmentId, props.cwd, props.path, props.active);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the tree cache fed by this directory query subscription; changing callback ownership would require restructuring the hook-owning loader.
   useEffect(() => {
     if (query.data) props.onEntries(props.path, query.data.entries);
     else if (query.error) props.onEntries(props.path, []);
@@ -67,6 +68,7 @@ function FileTreeStatus(props: {
   onStatus: (files: readonly GitFileChange[]) => void;
 }) {
   const status = useGitDetailedStatus(props.environmentId, props.cwd);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidate the subscribed Git status when filesystem revisions change outside this component.
   useEffect(() => {
     status.refresh();
   }, [props.revision, status.refresh]);
@@ -75,6 +77,7 @@ function FileTreeStatus(props: {
     resourceKey: `tree-status:${props.environmentId}:${props.cwd}`,
     refresh: status.refresh,
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the parent tree status cache fed by this separately mounted Git subscription; preserve its current ownership.
   useEffect(() => {
     props.onStatus(status.data?.files ?? []);
   }, [props.onStatus, status.data]);

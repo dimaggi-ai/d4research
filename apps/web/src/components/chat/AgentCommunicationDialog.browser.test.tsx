@@ -80,7 +80,7 @@ describe("communication dialog interactions", () => {
       removeEventListener() {},
     }));
     // These dialog fixtures do not navigate.
-    await using screen = await render(
+    await using _screen = await render(
       <AgentCommunicationDialog>{() => <Viewer />}</AgentCommunicationDialog>,
       { router: false },
     );
@@ -123,7 +123,7 @@ describe("communication dialog interactions", () => {
       return <AgentCommunicationView model={current} selection={selection} onSelect={select} />;
     }
     // These dialog fixtures do not navigate.
-    await using screen = await render(
+    await using _screen = await render(
       <AgentCommunicationDialog>{() => <LiveViewer />}</AgentCommunicationDialog>,
       { router: false },
     );
@@ -172,7 +172,7 @@ describe("communication dialog interactions", () => {
     }));
     shortPhone = true;
     // These dialog fixtures do not navigate.
-    await using screen = await render(
+    await using _screen = await render(
       <AgentCommunicationDialog>{() => <Viewer />}</AgentCommunicationDialog>,
       { router: false },
     );
@@ -195,7 +195,7 @@ describe("communication dialog interactions", () => {
       removeEventListener() {},
     }));
     // These dialog fixtures do not navigate.
-    await using screen = await render(
+    await using _screen = await render(
       <AgentCommunicationDialog>
         {() => (
           <AgentCommunicationView

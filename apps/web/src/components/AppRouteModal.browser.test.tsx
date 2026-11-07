@@ -25,7 +25,9 @@ describe("AppRouteModal", () => {
     await page.getByRole("textbox", { name: "Instructions" }).fill("Keep this draft");
     await page.getByRole("button", { name: "Open navigation" }).click();
     expect(onNavigate).toHaveBeenCalledOnce();
-    await expect.element(page.getByRole("textbox", { name: "Instructions" })).toHaveValue("Keep this draft");
+    await expect
+      .element(page.getByRole("textbox", { name: "Instructions" }))
+      .toHaveValue("Keep this draft");
   });
 
   it("keeps the settings pane inside the app content lane", async () => {
@@ -42,7 +44,7 @@ describe("AppRouteModal", () => {
     );
 
     await expect.element(page.getByRole("textbox", { name: "Instructions" })).toBeVisible();
-    const navigation = screen.container.querySelector('nav')!.getBoundingClientRect();
+    const navigation = screen.container.querySelector("nav")!.getBoundingClientRect();
     const pane = page.getByRole("dialog", { name: "Settings" }).element().getBoundingClientRect();
     expect(pane.left).toBeGreaterThanOrEqual(navigation.right);
     expect(pane.top).toBeGreaterThanOrEqual(navigation.top);

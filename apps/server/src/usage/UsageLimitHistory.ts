@@ -11,6 +11,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 
+const decodeHistory = Schema.decodeUnknownEffect(History);
+
 const SAMPLE_MS = 30_000;
 const RETENTION_MS = 90 * 24 * 60 * 60_000;
 
@@ -80,7 +82,7 @@ export const layer = Layer.effect(
           ORDER BY measured_at DESC
         ) AS position FROM usage_limit_history WHERE bucket >= ${sinceMs}
       ) WHERE position = 1 ORDER BY measured_at DESC LIMIT 20001`;
-      return yield* Schema.decodeUnknownEffect(History)({
+      return yield* decodeHistory({
         readAt: DateTime.formatIso(now),
         since: DateTime.formatIso(DateTime.makeUnsafe(sinceMs)),
         resolutionMinutes,

@@ -3,14 +3,8 @@ import {
   ENABLED_SKILL_SESSION_MAX_COUNT,
 } from "@d4research/contracts";
 
-/**
- * Wire format for skills the user chose to keep active on every turn.
- *
- * The server appends this block after all client-authored context. Clients use
- * this same parser to hide the transport markup and render an honest badge.
- * Keeping both ends here prevents a permissive test fixture from drifting away
- * from the production format.
- */
+// Share the wire parser with clients so hidden transport markup and the
+// active-skills badge match the context the server actually appends.
 
 export type EnabledSkillScope = "global" | "session";
 
@@ -163,7 +157,7 @@ export function appendEnabledSkillsContext(
     const scope = skill.scope === "session" ? "this chat" : "all chats";
     lines.push("");
     lines.push(
-      `- ${JSON.stringify(skill.name)} (${scope})${skill.description ? ` — ${skill.description}` : ""}`,
+      `- ${JSON.stringify(skill.name)} (${scope})${skill.description ? `: ${skill.description}` : ""}`,
     );
     lines.push(`  Instructions: ${JSON.stringify(skill.path)}`);
   }

@@ -1,12 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * The files this environment lets another one list, read and write for agents (see
- * `packages/contracts/src/peers.ts`). Every path must resolve inside a project folder or a thread
- * worktree of this environment, so a request relayed from another machine cannot reach the rest
- * of the disk.
- *
- * @module PeerFiles
- */
+// Resolve every peer file request inside an environment project or thread worktree
+// so relayed requests cannot reach the rest of the disk.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";

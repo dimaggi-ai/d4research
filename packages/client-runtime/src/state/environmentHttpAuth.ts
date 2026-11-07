@@ -56,39 +56,41 @@ const withEnvironmentRequestInit = <A, E, R>(
   );
 };
 
-export const buildEnvironmentAuthHeaders = Effect.fn("environmentHttpAuth.buildEnvironmentAuthHeaders")(
-  function* (
-    authorization: PreparedHttpAuthorization | null,
-    method: HttpMethod.HttpMethod,
-    url: string,
-    signer: Option.Option<ManagedRelay.ManagedRelayDpopSigner["Service"]>,
-  ): Effect.fn.Return<EnvironmentHttpAuthHeaders, RemoteEnvironmentAuthFetchError> {
-    if (authorization === null) {
-      return {};
-    }
-    if (authorization._tag === "Bearer") {
-      return { authorization: `Bearer ${authorization.token}` };
-    }
-    if (Option.isNone(signer)) {
-      return yield* new RemoteEnvironmentAuthFetchError({
-        message: "No DPoP signer is available to authorize the environment request.",
-        cause: authorization._tag,
-      });
-    }
-    const proof = yield* signer.value
-      .createProof({ method, url, accessToken: authorization.accessToken })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new RemoteEnvironmentAuthFetchError({
-              message: "Could not create the environment request authorization proof.",
-              cause,
-            }),
-        ),
-      );
-    return { authorization: `DPoP ${authorization.accessToken}`, dpop: proof };
-  },
-);
+// Relay proofs must bind to the request method and URL. Inject the signer
+// so primary and bearer connections work without relay signing support.
+export const buildEnvironmentAuthHeaders = Effect.fn(
+  "environmentHttpAuth.buildEnvironmentAuthHeaders",
+)(function* (
+  authorization: PreparedHttpAuthorization | null,
+  method: HttpMethod.HttpMethod,
+  url: string,
+  signer: Option.Option<ManagedRelay.ManagedRelayDpopSigner["Service"]>,
+): Effect.fn.Return<EnvironmentHttpAuthHeaders, RemoteEnvironmentAuthFetchError> {
+  if (authorization === null) {
+    return {};
+  }
+  if (authorization._tag === "Bearer") {
+    return { authorization: `Bearer ${authorization.token}` };
+  }
+  if (Option.isNone(signer)) {
+    return yield* new RemoteEnvironmentAuthFetchError({
+      message: "No DPoP signer is available to authorize the environment request.",
+      cause: authorization._tag,
+    });
+  }
+  const proof = yield* signer.value
+    .createProof({ method, url, accessToken: authorization.accessToken })
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new RemoteEnvironmentAuthFetchError({
+            message: "Could not create the environment request authorization proof.",
+            cause,
+          }),
+      ),
+    );
+  return { authorization: `DPoP ${authorization.accessToken}`, dpop: proof };
+});
 
 /**
  * A DPoP request is T3 Connect work, so its span starts an exported trace that

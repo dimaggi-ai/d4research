@@ -37,6 +37,8 @@ class BoundaryError extends Schema.TaggedError<BoundaryError>()("BoundaryError",
     return new BoundaryError({ message: REFUSAL, category });
   }
 }
+const isBoundaryError = Schema.is(BoundaryError);
+
 const hash = (raw: string | Buffer) => NodeCrypto.createHash("sha256").update(raw).digest("hex");
 const refuse = (category: string): never => {
   throw BoundaryError.new(category);
@@ -152,7 +154,7 @@ export function createScopedBrain(options: {
     } catch (error) {
       options.diagnostic?.({
         operation,
-        category: Schema.is(BoundaryError)(error) ? error.category : "unavailable",
+        category: isBoundaryError(error) ? error.category : "unavailable",
       });
       // oxlint-disable-next-line eslint/preserve-caught-error -- Public failures must omit filesystem details; the callback receives only a bounded category.
       throw new Error(REFUSAL);
@@ -168,7 +170,7 @@ export function createScopedBrain(options: {
         if (NodeFS.lstatSync(location).isSymbolicLink()) refuse("database-location");
       } catch (error) {
         if (
-          Schema.is(BoundaryError)(error) ||
+          isBoundaryError(error) ||
           !error ||
           typeof error !== "object" ||
           !("code" in error) ||
@@ -183,7 +185,7 @@ export function createScopedBrain(options: {
       if (NodeFS.lstatSync(path).isSymbolicLink()) refuse("database-location");
     } catch (error) {
       if (
-        Schema.is(BoundaryError)(error) ||
+        isBoundaryError(error) ||
         !error ||
         typeof error !== "object" ||
         !("code" in error) ||

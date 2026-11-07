@@ -18,6 +18,10 @@ import * as TestClock from "effect/testing/TestClock";
 import * as CursorKeychain from "./CursorKeychain.ts";
 import { readCursorAccountUsage } from "./accountUsage.ts";
 
+const decodeDashboardPage = Schema.decodePromise(
+  Schema.fromJsonString(Schema.Struct({ page: Schema.Number })),
+);
+
 const encodeJsonFixture = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /** A scoped temporary directory holding `auth.json` with `accessToken`. */
@@ -51,11 +55,7 @@ const dashboard = (answer: (request: DashboardRequest) => Response | Promise<Res
           page:
             url.pathname === "/auth/exchange_user_api_key"
               ? undefined
-              : (
-                  await Schema.decodePromise(
-                    Schema.fromJsonString(Schema.Struct({ page: Schema.Number })),
-                  )(body)
-                ).page,
+              : (await decodeDashboardPage(body)).page,
           headers: new Headers(request.headers),
         });
         return HttpClientResponse.fromWeb(request, response);

@@ -1,24 +1,7 @@
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-/**
- * Account rate-limit views: the sidebar hover card and the usage page's
- * "Limits" strip. Both render whatever windows the server reports, so a
- * window a provider adds or brings back (Codex's paused 5-hour) appears
- * without a client change.
- *
- * One block per provider; one row group per (environment, instance) under
- * it. With a single row - the common case - nothing is captioned and the
- * markup is identical to the single-account rendering. With several, each
- * group is captioned with the instance's display name (and the environment
- * label when more than one environment reports) so two accounts' numbers
- * can never be mistaken for one another.
- *
- * Every percentage is labelled `used` inline - a bare number cannot say
- * whether it is used or remaining. Snapshot age only renders once the data
- * is actually stale; fresh data needs no caption.
- *
- * @module AccountLimits
- */
+// Render every reported window so provider window changes do not require a client release.
+// Caption multiple account groups to prevent mixing their limits; always label percentages as used.
 import type { AccountLimitsSnapshot, AccountLimitsWindow } from "@d4research/contracts";
 import { useEffect, useState } from "react";
 
@@ -41,6 +24,7 @@ const STALE_AFTER_MS = 15 * 60_000;
  */
 function useNowMs(intervalMs = 30_000): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the clock timer that updates reset countdowns and stale snapshot ages without refetching.
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
@@ -237,118 +221,5 @@ export function AccountLimitsHoverCard() {
         );
       })}
     </div>
-  );
-}
-
-function SectionWindowRow({
-  window,
-  color,
-  nowMs,
-}: {
-  window: AccountLimitsWindow;
-  color: string;
-  nowMs: number;
-}) {
-  const resetAt = formatResetAt(window.resetsAt, nowMs);
-  return (
-    <div className="flex items-center gap-3">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className="w-10 shrink-0 truncate whitespace-nowrap text-xs text-muted-foreground">
-              {window.label}
-            </span>
-          }
-        />
-        <TooltipPopup>{window.label}</TooltipPopup>
-      </Tooltip>
-      <LimitMeter window={window} color={color} />
-      <span
-        className={cn(
-          "shrink-0 whitespace-nowrap text-right text-xs font-medium tabular-nums text-foreground",
-          usageTone(window.usedPercent),
-        )}
-      >
-        {Math.round(window.usedPercent)}% used
-      </span>
-      <span className="shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">
-        {resetAt === null ? "" : `resets ${resetAt}`}
-      </span>
-    </div>
-  );
-}
-
-/** The "Limits" strip above the analytics: one column per provider. */
-function AccountLimitsSection() {
-  const { byProvider, reportingEnvironments, isSettling } = useAccountLimits();
-  const nowMs = useNowMs();
-
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium text-foreground">Limits</h2>
-      <div className="grid gap-x-12 gap-y-4 sm:grid-cols-2">
-        {PROVIDER_ORDER.map((provider) => {
-          const rows = byProvider.get(provider) ?? [];
-          const only = rows.length === 1 ? rows[0] : undefined;
-          const presentation = PROVIDER_PRESENTATION[provider];
-
-          return (
-            <div key={provider} className="flex flex-col gap-1.5">
-              <div className="flex items-baseline gap-2">
-                <ProviderInstanceIcon
-                  driverKind={presentation.driverKind}
-                  displayName={presentation.label}
-                  iconClassName="size-3.5 shrink-0 self-center"
-                />
-                <span className="text-sm font-medium text-foreground">{presentation.label}</span>
-                <span className="ml-auto">
-                  {only !== undefined ? (
-                    <SnapshotAge snapshot={only.snapshot} nowMs={nowMs} />
-                  ) : null}
-                </span>
-              </div>
-              {rows.length === 0 || (only !== undefined && only.snapshot.windows.length === 0) ? (
-                <p className="text-xs text-muted-foreground">
-                  {rows.length === 0 && isSettling ? "Loading…" : "No limit data yet"}
-                </p>
-              ) : only !== undefined ? (
-                // Single group - the common case: same markup as one account.
-                only.snapshot.windows.map((window) => (
-                  <SectionWindowRow
-                    key={window.id}
-                    window={window}
-                    color={only.instanceColor ?? presentation.color}
-                    nowMs={nowMs}
-                  />
-                ))
-              ) : (
-                rows.map((row) => (
-                  <div key={rowKey(row)} className="flex flex-col gap-1.5">
-                    <RowCaption
-                      row={row}
-                      nameEnvironment={reportingEnvironments > 1}
-                      nowMs={nowMs}
-                      className="text-xs text-muted-foreground"
-                    />
-                    {row.snapshot.windows.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No limit data yet</p>
-                    ) : (
-                      row.snapshot.windows.map((window) => (
-                        <SectionWindowRow
-                          key={window.id}
-                          window={window}
-                          color={row.instanceColor ?? presentation.color}
-                          nowMs={nowMs}
-                        />
-                      ))
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }

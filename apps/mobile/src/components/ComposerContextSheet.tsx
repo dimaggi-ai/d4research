@@ -261,8 +261,8 @@ export function ComposerContextSheet(props: {
                 <ContextField label="Comment" value={record.comment} />
                 <ContextField label="Selection" value={record.targetSummary} />
                 <ContextField label="Requested changes" value={record.styleChanges.join("\n")} />
-                {record.elements?.map((element, index) => (
-                  <View key={`${element.selector ?? element.tagName}:${index}`} className="gap-3">
+                {record.elements?.map((element) => (
+                  <View key={JSON.stringify(element)} className="gap-3">
                     <ContextField
                       label="Element"
                       value={element.componentName ?? element.tagName}

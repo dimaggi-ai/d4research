@@ -1,12 +1,5 @@
-/**
- * ProviderAdapter - Provider-specific runtime adapter contract.
- *
- * Defines the provider-native session/protocol operations that `ProviderService`
- * routes to after resolving the target provider. Implementations should focus
- * on provider behavior only and avoid cross-provider orchestration concerns.
- *
- * @module ProviderAdapter
- */
+// Keep provider-native protocol behavior here; cross-provider orchestration belongs
+// in ProviderService after target resolution.
 import type {
   ApprovalRequestId,
   ProviderApprovalDecision,

@@ -25,6 +25,7 @@ function useShortcutNavigation(): void {
   const linkTo = useLinkTo();
   const handledInitialAction = useRef(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Consume native launcher actions and remove the quick-action listener on unmount.
   useEffect(() => {
     // Cold start: the tapped shortcut arrives as the launch action, before
     // any listener can fire. Navigating from here pushes the target over the
@@ -69,6 +70,7 @@ function useRecentThreadShortcutSync(state: NavigationState): void {
   // finishing after (and overwriting) a newer one.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Load persisted launcher history before allowing writes to replace it.
   useEffect(() => {
     if (Platform.OS !== "android") {
       return;
@@ -97,6 +99,7 @@ function useRecentThreadShortcutSync(state: NavigationState): void {
   const environmentId = threadRef?.environmentId ?? null;
   const threadId = threadRef?.threadId ?? null;
   const title = threadShell?.title ?? "";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retain navigation-driven recent history; moving this into one handler would miss other thread entry points.
   useEffect(() => {
     if (!loaded || environmentId === null || threadId === null) {
       return;
@@ -114,6 +117,7 @@ function useRecentThreadShortcutSync(state: NavigationState): void {
     });
   }, [loaded, environmentId, threadId, title]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Persist recent threads and publish their actions to the Android launcher.
   useEffect(() => {
     if (recents === null) {
       return;

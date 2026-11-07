@@ -99,6 +99,8 @@ const thread = (
   },
 });
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
 const threadId = ThreadId.make("thread:find");
 const projectId = ProjectId.make("project:find");
 const runId = RunId.make("run:find");
@@ -275,10 +277,7 @@ describe("V2 thread find", () => {
       assert.equal(result.totalMatches, 5000);
       assert.equal(result.match?.occurrence, 2000);
       assert.deepEqual(result.navigation, [{ entryId: "many", runId, startIndex: 0, count: 5000 }]);
-      assert.isBelow(
-        (yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(result)).length,
-        500,
-      );
+      assert.isBelow((yield* encodeJson(result)).length, 500);
     }).pipe(Effect.provide(layerTest)),
   );
 

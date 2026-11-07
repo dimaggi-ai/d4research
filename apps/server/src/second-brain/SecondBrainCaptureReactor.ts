@@ -50,14 +50,12 @@ const make = Effect.gen(function* () {
       ),
     ),
   );
-  const queue = Effect.fn("queue")((job: Index.CaptureJob) =>
-    Effect.gen(function* () {
-      if (yield* owns(ThreadId.make(job.threadId))) return;
-      if (job.state === "completed" || (job.attempts ?? 0) >= 3 || queued.has(job.id)) return;
-      queued.add(job.id);
-      yield* worker.enqueue(job);
-    }),
-  );
+  const queue = Effect.fn("SecondBrainCaptureReactor.queue")(function* (job: Index.CaptureJob) {
+    if (yield* owns(ThreadId.make(job.threadId))) return;
+    if (job.state === "completed" || (job.attempts ?? 0) >= 3 || queued.has(job.id)) return;
+    queued.add(job.id);
+    yield* worker.enqueue(job);
+  });
   const scan = scanLock.withPermits(1)(
     Effect.gen(function* () {
       const config = yield* settings.getSettings;
@@ -102,15 +100,13 @@ const make = Effect.gen(function* () {
     }
   });
   let lastRetry: number | undefined;
-  const recover = Effect.fn("recover")((retryFailed = false) =>
-    Effect.gen(function* () {
-      const config = yield* settings.getSettings;
-      if (config.secondBrain.capture === "proposals" && config.secondBrain.path)
-        for (const job of yield* index.pendingCaptures())
-          if (job.state === "pending" || retryFailed) yield* queue(job);
-      yield* replay;
-    }),
-  );
+  const recover = Effect.fn("SecondBrainCaptureReactor.recover")(function* (retryFailed = false) {
+    const config = yield* settings.getSettings;
+    if (config.secondBrain.capture === "proposals" && config.secondBrain.path)
+      for (const job of yield* index.pendingCaptures())
+        if (job.state === "pending" || retryFailed) yield* queue(job);
+    yield* replay;
+  });
   const notify = (event: OrchestrationV2DomainEvent) =>
     event.type === "run.updated" && event.payload.status === "completed"
       ? replay.pipe(
@@ -118,7 +114,7 @@ const make = Effect.gen(function* () {
         )
       : Effect.void;
   return {
-    retry: Effect.fn("retry")(() =>
+    retry: Effect.fn("SecondBrainCaptureReactor.retry")(() =>
       Effect.gen(function* () {
         const config = yield* settings.getSettings;
         const now = yield* Clock.currentTimeMillis;
@@ -132,16 +128,14 @@ const make = Effect.gen(function* () {
       }).pipe(Effect.catchCause(() => Effect.logWarning("Second brain capture retry failed"))),
     ),
     notify,
-    start: Effect.fn("start")(() =>
-      Effect.gen(function* () {
-        yield* forkParked(Stream.runForEach(engine.streamDomainEvents, notify));
-        yield* forkParked(
-          recover().pipe(
-            Effect.catchCause(() => Effect.logWarning("Second brain capture recovery failed")),
-          ),
-        );
-      }),
-    ),
+    start: Effect.fn("SecondBrainCaptureReactor.start")(function* () {
+      yield* forkParked(Stream.runForEach(engine.streamDomainEvents, notify));
+      yield* forkParked(
+        recover().pipe(
+          Effect.catchCause(() => Effect.logWarning("Second brain capture recovery failed")),
+        ),
+      );
+    }),
     drain: recover().pipe(
       Effect.catchCause(() => Effect.logWarning("Second brain capture replay failed")),
       Effect.andThen(worker.drain),

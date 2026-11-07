@@ -1,8 +1,10 @@
 import * as Dialog from "../../components/ui/Dialog";
-/* oxlint-disable react/no-array-index-key -- Captured table rows and columns have stable positions and may contain identical values. */
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@d4research/contracts";
-import { clampFileAttachmentUploadBytes, formatAttachmentSize } from "@d4research/client-runtime/state/attachments";
+import {
+  clampFileAttachmentUploadBytes,
+  formatAttachmentSize,
+} from "@d4research/client-runtime/state/attachments";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 
@@ -10,7 +12,12 @@ import { AppBar, type AppBarMenu } from "../../components/ui/AppBar";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useRefreshAssetUrl } from "../../state/assets";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { AttachmentDocumentBody, nativeViewerKind, isZipFile, ZipArchiveView } from "./ZipArchiveView";
+import {
+  AttachmentDocumentBody,
+  nativeViewerKind,
+  isZipFile,
+  ZipArchiveView,
+} from "./ZipArchiveView";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { useAttachmentDocument } from "../../lib/attachmentDocument";
 import { nativeViewerErrorMessage } from "../../lib/attachmentDownload";
@@ -31,7 +38,6 @@ export type AttachmentFileRouteParams = {
 };
 
 type AttachmentFileScreenProps = StaticScreenProps<AttachmentFileRouteParams>;
-
 
 export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
   const navigation = useNavigation();
@@ -67,6 +73,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     if (navigation.canGoBack()) navigation.goBack();
   }, [navigation]);
   const { uri, resource } = document;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Present the native document viewer once its asynchronously resolved file URI is available.
   useEffect(() => {
     if (nativeViewer !== "pending" || !uri) return;
     // oxlint-disable-next-line react/set-state-in-effect -- Presenting the viewer waits on the resolved file.

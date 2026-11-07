@@ -28,12 +28,16 @@ export function SourceText({ style, children, nativeTextRef, ...props }: SourceT
       </Text>
     );
   }
-  const runs = React.Children.toArray(children).map((child, index) => {
+  const occurrences = new Map<string, number>();
+  const runs = React.Children.toArray(children).map((child) => {
     if (React.isValidElement(child)) return child;
     if (typeof child !== "string" && typeof child !== "number") return null;
+    const text = String(child);
+    const occurrence = occurrences.get(text) ?? 0;
+    occurrences.set(text, occurrence + 1);
     return (
       <T3SourceTextRunNativeComponent
-        key={index}
+        key={`${text}:${occurrence}`}
         style={flattenedStyle}
         {...flattenedStyle}
         text={String(child)}

@@ -50,7 +50,11 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
               aria-label={label}
               data-slot="dialog-popup"
               data-app-modal=""
-              style={{ "--app-modal-top-inset": `max(var(--workspace-topbar-height), env(safe-area-inset-top), ${nativeTitlebarHeight}px)` } as CSSProperties}
+              style={
+                {
+                  "--app-modal-top-inset": `max(var(--workspace-topbar-height), env(safe-area-inset-top), ${nativeTitlebarHeight}px)`,
+                } as CSSProperties
+              }
               className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground outline-none max-md:pt-(--app-modal-top-inset) max-md:pb-safe [-webkit-app-region:no-drag]"
             >
               {children}

@@ -888,18 +888,18 @@ export const layer = Layer.effect(
         ),
     );
 
-    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-    const reconcileRuns = (recoverMissing: boolean) =>
-      Effect.gen(function* () {
-        const pending = yield* sql<{
-          task_id: string;
-          started_at: string;
-          message_id: string;
-          task_created_at: string;
-          status: string | null;
-          completed_at: string | null;
-          projected_message_id: string | null;
-        }>`
+    const reconcileRuns = Effect.fn("ScheduledTaskService.reconcileRuns")(function* (
+      recoverMissing: boolean,
+    ) {
+      const pending = yield* sql<{
+        task_id: string;
+        started_at: string;
+        message_id: string;
+        task_created_at: string;
+        status: string | null;
+        completed_at: string | null;
+        projected_message_id: string | null;
+      }>`
         SELECT pending.task_id, pending.started_at, pending.message_id, pending.task_created_at,
                run.status, run.completed_at, message.message_id AS projected_message_id
         FROM scheduled_task_runs pending
@@ -907,33 +907,33 @@ export const layer = Layer.effect(
         LEFT JOIN orchestration_v2_projection_runs run ON run.run_id = message.run_id
         WHERE pending.status = 'running'
       `;
-        for (const row of pending) {
-          const terminal =
-            row.status !== null &&
-            ["completed", "failed", "interrupted", "cancelled"].includes(row.status);
-          if (
-            !terminal &&
-            !(recoverMissing && row.status === null && row.projected_message_id === null)
-          )
-            continue;
-          const now = yield* localNow;
-          const task = yield* Effect.result(findTask(ScheduledTaskId.make(row.task_id)));
-          const status = row.status === "completed" ? "succeeded" : "failed";
-          const message =
-            row.status === null
-              ? "Run was interrupted by a server restart."
-              : status === "failed"
-                ? `Scheduled run ${row.status}.`
-                : null;
-          yield* sql.withTransaction(
-            Effect.gen(function* () {
-              const settled = yield* sql<{ message_id: string }>`
+      for (const row of pending) {
+        const terminal =
+          row.status !== null &&
+          ["completed", "failed", "interrupted", "cancelled"].includes(row.status);
+        if (
+          !terminal &&
+          !(recoverMissing && row.status === null && row.projected_message_id === null)
+        )
+          continue;
+        const now = yield* localNow;
+        const task = yield* Effect.result(findTask(ScheduledTaskId.make(row.task_id)));
+        const status = row.status === "completed" ? "succeeded" : "failed";
+        const message =
+          row.status === null
+            ? "Run was interrupted by a server restart."
+            : status === "failed"
+              ? `Scheduled run ${row.status}.`
+              : null;
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            const settled = yield* sql<{ message_id: string }>`
             UPDATE scheduled_task_runs SET status = ${status}, completed_at = ${row.completed_at ?? iso(now)}
             WHERE message_id = ${row.message_id} AND status = 'running' RETURNING message_id
           `;
-              if (settled.length === 0) return;
-              // A webhook delivery completes with its run, which webhook dedupe reads.
-              yield* sql`
+            if (settled.length === 0) return;
+            // A webhook delivery completes with its run, which webhook dedupe reads.
+            yield* sql`
             UPDATE scheduled_task_webhook_pending
             SET state = ${status === "succeeded" ? "completed" : "failed"}
             WHERE delivery_id = (
@@ -941,11 +941,11 @@ export const layer = Layer.effect(
               WHERE task_id = ${row.task_id} AND last_run_message_id = ${row.message_id}
             ) AND state NOT IN ('completed', 'failed')
           `;
-              yield* sql`
+            yield* sql`
             UPDATE scheduled_tasks SET run_count = run_count + 1
             WHERE task_id = ${row.task_id} AND created_at = ${row.task_created_at}
           `;
-              yield* sql`
+            yield* sql`
             UPDATE scheduled_tasks
             SET last_run_status = ${status}, last_run_error = ${message},
                 next_run_at = ${Result.isSuccess(task) && task.success !== null ? nextRunAfterRun({ ...task.success, lastRunAt: row.started_at }, now) : null},
@@ -953,30 +953,31 @@ export const layer = Layer.effect(
             WHERE task_id = ${row.task_id} AND created_at = ${row.task_created_at}
               AND last_run_status = 'running' AND last_run_message_id = ${row.message_id}
           `;
-            }),
-          );
-          yield* notifyChanged;
-        }
-        if (recoverMissing) {
-          const legacy = yield* sql<ScheduledTaskRow>`SELECT * FROM scheduled_tasks
+          }),
+        );
+        yield* notifyChanged;
+      }
+      if (recoverMissing) {
+        const legacy = yield* sql<ScheduledTaskRow>`SELECT * FROM scheduled_tasks
           WHERE last_run_status = 'running' AND last_run_message_id IS NULL`;
-          for (const row of legacy) {
-            const now = yield* localNow;
-            const task = yield* Effect.result(decodeRow(row));
-            yield* sql`UPDATE scheduled_tasks SET last_run_status = 'failed',
+        for (const row of legacy) {
+          const now = yield* localNow;
+          const task = yield* Effect.result(decodeRow(row));
+          yield* sql`UPDATE scheduled_tasks SET last_run_status = 'failed',
             last_run_error = 'Run was interrupted by a server restart.',
             next_run_at = ${Result.isSuccess(task) ? nextRunAfterRun(task.success, now) : null},
             updated_at = ${iso(now)}, run_count = run_count + 1
             WHERE task_id IS ${row.task_id} AND last_run_status = 'running' AND last_run_message_id IS NULL`;
-          }
-          if (legacy.length > 0) yield* notifyChanged;
         }
-        const cutoff = iso(DateTime.subtract(yield* localNow, { days: 7 }));
-        yield* sql`DELETE FROM scheduled_task_runs WHERE completed_at < ${cutoff}`;
-      });
+        if (legacy.length > 0) yield* notifyChanged;
+      }
+      const cutoff = iso(DateTime.subtract(yield* localNow, { days: 7 }));
+      yield* sql`DELETE FROM scheduled_task_runs WHERE completed_at < ${cutoff}`;
+    });
 
-    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-    const completedRuns: ScheduledTaskService["Service"]["completedRuns"] = () =>
+    const completedRuns: ScheduledTaskService["Service"]["completedRuns"] = Effect.fn(
+      "ScheduledTaskService.completedRuns",
+    )(() =>
       Effect.gen(function* () {
         const cutoff = iso(DateTime.subtract(yield* localNow, { days: 7 }));
         const rows = yield* sql<{
@@ -999,7 +1000,8 @@ export const layer = Layer.effect(
         }));
       }).pipe(
         Effect.mapError((cause) => taskError("Could not list completed schedule runs.", { cause })),
-      );
+      ),
+    );
     // The run already started the thread, so a failed write only costs the binding.
     // A thread deleted before the binding landed already ran its task cleanup, so apply that
     // cleanup here; a later deletion finds the binding. An unconfirmed lookup keeps the binding.

@@ -104,3 +104,21 @@ export function buildArchivedThreadGroups(input: {
     ),
   );
 }
+
+/** An offline environment is an expected state, so it is named rather than loaded and failed. */
+export function splitArchiveEnvironments(
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>,
+  connectedIds: ReadonlySet<EnvironmentId>,
+): {
+  readonly environmentIds: ReadonlyArray<EnvironmentId>;
+  readonly offlineLabels: ReadonlyArray<string>;
+} {
+  return {
+    environmentIds: environments
+      .map((environment) => environment.environmentId)
+      .filter((environmentId) => connectedIds.has(environmentId)),
+    offlineLabels: environments
+      .filter((environment) => !connectedIds.has(environment.environmentId))
+      .map((environment) => environment.label),
+  };
+}

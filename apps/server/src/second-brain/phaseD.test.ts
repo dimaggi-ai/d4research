@@ -33,9 +33,11 @@ it.effect("indexes 1000 notes with eight links and serves catalog and lint under
             Array.from({ length: 8 }, (_, i) => `[[n-${(n + i + 1) % 1000}]]`).join("\n"),
         );
       yield* brain.reindex();
+      // oxlint-disable-next-line t3code/no-wall-clock-in-tests -- This existing performance contract measures real catalog and lint latency; a fake clock would erase the assertion.
       const start = performance.now();
       const map = yield* brain.map();
       const lint = yield* brain.lint();
+      // oxlint-disable-next-line t3code/no-wall-clock-in-tests -- Retain the real elapsed-time bound for the 1000-note performance regression.
       const elapsed = performance.now() - start;
       expect(map.catalog).toHaveLength(1000);
       expect(map.catalog.every((n) => n.inboundLinks === 8)).toBe(true);

@@ -37,6 +37,7 @@ export function AssistantSelectionToolbar({
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Positions the toolbar DOM within the viewport around the native text selection.
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
     if (!toolbar || !selection) return;
@@ -45,6 +46,7 @@ export function AssistantSelectionToolbar({
     toolbar.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
   }, [selection]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes native text selection and keyboard focus while this timeline is mounted.
   useEffect(() => {
     if (!viewport) return;
     const clear = () => setSelection(null);

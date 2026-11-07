@@ -15,7 +15,11 @@ import {
   threadSearchMatchKey,
   threadSearchSubject,
 } from "@d4research/client-runtime/state/thread-search";
-import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@d4research/shared/paletteSearch";
+import {
+  foldSearchQuery,
+  rankSearchItems,
+  scoreThreadSearch,
+} from "@d4research/shared/paletteSearch";
 import {
   createInboxReturnTracker,
   isThreadWorking,

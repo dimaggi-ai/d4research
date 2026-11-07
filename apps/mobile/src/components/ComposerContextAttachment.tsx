@@ -39,6 +39,7 @@ export function ComposerContextAttachment(props: {
   const [error, setError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Acquire and release the native local attachment preview file lease.
   useEffect(() => {
     if (!local) return;
     const controller = new AbortController();

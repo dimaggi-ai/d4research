@@ -1,10 +1,7 @@
 "use strict";
 
-// Loading `dist/common` needs a small custom loader because uniwind declares
-// `"type": "module"` over that CommonJS output and its internal `@/...` import
-// alias only exists at uniwind's own build time; the loader hands unmodified
-// file bytes to V8 and resolves those aliases the same way, so this runs the
-// exact compiled code the Metro transformer bundles.
+// Uniwind marks CommonJS output as ESM and uses build-only aliases. This loader
+// resolves those aliases while executing the compiled bytes Metro bundles.
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");

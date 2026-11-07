@@ -1,5 +1,5 @@
 import { EnvironmentId, ThreadId } from "@d4research/contracts";
-import { act, render } from "../../../test/render";
+import { render } from "../../../test/render";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -123,7 +123,7 @@ describe("repository checkout controls", () => {
       refs: [{ name: "older", current: false, worktreePath: null }],
       nextCursor: null,
     });
-    await using screen = await render(
+    await using _screen = await render(
       <FileWorktreeToolbar
         environmentId={environmentId}
         threadRef={threadRef}

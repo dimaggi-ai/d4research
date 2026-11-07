@@ -56,8 +56,10 @@ export function QuestionAttachments(props: {
   const releaseFocus = useEffectEvent(() => {
     if (focusedRef.current) onInputFocusChange?.(false);
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases the external composer focus registration on unmount.
   useEffect(() => () => releaseFocus(), []);
   const pickerScope = useRef<{ key: string; active: boolean } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scopes asynchronous native attachment-picker replies to the mounted question.
   useEffect(() => {
     const scope = { key: scopeKey, active: true };
     pickerScope.current = scope;

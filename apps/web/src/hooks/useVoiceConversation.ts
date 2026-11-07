@@ -357,6 +357,7 @@ export function useVoiceConversation(options: {
       failConversation("Microphone access is required for voice conversation.");
     }
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the recorder and audio callbacks using the latest committed start-listening handler.
   useLayoutEffect(() => {
     startListeningRef.current = startListening;
   });
@@ -372,6 +373,7 @@ export function useVoiceConversation(options: {
     void startListeningRef.current();
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Start audio playback when the pending assistant reply finishes streaming.
   useEffect(() => {
     const pendingIds = pendingAssistantIdsRef.current;
     if (!pendingIds || !activeRef.current) return;
@@ -389,6 +391,7 @@ export function useVoiceConversation(options: {
     void speak(reply.text);
   }, [messages, speak]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retain original-reply invalidation for imperative voice commands; deriving this flag alone would leave the playback ref stale.
   useEffect(() => {
     const originalReply = originalReplyRef.current;
     if (
@@ -401,9 +404,11 @@ export function useVoiceConversation(options: {
   }, [messages]);
 
   const stopConversationRef = useRef(stopConversation);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep unmount cleanup using the latest committed recorder and audio stop handler.
   useLayoutEffect(() => {
     stopConversationRef.current = stopConversation;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Release microphone tracks, audio playback, and recording resources when the hook unmounts.
   useEffect(() => () => stopConversationRef.current(), []);
 
   return { active, status, hasOriginalReply, toggleConversation, stopConversation };

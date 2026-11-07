@@ -34,12 +34,11 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { bufferLiveStream } from "./LiveStreamBudget.ts";
 
-// @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-export const prepareShellMonitorStream = <E, R>(input: {
-  readonly changes: Stream.Stream<AgentMonitorUpdate>;
-  readonly snapshot: Effect.Effect<ReadonlyArray<AgentMonitorUpdate>, E, R>;
-}) =>
-  Effect.gen(function* () {
+export const prepareShellMonitorStream = Effect.fn("ShellStream.prepareShellMonitorStream")(
+  function* <E, R>(input: {
+    readonly changes: Stream.Stream<AgentMonitorUpdate>;
+    readonly snapshot: Effect.Effect<ReadonlyArray<AgentMonitorUpdate>, E, R>;
+  }) {
     // Acquire and drain the subscription before any shell or monitor snapshot is read.
     const changes = yield* Stream.toPull(bufferLiveStream(input.changes));
     const first = yield* changes.pipe(Effect.forkScoped({ startImmediately: true }));
@@ -69,7 +68,8 @@ export const prepareShellMonitorStream = <E, R>(input: {
         ),
       ).pipe(Stream.map((update) => ({ kind: "monitor.updated" as const, ...update }))),
     };
-  });
+  },
+);
 
 import { bufferLatestLiveStream } from "./LiveStreamBudget.ts";
 import type { ActiveShellIndexEntry } from "./ProjectionStore.ts";

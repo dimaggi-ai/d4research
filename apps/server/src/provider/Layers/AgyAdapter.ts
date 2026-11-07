@@ -216,11 +216,7 @@ export const makeAgyAdapter = Effect.fn("AgyAdapter.makeAgyAdapter")(
       );
 
       const sendTurn: AgyAdapterShape["sendTurn"] = (input) => {
-        // Assigned once the turn owns a child process. Without this, a turn that
-        // times out or whose stream fiber fails never reaches the normal
-        // teardown: the process leaks and `context.process` stays set, so every
-        // later turn is rejected with "already has a turn in progress" and the
-        // session is wedged for good.
+        // Release the owned process on timeout or stream failure so the next turn is not blocked.
         let releaseTurn: Effect.Effect<void> | undefined;
         // The normal path finalizes the turn itself (even on a failed result),
         // and `onError` would otherwise run releaseTurn again and emit a second
@@ -290,11 +286,7 @@ export const makeAgyAdapter = Effect.fn("AgyAdapter.makeAgyAdapter")(
             });
           }
 
-          // The prompt goes on stdin, never argv. A research delegate carries
-          // shared memory context and routinely exceeds Linux's 128KB
-          // MAX_ARG_STRLEN, where an argv prompt dies with E2BIG before agy
-          // starts — which is why agy was the only provider failing every
-          // delegated draft. `agy` with no --print value reads stdin.
+          // Stdin avoids Linux MAX_ARG_STRLEN for research prompts; agy reads it without a --print value.
           const args = [
             ...tokenizeCliArgs(settings.launchArgs),
             "--output-format",
@@ -384,12 +376,7 @@ export const makeAgyAdapter = Effect.fn("AgyAdapter.makeAgyAdapter")(
               resultStatus = event.result.status;
               const finalResponse = event.result.response;
               if (finalResponse !== undefined) {
-                // Some Agy models emit no agent_response step at all and return
-                // their entire answer only in the terminal result. Without a
-                // delta the durable transcript was correct after reload while
-                // the live client rendered an empty assistant turn. A final
-                // response that extends streamed text can likewise carry a
-                // suffix the client has not seen yet.
+                // Some models return only a terminal result; publish any answer suffix missing from the live stream.
                 const missingDelta = finalResponse.startsWith(responseText)
                   ? finalResponse.slice(responseText.length)
                   : responseText.length === 0

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MAX_CHAT_CUSTOM_WIDTH_PX, MIN_CHAT_CUSTOM_WIDTH_PX } from "@d4research/contracts/settings";
 import {
   NumberField,
@@ -16,7 +16,11 @@ export function ChatCustomWidthControl({
   onChange: (width: number) => void;
 }) {
   const [draft, setDraft] = useState<number | null>(value);
-  useEffect(() => setDraft(value), [value]);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousValue !== value) {
+    setPreviousValue(value);
+    setDraft(value);
+  }
 
   return (
     <NumberField

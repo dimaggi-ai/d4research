@@ -35,24 +35,23 @@ export function buildJunieAcpSpawnInput(
   };
 }
 
-export const makeJunieAcpRuntime = (
+export const makeJunieAcpRuntime = Effect.fn("JunieAcpSupport.makeJunieAcpRuntime")(function* (
   input: JunieAcpRuntimeInput,
-): Effect.Effect<
+): Effect.fn.Return<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
   SecureRandom.SecureRandom | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
-> =>
-  Effect.gen(function* () {
-    const acpContext = yield* Layer.build(
-      AcpSessionRuntime.layer({
-        ...input,
-        safeRequestIds: true,
-        spawn: buildJunieAcpSpawnInput(input.junieSettings, input.cwd, input.environment),
-        // Junie advertises the active JetBrains/BYOK authentication method;
-        // omitting the id lets the shared runtime select the first advertised one.
-      }),
-    );
-    return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
-      Effect.provide(acpContext),
-    );
-  });
+> {
+  const acpContext = yield* Layer.build(
+    AcpSessionRuntime.layer({
+      ...input,
+      safeRequestIds: true,
+      spawn: buildJunieAcpSpawnInput(input.junieSettings, input.cwd, input.environment),
+      // Junie advertises the active JetBrains/BYOK authentication method;
+      // omitting the id lets the shared runtime select the first advertised one.
+    }),
+  );
+  return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
+    Effect.provide(acpContext),
+  );
+});

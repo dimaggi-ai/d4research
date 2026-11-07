@@ -1,3 +1,4 @@
+import { keyTextOccurrences } from "../review/textOccurrenceKeys";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import type { ComponentType } from "react";
@@ -251,15 +252,26 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullToRefresh()} />
   ) : undefined;
 
+  const scrollRequest = useMemo(
+    () => ({ path: props.path, index: targetIndex }),
+    [props.path, targetIndex],
+  );
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scroll the native source list to the requested line after layout.
   useEffect(() => {
-    if (targetIndex === null) {
+    const { index } = scrollRequest;
+    if (index === null) {
       return;
     }
     const frame = requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({ index: targetIndex, animated: false, viewPosition: 0.3 });
+      listRef.current?.scrollToIndex({
+        index,
+        animated: false,
+        viewPosition: 0.3,
+      });
     });
     return () => cancelAnimationFrame(frame);
-  }, [props.path, targetIndex]);
+  }, [scrollRequest]);
 
   const renderLine = useCallback(
     ({ item, index }: { item: string; index: number }) => (
@@ -275,11 +287,8 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     [codeSurface, codeWordBreak, targetIndex, tokens],
   );
 
-  // On iOS `uiTextView` renders a real `UITextView`, which selects across every line,
-  // wraps, and lays out long documents through TextKit; on Android the primitive is an RN
-  // `Text`, which selects across its nested children. Either way "select all" takes the
-  // file rather than a line, which a `FlatList` row can never do because each row is its
-  // own selection scope.
+  // One native text selection scope lets Select All include the whole file;
+  // FlatList rows would restrict selection to individual lines.
   const selectableBlock = props.selectable ? (
     <SourceText
       selectable
@@ -292,29 +301,31 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
       }}
     >
       {selectableTokens
-        ? lines.map((line, index) => {
+        ? keyTextOccurrences(lines, (line) => line).map(({ value: line, key }, index) => {
             const lineTokens = selectableTokens[index] ?? null;
             const body =
               lineTokens && lineTokens.length > 0
-                ? lineTokens.map((token, tokenIndex) => (
-                    <SourceText
-                      key={`${index}:${tokenIndex}`}
-                      style={{
-                        color: token.color ?? foreground,
-                        fontWeight:
-                          token.fontStyle !== null && (token.fontStyle & 2) === 2 ? "700" : "400",
-                        fontStyle:
-                          token.fontStyle !== null && (token.fontStyle & 1) === 1
-                            ? "italic"
-                            : "normal",
-                      }}
-                    >
-                      {token.content}
-                    </SourceText>
-                  ))
+                ? keyTextOccurrences(lineTokens, (token) => token.content).map(
+                    ({ value: token, key: tokenKey }) => (
+                      <SourceText
+                        key={tokenKey}
+                        style={{
+                          color: token.color ?? foreground,
+                          fontWeight:
+                            token.fontStyle !== null && (token.fontStyle & 2) === 2 ? "700" : "400",
+                          fontStyle:
+                            token.fontStyle !== null && (token.fontStyle & 1) === 1
+                              ? "italic"
+                              : "normal",
+                        }}
+                      >
+                        {token.content}
+                      </SourceText>
+                    ),
+                  )
                 : line;
             return (
-              <SourceText key={index}>
+              <SourceText key={key}>
                 {body}
                 {index < lines.length - 1 ? "\n" : ""}
               </SourceText>

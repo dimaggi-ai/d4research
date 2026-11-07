@@ -27,6 +27,7 @@ export function useSidebarOrderMigration(
   const ready = useAllEnvironmentShellsBootstrapped();
   const liveSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   const attempted = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Migrate persisted local order to server thread keys only after live snapshots prevent overwriting remote changes.
   useEffect(() => {
     if (!ready || !liveSnapshotsReady || attempted.current) return;
     const store = useSidebarThreadOrderStore.getState();

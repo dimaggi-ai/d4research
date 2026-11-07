@@ -4,10 +4,7 @@ import { projectChangeRequestUrl } from "@d4research/client-runtime/change-reque
 import { normalizeThreadPullRequestKey } from "@d4research/client-runtime/thread-pull-requests";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
-import {
-  scopeProjectRef,
-  scopeThreadRef,
-} from "@d4research/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,

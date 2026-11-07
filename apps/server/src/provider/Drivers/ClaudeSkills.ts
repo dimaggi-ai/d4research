@@ -601,13 +601,8 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
 
 const SKILL_SCAN_MAX_DEPTH = 3;
 
-/**
- * Walk a skills root and return every directory that contains a `SKILL.md`,
- * recursing into category subdirectories up to {@link SKILL_SCAN_MAX_DEPTH}.
- * Hidden directories and `node_modules` are skipped, and a directory that is
- * itself a skill is never descended into — nested `SKILL.md` files inside a
- * skill are fixtures, not separate skills. Results are sorted for determinism.
- */
+// Stop descending at a skill root: nested SKILL.md files are fixtures. Skip hidden
+// directories and node_modules, enforce SKILL_SCAN_MAX_DEPTH and sort deterministically.
 export const collectSkillDirectories = Effect.fn("collectSkillDirectories")(function* (
   directory: string,
   depth: number = SKILL_SCAN_MAX_DEPTH,

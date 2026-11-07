@@ -8,18 +8,8 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { useRightPanelStore } from "../rightPanelStore";
 import { resolveThreadRouteRef } from "../threadRoutes";
 
-/**
- * The right panel's own shortcuts, owned once for the whole app.
- *
- * They used to live in the chat view, which meant they answered only while a chat view was mounted
- * and only when its listener happened to be ahead of the ones mounted after it. Bound to a bare
- * printable key — `§` on a Mac ISO layout is the usual choice — that was the difference between a
- * toggle and a stray character in whatever field had focus. Here it is one listener, registered
- * before anything else in the app, that answers wherever you are.
- *
- * Settings is the exception: it is where the binding is being read and edited, so a keypress there
- * belongs to the page.
- */
+// Register before route listeners so printable shortcuts cannot enter the focused field.
+// Settings owns keypresses while bindings are being edited there.
 export function RightPanelShortcuts() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const threadRef = useRouterState({
@@ -35,6 +25,7 @@ export function RightPanelShortcuts() {
   const stateRef = useRef({ keybindings, threadRef, pathname });
   stateRef.current = { keybindings, threadRef, pathname };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the window shortcut listener for the mounted app and remove it on unmount.
   useEffect(() => {
     const claim = (event: Event) => {
       event.preventDefault();

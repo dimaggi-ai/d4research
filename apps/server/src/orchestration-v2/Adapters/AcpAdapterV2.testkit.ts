@@ -26,7 +26,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 import type { ProviderReplayGate } from "@d4research/provider-testing/replayGate";
-import { ACP_PROTOCOL, type AcpAdapterV2RuntimeInput } from "@d4research/provider-acp/server/adapter";
+import {
+  ACP_PROTOCOL,
+  type AcpAdapterV2RuntimeInput,
+} from "@d4research/provider-acp/server/adapter";
 
 export const AcpReplayTranscript = Schema.Struct({
   provider: ProviderDriverKind,

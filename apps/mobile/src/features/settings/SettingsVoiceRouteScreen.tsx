@@ -53,6 +53,7 @@ function useMicrophonePermission() {
     () => void getRecordingPermissionsAsync().then(apply, () => setPermission("ask")),
     [apply],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refresh native microphone permission when the app returns from system settings.
   useEffect(() => {
     refresh();
     const subscription = AppState.addEventListener("change", (state) => {

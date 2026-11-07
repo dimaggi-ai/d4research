@@ -12,7 +12,7 @@ import {
   Rows3Icon,
   TextWrapIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useTheme } from "~/hooks/useTheme";
 import { workspaceDisplayName } from "~/lib/projectWorkspacePresentation";
@@ -152,7 +152,11 @@ export default function GitHistoryPanel(props: {
     ? selectedSha
     : (commits[0]?.sha ?? null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  useEffect(() => setSelectedSha(null), [activeCwd]);
+  const [selectionCwd, setSelectionCwd] = useState(activeCwd);
+  if (selectionCwd !== activeCwd) {
+    setSelectionCwd(activeCwd);
+    setSelectedSha(null);
+  }
   const details = useEnvironmentQuery(
     resolvedSelectedSha
       ? gitEnvironment.commitDetails({
@@ -177,7 +181,12 @@ export default function GitHistoryPanel(props: {
   const setDiffRenderMode = (diffLayout: "stacked" | "split") =>
     updateClientSettings({ diffLayout });
   const [wordWrap, setWordWrap] = useState(false);
-  useEffect(() => setSelectedFilePath(null), [activeCwd, resolvedSelectedSha]);
+  const selectionKey = `${activeCwd}:${resolvedSelectedSha ?? ""}`;
+  const [fileSelectionKey, setFileSelectionKey] = useState(selectionKey);
+  if (fileSelectionKey !== selectionKey) {
+    setFileSelectionKey(selectionKey);
+    setSelectedFilePath(null);
+  }
   const renderablePatch = useMemo(
     () =>
       getRenderablePatch(

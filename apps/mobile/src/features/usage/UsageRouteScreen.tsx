@@ -2,7 +2,11 @@ import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@d4research/contracts";
+import {
+  EnvironmentId,
+  USAGE_CONTRACT_VERSION,
+  type UsageProviderKind,
+} from "@d4research/contracts";
 import { type RouteProp, useIsFocused, useRoute } from "@react-navigation/native";
 import { cursorKeychainAccessEnvironments } from "@d4research/client-runtime/state/usage";
 import {

@@ -22,7 +22,13 @@ export type MediaVideoPreviewSource = {
       readonly environmentId: EnvironmentId;
       readonly resource: Extract<
         AssetResource,
-        { readonly _tag: "attachment" | "media-file" | "draft-workspace-file" | typeof SOURCE_CONTROL_MEDIA_ASSET }
+        {
+          readonly _tag:
+            | "attachment"
+            | "media-file"
+            | "draft-workspace-file"
+            | typeof SOURCE_CONTROL_MEDIA_ASSET;
+        }
       >;
     }
 );

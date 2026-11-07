@@ -27,6 +27,7 @@ export function useHardwareKeyboardCommand(
   command: HardwareKeyboardCommand | ReadonlyArray<HardwareKeyboardCommand>,
   handler: CommandHandler,
 ): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register hardware keyboard handlers only while their owning screen is mounted.
   useEffect(() => {
     const commands = typeof command === "string" ? [command] : command;
     for (const command of commands) {

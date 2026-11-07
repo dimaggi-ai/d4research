@@ -88,7 +88,7 @@ describe("describeComposerFallbackSkill", () => {
         enabled: true,
         description: "Review code.",
       }),
-    ).toBe("Attach as instructions — Review code.");
+    ).toBe("Attach as instructions: Review code.");
     expect(
       describeComposerFallbackSkill({ name: "bare", path: "/x/SKILL.md", enabled: true }),
     ).toBe("Attach as instructions");

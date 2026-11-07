@@ -2,14 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { expandResearchPipelinePrompt, type ResearchProviderCandidate } from "./researchPipeline";
 
-/**
- * Live QA against a small local model (gemma4 via Ollama): does a modest
- * orchestrator actually obey the compiled protocol — step markers, delegation
- * through the tool, honesty about unresolved targets? Unit tests prove the
- * prompt says these things; this proves a mid model reads them the way we
- * intend. This suite is explicitly opt-in; once enabled, missing Ollama/model
- * prerequisites fail instead of returning a green test without an assertion.
- */
+// Opt-in live QA checks whether local Gemma follows the compiled delegation protocol.
+// Once enabled, missing Ollama/model prerequisites fail rather than produce an empty pass.
 const OLLAMA_URL = "http://127.0.0.1:11434";
 const GENERATION_TIMEOUT_MS = 150_000;
 

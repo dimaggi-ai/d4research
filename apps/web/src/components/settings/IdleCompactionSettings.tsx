@@ -111,7 +111,7 @@ export function IdleCompactionSettings() {
         title="Idle time before compaction"
         serverScoped
         settingKeys={["idleCompactionMinutes"]}
-        description="Minutes since the last reply finished (1–1,440). When background work is allowed, its output does not reset the timer. Otherwise the timer waits for all work to finish. Reading the thread does not reset it."
+        description="Minutes since the last reply finished (1–1,440). Allowed background output does not reset the timer; otherwise it waits for all work to finish. Reading the thread does not reset it."
         resetAction={
           settings.idleCompactionMinutes !== DEFAULT_SERVER_SETTINGS.idleCompactionMinutes ? (
             <SettingResetButton

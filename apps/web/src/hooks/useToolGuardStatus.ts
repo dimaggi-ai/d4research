@@ -65,6 +65,7 @@ export function useToolGuardStatus(): ToolGuardStatusState {
   });
   const refresh = () => setRefreshSequence((options) => ({ ...options }));
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the local Tool Guard status polling timer and abort its requests on unmount or refresh.
   useEffect(() => {
     const controller = new AbortController();
 

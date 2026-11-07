@@ -1,3 +1,4 @@
+import { keyTextOccurrences } from "./textOccurrenceKeys";
 import { memo, useMemo, useState } from "react";
 import { getFiletypeFromFileName } from "@pierre/diffs/utils/getFiletypeFromFileName";
 import { ScrollView, StyleSheet, Text as NativeText, View, type ColorValue } from "react-native";
@@ -215,21 +216,25 @@ export const ReviewCommentCard = memo(function ReviewCommentCard(props: {
             }}
           >
             {snippetTokens
-              ? snippetTokens.map((line, lineIndex) => (
-                  <NativeText key={lineIndex}>
+              ? keyTextOccurrences(snippetTokens, (line) =>
+                  line.map((token) => token.content).join(""),
+                ).map(({ value: line, key }, lineIndex) => (
+                  <NativeText key={key}>
                     {lineIndex > 0 ? "\n" : ""}
-                    {line.map((token, tokenIndex) => (
-                      <NativeText
-                        key={tokenIndex}
-                        style={{
-                          color: token.color ?? props.colors.text,
-                          fontStyle: (token.fontStyle ?? 0) & 1 ? "italic" : "normal",
-                          fontWeight: (token.fontStyle ?? 0) & 2 ? "700" : "400",
-                        }}
-                      >
-                        {token.content}
-                      </NativeText>
-                    ))}
+                    {keyTextOccurrences(line, (token) => token.content).map(
+                      ({ value: token, key: tokenKey }) => (
+                        <NativeText
+                          key={tokenKey}
+                          style={{
+                            color: token.color ?? props.colors.text,
+                            fontStyle: (token.fontStyle ?? 0) & 1 ? "italic" : "normal",
+                            fontWeight: (token.fontStyle ?? 0) & 2 ? "700" : "400",
+                          }}
+                        >
+                          {token.content}
+                        </NativeText>
+                      ),
+                    )}
                   </NativeText>
                 ))
               : props.comment.diff.trim()}

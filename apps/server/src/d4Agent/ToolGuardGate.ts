@@ -47,7 +47,7 @@ const unavailable = (reason: string): D4AgentGuardVerdict => ({
   reason,
 });
 
-export const evaluateWithProxy = Effect.fn("evaluateWithProxy")(
+export const evaluateWithProxy = Effect.fn("ToolGuardGate.evaluateWithProxy")(
   (url: string, envelope: ToolGuardEnvelope) =>
     Effect.gen(function* () {
       const base = yield* Effect.try({ try: () => new URL(url), catch: () => "invalid" as const });

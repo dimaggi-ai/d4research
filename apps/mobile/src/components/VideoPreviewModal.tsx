@@ -1,6 +1,6 @@
 import { useIsFocused } from "@react-navigation/native";
 import { videoMimeType } from "@d4research/shared/video";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { Keyboard, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -56,19 +56,14 @@ function useLocalPlayback(source: LocalVideoPreviewSource): PlaybackState {
   const { attachment } = source;
   const [uri, setUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Only a different file needs a new lease; a metadata update on the same
-  // draft must not dispose the file Android is still playing.
-  const attachmentRef = useRef(attachment);
-  // Refresh the native preview lease input without disposing an unchanged playing file.
-  useLayoutEffect(() => {
-    attachmentRef.current = attachment;
-  }, [attachment]);
-  const { id: attachmentId, fileUri } = attachment;
+  // LocalPreviewModal is keyed by attachment ID and URI, so metadata changes retain playback.
+  const loadPreview = useEffectEvent((signal: AbortSignal) =>
+    loadLocalAttachmentPreview(attachment, signal),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hold the local playback file lease and release it when the selected file changes.
   useEffect(() => {
-    setUri(null);
-    setError(null);
     const controller = new AbortController();
-    const loading = loadLocalAttachmentPreview(attachmentRef.current, controller.signal);
+    const loading = loadPreview(controller.signal);
     void loading.then(
       (file) => {
         if (file === null) return;
@@ -88,7 +83,7 @@ function useLocalPlayback(source: LocalVideoPreviewSource): PlaybackState {
         () => undefined,
       );
     };
-  }, [attachmentId, fileUri]);
+  }, []);
   const mimeType = videoMimeType(attachment) ?? attachment.mimeType;
   return {
     uri,
@@ -136,6 +131,7 @@ function OpenVideoPreviewModal(props: {
   const insets = useSafeAreaInsets();
   const mediaActions = useMediaActions(playback.actionsSource, props.onRequestClose);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Dismiss the native keyboard before opening fullscreen playback.
   useEffect(() => Keyboard.dismiss(), []);
   return (
     <Modal
@@ -200,9 +196,11 @@ export function VideoPreviewModal(props: {
 }) {
   const isFocused = useIsFocused();
   const hasSource = props.source !== null;
+  const onRequestClose = useEffectEvent(props.onRequestClose);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Close the native modal when navigation loses focus.
   useEffect(() => {
-    if (!isFocused && hasSource) props.onRequestClose();
-  }, [isFocused, hasSource, props.onRequestClose]);
+    if (!isFocused && hasSource) onRequestClose();
+  }, [isFocused, hasSource]);
   const { source } = props;
   if (source === null || !isFocused) return null;
   return source.type === "local" ? (

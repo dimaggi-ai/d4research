@@ -17,7 +17,10 @@ import {
   threadContextsOutsideEnvironment,
   threadLinkContextReferences,
 } from "@d4research/shared/composerContextReferences";
-import { executeAtomQuery, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import {
+  executeAtomQuery,
+  squashAtomCommandFailure,
+} from "@d4research/client-runtime/state/runtime";
 import { resolveAssetUrl } from "@d4research/client-runtime/state/assets";
 import * as Option from "effect/Option";
 import { appAtomRegistry } from "../state/atom-registry";

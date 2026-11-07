@@ -60,7 +60,7 @@ import {
   useNativeWorkspaceColumnsSupported,
 } from "../../native/NativeWorkspaceColumns";
 import { V5StackHeader } from "../../native/V5StackHeader.ios";
-import { InspectorColumnScreens } from "./inspector-host";
+import { InspectorColumnScreens } from "./inspector-host.ios";
 import { PaneContext } from "../../components/ui/Pane";
 import { useWorkspaceSidebarHeaderItem } from "./useWorkspaceSidebarHeaderItem";
 import type { AppNativeStackNavigationOptions } from "../../native/StackHeader";

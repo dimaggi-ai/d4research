@@ -92,7 +92,10 @@ import {
   renderCodexInlineDirectivesAsMarkdown,
   splitCodexArtifactTemplateMarkdown,
 } from "@d4research/shared/codexMarkdownDirectives";
-import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@d4research/shared/chatList";
+import {
+  CHAT_LIST_ANCHOR_OFFSET,
+  resolveChatListAnchoredEndSpace,
+} from "@d4research/shared/chatList";
 import { imageMimeType } from "@d4research/shared/image";
 import { videoMimeType } from "@d4research/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";

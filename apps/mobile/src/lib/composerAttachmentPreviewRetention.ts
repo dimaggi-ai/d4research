@@ -1,13 +1,8 @@
 import type { FileBackedComposerAttachment } from "./composerImages";
 import { retainComposerAttachmentFile } from "./composerAttachmentFiles";
 
-/**
- * The durable owners of an attachment file (composer drafts, queued outbox
- * messages) live in state, so this module cannot reach the ownership-cleanup
- * sweep directly. Composer draft state registers the owner-side cleanup hook
- * at module load; until then a release has nothing to retry, because no draft
- * store has loaded yet and there is nothing to clean.
- */
+// Draft state owns cleanup and registers its hook when loaded; until then no owner
+// can schedule a cleanup sweep for a released attachment.
 type UnusedAttachmentHandler = (attachment: FileBackedComposerAttachment) => void;
 
 let onAttachmentUnused: UnusedAttachmentHandler | null = null;

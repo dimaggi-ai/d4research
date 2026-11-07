@@ -40,12 +40,16 @@ const CLOSED_FIND = {
 export function useThreadFind({
   thread,
   enabled,
+  isOpen: requestedOpen,
+  onOpenChange,
   progressive = false,
   skills = EMPTY_SKILLS,
   content,
 }: {
   thread: ScopedThreadRef | null;
   enabled: boolean;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
   progressive?: boolean;
   skills?: readonly InlineSkill[];
   content: Pick<OrchestrationV2ThreadProjection, "visibleTurnItems" | "runs"> | undefined;
@@ -59,9 +63,9 @@ export function useThreadFind({
   const refreshAfterSearchRef = useRef(false);
   const threadKey = thread ? scopedThreadKey(thread) : null;
   const [state, setState] = useState(CLOSED_FIND);
-  if (state.threadKey !== null && (!enabled || state.threadKey !== threadKey))
+  if (state.threadKey !== null && (!requestedOpen || !enabled || state.threadKey !== threadKey))
     setState(CLOSED_FIND);
-  const isOpen = enabled && threadKey !== null && state.threadKey === threadKey;
+  const isOpen = requestedOpen && enabled && threadKey !== null && state.threadKey === threadKey;
   const open = useStableCallback(() => {
     if (threadKey === null) return;
     if (!enabled) {
@@ -93,8 +97,13 @@ export function useThreadFind({
           : {}),
       };
     });
+    onOpenChange(true);
   });
-  const close = useStableCallback(() => setState(CLOSED_FIND));
+  const close = useStableCallback(() => {
+    setState(CLOSED_FIND);
+    onOpenChange(false);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes the mounted thread search to external open-search commands.
   useEffect(() => subscribeThreadFindOpen(open), [open]);
 
   const remote = useServerResults(
@@ -210,6 +219,7 @@ export function useThreadFind({
   };
 
   const refreshLiveResultsRef = useRef(() => {});
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the scheduled search refresh callback current with the committed query and selected match.
   useLayoutEffect(() => {
     refreshLiveResultsRef.current = () => {
       if (!isOpen || !state.query.trim()) return;
@@ -241,11 +251,13 @@ export function useThreadFind({
       }
     };
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained post-search refresh sequencing for deferred streamed content; moving it requires preserving scan completion ordering.
   useEffect(() => {
     if (!refreshAfterSearchRef.current || remote.isPending) return;
     refreshAfterSearchRef.current = false;
     if (!remote.error) refreshLiveResultsRef.current();
   }, [remote.isPending, remote.error]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Coalesces streamed-content search refreshes through a single timer.
   useEffect(() => {
     if (lastContentRef.current === content) return;
     lastContentRef.current = content;
@@ -255,6 +267,7 @@ export function useThreadFind({
       refreshLiveResultsRef.current();
     }, 300);
   }, [content, isOpen, state.query]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels the pending search-refresh timer when the query or mounted thread changes.
   useEffect(() => {
     if (!isOpen || threadKey === null || !state.query.trim()) return;
     return () => {

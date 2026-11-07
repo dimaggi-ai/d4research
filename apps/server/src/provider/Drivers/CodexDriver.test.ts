@@ -7,7 +7,12 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ProviderSessionId, ThreadId } from "@d4research/contracts";
+import {
+  EnvironmentId,
+  ProviderInstanceId,
+  ProviderSessionId,
+  ThreadId,
+} from "@d4research/contracts";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as ConfigProvider from "effect/ConfigProvider";

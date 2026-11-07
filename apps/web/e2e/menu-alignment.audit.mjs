@@ -1,13 +1,5 @@
-/**
- * Menu alignment audit.
- *
- * Opens every popup menu we can reach from a live thread and measures the real
- * geometry of its rows: row bounds against the surface, icon column, label
- * start, and row heights. Eyeballing a screenshot cannot tell a 1px drift from
- * a 9px one, so this reports numbers and only then captures the image.
- *
- * Run: node e2e/menu-alignment.audit.mjs
- */
+// Measure popup row geometry before capturing screenshots: images alone hide small drift.
+// Run: node e2e/menu-alignment.audit.mjs
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 

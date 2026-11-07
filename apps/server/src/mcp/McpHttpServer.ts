@@ -1045,10 +1045,9 @@ export const layerUsageToolkit = toolkitRegistration(UsageToolkit, UsageHandlers
   Layer.provide(UsageSnapshots.layer),
 );
 
-export const layerDecisionToolkit = toolkitRegistration(
-  DecisionToolkit,
-  DecisionHandlers.layer,
-).pipe(Layer.provide(DecisionService.layer));
+const layerDecisionToolkit = toolkitRegistration(DecisionToolkit, DecisionHandlers.layer).pipe(
+  Layer.provide(DecisionService.layer),
+);
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,

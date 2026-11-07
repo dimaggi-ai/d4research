@@ -30,6 +30,7 @@ export function useTerminalLifecycle({
   const handleRunning = useEffectEvent(onRunning);
   const handleExit = useEffectEvent(onExit);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reconcile the attached PTY lifecycle with reopen commands and navigation callbacks while this terminal is mounted.
   useEffect(() => {
     if (lifecycle.current.key !== terminalKey) {
       lifecycle.current = {

@@ -25,7 +25,11 @@ export async function missingThreadRedirect({ page, app }) {
     const probe = await Promise.race([
       page.evaluate(() => location.pathname),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Renderer unresponsive after ${attempt} open`)), 10_000),
+        AbortSignal.timeout(10_000).addEventListener(
+          "abort",
+          () => reject(new Error(`Renderer unresponsive after ${attempt} open`)),
+          { once: true },
+        ),
       ),
     ]);
     NodeAssert.match(probe, /^\/draft\//, `${attempt}: expected a draft route, got ${probe}`);

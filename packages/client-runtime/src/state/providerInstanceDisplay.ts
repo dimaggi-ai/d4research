@@ -1,6 +1,7 @@
 import {
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
+  type ModelSelection,
   type ProviderDriverKind,
   type ServerProvider,
 } from "@d4research/contracts";
@@ -11,6 +12,18 @@ function humanizeSlug(slug: string): string {
     .replace(/[_-]+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+/** Names a saved model selection, falling back to its IDs when the catalog lacks it. */
+export function formatModelSelectionLabel(
+  providers: ReadonlyArray<ServerProvider> | undefined,
+  selection: Pick<ModelSelection, "instanceId" | "model">,
+): string {
+  const provider = providers?.find((entry) => entry.instanceId === selection.instanceId);
+  const model = provider?.models.find((entry) => entry.slug === selection.model);
+  return provider && model
+    ? `${resolveProviderInstanceDisplayName(provider)} · ${model.name}`
+    : `${selection.instanceId} · ${selection.model}`;
 }
 
 export function resolveProviderInstanceDisplayName(

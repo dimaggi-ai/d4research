@@ -38,7 +38,6 @@ const PROBE_TIMEOUT_MS = 20_000;
 // Matching control characters is the entire point here — the CLI emits them.
 // Backspace is deliberately excluded and handled by `applyBackspaces`.
 const ANSI_ESCAPE_REGEX =
-  // eslint-disable-next-line no-control-regex -- Strip ANSI escapes and C0 controls emitted by the CLI.
   /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-9A-Za-z=<>]|[\x00-\x07\x0b-\x1f\x7f]/gu;
 
 // A PTY rubs characters out with backspaces rather than rewriting the line, and
@@ -124,13 +123,7 @@ const runAgy = Effect.fn("AgyProvider.runAgy")(
       const platform = yield* HostProcess.Platform;
       const command = settings.binaryPath || "agy";
       const resolved = yield* resolveSpawnCommand(command, args, { env: environment });
-      // Agy's `models` command keeps running when its stdout is an ordinary
-      // Node pipe, while it exits normally under a PTY. Settings health checks
-      // run from Node, so give this discovery-only probe a pseudo-terminal.
-      // `script` provides one on both Linux and macOS, but the two versions
-      // disagree on how the command is passed: util-linux wants a single `-c`
-      // string, BSD wants argv after the typescript file. Both forward the
-      // child's exit status, which the caller reads to decide health.
+      // Agy models hangs on a pipe, so discovery needs a PTY. Linux script takes -c; BSD takes argv.
       if (isPtyProbePlatform(platform) && args.length === 1 && args[0] === "models") {
         const scriptArgs =
           platform === "linux"

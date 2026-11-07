@@ -120,10 +120,12 @@ export function useThreadFindHighlights(input: {
   const rangesRef = useRef<readonly ThreadFindRange[]>([]);
   const paintRef = useRef<ReturnType<typeof makeThreadFindHighlightPainter> | null>(null);
   const selectionRef = useRef({ activeRowId, activeOccurrence, onActiveRange });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the native DOM mutation painter current with the active search selection.
   useLayoutEffect(() => {
     selectionRef.current = { activeRowId, activeOccurrence, onActiveRange };
   }, [activeRowId, activeOccurrence, onActiveRange]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns native CSS highlight registrations and the DOM mutation observer for search results.
   useEffect(() => {
     if (typeof CSS === "undefined" || !CSS.highlights || typeof Highlight === "undefined") {
       selectionRef.current.onActiveRange(null);
@@ -208,6 +210,7 @@ export function useThreadFindHighlights(input: {
     };
   }, [container, query]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Repaints native CSS highlight ranges when the selected result changes.
   useEffect(() => {
     paintRef.current?.(rangesRef.current, { activeRowId, activeOccurrence, onActiveRange });
   }, [activeOccurrence, activeRowId, onActiveRange]);

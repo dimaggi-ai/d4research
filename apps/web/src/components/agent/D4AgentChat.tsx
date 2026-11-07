@@ -11,7 +11,7 @@ import {
 } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { serverEnvironment } from "../../state/server";
 import ChatMarkdown from "../ChatMarkdown";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
@@ -128,12 +128,13 @@ export function D4AgentChat({
   const conversation = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLElement | null>(null);
-  const registerComposer = useCallback((node: HTMLDivElement | null) => {
+  const registerComposer = (node: HTMLDivElement | null) => {
     composer.current = node;
     setComposerOverlayElement(node);
-  }, []);
+  };
   const [composerInset, setComposerInset] = useState(0);
   const [showScrollToEnd, setShowScrollToEnd] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observe composer DOM height so the transcript stays above the overlaid composer.
   useLayoutEffect(() => {
     const node = composer.current;
     if (!node) return;
@@ -143,6 +144,7 @@ export function D4AgentChat({
   const content = useRef<HTMLDivElement>(null);
   // A width change or late-rendering markdown reflows the transcript without changing it; a
   // reader at the end stays there.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the transcript DOM scroll position at the end as ResizeObserver detects reflow.
   useLayoutEffect(() => {
     const node = conversation.current;
     const lane = content.current;
@@ -157,6 +159,7 @@ export function D4AgentChat({
       stopNode();
     };
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scroll the transcript DOM after new content or composer height changes when following the end.
   useEffect(() => {
     if (!state.transcript?.length || composerInset === 0) return;
     const node = conversation.current;

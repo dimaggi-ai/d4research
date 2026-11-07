@@ -235,48 +235,50 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
   // and emits it as a unified diff. Runs on its own fiber so a slow
   // `item/readOutput` never blocks the notification stream; failures only
   // warn, since the item itself was already emitted without the diff.
-  const fetchPatchDiff = (ctx: MuseContext, item: Msp.Item): Effect.Effect<void> =>
-    Effect.gen(function* () {
-      const runtime = ctx.runtime;
-      const sessionId = ctx.sessionId;
-      const threadId = ctx.session.threadId;
-      const ref = item.patchRef;
-      if (!ref) return;
-      const providerTurnId =
-        typeof item.turnId === "string" && item.turnId.length > 0 ? item.turnId : ctx.activeTurnId;
-      const turnId = providerTurnId ? TurnId.make(providerTurnId) : undefined;
-      const tool = item.tool ?? "edit";
-      const page = yield* runtime
-        .readOutput({ sessionId, itemId: item.itemId, outputRef: ref.id })
-        .pipe(
-          Effect.catchCause((cause) =>
-            warning(threadId, `Muse patch for ${tool} is unavailable: ${Cause.pretty(cause)}`).pipe(
-              Effect.as(undefined),
-            ),
+  const fetchPatchDiff = Effect.fn("MuseAdapter.fetchPatchDiff")(function* (
+    ctx: MuseContext,
+    item: Msp.Item,
+  ): Effect.fn.Return<void> {
+    const runtime = ctx.runtime;
+    const sessionId = ctx.sessionId;
+    const threadId = ctx.session.threadId;
+    const ref = item.patchRef;
+    if (!ref) return;
+    const providerTurnId =
+      typeof item.turnId === "string" && item.turnId.length > 0 ? item.turnId : ctx.activeTurnId;
+    const turnId = providerTurnId ? TurnId.make(providerTurnId) : undefined;
+    const tool = item.tool ?? "edit";
+    const page = yield* runtime
+      .readOutput({ sessionId, itemId: item.itemId, outputRef: ref.id })
+      .pipe(
+        Effect.catchCause((cause) =>
+          warning(threadId, `Muse patch for ${tool} is unavailable: ${Cause.pretty(cause)}`).pipe(
+            Effect.as(undefined),
           ),
-        );
-      if (page === undefined) return;
-      const parsed = yield* decodeJsonUnknown(page.content).pipe(
-        Effect.orElseSucceed(() => undefined),
+        ),
       );
-      if (parsed === undefined) {
-        yield* warning(threadId, `Muse patch for ${tool} is not valid JSON.`);
-        return;
-      }
-      const diff = patchBodyToUnifiedDiff(parsed, ctx.session.cwd ?? ".");
-      if (!diff) {
-        yield* warning(threadId, `Muse patch for ${tool} has no file changes.`);
-        return;
-      }
-      yield* offer({
-        ...(yield* stamp(threadId)),
-        type: "turn.diff.updated",
-        ...(turnId ? { turnId } : {}),
-        providerRefs: providerTurnId === undefined ? {} : { providerTurnId },
-        raw: { source: "muse.msp.notification" as const, method: "item/completed", payload: item },
-        payload: { unifiedDiff: diff },
-      });
+    if (page === undefined) return;
+    const parsed = yield* decodeJsonUnknown(page.content).pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+    if (parsed === undefined) {
+      yield* warning(threadId, `Muse patch for ${tool} is not valid JSON.`);
+      return;
+    }
+    const diff = patchBodyToUnifiedDiff(parsed, ctx.session.cwd ?? ".");
+    if (!diff) {
+      yield* warning(threadId, `Muse patch for ${tool} has no file changes.`);
+      return;
+    }
+    yield* offer({
+      ...(yield* stamp(threadId)),
+      type: "turn.diff.updated",
+      ...(turnId ? { turnId } : {}),
+      providerRefs: providerTurnId === undefined ? {} : { providerTurnId },
+      raw: { source: "muse.msp.notification" as const, method: "item/completed", payload: item },
+      payload: { unifiedDiff: diff },
     });
+  });
   const processIncoming = Effect.fn("MuseAdapter.processIncoming")(function* (
     ctx: MuseContext,
     incoming: Incoming,
@@ -589,42 +591,44 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
   // and resumes the same Muse session under a new one with the right flags.
   // The new host registers on the session scope and needs the host-spawn
   // services, which sendTurn does not otherwise provide.
-  const ensurePosture = (ctx: MuseContext, desired: ProviderInteractionMode) =>
-    Effect.gen(function* () {
-      if (desired === ctx.interactionMode) return;
-      const threadId = ctx.session.threadId;
-      const cwd = ctx.session.cwd;
-      if (!cwd) return yield* mapError("sendTurn")("Muse session lost its workspace directory.");
-      // Retire the old host before it can report its own exit: its watcher
-      // still fires, but the generation check drops the stale signal.
-      ctx.hostGeneration += 1;
-      const generation = ctx.hostGeneration;
-      yield* ctx.runtime.stop.pipe(Effect.ignore);
-      const runtime = yield* spawnHost({
-        threadId,
-        cwd,
-        runtimeMode: ctx.session.runtimeMode,
-        planMode: desired === "plan",
-        queue: ctx.queue,
-        generation,
-      }).pipe(Effect.mapError(mapError("sendTurn")));
-      const mcpConfig = yield* mcpConfigFor(threadId);
-      const resumed = yield* runtime
-        .resumeSession({
-          sessionId: ctx.sessionId,
-          cursor: ctx.viewCursor,
-          ...(mcpConfig ? { config: mcpConfig } : {}),
-        })
-        .pipe(Effect.mapError(mapError("session/resume")));
-      ctx.runtime = runtime;
-      updateCursor(ctx, resumed.viewCursor);
-      ctx.interactionMode = desired;
-      yield* watchHost(ctx, runtime, generation);
-    }).pipe(
-      Effect.provideService(SecureRandom.SecureRandom, crypto),
-      Effect.provideService(FileSystem.FileSystem, fs),
-      Effect.provideService(Scope.Scope, ctx.scope),
-    );
+  const ensurePosture = Effect.fn("MuseAdapter.ensurePosture")(
+    (ctx: MuseContext, desired: ProviderInteractionMode) =>
+      Effect.gen(function* () {
+        if (desired === ctx.interactionMode) return;
+        const threadId = ctx.session.threadId;
+        const cwd = ctx.session.cwd;
+        if (!cwd) return yield* mapError("sendTurn")("Muse session lost its workspace directory.");
+        // Retire the old host before it can report its own exit: its watcher
+        // still fires, but the generation check drops the stale signal.
+        ctx.hostGeneration += 1;
+        const generation = ctx.hostGeneration;
+        yield* ctx.runtime.stop.pipe(Effect.ignore);
+        const runtime = yield* spawnHost({
+          threadId,
+          cwd,
+          runtimeMode: ctx.session.runtimeMode,
+          planMode: desired === "plan",
+          queue: ctx.queue,
+          generation,
+        }).pipe(Effect.mapError(mapError("sendTurn")));
+        const mcpConfig = yield* mcpConfigFor(threadId);
+        const resumed = yield* runtime
+          .resumeSession({
+            sessionId: ctx.sessionId,
+            cursor: ctx.viewCursor,
+            ...(mcpConfig ? { config: mcpConfig } : {}),
+          })
+          .pipe(Effect.mapError(mapError("session/resume")));
+        ctx.runtime = runtime;
+        updateCursor(ctx, resumed.viewCursor);
+        ctx.interactionMode = desired;
+        yield* watchHost(ctx, runtime, generation);
+      }).pipe(
+        Effect.provideService(SecureRandom.SecureRandom, crypto),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Scope.Scope, ctx.scope),
+      ),
+  );
   const startSession: MuseAdapterShape["startSession"] = Effect.fn("MuseAdapter.startSession")(
     (input) =>
       Effect.gen(function* () {

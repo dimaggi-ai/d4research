@@ -16,12 +16,12 @@ const original = {
     { id: "fastMode", value: true },
   ],
 };
+const decodeD4AgentSettings = Schema.decodeUnknownSync(D4AgentSettings);
 function persistSelection(selection: ReturnType<typeof withAgentModelOption>) {
   const updated = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
     d4Agent: { ...DEFAULT_SERVER_SETTINGS.d4Agent, modelSelection: selection },
   });
-  return Schema.decodeUnknownSync(D4AgentSettings)(JSON.parse(JSON.stringify(updated.d4Agent)))
-    .modelSelection;
+  return decodeD4AgentSettings(JSON.parse(JSON.stringify(updated.d4Agent))).modelSelection;
 }
 it("restores provider-default effort without sending an invalid empty option across the settings contract", () => {
   const selected = withAgentModelOption(original, "reasoningEffort", "");

@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { act, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -27,6 +26,9 @@ const harness = vi.hoisted(() => {
 
 vi.mock("@react-navigation/native", () => ({
   useIsFocused: () => useSyncExternalStore(harness.subscribe, () => harness.state.focused),
+}));
+vi.mock("../../components/ui/Pane", () => ({
+  usePaneRole: () => "page",
 }));
 vi.mock("react-native", () => ({
   AppState: {

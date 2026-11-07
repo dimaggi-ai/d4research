@@ -62,6 +62,7 @@ export function Host() {
   );
   const [inputValue, setInputValue] = useState("");
   const nextPresentationId = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the native dialog presenter for requests while this host is mounted.
   useEffect(() => {
     presentRequest = (request) => {
       setInputValue(request.kind === "text-input" ? request.request.initialValue : "");

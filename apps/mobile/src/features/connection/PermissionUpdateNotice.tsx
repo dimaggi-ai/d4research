@@ -33,6 +33,7 @@ export function PermissionUpdateNotice() {
     ),
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Load native SecureStore dismissals before deciding which permission alert to present.
   useEffect(() => {
     let active = true;
     void SecureStore.getItemAsync(storageKey)
@@ -55,6 +56,7 @@ export function PermissionUpdateNotice() {
     };
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Present a native permission-change alert once per undismissed environment.
   useEffect(() => {
     if (dismissed === null || showing.current) return;
     const environment = affected.find(

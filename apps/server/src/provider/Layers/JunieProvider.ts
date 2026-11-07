@@ -52,13 +52,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = HOSTED_MODELS.map(([
   capabilities: EMPTY_CAPABILITIES,
 }));
 
-/**
- * Junie's catalog arrives as the session's model-category config option, not as
- * `models.availableModels` — it never sends that field, so reading it left
- * discovery empty and silently fell back to the hardcoded list above. Models
- * defined under `~/.junie/models/*.json` come back through here too, as
- * `custom:<file stem>`, which is the id the CLI actually accepts.
- */
+/** Junie exposes models through configOptions, including custom:<file stem> IDs, not models.availableModels. */
 export function junieModelsFromSessionSetup(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
   modelConfigId: string | undefined,

@@ -116,11 +116,8 @@ const HANDOFF_OMISSION_MARKER = "[... earlier conversation compressed/omitted ..
 const SECTION_SEPARATOR = "\n\n";
 
 /**
- * Builds a handoff transcript that stays context-valid on long threads:
- * the first non-empty user message (the original task) is kept verbatim as a
- * header, then as many of the MOST RECENT messages as fit the remaining
- * budget. Tail-only truncation dropped the task statement first — this never
- * does.
+ * Preserve the original task verbatim before fitting recent messages into the
+ * remaining budget; tail-only truncation can discard the task statement.
  */
 export function buildStructuredHandoffTranscript(
   messages: ReadonlyArray<ProviderHandoffMessage>,
@@ -381,12 +378,9 @@ export async function prepareProviderHandoff(
 }
 
 /**
- * Prepares a provider handoff and attempts to mirror its context to local Memo.
- *
- * INVARIANT: a provider handoff may replace the provider-native session, but
- * it must never replace the d4research thread. The visible thread transcript
- * is authoritative and is attached directly when compression or Memo is
- * unavailable, so an exhausted source provider cannot block the switch.
+ * Handoffs may replace provider sessions, never the visible thread. Attach its
+ * authoritative transcript when compression or Memo is unavailable so an
+ * exhausted provider cannot block the switch.
  */
 export async function prepareDurableProviderHandoff(
   input: PrepareProviderHandoffInput & {

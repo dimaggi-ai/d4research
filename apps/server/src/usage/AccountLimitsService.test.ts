@@ -627,11 +627,8 @@ it("a shadow-overlay instance seeds from its layout, not its CODEX_HOME env", ()
                 driver: asDriver("codex"),
                 environment: [{ name: "CODEX_HOME", value: plainEnvHome, sensitive: false }],
               },
-              // Shadow overlay: spawn pins CODEX_HOME to the overlay, so the
-              // instance env value never reaches the CLI - the seed must not
-              // read it either. (Its layout home may hold this machine's
-              // real transcripts; the assertions below stay independent of
-              // whatever that dir contains.)
+              // Spawn pins CODEX_HOME to the shadow overlay, so seeding must ignore the instance
+              // env home and avoid depending on this machine's real transcripts.
               [asInstanceId("codex_shadow")]: {
                 driver: asDriver("codex"),
                 config: { shadowHomePath: "/nonexistent/t3-test-codex-shadow" },

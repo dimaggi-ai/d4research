@@ -205,36 +205,6 @@ export function resolveThreadPullRequestChains(
   return chains;
 }
 
-export type ThreadPullRequestBadge = {
-  readonly state: "open" | "closed" | "merged" | "draft";
-} & (
-  | {
-      readonly kind: "stack";
-      readonly layers: number;
-    }
-  | { readonly kind: "pull-request"; readonly others: number }
-);
-
-export function resolveThreadPullRequestBadge(
-  pullRequests: ReadonlyArray<ThreadPullRequestLink> | undefined,
-): ThreadPullRequestBadge | null {
-  const visible = visibleThreadPullRequests(pullRequests ?? []);
-  if (visible.length === 0) return null;
-  const states = visible.map((link) => link.snapshot?.state ?? "open");
-  const state = visible.every((link) => link.snapshot?.state === "open" && link.snapshot.isDraft)
-    ? "draft"
-    : states.includes("open")
-      ? "open"
-      : states.every((entry) => entry === "merged")
-        ? "merged"
-        : "closed";
-  const chains = resolveThreadPullRequestChains(visible);
-  if (visible.length > 1 && chains.length === 1) {
-    return { kind: "stack", layers: visible.length, state };
-  }
-  return { kind: "pull-request", others: visible.length - 1, state };
-}
-
 export function threadPullRequestSearchTerms(thread: {
   readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;

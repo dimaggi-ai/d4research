@@ -16,6 +16,7 @@ export function GitActionProgressOverlay(props: {
   const openPullRequest = props.onOpenPullRequest;
   const prevPhaseRef = useRef(progress.phase);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Triggers native haptic feedback when the external git action finishes.
   useEffect(() => {
     const prev = prevPhaseRef.current;
     prevPhaseRef.current = progress.phase;

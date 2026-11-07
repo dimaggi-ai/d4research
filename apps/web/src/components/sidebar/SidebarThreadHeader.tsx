@@ -67,9 +67,7 @@ export function SidebarThreadHeader({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1">
-        <div
-          className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70 md:h-8"
-        >
+        <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70 md:h-8">
           <SearchIcon className="size-4 shrink-0 text-[var(--sidebar-icon-color)]" />
           <Input
             ref={searchInputRef}

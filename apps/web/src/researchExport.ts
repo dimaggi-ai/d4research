@@ -65,11 +65,11 @@ function researchManifestLines(activities: ReadonlyArray<ResearchActivity>): Rea
           const title = typeof step.title === "string" ? cleanLine(step.title) : "Untitled";
           const delegation =
             step.delegation === "skipped-no-target"
-              ? "delegate SKIPPED — no explicit target"
+              ? "delegate SKIPPED: no explicit target"
               : step.delegation === "planned"
                 ? "delegation planned"
                 : "local";
-          return [`- Step ${number}: ${title} — ${delegation}`];
+          return [`- Step ${number}: ${title}: ${delegation}`];
         })
       : ["_No numbered steps were parsed from the scenario._"]),
     "",
@@ -145,7 +145,7 @@ export function buildResearchMarkdownExport(input: ResearchMarkdownExportInput):
     ...(relevantActivities.length > 0
       ? relevantActivities.map(
           (activity) =>
-            `- ${activity.createdAt} · \`${cleanLine(activity.kind)}\` — ${cleanLine(activity.summary)}`,
+            `- ${activity.createdAt} · \`${cleanLine(activity.kind)}\`: ${cleanLine(activity.summary)}`,
         )
       : ["_No research or provider lifecycle events were recorded._"]),
     "",

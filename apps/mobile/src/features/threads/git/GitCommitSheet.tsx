@@ -146,7 +146,11 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                 {allFiles.length > 0 && isEditingFiles ? (
                   <Pressable
                     className="rounded-full px-3 android:min-h-12 android:justify-center android:active:bg-subtle ios:bg-subtle ios:py-2"
-                    onPress={() => setExcludedFiles(allSelected ? new Set(allFiles.map((file) => file.path)) : new Set())}
+                    onPress={() =>
+                      setExcludedFiles(
+                        allSelected ? new Set(allFiles.map((file) => file.path)) : new Set(),
+                      )
+                    }
                   >
                     <Text className="android:text-primary-text android:text-sm android:font-t3-medium ios:text-foreground ios:text-2xs ios:font-t3-bold ios:uppercase">
                       {allSelected ? "Deselect all" : "Select all"}

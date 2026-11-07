@@ -611,7 +611,7 @@ export function WorktreeCleanupSection() {
                   ]
                     .filter(Boolean)
                     .join(". ")}
-                  description="Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Turn off “Delete worktrees when threads settle” to use a delay. Branches and thread history are kept."
+                  description="Remove worktrees this many days after their thread settles; 0 means next cleanup. Turn off “Delete worktrees when threads settle” to use a delay. Branches and thread history are kept."
                   serverScoped={!isProjectScope}
                   control={
                     <RetentionControl

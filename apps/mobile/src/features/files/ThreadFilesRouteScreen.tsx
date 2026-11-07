@@ -1013,9 +1013,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   );
 }
 
-function DelimitedFilePreview(props: {
-  readonly table: ReturnType<typeof parseDelimitedPreview>;
-}) {
+function DelimitedFilePreview(props: { readonly table: ReturnType<typeof parseDelimitedPreview> }) {
   return (
     <ScrollView className="flex-1">
       {props.table.truncated ? (

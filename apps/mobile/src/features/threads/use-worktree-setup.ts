@@ -1,6 +1,6 @@
 import type { EnvironmentId, ThreadId, WorktreeSetupSnapshot } from "@d4research/contracts";
 import { resolveVisibleWorktreeSetup } from "@d4research/client-runtime/worktree-setup";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
 import { resolveWorktreeSetupSnapshot } from "./worktree-setup-state";
@@ -26,9 +26,7 @@ export function useWorktreeSetup(input: {
       : null,
   );
   const snapshot = resolveWorktreeSetupSnapshot(input.threadId, query.data, live);
-  useEffect(() => {
-    if (snapshot && snapshot !== live) setHeld({ key, snapshot });
-  }, [key, live, snapshot]);
+  if (snapshot && snapshot !== live) setHeld({ key, snapshot });
   return {
     snapshot,
     visible: resolveVisibleWorktreeSetup({

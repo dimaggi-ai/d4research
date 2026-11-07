@@ -31,6 +31,7 @@ function MekoHandoffControls() {
   const [message, setMessage] = useState<string | null>(null);
   const [recent, setRecent] = useState<ReadonlyArray<MekoReceipt>>([]);
   const pending = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Abort the in-flight Meko HTTP request when this settings view unmounts.
   useEffect(() => () => pending.current?.abort(), []);
 
   async function inspect(action: "status" | "check") {

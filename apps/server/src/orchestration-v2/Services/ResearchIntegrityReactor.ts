@@ -1,12 +1,5 @@
-/**
- * ResearchIntegrityReactor - honesty guard for research-orchestrator threads.
- *
- * Reacts to completed runs and, when a research-orchestrator thread advanced
- * the pipeline in prose without a recorded `research_delegate` call, appends
- * a visible warning so a faked pipeline cannot pass as real work.
- *
- * @module ResearchIntegrityReactor
- */
+// Warn on completed research-orchestrator runs that claim pipeline progress
+// without a recorded research_delegate call.
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";

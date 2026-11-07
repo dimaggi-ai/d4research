@@ -57,8 +57,7 @@ function PairingForm({
   readonly routePairingUrl: string;
   readonly routeFor: EnvironmentId | undefined;
 }) {
-  const { connectionPairingUrl, onChangeConnectionPairingUrl } =
-    useRemoteConnections();
+  const { connectionPairingUrl, onChangeConnectionPairingUrl } = useRemoteConnections();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [initialPairing] = useState(() => parsePairingUrl(routePairingUrl || connectionPairingUrl));
@@ -246,7 +245,6 @@ function PairingForm({
                 "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
             </Text>
           </View>
-
         </View>
       </ScrollView>
     </SettingsScreen>

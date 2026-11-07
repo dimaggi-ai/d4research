@@ -1,5 +1,4 @@
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { act, render } from "../../test/render";
 import { expect, it, vi } from "vite-plus/test";
 import { useVoiceConversation } from "./useVoiceConversation";
 
@@ -45,7 +44,6 @@ it("keeps the microphone open across renders and stops it when its conversation 
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
   function Conversation({ revision }: { revision: number }) {
     const voice = useVoiceConversation({
       messages: [],
@@ -59,15 +57,15 @@ it("keeps the microphone open across renders and stops it when its conversation 
     );
   }
   try {
-    await act(() => root.render(<Conversation revision={0} />));
+    await using screen = await render(<Conversation revision={0} />, { container, router: false });
     await act(async () => container.querySelector("button")!.click());
     expect(container.textContent).toBe("0:listening");
     expect(getUserMedia).toHaveBeenCalledOnce();
     expect(stopTrack).not.toHaveBeenCalled();
-    await act(() => root.render(<Conversation revision={1} />));
+    await screen.rerender(<Conversation revision={1} />);
     expect(container.textContent).toBe("1:listening");
     expect(stopTrack).not.toHaveBeenCalled();
-    await act(() => root.unmount());
+    await screen.unmount();
     expect(stopTrack).toHaveBeenCalledOnce();
     expect(stopRecorder).toHaveBeenCalledOnce();
   } finally {

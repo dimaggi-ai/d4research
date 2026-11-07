@@ -133,6 +133,7 @@ function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): s
   const [rebased, setRebased] = useState<{ fileUri: string; uri: string } | null>(null);
   const [materialized, setMaterialized] = useState<{ id: string; uri: string | null } | null>(null);
   const inlinePreview = fileUri === undefined && previewUri.startsWith("data:");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Resolve a persisted preview URI against the current native file cache.
   useEffect(() => {
     if (fileUri === undefined) return;
     let cancelled = false;
@@ -143,6 +144,7 @@ function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): s
       cancelled = true;
     };
   }, [fileUri, previewUri]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Materialize inline preview bytes in the native file cache and cancel stale results.
   useEffect(() => {
     if (!inlinePreview) return;
     let cancelled = false;

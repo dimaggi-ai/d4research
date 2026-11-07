@@ -60,7 +60,11 @@ const pullRequestSummaryAtom = createLinkedPullRequestSummaryAtomFamily(
     ),
 );
 
-export { presentThreadPr, type ThreadPr, type ThreadPrPresentation } from "./thread-pr-presentation";
+export {
+  presentThreadPr,
+  type ThreadPr,
+  type ThreadPrPresentation,
+} from "./thread-pr-presentation";
 
 /** Seeds a pull request page with a summary already in memory, never another pull request's. */
 export function withKnownPullRequestSummary<

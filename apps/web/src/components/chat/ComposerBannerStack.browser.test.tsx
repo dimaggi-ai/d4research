@@ -3,64 +3,69 @@ import "../../index.css";
 import type { ReactNode } from "react";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
-import { render as renderComponent } from "../../../test/render";
+import { act, render as renderComponent, type Screen } from "../../../test/render";
+import { observeResize } from "../../lib/observeResize";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerBannerStack, NoticeText } from "./ComposerBannerStack";
 
-let root: Root;
+let root: Screen;
 let container: HTMLDivElement;
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+async function setupFixture() {
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
-
-const nextFrame = () =>
-  act(() => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))));
+  root = await renderComponent(null, { container: container, router: false });
+  return {
+    async [Symbol.asyncDispose]() {
+      await root[Symbol.asyncDispose]();
+      container.remove();
+      vi.unstubAllGlobals();
+    },
+  };
+}
 
 async function render(width: number, description: string) {
   container.style.width = `${width}px`;
-  await act(async () =>
-    root.render(
-      <ComposerBannerStack
-        items={[{ id: "usage", variant: "info", icon: null, title: "Usage limits", description }]}
-      />,
-    ),
+  await act(
+    async () =>
+      await root.rerender(
+        <ComposerBannerStack
+          items={[{ id: "usage", variant: "info", icon: null, title: "Usage limits", description }]}
+        />,
+      ),
   );
-  await nextFrame();
 }
 
 const hasDetails = () => container.querySelector('[aria-label="Show notice details"]') !== null;
 
 it("only offers notice details when the description cannot fit", async () => {
+  await using _fixture = await setupFixture();
   await render(700, "OpenCode");
-  expect(hasDetails()).toBe(false);
+  await vi.waitFor(() => expect(hasDetails()).toBe(false));
 
   await render(700, "OpenCode ".repeat(40));
-  expect(hasDetails()).toBe(true);
+  await vi.waitFor(() => expect(hasDetails()).toBe(true));
 
   container.style.width = "4000px";
-  await nextFrame();
-  expect(hasDetails()).toBe(false);
+  await vi.waitFor(() => expect(hasDetails()).toBe(false));
 
   await render(4000, "OpenCode");
-  expect(hasDetails()).toBe(false);
+  await vi.waitFor(() => expect(hasDetails()).toBe(false));
 
-  // Short descriptions remain readable in a narrow composer.
+  // Shared resize delivery flushes the banner measurement before this subscriber resolves.
+  const banner = container.querySelector<HTMLElement>('[data-slot="composer-banner"]')!;
+  using observing = new DisposableStack();
+  const resized = new Promise<void>((resolve) => {
+    observing.defer(
+      observeResize(banner, (entries) => {
+        if (entries.some((entry) => entry.contentRect.width < 300)) resolve();
+      }),
+    );
+  });
   container.style.width = "300px";
-  await nextFrame();
+  await resized;
   expect(hasDetails()).toBe(false);
 });
 
@@ -75,6 +80,7 @@ function noticeRow(width: string, children: ReactNode) {
 }
 
 it("leaves out the details button when only a link's hit area reaches past the text", async () => {
+  await using _fixture = await setupFixture();
   // Phones lay out in device pixels, so a range can measure one float32 step (2^-17 px at
   // this size) wider than its element. Headless Chromium's rects agree exactly.
   const rangeRect = Range.prototype.getBoundingClientRect;
@@ -118,6 +124,7 @@ it("leaves out the details button when only a link's hit area reaches past the t
 });
 
 it("shows the details button while text or nested text is cut, until it fits again", async () => {
+  await using _fixture = await setupFixture();
   await using screen = await renderComponent(
     noticeRow("4rem", "Waiting on a subagent with a long name"),
   );
@@ -152,6 +159,7 @@ it("shows the details button while text or nested text is cut, until it fits aga
 });
 
 it("opens the details of a long notice right above its button", async () => {
+  await using _fixture = await setupFixture();
   const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(1280, 800);
   await using _viewport = {

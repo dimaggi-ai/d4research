@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  ComposerContextId,
-  EnvironmentId,
-  ThreadId,
-} from "@d4research/contracts";
+import { ComposerContextId, EnvironmentId, ThreadId } from "@d4research/contracts";
 import { encodeComposerContextFragment } from "@d4research/shared/composerContextClipboard";
 import {
   collectComposerContextReferences,

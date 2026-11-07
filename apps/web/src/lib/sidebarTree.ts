@@ -10,11 +10,6 @@ function setTabIndex(element: HTMLElement, value: number) {
   if (element.tabIndex !== value) element.tabIndex = value;
 }
 
-/** A roving DOM focus, separate from thread activation, as in VS Code's list commands. */
-export function attachSidebarTree(element: HTMLElement | null) {
-  return element ? installSidebarTree(element) : undefined;
-}
-
 export function installSidebarTree(root: HTMLElement) {
   let rows: HTMLElement[] = [];
   let focusedId: string | undefined;

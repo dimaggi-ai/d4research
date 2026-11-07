@@ -6,7 +6,11 @@ import * as Redacted from "effect/Redacted";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
-import { DEFAULT_SERVER_SETTINGS, SecretProviderId, SecretProviderKind } from "@d4research/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  SecretProviderId,
+  SecretProviderKind,
+} from "@d4research/contracts";
 import type * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
 import { applyServerSettingsPatch } from "@d4research/shared/serverSettings";
 import * as TestSourceControlHost from "@d4research/source-control-testing/TestSourceControlHost";

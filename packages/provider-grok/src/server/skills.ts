@@ -5,7 +5,6 @@ import * as Effect from "effect/Effect";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/process/ChildProcess";
 import { SKILL_MENTION_PATTERN } from "@d4research/shared/composerInlineTokens";
 import { resolveSpawnCommand } from "@d4research/shared/shell";

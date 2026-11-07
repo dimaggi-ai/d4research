@@ -16,10 +16,10 @@
     "typecheck": "effect-tsgo tsrs --noEmit"
   },
   "dependencies": {
-    "@effect/platform-node": "catalog:",
     "@d4research/contracts": "workspace:*",
     "@d4research/shared": "workspace:*",
     "@d4research/source-control-core": "workspace:*",
+    "@effect/platform-node": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

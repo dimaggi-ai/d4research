@@ -1,16 +1,7 @@
 #!/usr/bin/env node
-/**
- * Builds the `d4research` npm package behind `npx d4research` / `npm i -g d4research`: a launcher
- * with no dependencies that downloads this exact version's CLI archive from
- * the GitHub Release on first run (scripts/npm-launcher/d4research.mjs).
- * The executables are not published to npm. npm's publish-time scanning held
- * 250 MB platform packages back for up to an hour after the launcher went
- * live, and every install in that window ran a launcher with nothing to
- * launch.
- *
- * Output: `<output-dir>/d4research/` (the package tree) and `<output-dir>/d4research.tgz`,
- * which is what gets published.
- */
+// Publish only the dependency-free launcher; download this version's CLI from GitHub
+// Releases to avoid npm platform-package publication delays leaving installs unusable.
+// Output: <output-dir>/d4research/ and the publishable <output-dir>/d4research.tgz.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";

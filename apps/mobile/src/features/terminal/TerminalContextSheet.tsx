@@ -1,3 +1,4 @@
+import { keyTextOccurrences } from "../review/textOccurrenceKeys";
 import * as Dialog from "../../components/ui/Dialog";
 import {
   ComposerContextId,
@@ -66,9 +67,9 @@ export function TerminalContextSheet(props: {
           Tap the first and last line to select a range.
         </Text>
         <View className="overflow-hidden rounded-xl bg-card-alt">
-          {lines.map((line, index) => (
+          {keyTextOccurrences(lines, (line) => line).map(({ value: line, key }, index) => (
             <Pressable
-              key={index}
+              key={key}
               accessibilityRole="button"
               accessibilityLabel={`Line ${index + 1}: ${line}`}
               accessibilityState={{ selected: index >= range.start && index <= range.end }}

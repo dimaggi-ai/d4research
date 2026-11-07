@@ -39,7 +39,7 @@ export class EnvironmentRpcTimeoutError extends Schema.TaggedError<EnvironmentRp
   },
 ) {}
 
-export const ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS = 120_000;
+const ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS = 120_000;
 
 export interface EnvironmentRpcRequestObservation {
   readonly environmentId: string;

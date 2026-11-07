@@ -282,6 +282,7 @@ function ArchiveError(props: { readonly message: string; readonly onRetry: () =>
 }
 
 export function ArchivedThreadsScreen(props: {
+  readonly offlineLabels: ReadonlyArray<string>;
   readonly environments: ReadonlyArray<ArchivedThreadsHeaderEnvironment>;
   readonly error: string | null;
   readonly groups: ReadonlyArray<ArchivedThreadGroup>;
@@ -439,7 +440,16 @@ export function ArchivedThreadsScreen(props: {
             keyExtractor={(item) => item.key}
             ListEmptyComponent={listEmptyComponent}
             ListHeaderComponent={
-              props.error ? <ArchiveError message={props.error} onRetry={props.onRefresh} /> : null
+              <>
+                {props.offlineLabels.length > 0 ? (
+                  <Text className="text-sm text-foreground-muted">
+                    {`Offline: ${props.offlineLabels.join(", ")}. Reconnect to see archived threads there.`}
+                  </Text>
+                ) : null}
+                {props.error ? (
+                  <ArchiveError message={props.error} onRetry={props.onRefresh} />
+                ) : null}
+              </>
             }
             onScrollBeginDrag={() => openSwipeableRef.current?.close()}
             refreshControl={

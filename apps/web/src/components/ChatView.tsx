@@ -366,6 +366,7 @@ import {
   useUpdateEnvironmentSettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { useNowAfter } from "../hooks/useDeadline";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
@@ -706,6 +707,7 @@ function useDraftHeroLayoutTransition(
     previousComposerRectRef.current = composerAnchorRef.current?.getBoundingClientRect() ?? null;
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures and animates the composer DOM between draft and conversation layouts.
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
@@ -1270,6 +1272,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const storeCloseTerminal = useTerminalUiStateStore((state) => state.closeTerminal);
   const reconcileTerminalIds = useTerminalUiStateStore((state) => state.reconcileTerminalIds);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained reconciliation of persisted terminal UI with server terminal IDs; moving ownership risks losing optimistic terminals.
   useEffect(() => {
     if (terminalIdListsEqual(serverOrderedTerminalIds, terminalUiState.terminalIds)) {
       return;
@@ -1741,6 +1744,7 @@ function ChatViewContent(props: ChatViewProps) {
   const routeThreadKeyRef = useRef<string | null>(routeThreadKey);
   const routeGenerationRef = useRef(0);
   const routeMountedRef = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidates outstanding route-scoped async work when the mounted thread changes.
   useLayoutEffect(() => {
     routeMountedRef.current = true;
     routeThreadKeyRef.current = routeThreadKey;
@@ -2066,6 +2070,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the unmount cleanup callback current so it revokes all optimistic message blob URLs.
   useLayoutEffect(() => {
     optimisticUserMessagesRef.current = optimisticUserMessages;
   });
@@ -2087,6 +2092,7 @@ function ChatViewContent(props: ChatViewProps) {
     setIsWorkspaceFileDragActive(false);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears workspace drag state when the native drag session ends outside the composer.
   useEffect(() => {
     if (!isWorkspaceFileDragActive) return;
     const clearWorkspaceFileDrag = () => setIsWorkspaceFileDragActive(false);
@@ -2175,6 +2181,7 @@ function ChatViewContent(props: ChatViewProps) {
 
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes the composer overlay DOM height to reserve timeline space.
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
 
@@ -2261,6 +2268,7 @@ function ChatViewContent(props: ChatViewProps) {
   const isServerThread = serverThread !== null;
   const activeThread = isServerThread ? serverThread : localDraftThread;
   const synchronizedComposerSelectionRef = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained server-to-draft model reconciliation; ownership spans remote updates and local edits and needs a separate migration.
   useEffect(() => {
     if (!serverThread) {
       synchronizedComposerSelectionRef.current = null;
@@ -2518,6 +2526,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const diffOpen = activeRightPanelKind === "diff";
   const explicitDiffOpenRef = useRef<ScopedThreadRef | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained diff selection reset across panel activation paths; moving it requires coordinating all external open requests.
   useLayoutEffect(() => {
     const explicitThreadRef = explicitDiffOpenRef.current;
     explicitDiffOpenRef.current = null;
@@ -2604,6 +2613,7 @@ function ChatViewContent(props: ChatViewProps) {
     ),
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained browser-surface reconciliation with server preview sessions; removing it can leave stale persisted tabs.
   useEffect(() => {
     if (!activeThreadRef || !previewSessionsReady) return;
     const hiddenTabIds = new Set(
@@ -2620,6 +2630,7 @@ function ChatViewContent(props: ChatViewProps) {
       );
   }, [activePreviewState.sessions, activeThreadRef, previewSessionsReady]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Closes the browser mini-player resource when its backing preview session disappears.
   useEffect(() => {
     const source = activePreviewMiniPlayer?.source;
     if (
@@ -2831,6 +2842,7 @@ function ChatViewContent(props: ChatViewProps) {
   useStableCallback(handleFilePendingChange);
   const configuredPreviewUrls = getConfiguredPreviewUrls(activeProjectScripts);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained file-surface reconciliation after bootstrap; changing store ownership risks discarding restored panels.
   useEffect(() => {
     if (!activeThreadRef || !activeEnvironmentBootstrapComplete) return;
     useRightPanelStore.getState().reconcileFileSurfaces(activeThreadRef, activeProject !== null);
@@ -2865,6 +2877,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeReconnectingEnvironmentId,
     reconnectWarningGraceElapsedEnvironmentId,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the reconnect warning grace timer for the active disconnected environment.
   useEffect(() => {
     if (activeReconnectingEnvironmentId === null) return;
     return scheduleEnvironmentReconnectWarning(() =>
@@ -3138,12 +3151,9 @@ function ChatViewContent(props: ChatViewProps) {
     const items: ComposerBannerStackItem[] = [];
     const updateRunning = serverUpdateState.status === "running";
     const unavailableConnection = activeEnvironmentUnavailableState?.connection ?? null;
-    // Reconnecting to a version-skewed server with no update in flight
-    // usually means the server is restarting mid-update and a refresh wiped
-    // the in-memory update state. Fold the reconnect and version banners
-    // into one calm line instead of stacking "Failed to connect" on
-    // "versions differ". A failed update never folds: its error and retry
-    // action must stay visible.
+    // A refresh during a server update can lose the in-memory update state.
+    // Combine reconnect and version-skew banners in that case, but keep failed
+    // updates separate so their error and retry action remain visible.
     const environmentReconnecting =
       unavailableConnection !== null &&
       (unavailableConnection.phase === "connecting" ||
@@ -3438,11 +3448,8 @@ function ChatViewContent(props: ChatViewProps) {
     hasComposerAttachments: composerHasAttachments,
   });
 
-  // The open /usage-limits panel for this thread, model and turn. Only the open
-  // moment is stored: the rows read live provider data, so a redeemed reset
-  // credit or refreshed probe shows through. Anything that spends quota closes
-  // it: a new turn from any source, or the agent resuming after an approval or
-  // answered question.
+  // Quota-spending activity closes the panel; live provider data still updates
+  // its rows while it is open.
   useState<{
     readonly key: string;
     readonly threadKey: string;
@@ -3570,6 +3577,7 @@ function ChatViewContent(props: ChatViewProps) {
   const sendQueuesBehindSetup =
     isServerThread && (activeRunPreparing || activeActivityRun?.status === "starting");
   const [setupQueueSendThreadKey, setSetupQueueSendThreadKey] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps blob URL handoff cleanup callbacks current as preview resources change.
   useEffect(() => {
     attachmentPreviewHandoffByMessageIdRef.current = attachmentPreviewHandoffByMessageId;
   }, [attachmentPreviewHandoffByMessageId]);
@@ -3605,6 +3613,7 @@ function ChatViewContent(props: ChatViewProps) {
     setAttachmentPreviewHandoffByMessageId({});
   };
   const clearAttachmentPreviewHandoffsStable = useStableCallback(clearAttachmentPreviewHandoffs);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases attachment handoff and optimistic message blob URLs when the view unmounts.
   useEffect(() => {
     return () => {
       clearAttachmentPreviewHandoffsStable();
@@ -3684,6 +3693,7 @@ function ChatViewContent(props: ChatViewProps) {
       return url ? [[resource.attachmentId, url] as const] : [];
     }),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Preloads server image resources before retiring their local blob previews.
   useEffect(() => {
     if (typeof Image === "undefined" || serverVisibleTurnItems.length === 0) {
       return;
@@ -3980,6 +3990,7 @@ function ChatViewContent(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained ready-timeline cache publication for route restoration; moving it needs cache lifetime tests.
   useLayoutEffect(() => {
     if (
       threadDetailLoading ||
@@ -4001,6 +4012,7 @@ function ChatViewContent(props: ChatViewProps) {
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   const liveIsGitRepo = gitStatusQuery.data?.isRepo;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained checkout cache publication from live Git status; moving it requires shared cache ownership.
   useEffect(() => {
     if (gitStatusCwd !== null && liveIsGitRepo !== undefined) {
       rememberCheckoutIsRepo(environmentId, gitStatusCwd, liveIsGitRepo);
@@ -4132,6 +4144,7 @@ function ChatViewContent(props: ChatViewProps) {
     loadBalancingCandidates,
     loadBalancingSettings.loadBalancingWeights,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained asynchronous load-balancing result adoption into the draft; moving it risks racing send and manual machine selection.
   useEffect(() => {
     if (!needsLoadBalancing || loadBalancing.pending || !draftId || sendInFlightRef.current) return;
     const target = logicalProjectEnvironments.find(
@@ -4192,10 +4205,12 @@ function ChatViewContent(props: ChatViewProps) {
     readonly scope: string;
   } | null>(null);
   const environmentChangeScopeRef = useRef("");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps async environment-switch completion guards aligned with the committed draft scope.
   useLayoutEffect(() => {
     environmentChangeScopeRef.current = environmentChangeScope;
   });
   // Leaving the scope, or unmounting, abandons a change still in flight.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidates pending environment-switch requests when their draft scope unmounts.
   useLayoutEffect(
     () => () => {
       if (environmentChangeRef.current?.scope === environmentChangeScope) {
@@ -4325,7 +4340,7 @@ function ChatViewContent(props: ChatViewProps) {
     });
   };
   const scheduleComposerFocusStable = useStableCallback(scheduleComposerFocus);
-  const useArtifactTemplate = (template: CodexArtifactTemplate) => {
+  const applyArtifactTemplate = (template: CodexArtifactTemplate) => {
     const composer = composerRef.current;
     if (!composer) return;
 
@@ -4341,7 +4356,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     scheduleComposerFocus();
   };
-  const useArtifactTemplateStable = useStableCallback(useArtifactTemplate);
+  const applyArtifactTemplateStable = useStableCallback(applyArtifactTemplate);
   const sendAppMessage = async (text: string) => {
     if (!isServerThread || activeThreadId === null) {
       throw new Error("Messages from apps need a started thread.");
@@ -4530,6 +4545,7 @@ function ChatViewContent(props: ChatViewProps) {
   const runProjectScriptStable = useStableCallback(runProjectScript);
 
   const runProjectScriptRef = useRef(runProjectScriptStable);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative code-block shell runner aligned with the committed project script callback.
   useLayoutEffect(() => {
     runProjectScriptRef.current = runProjectScriptStable;
   }, [runProjectScriptStable]);
@@ -4875,6 +4891,7 @@ function ChatViewContent(props: ChatViewProps) {
     useRightPanelStore.getState().toggleThreadPanel(activeThreadRef, threadPanelPresentation);
   };
   const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained deferred panel maximize request consumption after layout becomes eligible; changing it risks dropping cross-route requests.
   useEffect(() => {
     if (!canMaximizeRightPanel) return;
     if (useRightPanelStore.getState().consumeMaximizeRequest(routeThreadRef)) {
@@ -4933,6 +4950,7 @@ function ChatViewContent(props: ChatViewProps) {
     );
   };
   const copyRightPanelFilePathStable = useStableCallback(copyRightPanelFilePath);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes the mounted chat to preview-panel action events.
   useEffect(
     () =>
       subscribePreviewAction((action) => {
@@ -5053,13 +5071,9 @@ function ChatViewContent(props: ChatViewProps) {
       anchorScrollRestoreFrameRef.current = null;
     }
     if (wasProgrammaticScrollMode) {
-      // While following or anchoring, our scrollToEnd/scrollToOffset calls can
-      // sit in LegendList's pending-imperative-scroll queue (it defers them
-      // while layout settles) and fire seconds later with stale targets,
-      // yanking the view away after the user scrolled. Starting a new
-      // imperative scroll cancels everything queued; targeting an item that
-      // is not in the data makes the new request itself resolve without ever
-      // scrolling, so this is a pure cancel.
+      // LegendList defers imperative scrolls while layout settles. A new request
+      // cancels that queue; an absent item cancels without scrolling, so delayed
+      // follow requests cannot override the user's manual scroll.
       void legendListRef.current?.scrollToItem({
         item: TIMELINE_SCROLL_CANCEL_SENTINEL,
         animated: false,
@@ -5083,10 +5097,12 @@ function ChatViewContent(props: ChatViewProps) {
   const cancelTimelineLiveFollowForUserNavigationRef = useRef(
     cancelTimelineLiveFollowForUserNavigationStable,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps native timeline gesture handlers current without reinstalling their listeners.
   useEffect(() => {
     cancelTimelineLiveFollowForUserNavigationRef.current =
       cancelTimelineLiveFollowForUserNavigationStable;
   }, [cancelTimelineLiveFollowForUserNavigationStable]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained streamed-run anchor transition for LegendList; moving it requires proving queued-turn scroll ordering.
   useEffect(() => {
     const previous = observedTimelineActivityRef.current;
     const dispatchedUserItem =
@@ -5148,6 +5164,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the page-scroll controller and disposes its native key and scroll resources.
   useEffect(() => {
     const controller = createPageScrollController({
       getContainer: () => legendListRef.current?.getScrollableNode() ?? null,
@@ -5187,12 +5204,13 @@ function ChatViewContent(props: ChatViewProps) {
     setShowScrollToBottom(false);
     setTimelineAnchor(releaseChatTimelineAnchor);
     // The anchored end space must be gone before the scroll measures, or the
-    // list lands short of the real end (#6519).
+    // list lands short of the real end.
     requestAnimationFrame(() => {
       void legendListRef.current?.scrollToEnd?.({ animated });
     });
   };
   const scrollToEndStable = useStableCallback(scrollToEnd);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Attaches timeline wheel, touch, pointer and keyboard listeners after the list DOM mounts.
   useEffect(() => {
     const composer = composerRef;
     let removeListeners: (() => void) | null = null;
@@ -5213,11 +5231,9 @@ function ChatViewContent(props: ChatViewProps) {
         const handleManualNavigation = () => {
           cancelTimelineLiveFollowForUserNavigationRef.current();
         };
-        // The gestures below must only break follow when they can actually
-        // move the viewport away from the live edge (#5566): a spurious break
-        // while pinned at the end produces no scroll event, never re-arms,
-        // and streaming silently stops following. Underflowing content can't
-        // scroll at all, so nothing there should break follow.
+        // Break follow only when the gesture can move away from the live edge.
+        // A spurious break at the end produces no scroll event to re-arm follow;
+        // underflowing content cannot scroll and must keep following.
         const contentScrollsUp = () => timelineRealContentOverflowsViewportStable();
         // The follow re-arm band, not the strict flag: streaming growth makes
         // isAtEnd flicker false for a frame before the follow scroll catches
@@ -5477,6 +5493,7 @@ function ChatViewContent(props: ChatViewProps) {
   };
   const onIsAtEndChangeStable = useStableCallback(onIsAtEndChange);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases the imperative timeline scroll anchor when live tool activity requires following the end.
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") return;
     if (
@@ -5509,6 +5526,7 @@ function ChatViewContent(props: ChatViewProps) {
     setTimelineLiveFollowEnabled(followEnd);
     setShowScrollToBottom(!followEnd);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Resets the imperative timeline scroll controller and its debounce timer for the committed thread.
   useEffect(() => {
     const { followEnd } = timelineThreadReset;
     isAtEndRef.current = followEnd;
@@ -5529,6 +5547,7 @@ function ChatViewContent(props: ChatViewProps) {
     planSidebarDismissedForTurnRef.current = null;
   }, [timelineThreadReset, activeThreadRef, planSidebarDismissedForTurnRef]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Schedules composer DOM focus after switching threads or closing the terminal.
   useEffect(() => {
     if (embedded || !activeThread?.id || terminalUiState.terminalOpen) return;
     const frame = window.requestAnimationFrame(() => {
@@ -5539,6 +5558,7 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [activeThread?.id, embedded, focusComposerStable, terminalUiState.terminalOpen]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Restores composer DOM focus after the window focus event and browser focus restoration settle.
   useEffect(() => {
     if (embedded || !activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
     let frame: number | null = null;
@@ -5573,6 +5593,7 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiState.terminalOpen,
   ]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hands off optimistic blob previews to server images and owns the deferred retirement timer.
   useEffect(() => {
     if (!activeThread?.id) return;
     if (activeMessageCount === 0) {
@@ -5621,6 +5642,7 @@ function ChatViewContent(props: ChatViewProps) {
     setOptimisticUserMessages([]);
     resetLocalDispatch();
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Revokes blob URL resources belonging to retired optimistic messages.
   useEffect(() => {
     for (const message of retiredOptimisticMessages) {
       revokeUserMessagePreviewUrls(message);
@@ -5748,6 +5770,7 @@ function ChatViewContent(props: ChatViewProps) {
     composerRestingRef.current = resting;
   };
   const onComposerRestingChangeStable = useStableCallback(onComposerRestingChange);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures the composer overlay DOM for the newly committed timeline.
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
     composerTimelineInsetRef.current = 0;
@@ -5755,6 +5778,7 @@ function ChatViewContent(props: ChatViewProps) {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A thread switch must re-measure the overlay for the new timeline.
   }, [activeThreadKey, composerOverlayElement, publishComposerOverlayHeightStable]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes composer overlay DOM size and publishes the inset used by imperative scrolling.
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
 
@@ -5766,6 +5790,7 @@ function ChatViewContent(props: ChatViewProps) {
     return observeResize(composerOverlayElement, updateHeight);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The scroll-to-bottom button changes the overlay's height without resizing the observed node first.
   }, [composerOverlayElement, publishComposerOverlayHeightStable, showScrollToBottom]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Remeasures the composer overlay DOM when its mount state changes.
   useLayoutEffect(() => {
     if (composerMountedRef.current === composerMounted) return;
     composerMountedRef.current = composerMounted;
@@ -5849,32 +5874,17 @@ function ChatViewContent(props: ChatViewProps) {
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
 
   const activeThreadPinned = supportsPinning && activeThreadShell?.pinnedAt != null;
-  // The compiler caches render results on their inputs, so a clock read in render
-  // stays frozen until the shell changes. The clock is state: reset with the shell,
-  // and moved by the wake timer.
-  const [snoozeClockState, setSnoozeClockState] = useState(() => ({
-    shell: activeThreadShell,
-    now: new Date().toISOString(),
-  }));
-  if (snoozeClockState.shell !== activeThreadShell) {
-    setSnoozeClockState({ shell: activeThreadShell, now: new Date().toISOString() });
-  }
-  const snoozeClock = snoozeClockState.now;
+  const snoozeDeadline = activeThreadShell?.snoozedUntil
+    ? Date.parse(activeThreadShell.snoozedUntil)
+    : null;
+  const snoozeClock = new Date(
+    useNowAfter(snoozeDeadline !== null && Number.isFinite(snoozeDeadline) ? snoozeDeadline : null),
+  ).toISOString();
   const activeThreadSnoozed =
     activeThreadShell !== null &&
     supportsSnooze &&
     effectiveSnoozed(activeThreadShell, { now: snoozeClock });
-  useEffect(() => {
-    if (!activeThreadSnoozed) return;
-    const wakeAtMs = Date.parse(activeThreadShell?.snoozedUntil ?? "");
-    if (!Number.isFinite(wakeAtMs)) return;
-    const id = window.setTimeout(
-      () => setSnoozeClockState((clock) => ({ ...clock, now: new Date().toISOString() })),
-      Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647),
-    );
-    return () => window.clearTimeout(id);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A clock that lands before the wake time (timer clamping, clock skew) re-arms the timer.
-  }, [activeThreadShell?.snoozedUntil, activeThreadSnoozed, snoozeClock]);
+
   const activeThreadWokeAt =
     activeThreadShell !== null && supportsSnooze
       ? threadWokeAt(activeThreadShell, { now: snoozeClock })
@@ -6322,11 +6332,8 @@ function ChatViewContent(props: ChatViewProps) {
         onAction={acknowledgeActiveThreadWokeStable}
       />
     ) : null;
-  // Reverse state for staging: put the draft selection back on the provider and
-  // model this chat is actually running, which clears the staged handoff. A
-  // cached per-provider draft entry is deliberately ignored — restoring a model
-  // the session is not on would leave the banner stuck on providers that need a
-  // new session for a model change.
+  // Cancel staging with the running session's model, ignoring cached draft
+  // models that could keep the handoff banner active on session-bound providers.
   const handleCancelStagedProviderHandoff = () => {
     if (!activeThread) return;
     // Once a send captured the staged target, reverting the picker would only
@@ -6561,7 +6568,7 @@ function ChatViewContent(props: ChatViewProps) {
         icon: <GitBranchIcon />,
         title: (
           <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className="shrink-0 font-normal text-muted-foreground">Branch changed — was</span>
+            <span className="shrink-0 font-normal text-muted-foreground">Branch changed, was</span>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -6613,6 +6620,7 @@ function ChatViewContent(props: ChatViewProps) {
     setTerminalUiLaunchContext(null);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Transfers DOM focus between terminal and composer as the terminal panel opens or closes.
   useEffect(() => {
     if (!activeThreadKey) return;
     const previous = terminalUiOpenByThreadRef.current[activeThreadKey] ?? false;
@@ -6655,7 +6663,19 @@ function ChatViewContent(props: ChatViewProps) {
     ? resolveProviderSkillsForCwd(activeProviderStatus, gitCwd)
     : EMPTY_PROVIDER_SKILLS;
   const threadFindControlsRef = useRef<ThreadFindControls | null>(null);
-  const [isThreadFindActive, setIsThreadFindActive] = useState(false);
+  const threadFindEnabled =
+    isServerThread && serverConfig?.threadFind === true && !paintOnlyDisplayedTimeline;
+  const [threadFindOpenThreadKey, setThreadFindOpenThreadKey] = useState<string | null>(null);
+  if (
+    threadFindOpenThreadKey !== null &&
+    (!threadFindEnabled || threadFindOpenThreadKey !== activeThreadKey)
+  ) {
+    setThreadFindOpenThreadKey(null);
+  }
+  const isThreadFindActive =
+    threadFindEnabled && activeThreadKey !== null && threadFindOpenThreadKey === activeThreadKey;
+  const setIsThreadFindActive = (open: boolean) =>
+    setThreadFindOpenThreadKey(open && threadFindEnabled ? activeThreadKey : null);
   const openThreadFind = () => threadFindControlsRef.current?.open();
   const openThreadFindStable = useStableCallback(openThreadFind);
   const closeThreadFind = () => threadFindControlsRef.current?.close();
@@ -6809,6 +6829,7 @@ function ChatViewContent(props: ChatViewProps) {
   });
 
   // A focused desktop browser page forwards these chords as menu actions.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes the mounted chat to native desktop right-panel menu actions.
   useEffect(() => {
     if (embedded) return;
     return window.desktopBridge?.onMenuAction((action) => {
@@ -6861,6 +6882,7 @@ function ChatViewContent(props: ChatViewProps) {
   const sendSideChatStable = useStableCallback((prompt: string) => sideChat.open(prompt));
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Installs native paste and keyboard listeners for redirecting clipboard input to the composer.
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
       if (
@@ -7523,6 +7545,7 @@ function ChatViewContent(props: ChatViewProps) {
         submission: {
           id: newMessageId(),
           command: trimmed,
+          // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
           createdAt: new Date().toISOString(),
         },
         clearDraft: () => {
@@ -7819,6 +7842,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerAttachmentsSnapshot.map((attachment) => attachment.id),
     );
     const messageIdForSend = newMessageId();
+    // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
     const messageCreatedAt = new Date().toISOString();
     // A stale Claude session compacts before this message so the turn does not re-read the
     // old history. The message queues behind the /compact run, since steering into it is
@@ -8729,6 +8753,7 @@ function ChatViewContent(props: ChatViewProps) {
 
     const threadIdForSend = activeThread.id;
     const messageIdForSend = newMessageId();
+    // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
     const messageCreatedAt = new Date().toISOString();
     const composedFollowUpText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
@@ -8871,6 +8896,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
 
+    // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
@@ -9004,13 +9030,9 @@ function ChatViewContent(props: ChatViewProps) {
     ? listDevScenarios(settings.dev).map((scenario) => scenario.name)
     : [];
 
-  // Research always runs in a thread of its own, so it is offered only on a
-  // chat that has not started yet. In a started thread the send-time divert
-  // would spawn a separate thread anyway, which reads as the button losing
-  // your conversation.
-  // A brand-new chat is a draft route — no server thread exists yet. Research
-  // must be offered there (that is the "new chat" case), and on a created but
-  // never-started server thread; only a started conversation hides it.
+  // Research starts its own thread. Offer it on draft routes and unstarted
+  // server threads; hiding it in started conversations avoids an unexpected
+  // switch to a different thread.
   const canStartResearch =
     selectedProviderSupportsPipelines &&
     (routeKind === "draft" || (routeKind === "server" && !threadHasStarted(activeThread)));
@@ -9195,6 +9217,7 @@ function ChatViewContent(props: ChatViewProps) {
     !activeEnvironmentUnavailable &&
     !activePendingProgress &&
     !feedbackUploading;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained work-locally resend orchestration after async setup; moving it risks duplicate sends or using the wrong environment.
   useEffect(() => {
     if (
       !workLocallyResendReady ||
@@ -9261,6 +9284,7 @@ function ChatViewContent(props: ChatViewProps) {
   }) => {
     if (!paintOnlyDisplayedTimeline) void onRollbackCheckpoint(input);
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained automatic plan-panel opening from streamed plans; changing ownership risks overriding explicit dismissals.
   useEffect(() => {
     if (!autoOpenPlanSidebar || !activePlan || planSidebarOpen || !activeThreadRef) return;
     if (activeLatestRun?.runId && activePlan.runId !== activeLatestRun.runId) return;
@@ -9311,6 +9335,7 @@ function ChatViewContent(props: ChatViewProps) {
   const consumePendingFileDrop = useSidebarPendingFileDropStore(
     (state) => state.consumePendingFileDrop,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Delivers queued native file drops to the composer after its imperative handle mounts.
   useEffect(() => {
     if (pendingSidebarFileDrops.length === 0) return;
     if (
@@ -9341,6 +9366,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   // Empty state: no active thread
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases the expanded video blob URL when its preview closes or changes.
   useEffect(() => {
     const item = expandedImage?.images[expandedImage.index];
     if (item?.type !== "video" || item.src === null || !item.src.startsWith("blob:")) return;
@@ -9354,6 +9380,7 @@ function ChatViewContent(props: ChatViewProps) {
     setIsWorkspaceFileDragActive(false);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears workspace drag state when the native drag session ends outside the composer.
   useEffect(() => {
     if (!isWorkspaceFileDragActive) return;
     const clearWorkspaceFileDrag = () => setIsWorkspaceFileDragActive(false);
@@ -9361,6 +9388,7 @@ function ChatViewContent(props: ChatViewProps) {
     return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
   }, [isWorkspaceFileDragActive]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Registers the mounted thread with browser history using the hydrated project grouping.
   useEffect(() => {
     if (!clientSettingsHydrated || !activeThreadRef || !activeProject) return;
     // Reuse the sidebar's grouping so history follows the project rows the user
@@ -9394,6 +9422,7 @@ function ChatViewContent(props: ChatViewProps) {
     setPreviousReconnectingEnvironmentId(activeReconnectingEnvironmentId);
     setReconnectWarningGraceElapsedEnvironmentId(null);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the reconnect warning grace timer for the active disconnected environment.
   useEffect(() => {
     if (activeReconnectingEnvironmentId === null) return;
     return scheduleEnvironmentReconnectWarning(() =>
@@ -9404,12 +9433,14 @@ function ChatViewContent(props: ChatViewProps) {
   const persistNativeCompactionDismissal = useEffectEvent(() =>
     setResumeCompactionPermanentlyDismissed(true),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained compaction dismissal persistence after async initialization; moving it needs dismissal ownership tests.
   useEffect(() => {
     if (nativeResumeCompactionDismissed && !resumeCompactionPermanentlyDismissed) {
       persistNativeCompactionDismissal();
     }
   }, [nativeResumeCompactionDismissed, resumeCompactionPermanentlyDismissed]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases the imperative timeline scroll anchor when live tool activity requires following the end.
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
@@ -9788,11 +9819,11 @@ function ChatViewContent(props: ChatViewProps) {
               skills: timelineSkills,
               progressive: serverConfig?.threadFindProgressive === true,
               thread: activeThreadRef,
-              enabled:
-                isServerThread && serverConfig?.threadFind === true && !paintOnlyDisplayedTimeline,
+              enabled: threadFindEnabled,
               content: serverProjection ?? undefined,
             }}
             controlsRef={threadFindControlsRef}
+            isOpen={isThreadFindActive}
             onOpenChange={setIsThreadFindActive}
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}
@@ -9942,7 +9973,7 @@ function ChatViewContent(props: ChatViewProps) {
                 }
                 {...(!paintOnlyDisplayedTimeline
                   ? {
-                      onUseArtifactTemplate: useArtifactTemplateStable,
+                      onUseArtifactTemplate: applyArtifactTemplateStable,
                       onSendAppMessage: sendAppMessageStable,
                     }
                   : {})}
@@ -10666,6 +10697,7 @@ function ThreadVisitWatermark(props: { readonly threadRef: ScopedThreadRef }) {
   const lastDispatchedVisitRef = useRef<string | null>(null);
   const lastVisitDispatchAtRef = useRef(0);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Publishes the visible thread visit watermark to the server and owns its throttle timer.
   useEffect(() => {
     if (!serverThread?.id) return;
     const threadUpdatedAt = Date.parse(serverThread.updatedAt);

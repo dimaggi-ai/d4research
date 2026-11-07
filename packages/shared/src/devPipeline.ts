@@ -176,13 +176,13 @@ export function buildDefaultDevPipelinePrompt(
     }))
     .filter((candidate) => candidate.models.length > 0);
   if (usableCandidates.length === 0) {
-    return `STEP 1 — PLAN
+    return `STEP 1: PLAN
 Determine the root cause, the smallest correct fix, the files to touch, and the command that proves it. Do not edit until the plan is concrete.
 
-STEP 2 — BUILD
+STEP 2: BUILD
 Apply the minimal change yourself. Preserve unrelated work and cover the root cause, not merely the symptom.
 
-STEP 3 — REVIEW + VERIFY
+STEP 3: REVIEW + VERIFY
 Review the resulting diff adversarially, run the narrowest meaningful verification command, and paste its real output. Fix a blocking review finding before reporting done.
 
 RUN STATE
@@ -246,17 +246,17 @@ ${request}`;
 
   return [
     step(
-      "STEP 1 — PLAN",
+      "STEP 1: PLAN",
       planner,
       "Ask for root cause, the smallest correct fix, exact files, risks, and the verification command. No code yet.",
     ),
     step(
-      "STEP 2 — BUILD",
+      "STEP 2: BUILD",
       builder,
       "Send the approved plan and current file contents. Require a complete diff covering every planned file.",
     ),
     step(
-      "STEP 3 — REVIEW",
+      "STEP 3: REVIEW",
       reviewer,
       "Send the plan and proposed diff. Require an explicit verdict, nearby regressions, and a verification command.",
     ),
@@ -264,7 +264,7 @@ ${request}`;
       ? []
       : [
           step(
-            "STEP 3b — SECOND OPINION (only when review flags a risk)",
+            "STEP 3b: SECOND OPINION (only when review flags a risk)",
             secondOpinion,
             "Send the objection and diff. Require agree/disagree plus the cheapest correct resolution. This target shares no model family with the primary review target.",
           ),
@@ -451,17 +451,17 @@ export function expandDevPipelinePrompt(
   return [
     `${DEV_TRIGGER_PREFIX}:${scenario.name}`,
     "",
-    `You are running the \`${scenario.name}\` dev pipeline in this thread. Follow its steps exactly, in order. You apply the final change yourself — the delegates advise, you edit.`,
+    `You are running the \`${scenario.name}\` dev pipeline in this thread. Follow its steps exactly, in order. You apply the final change yourself: the delegates advise, you edit.`,
     "",
     DEV_PROTOCOL_SENTINEL,
-    "1. TRACE — Keep one plan entry per pipeline step. Begin every status with `[step N | visit K]`.",
-    `2. DELEGATE — Call \`research_delegate\` with the resolved target, \`pipelineKind: "dev"\`, \`scenario: "${scenario.name}"\`, and current \`step\` and \`visit\`. Never simulate a delegate.`,
+    "1. TRACE: Keep one plan entry per pipeline step. Begin every status with `[step N | visit K]`.",
+    `2. DELEGATE: Call \`research_delegate\` with the resolved target, \`pipelineKind: "dev"\`, \`scenario: "${scenario.name}"\`, and current \`step\` and \`visit\`. Never simulate a delegate.`,
     targetPolicy === "labeled-fallback"
-      ? "3. TARGET POLICY — Labeled fallback is enabled. Pass `fallbackTargets` only when the step's pipeline text has a line labeled FALLBACK, copying that directive exactly. When no FALLBACK line exists, omit `fallbackTargets`; an invented fallback is rejected before the primary target runs. The tool identifies requested and resolved targets; always name the actual model that ran."
-      : "3. TARGET POLICY — Exact targets only. Do not pass or invent fallbacks; report an unavailable target as FAILED.",
-    `4. BUDGET — The server enforces ${RESEARCH_DELEGATION_BUDGET_PER_TURN} calls per run and ${RESEARCH_STEP_VISIT_LIMIT} visits per step-target.`,
-    "5. HONESTY — A delegate that timed out, refused, returned empty, or answered with intent only is reported as FAILED. Never invent its answer.",
-    "6. RUN STATE — End with requested target, actual resolved target, whether a labeled fallback was used, visits, and outcome for every step, including failed dependencies.",
+      ? "3. TARGET POLICY: Labeled fallback is enabled. Pass `fallbackTargets` only when the step's pipeline text has a line labeled FALLBACK, copying that directive exactly. When no FALLBACK line exists, omit `fallbackTargets`; an invented fallback is rejected before the primary target runs. The tool identifies requested and resolved targets; always name the actual model that ran."
+      : "3. TARGET POLICY: Exact targets only. Do not pass or invent fallbacks; report an unavailable target as FAILED.",
+    `4. BUDGET: The server enforces ${RESEARCH_DELEGATION_BUDGET_PER_TURN} calls per run and ${RESEARCH_STEP_VISIT_LIMIT} visits per step-target.`,
+    "5. HONESTY: A delegate that timed out, refused, returned empty, or answered with intent only is reported as FAILED. Never invent its answer.",
+    "6. RUN STATE: End with requested target, actual resolved target, whether a labeled fallback was used, visits, and outcome for every step, including failed dependencies.",
     "",
     "Delegation targets referenced by the pipeline:",
     ...(targets.length > 0 ? targets : ["- No delegation targets. Execute with this model only."]),

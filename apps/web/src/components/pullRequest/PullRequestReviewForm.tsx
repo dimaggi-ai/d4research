@@ -1,6 +1,10 @@
 import { useAtomCommand } from "~/state/use-atom-command";
 import { capitalizeTerm } from "@d4research/client-runtime/source-control-clients";
-import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@d4research/contracts";
+import type {
+  EnvironmentId,
+  PullRequestRef,
+  PullRequestReviewVerdict,
+} from "@d4research/contracts";
 import { CheckIcon, MessageSquareIcon, XCircleIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 

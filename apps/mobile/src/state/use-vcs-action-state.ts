@@ -93,6 +93,7 @@ export function useGitActionProgress(target: VcsActionTarget): GitActionProgress
     }
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Run the elapsed-time timer only while a VCS action is running.
   useEffect(() => {
     if (actionState.isRunning) {
       startElapsedTimer();

@@ -563,7 +563,7 @@ const signWindowsExecutable = Effect.fn("signWindowsExecutable")(function* (
   yield* stripStaleAuthenticodeEntry(executablePath);
   if ((yield* HostProcess.Platform) !== "win32") {
     yield* signWithJsign(executablePath);
-    yield* Effect.log("[cli-archive] Signed d4research.exe (Azure Trusted Signing via jsign).");
+    yield* Effect.log("[cli-archive] Signed t3.exe (Azure Trusted Signing via jsign).");
     return;
   }
   const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -580,9 +580,9 @@ const signWindowsExecutable = Effect.fn("signWindowsExecutable")(function* (
   ].join(" ");
   yield* runCommand(
     ChildProcess.make("pwsh", ["-NoProfile", "-NonInteractive", "-Command", script]),
-    "Invoke-TrustedSigning d4research.exe",
+    "Invoke-TrustedSigning t3.exe",
   );
-  yield* Effect.log("[cli-archive] Signed d4research.exe (Azure Trusted Signing).");
+  yield* Effect.log("[cli-archive] Signed t3.exe (Azure Trusted Signing).");
 });
 
 const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
@@ -597,7 +597,9 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
   const serverDir = path.join(repoRoot, "apps/server");
-  const executableName = input.platform === "win" ? "d4research.exe" : "d4research";
+  const builtExecutableName = input.platform === "win" ? "d4research.exe" : "d4research";
+  // Pinned runtimes, the SSH runner, WSL and the install scripts all run <root>/t3.
+  const archivedExecutableName = input.platform === "win" ? "t3.exe" : "t3";
   // tsdown suffixes cross-built executables with their target (d4research-darwin-x64);
   // a host build is plain d4research. Prefer the exact target when both exist.
   const targetKey = `${input.platform === "mac" ? "darwin" : input.platform}-${input.arch}`;
@@ -612,7 +614,7 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   const builtExecutable = (yield* fs.exists(targetExecutable))
     ? targetExecutable
     : targetKey === hostKey
-      ? path.join(serverDir, "dist-exe", executableName)
+      ? path.join(serverDir, "dist-exe", builtExecutableName)
       : targetExecutable;
   const webClient = path.join(serverDir, "dist/client");
   const resourceMonitorDir = Option.getOrElse(input.resourceMonitorDir, () =>
@@ -638,7 +640,7 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   yield* fs.makeDirectory(contentDir, { recursive: true });
 
   yield* Effect.log(`[cli-archive] Staging ${stem}...`);
-  yield* fs.copyFile(builtExecutable, path.join(contentDir, executableName));
+  yield* fs.copyFile(builtExecutable, path.join(contentDir, archivedExecutableName));
   yield* stageWebClient(webClient, path.join(contentDir, "client"));
   yield* fs.copy(resourceMonitorDir, path.join(contentDir, "resource-monitor"));
   yield* stageRuntimeExternals({
@@ -649,7 +651,7 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
     version: input.version,
   });
 
-  const executablePath = path.join(contentDir, executableName);
+  const executablePath = path.join(contentDir, archivedExecutableName);
   if (input.platform === "linux") {
     yield* bundleLinuxLibatomic({ repoRoot, contentDir, executablePath });
   }

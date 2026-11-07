@@ -85,11 +85,13 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<readonly BrainLintIssue[] | null>(null);
   const [lintTruncated, setLintTruncated] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the window focus listener that refreshes the external vault queries on returning to the app.
   useEffect(() => {
     const refresh = () => secondBrain.refresh(environmentId, registry);
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, [environmentId, registry]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidate the vault query registry after committed environment settings change its external source.
   useEffect(() => {
     secondBrain.refresh(environmentId, registry);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A committed settings change invalidates the vault and its derived queries.
@@ -290,7 +292,7 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
               {issues.map((issue) => (
                 <li key={`${issue.path}:${issue.code}:${issue.line ?? 0}`}>
                   {issue.path}
-                  {issue.line ? `:${issue.line}` : ""} — {issue.code}
+                  {issue.line ? `:${issue.line}` : ""}: {issue.code}
                 </li>
               ))}
             </ul>
@@ -519,7 +521,7 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
       ))}
       {proposal.possibleDuplicates?.map((duplicate) => (
         <p key={duplicate.path} role="note">
-          Possible duplicate: {duplicate.path} — {duplicate.reason}
+          Possible duplicate: {duplicate.path}: {duplicate.reason}
         </p>
       ))}
       {reviewable && (

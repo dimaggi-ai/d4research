@@ -1,16 +1,6 @@
-/**
- * A review being written, held until it is sent.
- *
- * Nothing here reaches the host: a review is one request carrying every line comment and the
- * verdict together, so a half-written one is invisible to everyone else — including on the
- * hosts that have no pending review of their own. That also means a draft lives only as long
- * as the tab does, which is why this is deliberately not persisted.
- */
-import type {
-  ProjectId,
-  PullRequestRef,
-  PullRequestReviewCommentDraft,
-} from "@d4research/contracts";
+// Keep review drafts in this tab until all comments and the verdict are submitted together.
+// Persisting them would expose half-written reviews after a reload or on another host.
+import type { PullRequestRef, PullRequestReviewCommentDraft } from "@d4research/contracts";
 import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };

@@ -4,7 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, FolderGit2, RefreshCw } from "lucide-react";
 import { threadEnvironment } from "~/state/threads";
 import { vcsEnvironment } from "~/state/vcs";
@@ -52,17 +52,23 @@ export function FileWorktreeToolbar(props: {
       },
     }),
   );
-  useEffect(() => {
-    if (!refsQuery.data) return;
-    setLoadedRefs((previous) => [
-      ...new Map(
-        [...(cursor === undefined ? [] : previous), ...refsQuery.data!.refs].map((ref) => [
-          ref.name,
-          ref,
-        ]),
-      ).values(),
-    ]);
-  }, [cursor, refsQuery.data]);
+  const [loadedPage, setLoadedPage] = useState<{
+    cursor: number | undefined;
+    data: typeof refsQuery.data;
+  } | null>(null);
+  if (loadedPage?.cursor !== cursor || loadedPage?.data !== refsQuery.data) {
+    setLoadedPage({ cursor, data: refsQuery.data });
+    if (refsQuery.data) {
+      setLoadedRefs((previous) => [
+        ...new Map(
+          [...(cursor === undefined ? [] : previous), ...refsQuery.data!.refs].map((ref) => [
+            ref.name,
+            ref,
+          ]),
+        ).values(),
+      ]);
+    }
+  }
   const refresh = () => {
     setCursor(undefined);
     refsQuery.refresh();

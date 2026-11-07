@@ -58,7 +58,7 @@ describe("ResearchProgressBanner", () => {
   });
 
   it("shows an identified running delegate before the orchestrator publishes its plan", () => {
-    const nowMs = Date.now();
+    const nowMs = 1_800_000_000_000;
     const markup = renderToStaticMarkup(
       createElement(ResearchProgressBanner, {
         pipelineKind: "dev",

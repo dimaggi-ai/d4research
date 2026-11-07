@@ -52,20 +52,22 @@ function NativeVideoPreview(props: {
           : null
       : null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Dismiss the native keyboard before presenting the fullscreen player.
   useEffect(() => Keyboard.dismiss(), []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hold the native fullscreen audio session until the video preview unmounts.
   useEffect(() => {
     fullscreenVideoOpened();
     return () => fullscreenVideoClosed();
   }, []);
-  useEffect(() => {
-    if (playbackUrl === null && resolvedUrl !== null) setPlaybackUrl(resolvedUrl);
-  }, [playbackUrl, resolvedUrl]);
+  if (playbackUrl === null && resolvedUrl !== null) setPlaybackUrl(resolvedUrl);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Present a native failure alert and close the unavailable video route.
   useEffect(() => {
     if (!loadError) return;
     Dialog.alert("Could not open video", loadError);
     onRequestClose();
   }, [loadError]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Present and dismiss the native AVKit player while holding its local file lease.
   useEffect(() => {
     if (localAttachment === null && playbackUrl === null) return;
     const controller = new AbortController();
@@ -120,6 +122,7 @@ export function VideoPreviewModal(props: {
   const isFocused = useIsFocused();
   const hasSource = props.source !== null;
   const onRequestClose = useEffectEvent(props.onRequestClose);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Close the native video presentation when navigation loses focus.
   useEffect(() => {
     if (!isFocused && hasSource) onRequestClose();
   }, [isFocused, hasSource]);

@@ -150,13 +150,7 @@ function recentFileItems(
   }));
 }
 
-/**
- * Files to list before the user types: recent files first, then the rest of the project (deduped,
- * capped). A freshly opened workspace has no recent files, so without this the Double-Shift dialog
- * would open empty in the All/Files scopes and there'd be nothing to select until you typed — the
- * tree, by contrast, shows everything. This makes Double Shift immediately useful like VS Code's
- * quick-open. Typing then narrows via the server-side `searchEntries` query (remoteResults).
- */
+// New workspaces have no recent files; include project files so quick-open is usable before typing.
 function emptyQueryFileItems(
   recentFiles: ReadonlyArray<RecentEditorFile>,
   entries: ReadonlyArray<ProjectEntry>,
@@ -219,6 +213,7 @@ export function EditorNavigationDialog(props: EditorNavigationDialogProps) {
     setOpen(true);
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the window keyboard listeners for quick-open and remove them when unmounted.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
@@ -256,6 +251,7 @@ export function EditorNavigationDialog(props: EditorNavigationDialogProps) {
     };
   }, [openRecent, openSearch]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Focus the dialog input DOM when its open mode or scope changes.
   useEffect(() => {
     if (!open) return;
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
@@ -332,18 +328,16 @@ export function EditorNavigationDialog(props: EditorNavigationDialogProps) {
     [actions, query],
   );
 
+  const searchEnabled = open && mode !== "recent" && query.trim() !== "" && scope !== "actions";
+  if (!searchEnabled && (remoteResults.length > 0 || loading)) {
+    setRemoteResults([]);
+    setLoading(false);
+  }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the debounced remote search timer and ignore its responses after the query changes.
   useEffect(() => {
-    if (!open || mode === "recent") {
-      setRemoteResults([]);
-      setLoading(false);
-      return;
-    }
+    if (!searchEnabled) return;
     const trimmedQuery = query.trim();
-    if (!trimmedQuery || scope === "actions") {
-      setRemoteResults([]);
-      setLoading(false);
-      return;
-    }
 
     let cancelled = false;
     const timeout = window.setTimeout(() => {
@@ -433,7 +427,7 @@ export function EditorNavigationDialog(props: EditorNavigationDialogProps) {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [mode, open, props.cwd, props.environmentId, query, scope, searchCode, searchEntries]);
+  }, [searchEnabled, props.cwd, props.environmentId, query, scope, searchCode, searchEntries]);
 
   const results = useMemo(() => {
     if (mode === "recent") {
@@ -453,9 +447,12 @@ export function EditorNavigationDialog(props: EditorNavigationDialogProps) {
       : remoteResults;
   }, [filteredActions, mode, props.entries, query, recentFiles, remoteResults, scope]);
 
-  useEffect(() => {
+  const selectionContext = `${mode}:${scope}:${query}:${results.length}`;
+  const [previousSelectionContext, setPreviousSelectionContext] = useState(selectionContext);
+  if (previousSelectionContext !== selectionContext) {
+    setPreviousSelectionContext(selectionContext);
     setSelectedIndex(0);
-  }, [query, scope, mode, results.length]);
+  }
 
   const execute = useCallback(
     (item: SearchResultItem) => {

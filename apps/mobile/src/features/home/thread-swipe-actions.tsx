@@ -139,13 +139,8 @@ export function SwipeableScrollGateProvider(props: {
   );
 }
 
-/**
- * failOffsetY on the swipe pan covers the first pan of a scroll, but trackpad
- * scroll sessions spawn fresh gesture sessions (momentum catch, direction
- * changes) whose reset translation can re-activate a swipe mid-scroll — so
- * while the list has moved vertically during an active drag/momentum phase, row
- * swipes are disabled entirely.
- */
+// Trackpad momentum can start fresh swipe gestures mid-scroll, so disable
+// row swipes after vertical movement until the drag/momentum phase settles.
 export function useSwipeableScrollGate(options?: {
   readonly onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   readonly onScrollBeginDrag?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -170,6 +165,7 @@ export function useSwipeableScrollGate(options?: {
       settleTimerRef.current = null;
     }
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels the scroll-settle timer when the scroll gate unmounts.
   useEffect(() => clearSettle, [clearSettle]);
 
   const onScrollBeginDrag = useCallback(
@@ -312,6 +308,7 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
     finish?.();
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels native swipe animations and completes pending dismissal on unmount.
   useLayoutEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -348,6 +345,7 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
     },
     [actionOpacity, collapse, dismissing, finishDismiss, rowWidth],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Registers an imperative row dismissal with the thread dismissal registry.
   useLayoutEffect(
     () =>
       registerThreadDismissal(props.threadKey, () => {
@@ -473,11 +471,18 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
           rightThreshold={actionsWidth * 0.42}
           simultaneousWith={props.simultaneousWith}
         >
-          {props.children(close)}
+          <ThreadSwipeableContent onClose={close}>{props.children}</ThreadSwipeableContent>
         </ReanimatedSwipeable>
       </View>
     </Animated.View>
   );
+}
+
+function ThreadSwipeableContent(props: {
+  readonly onClose: () => void;
+  readonly children: (close: () => void) => ReactNode;
+}) {
+  return props.children(props.onClose);
 }
 
 function SwipeActionButton(props: {

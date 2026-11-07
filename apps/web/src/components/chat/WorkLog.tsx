@@ -141,6 +141,7 @@ export function WorkLogDetails({
   const atLiveEdgeRef = useRef(true);
   // No deps: each streamed chunk re-renders this, and pinning before paint
   // shows the new text without a visible jump.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scrolls the work-log DOM to the live edge after new content commits.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (followLive && atLiveEdgeRef.current && scroller) {

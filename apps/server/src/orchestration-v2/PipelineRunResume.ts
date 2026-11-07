@@ -27,15 +27,8 @@ import { ThreadManagementService } from "./ThreadManagementService.ts";
 export const PIPELINE_RESUME_PROMPT =
   "Resume the interrupted pipeline run from the next incomplete step.";
 
-/**
- * Continues a pipeline run that a restart, a stop, or a failure cut short.
- * One path for the web Resume button and Nia's `resume` action.
- *
- * A d4-action task stays pinned to the pipeline it was approved under, so a
- * plain message after a pipeline edit is refused. This explicit resume is
- * the re-approval: it re-pins the task to the pipeline as it is now, and only
- * when every other scope check still holds.
- */
+// Explicit resume re-approves a d4-action task against the current pipeline. Plain
+// messages cannot bypass its approval pin, and all other scope checks still apply.
 export const resumePipelineRun = Effect.fn("PipelineRunResume.resume")(function* (input: {
   readonly threadId: ThreadId;
   readonly createdBy: OrchestrationV2Actor;

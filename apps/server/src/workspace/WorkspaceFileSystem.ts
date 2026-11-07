@@ -17,12 +17,15 @@ import type {
 import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import { isNetworkPath } from "@d4research/shared/path";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -544,19 +547,50 @@ export const make = Effect.gen(function* () {
           });
 
         // Reuse the read path's canonical containment checks before opening a host watcher.
-        // The initial event is emitted only after the watcher exists, closing the read/watch race
-        // without polling or repeatedly transferring the whole file.
         yield* readFile({ ...input, metadataOnly: true });
         const watchedDirectory = path.dirname(target.realTargetPath);
         const watchedFile = path.basename(target.realTargetPath);
         const watchedPath = path.resolve(target.realTargetPath);
-        const pullChanges = yield* Stream.toPull(fileSystem.watch(watchedDirectory));
+        const toWatchError = (cause: unknown) =>
+          new WorkspaceFileSystemOperationError({
+            workspaceRoot: input.cwd,
+            relativePath: input.relativePath,
+            resolvedPath: watchedPath,
+            operationPath: watchedDirectory,
+            operation: "watch",
+            cause,
+          });
+        // FileSystem.watch registers on a forked fiber and has no ready signal, so a change right
+        // after the initial event could be lost. This waits until the host watcher exists.
+        const watcherReady = yield* Deferred.make<void, WorkspaceFileSystemOperationError>();
+        const pullChanges = yield* Stream.toPull(
+          Stream.callback<string, WorkspaceFileSystemOperationError>((queue) =>
+            Effect.acquireRelease(
+              Effect.try({
+                try: () => {
+                  const watcher = NodeFS.watch(watchedDirectory, (_event, changedPath) => {
+                    if (changedPath) Queue.offerUnsafe(queue, changedPath);
+                  });
+                  watcher.on("error", (cause) => {
+                    Queue.failCauseUnsafe(queue, Cause.fail(toWatchError(cause)));
+                  });
+                  return watcher;
+                },
+                catch: toWatchError,
+              }),
+              (watcher) => Effect.sync(() => watcher.close()),
+            ).pipe(
+              Effect.tap(() => Deferred.succeed(watcherReady, undefined)),
+              Effect.tapError((error) => Deferred.fail(watcherReady, error)),
+            ),
+          ),
+        );
+        yield* Deferred.await(watcherReady);
         const changes = Stream.fromPull(Effect.succeed(pullChanges)).pipe(
           Stream.filter(
-            (event) =>
-              event.path === watchedFile ||
-              event.path === watchedPath ||
-              path.resolve(watchedDirectory, event.path) === watchedPath,
+            (changedPath) =>
+              changedPath === watchedFile ||
+              path.resolve(watchedDirectory, changedPath) === watchedPath,
           ),
           Stream.debounce(Duration.millis(50)),
           Stream.mapAccum(
@@ -565,17 +599,6 @@ export const make = Effect.gen(function* () {
               revision + 1,
               [{ relativePath: target.relativePath, revision }],
             ],
-          ),
-          Stream.mapError(
-            (cause) =>
-              new WorkspaceFileSystemOperationError({
-                workspaceRoot: input.cwd,
-                relativePath: input.relativePath,
-                resolvedPath: watchedPath,
-                operationPath: watchedDirectory,
-                operation: "watch",
-                cause,
-              }),
           ),
         );
         return Stream.concat(

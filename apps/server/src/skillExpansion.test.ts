@@ -45,7 +45,7 @@ describe("buildSkillReferenceBlock", () => {
   it("emits a compact reference, not the skill body, and never claims a run", () => {
     const block = buildSkillReferenceBlock([reviewSkill]);
     expect(block).toContain("attaching a skill does not run it");
-    expect(block).toContain("- $security-review — Review code for vulnerabilities.");
+    expect(block).toContain("- $security-review: Review code for vulnerabilities.");
     expect(block).toContain(`Instructions: ${reviewSkill.path}`);
     expect(block).toContain("Read that file before applying this skill.");
   });

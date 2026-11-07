@@ -44,6 +44,7 @@ export function SettingsDiagnosticsRouteScreen() {
   );
   const [copied, setCopied] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Read the native Expo update log for this mounted diagnostics screen and ignore late results.
   useEffect(() => {
     if (!Updates.isEnabled) return;
     let cancelled = false;

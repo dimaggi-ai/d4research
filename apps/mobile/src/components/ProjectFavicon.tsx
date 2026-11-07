@@ -1,7 +1,7 @@
 import { SymbolView } from "./ui/AppSymbol";
 import { AppText } from "./ui/AppText";
 import { Image } from "expo-image";
-import { memo, useLayoutEffect, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import type { EnvironmentId, ProjectIconOverride } from "@d4research/contracts";
 import {
@@ -132,14 +132,15 @@ function ProjectFaviconImage(props: {
   readonly projectTitle: string;
   readonly size: number;
 }) {
-  const faviconRequest = createProjectFaviconRequest(props.cacheKey, props.faviconUrl);
-  const [activeFaviconRequest, setActiveFaviconRequest] = useState<typeof faviconRequest>(null);
+  const faviconRequest = useMemo(
+    () => createProjectFaviconRequest(props.cacheKey, props.faviconUrl),
+    [props.cacheKey, props.faviconUrl],
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register this mounted image request with the shared favicon cache and release it on unmount.
   useLayoutEffect(() => {
     if (faviconRequest === null) return;
 
-    const endRequest = beginProjectFaviconRequest(faviconRequest);
-    setActiveFaviconRequest(faviconRequest);
-    return endRequest;
+    return beginProjectFaviconRequest(faviconRequest);
   }, [faviconRequest]);
 
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(() =>
@@ -148,7 +149,7 @@ function ProjectFaviconImage(props: {
       : "loading",
   );
 
-  const requestIsActive = faviconRequest !== null && activeFaviconRequest === faviconRequest;
+  const requestIsActive = faviconRequest !== null;
   const showImage = requestIsActive && status === "loaded";
 
   return (

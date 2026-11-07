@@ -87,6 +87,7 @@ export function ResearchSettingsPanel() {
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   // Scenario switches and remote saves both replace the draft — unless this
   // editor is the one holding unsaved changes.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Preserve focused unsaved textarea edits while applying externally saved scenario prompts to the local draft.
   useEffect(() => {
     setPipelineDraft((current) =>
       document.activeElement === pipelineRef.current ? current : scenario.pipelinePrompt,
@@ -307,7 +308,7 @@ export function ResearchSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("research-pipeline-prompt")}
-          description="The steps the orchestrator must follow, verbatim. Type ! for model suggestions — loops are allowed and budget-guarded."
+          description="The steps the orchestrator must follow, verbatim. Type ! for model suggestions. Loops are allowed and budget-guarded."
         >
           <div className="mt-3 max-w-4xl pb-1">
             <Textarea
@@ -399,7 +400,7 @@ export function ResearchSettingsPanel() {
                             ? ` + ${resolution.directive.promptFile}`
                             : ""
                         }`
-                      : `${resolution.directive.raw} — ${resolution.error}`}
+                      : `${resolution.directive.raw}: ${resolution.error}`}
                   </li>
                 ))}
               </ul>
@@ -413,7 +414,7 @@ export function ResearchSettingsPanel() {
           control={
             <div className="flex flex-col items-end gap-2">
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                Bypass compression — hand transcripts over as-is
+                Bypass compression: hand transcripts over as-is
                 <Switch
                   checked={research.bypassCompression}
                   onCheckedChange={(checked) =>

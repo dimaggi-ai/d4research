@@ -1,6 +1,4 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
-import { ThreadId } from "@d4research/contracts";
-import { TurnId } from "@d4research/contracts";
 import type { SnoozePresetSetting } from "@d4research/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 

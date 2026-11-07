@@ -5,6 +5,9 @@ import "vite-plus/test/config";
 
 const reactTests = [
   "src/features/agent-awareness/D4Agent.test.tsx",
+  "src/features/agent-awareness/useD4AgentState.test.tsx",
+  "src/features/agent-awareness/useD4AgentState.atom.test.tsx",
+  "src/features/threads/use-visible-second-clock.test.tsx",
   "src/features/threads/git/GitBranchesSheet.test.tsx",
   "src/features/threads/new-task-flow-provider.test.tsx",
   "src/features/workspace/workspace-tabs-state.test.ts",

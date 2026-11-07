@@ -47,12 +47,11 @@ export function searchSkillsInventory(
 const handlers = {
   // Scanned per call rather than indexed: skills change on disk behind the
   // app's back, and a live scan can never hand back a deleted skill.
-  skills_search: (input) =>
-    Effect.gen(function* () {
-      const entries = yield* readSkillsInventory();
-      const results = searchSkillsInventory(entries, input.query, input.limit);
-      return { results, count: results.length };
-    }),
+  skills_search: Effect.fn("skillsToolkit.skills_search")(function* (input) {
+    const entries = yield* readSkillsInventory();
+    const results = searchSkillsInventory(entries, input.query, input.limit);
+    return { results, count: results.length };
+  }),
 } satisfies Parameters<typeof SkillsToolkit.toLayer>[0];
 
 export const SkillsToolkitHandlersLive = SkillsToolkit.toLayer(handlers);

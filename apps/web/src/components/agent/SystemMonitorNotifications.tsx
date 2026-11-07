@@ -45,6 +45,7 @@ function EnabledSystemNotifications({ environmentId }: { environmentId: Environm
   const checked = useRef(new Set<string>());
   const mounted = useRef(true);
   const notifications = useRef(new Set<Notification>());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Close browser Notification resources when the notification presenter unmounts.
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -128,6 +129,7 @@ function EnabledSystemNotifications({ environmentId }: { environmentId: Environm
       /* The browser can reject notification presentation after permission changes. */
     }
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Claim new system reports before presenting browser notifications, sounds, or imperative toasts.
   useEffect(() => {
     if (!allowed || !canPresent()) return;
     for (const check of query.data?.systemHealth ?? []) {

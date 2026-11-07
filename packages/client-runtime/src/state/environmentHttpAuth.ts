@@ -48,17 +48,8 @@ const withEnvironmentCredentials = <A, E, R>(
     ? request.pipe(Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }))
     : request;
 
-/**
- * Build request-bound headers from the current environment credential:
- * - primary/local connections carry no credential,
- * - bearer connections send a static `Bearer` token,
- * - relay connections send a `DPoP` access token with a freshly signed proof
- *   bound to this request's method and URL.
- *
- * The DPoP signer is passed in (not resolved from context) and is only required
- * for relay/DPoP connections, so bearer/primary connections work even when no
- * signer is available.
- */
+// Relay proofs must bind to the request method and URL. Inject the signer
+// so primary and bearer connections work without relay signing support.
 export const buildEnvironmentAuthHeaders = Effect.fn(
   "environmentHttpAuth.buildEnvironmentAuthHeaders",
 )(function* (

@@ -36,7 +36,10 @@ import {
   PROJECT_FAVICON_FALLBACK_MARKER,
 } from "@d4research/shared/projectFavicon";
 import { isNetworkPath } from "@d4research/shared/path";
-import { MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH, toolOutputImages } from "@d4research/shared/toolOutput";
+import {
+  MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
+  toolOutputImages,
+} from "@d4research/shared/toolOutput";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

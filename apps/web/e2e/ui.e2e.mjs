@@ -1132,12 +1132,7 @@ spec(
   },
 );
 
-// The Ollama preset is the only path from a stock install to Ollama-served
-// models, so assert against the *live* daemon roster rather than the bundled
-// fallback list — a stale hardcoded roster is exactly the bug this guards.
-// The file preview panel is a lazily loaded chunk — the surface that broke
-// when a stale tab fetched renamed chunks and got index.html back. Opening a
-// real file end-to-end proves the chunk loads and the file actually renders.
+// The file panel loads lazily; opening a real file catches stale chunk URLs returning HTML.
 spec("files panel opens a workspace file", async ({ page, webUrl, workspace }) => {
   await page.goto(webUrl, { waitUntil: "domcontentloaded" });
   await openProject(page, workspace);

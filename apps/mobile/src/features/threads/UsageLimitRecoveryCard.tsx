@@ -1,8 +1,9 @@
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import type { EnvironmentId } from "@d4research/contracts";
+import { deadlineStore } from "@d4research/client-runtime/clock";
 import * as DateTime from "effect/DateTime";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { threadEnvironment } from "../../state/threads";
@@ -19,6 +20,8 @@ export function UsageLimitRecoveryCard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const resetAt = thread.runtime?.usageLimitResetAt ?? null;
+  const resetDeadline = deadlineStore(resetAt === null ? null : Date.parse(resetAt));
+  const resetPassed = useSyncExternalStore(resetDeadline.subscribe, resetDeadline.getSnapshot);
   const canSchedule =
     resetAt !== null &&
     Date.parse(resetAt) > Date.parse(thread.latestRun?.completedAt ?? thread.updatedAt);
@@ -89,7 +92,7 @@ export function UsageLimitRecoveryCard({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            disabled={pending || (!snoozed && Date.parse(resetAt!) <= Date.now())}
+            disabled={pending || (!snoozed && resetPassed)}
             onPress={() => void toggle("snooze")}
             className="self-start rounded-lg bg-subtle px-3 py-2 active:opacity-70"
           >

@@ -104,6 +104,7 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
   const sessionSet = new Set(sessionNames);
   const effectiveNames = mergeEnabledSkillNames(props.globalNames, sessionNames);
   const { disabled, open, onOpenChange } = props;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained controlled-menu close on permission loss; moving ownership requires coordinating external permission changes.
   useEffect(() => {
     if (disabled && open) onOpenChange(false);
   }, [disabled, onOpenChange, open]);

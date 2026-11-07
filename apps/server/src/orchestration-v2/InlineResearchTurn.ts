@@ -88,18 +88,17 @@ export const tryRunInlineResearchTurn = Effect.fn("tryRunInlineResearchTurn")(fu
     ...payload,
     occurredAt,
   });
-  const wrap = (payload: EventPayload) =>
-    Effect.gen(function* () {
-      return {
-        ...payload,
-        id: yield* ids.allocate.event({ threadId: message.threadId }),
-        threadId: message.threadId,
-        runId: run.id,
-        nodeId: rootNode.id,
-        providerInstanceId: run.providerInstanceId,
-        occurredAt: now,
-      };
-    });
+  const wrap = Effect.fn("InlineResearchTurn.wrap")(function* (payload: EventPayload) {
+    return {
+      ...payload,
+      id: yield* ids.allocate.event({ threadId: message.threadId }),
+      threadId: message.threadId,
+      runId: run.id,
+      nodeId: rootNode.id,
+      providerInstanceId: run.providerInstanceId,
+      occurredAt: now,
+    };
+  });
   const started = yield* sink.writeIfRunCurrent({
     threadId: message.threadId,
     runId: run.id,

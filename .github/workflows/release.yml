@@ -291,7 +291,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config build-essential
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@d4research/monorepo' --filter '!@d4research/web' test
+        run: vp run --parallel --concurrency-limit 4 --filter '!d4research' --filter '!@d4research/monorepo' --filter '!@d4research/web' test
 
   # Web browser tests time out when they share a runner with the other package
   # suites: Chromium gets too little CPU and diff workers miss their 10s start budget.
@@ -340,7 +340,13 @@ jobs:
           fi
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!d4research' --filter '!@d4research/monorepo' test
+        run: vp run --filter @d4research/web test
+
+      # Browser tests run source modules; this boots the production chunk graph.
+      - name: Boot the built web client
+        run: |
+          vp run --filter @d4research/web build
+          node apps/web/scripts/verify-built-boot.ts
 
   # Server test files run one at a time, so more small runners beat fewer big ones.
   test_server:

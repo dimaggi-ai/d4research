@@ -32,6 +32,7 @@ export function ComposerPopoverAnchor(props: { readonly children: ReactNode }) {
   // No dependency array: the composer re-renders when its padding or expanded
   // state changes, which moves it without resizing the anchor, so measure and
   // re-project after every render.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures the native anchor and projects its content into the Android popover host.
   useEffect(() => {
     measure();
     host?.setContent(
@@ -48,6 +49,7 @@ export function ComposerPopoverAnchor(props: { readonly children: ReactNode }) {
   });
 
   const setHostContent = host?.setContent;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the imperative popover host when its anchor unmounts.
   useEffect(() => () => setHostContent?.(null), [setHostContent]);
 
   if (host === null) {

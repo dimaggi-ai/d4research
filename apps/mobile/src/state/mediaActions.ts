@@ -51,6 +51,7 @@ export function useMediaActions(source: MediaActionsSource | undefined, onOpenFi
   );
   const controller = useRef<AbortController | null>(null);
   const [sharing, setSharing] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Abort an outstanding native share or download when its owner unmounts.
   useEffect(() => () => controller.current?.abort(), []);
 
   const share = () => {

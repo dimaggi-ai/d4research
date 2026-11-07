@@ -91,6 +91,7 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(
     props.onResize(estimateGridSize({ width, height, fontSize }));
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Focus the native fallback text input after the requested keyboard focus frame.
   useEffect(() => {
     if (!props.readOnly && (props.keyboardFocusRequest ?? 0) > 0) {
       inputRef.current?.blur();
@@ -201,7 +202,7 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerm
   const appearanceScheme = useColorScheme() === "light" ? "light" : "dark";
   const theme = props.theme ?? getPierreTerminalTheme(appearanceScheme);
   const { onInput, onResize } = props;
-  const NativeTerminalSurfaceView = resolveNativeTerminalSurfaceView();
+  const [NativeTerminalSurfaceView] = useState(resolveNativeTerminalSurfaceView);
   const hasNativeSurface = Boolean(NativeTerminalSurfaceView);
   const streaming = supportsNativeTerminalOutput();
   const nativeRef = useRef<NativeTerminalSurfaceHandle>(null);
@@ -228,6 +229,7 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerm
     });
   }, [nativeReady, props.output, streaming]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Record committed native terminal surface changes in the external debug log.
   useEffect(() => {
     terminalDebugLog("native:surface", {
       terminalKey: props.terminalKey,

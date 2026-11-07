@@ -75,10 +75,10 @@ describe("research Markdown export", () => {
     expect(markdown).toContain("Current provider instance: `codex`");
     expect(markdown).toContain("## Research run manifest");
     expect(markdown).toContain("Pipeline SHA-256: `aaaaaaaa");
-    expect(markdown).toContain("delegate SKIPPED — no explicit target");
+    expect(markdown).toContain("delegate SKIPPED: no explicit target");
     expect(markdown).toContain("No delegate target was configured");
     expect(markdown).toContain("_Attached context: corpus.md_");
-    expect(markdown).toContain("`thread.turn.completed` — Turn completed");
+    expect(markdown).toContain("`thread.turn.completed`: Turn completed");
     expect(markdown).not.toContain("<enabled_skills");
     expect(markdown).not.toContain("<pasted_context");
   });

@@ -78,6 +78,7 @@ function EnabledGuardNotifications({ environmentId }: { environmentId: Environme
       /* The browser can reject notification presentation after permission changes. */
     }
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Present newly received guard verdicts through browser notifications, sounds, or imperative toasts.
   useEffect(() => {
     const log = query.data?.actionLog;
     if (log === undefined) return;

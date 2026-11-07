@@ -1186,7 +1186,7 @@ it.each(["research", "pipeline"] as const)(
     expect(container.textContent).toContain(type === "research" ? "Research" : "Pipeline");
     expect(container.textContent).toContain("Target project · Research lab");
     expect(container.textContent).toContain("Pipeline · research:focused");
-    expect(container.textContent).toContain("Model · codex-instance / gpt-test");
+    expect(container.textContent).toContain("Model · codex-instance · gpt-test");
     expect(container.textContent).toContain("Task model option · reasoningEffort: high");
     expect(container.textContent).toContain("Detailed approved research prompt");
     expect(mocks.resolve).not.toHaveBeenCalled();
@@ -1244,7 +1244,7 @@ it("shows the immutable worker options and schedule before approval and in histo
     resolvedAt: null,
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("Model · worker-at-proposal / worker-model");
+  expect(container.textContent).toContain("Model · worker-at-proposal · worker-model");
   expect(container.textContent).toContain("Task model option · reasoningEffort: high");
   expect(container.textContent).toContain("Task model option · sandbox: true");
   expect(container.textContent).toContain("Schedule · Mon, Wed at 09:30 (server time)");
@@ -1316,6 +1316,16 @@ it("waits for a connection before opening Nia with cached configuration", async 
   expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/${threadId}`);
 });
 
+it("does not open Settings from an offline environment with Nia off", async () => {
+  mocks.enabled = false;
+  mocks.connectionPhase = "disconnected";
+  await act(() => root.render(<D4AgentEntry environmentId={environmentId} />));
+  const entry = container.querySelector("button")!;
+  expect(entry.textContent).toBe("Nia · Offline");
+  await act(async () => entry.click());
+  expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
 it("pins the agent above filters in the actual mobile HomeScreen", async () => {
   const noop = vi.fn();
   mocks.navigationProjects = [
@@ -1379,6 +1389,24 @@ it("keeps only the selected environment agent entry at the top of mobile home", 
     "Nia · Local",
     "Projects",
   ]);
+});
+
+it("puts every environment's Nia entry in one compact row on mobile home", async () => {
+  const other = EnvironmentId.make("other");
+  await act(() =>
+    root.render(
+      <D4AgentHomeHeader
+        environments={[
+          { environmentId, label: "Local" },
+          { environmentId: other, label: "Remote" },
+        ]}
+        selectedEnvironmentId={null}
+      />,
+    ),
+  );
+  const buttons = [...container.querySelectorAll("button")];
+  expect(buttons.map((button) => button.textContent)).toEqual(["Nia · Local", "Nia · Remote"]);
+  expect(buttons[0]?.parentElement?.parentElement).toBe(buttons[1]?.parentElement?.parentElement);
 });
 
 it("removes project-only actions from the dedicated mobile chat", async () => {
@@ -1783,7 +1811,7 @@ it("asks before creating a thread and then links the thread it created", async (
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(container.textContent).toContain("New thread");
   expect(container.textContent).toContain("Web app");
-  expect(container.textContent).toContain("codex-instance / gpt-test");
+  expect(container.textContent).toContain("codex-instance · gpt-test");
   expect(container.textContent).not.toContain("Open thread");
   await act(async () =>
     [...container.querySelectorAll("button")]

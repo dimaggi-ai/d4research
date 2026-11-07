@@ -1,4 +1,7 @@
-import type { ThreadStructure, ThreadStructureTurnItem } from "@d4research/client-runtime/state/shell";
+import type {
+  ThreadStructure,
+  ThreadStructureTurnItem,
+} from "@d4research/client-runtime/state/shell";
 import type {
   OrchestrationV2ProviderTurn,
   OrchestrationV2ProviderTurnTokenUsage,

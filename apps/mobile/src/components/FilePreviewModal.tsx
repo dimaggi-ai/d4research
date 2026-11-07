@@ -48,7 +48,9 @@ function PreviewItemResolver(props: {
     else Dialog.alert("Could not open preview", fallbackMessage);
     onRequestClose();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Dismiss the native keyboard before presenting the document viewer.
   useEffect(() => Keyboard.dismiss(), []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reauthorize the remote file before passing its URL to the native viewer.
   useEffect(() => {
     if (environmentId === null || uri !== null) return;
     let cancelled = false;
@@ -71,6 +73,7 @@ function PreviewItemResolver(props: {
       cancelled = true;
     };
   }, [environmentId, uri, refreshAssetUrl, source.srcFragment]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hold the native attachment file lease until this preview unmounts.
   useEffect(() => {
     if (!("attachment" in source)) return;
     const controller = new AbortController();
@@ -96,6 +99,7 @@ function PreviewItemResolver(props: {
   }, [source]);
 
   const onResolved = useEffectEvent(props.onResolved);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Deliver the authorized native viewer resource when asynchronous resolution completes.
   useEffect(() => {
     if (uri !== null) onResolved({ ...source, name: filePreviewName(source), uri });
   }, [uri, source]);
@@ -183,6 +187,7 @@ export function FilePreviewModal(props: {
   );
   const hasSource = props.source !== null;
   const onRequestClose = useEffectEvent(props.onRequestClose);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Close the native document presentation when navigation loses focus.
   useEffect(() => {
     if (!isFocused && hasSource) onRequestClose();
   }, [isFocused, hasSource]);

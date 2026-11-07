@@ -1,37 +1,15 @@
-/**
- * Account rate-limit contract.
- *
- * Providers meter subscription usage in rolling windows (Claude: 5-hour and
- * weekly; Codex: weekly today, 5-hour whenever OpenAI turns it back on). Each
- * environment folds whatever the provider streams into one snapshot per
- * provider instance and serves it here; the client keeps one row per
- * (environment, provider, instance) and never merges across environments -
- * two machines' clocks cannot arbitrate freshness for each other.
- *
- * Windows are data, not schema: the set a provider reports changes without
- * notice (Codex paused its 5-hour window, Claude added model-scoped
- * weeklies), so clients render the array as-is and a window that reappears
- * upstream shows up again with zero client changes.
- *
- * @module accountLimits
- */
+// Keep rate-limit snapshots separate by environment, provider, and instance;
+// clocks on different machines cannot establish shared freshness.
+// Render provider windows as data because upstream window sets can change.
 import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { UsageProviderKind } from "./usage.ts";
 
-/**
- * Bumped whenever the shape of {@link AccountLimitsSummary} changes
- * incompatibly. The client skips summaries reporting another version rather
- * than failing the merge.
- *
- * v1: at most one snapshot per provider, no `instanceId`.
- * v2: at most one snapshot per provider instance. A v2-aware client also
- * accepts v1 summaries (folding them onto the driver's default instance);
- * a v1 client skips v2 summaries entirely - showing nothing beats showing
- * one instance's numbers as the whole provider's.
- */
+// Skip incompatible summary versions rather than fail the merge.
+// Version 2 attributes instances; accept v1 as the default instance, while
+// v1 clients skip v2 rather than misrepresent instance usage as provider usage.
 export const ACCOUNT_LIMITS_CONTRACT_VERSION = 2 as const;
 export const ACCOUNT_LIMITS_ACCEPTED_VERSIONS: readonly number[] = [1, 2];
 
@@ -60,15 +38,8 @@ export type AccountLimitsSource = typeof AccountLimitsSource.Type;
 
 export const AccountLimitsSnapshot = Schema.Struct({
   provider: UsageProviderKind,
-  /**
-   * Routing key of the provider instance these windows were observed on.
-   * Instances are the closest account identity every rate-limit event
-   * already carries: two instances logged into different accounts must not
-   * overwrite each other, and two logged into the same account simply show
-   * the same numbers. Optional on the wire so summaries from servers that
-   * predate instance attribution still decode; consumers treat an absent
-   * value as the driver's default instance.
-   */
+  // Separate instances so different accounts cannot overwrite each other.
+  // Absent instance IDs decode as the default instance for older servers.
   instanceId: Schema.optional(ProviderInstanceId),
   /** Provider plan slug ("max", "pro"), when known. */
   plan: Schema.NullOr(TrimmedNonEmptyString),

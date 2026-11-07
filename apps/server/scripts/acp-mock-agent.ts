@@ -16,14 +16,8 @@ import type * as AcpCompat from "effect-acp/compat";
 
 import { beginAcpMockPrompt } from "./acpMockCancellationState.ts";
 
-/**
- * Which real CLI this mock is standing in for. The default emits every model
- * surface at once, which is convenient but permissive: it satisfies code that
- * reads `models.availableModels` AND code that reads `configOptions`, so a
- * discovery test against it passes no matter which field the provider reads.
- * That is how Junie shipped reading Grok's field. A profile narrows the
- * response to what that CLI actually sends, so the test can disagree.
- */
+// Profiles expose only the model fields the real CLI sends, so discovery tests
+// reject a provider adapter that reads another CLI's response shape.
 const modelSurfaceProfile = process.env.T3_ACP_MOCK_PROFILE ?? "permissive";
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const antigravityProfile = process.env.T3_ACP_ANTIGRAVITY === "1";

@@ -6,13 +6,12 @@ import {
   communicationThreadKey,
   deriveThreadCommunication,
   retainThreadCommunication,
-  type ThreadCommunication,
   type CommunicationSelection,
   type CommunicationParticipant,
 } from "@d4research/client-runtime/state/thread-communication";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useThreadProjection, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
@@ -102,14 +101,17 @@ function ConnectedCommunication({
       environmentLabels: labels,
     });
   }, [root.environmentId, root.threadId, rootThread, selected, labels]);
-  const [retained, setRetained] = useState<ThreadCommunication | null>(null);
-  useEffect(() => {
-    setRetained((previous) => retainThreadCommunication(previous, currentModel));
-  }, [currentModel]);
-  const model = useMemo(
-    () => retainThreadCommunication(retained, currentModel),
-    [retained, currentModel],
-  );
+  const [retained, setRetained] = useState(() => ({
+    source: currentModel,
+    model: retainThreadCommunication(null, currentModel),
+  }));
+  const model =
+    retained.source === currentModel
+      ? retained.model
+      : retainThreadCommunication(retained.model, currentModel);
+  if (retained.source !== currentModel) {
+    setRetained({ source: currentModel, model });
+  }
   const errors = [rootError, ...selected.map((source) => source.error)].filter(
     (error) => error !== null,
   );

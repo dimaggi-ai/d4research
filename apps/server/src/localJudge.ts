@@ -1,18 +1,8 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
-/**
- * Local System One judge: a TypeSafe-shaped question API (Choice, Noul, Score)
- * answered by the resident Bonsai 2 model instead of the hosted `jev` model.
- *
- * Each question becomes one single-token completion whose options are lettered
- * A, B, C… The first-token `top_logprobs` over those letters, renormalised, is
- * the answer distribution. Nothing is generated or explained, so a question
- * costs one prompt evaluation and one token, and answers are probabilities the
- * caller can threshold in code. When the endpoint returns no logprobs (plain
- * Ollama, or the bonsai2 gateway on :11434 which rebuilds replies from the
- * stream) the emitted letter becomes a one-hot answer instead.
- */
+// Local judging derives answer probabilities from one-token letter logprobs.
+// Endpoints without logprobs fall back to a one-hot distribution for the emitted letter.
 
 /** llama.cpp server behind `bonsai2.service`; the only local endpoint that returns logprobs. */
 export const DEFAULT_LOCAL_JUDGE_BASE_URL = "http://127.0.0.1:8094";

@@ -32,6 +32,7 @@ export function useAttachmentDocument(input: {
   const kind = filePreviewKind(input);
   const delimiter = filePreviewDelimiter(input);
   const shareController = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Abort the native share operation when its owning preview unmounts.
   useEffect(() => () => shareController.current?.abort(), []);
   const resource = useMemo(
     () => ({
@@ -66,6 +67,7 @@ export function useAttachmentDocument(input: {
   const [sharing, setSharing] = useState(false);
   const uri = input.attachment ? localUri : remoteUri;
   const attachment = input.attachment;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reauthorize the remote attachment request and cancel stale URL responses.
   useEffect(() => {
     if (attachment) return;
     let cancelled = false;
@@ -90,6 +92,7 @@ export function useAttachmentDocument(input: {
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reauthorize the remote file.
   }, [attachment, refresh, revision]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Acquire the native attachment file lease and release it when the preview changes.
   useEffect(() => {
     if (!attachment) return;
     // A new attachment must not keep the previous file behind it: `share()` would otherwise
@@ -120,6 +123,7 @@ export function useAttachmentDocument(input: {
   }, [attachment, revision]);
   const needsText = kind === "text" || kind === "markdown" || (kind === "html" && !rendered);
   const sizeBytes = input.sizeBytes;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Read the external file stream and abort it when the preview or resource changes.
   useEffect(() => {
     if (!uri || !needsText) return;
     const controller = new AbortController();

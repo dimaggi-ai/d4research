@@ -63,13 +63,8 @@ function threadShortcutLabel(thread: RecentThreadShortcut): string {
   return title.length > 0 ? title : "Thread";
 }
 
-/**
- * In-app navigation path carried by a shortcut, or null for anything
- * malformed — shortcuts persist in the launcher across app updates, so this
- * allowlists the exact destinations shortcuts can produce rather than
- * trusting any path-shaped string (`//host`, arbitrary routes, stale
- * persisted junk all navigate nowhere).
- */
+// Launcher shortcuts survive app updates; accept only destinations the app
+// generates so malformed, external, or stale routes cannot be opened.
 export function shortcutHref(action: Action): string | null {
   const href = action.params?.href;
   if (typeof href !== "string") {

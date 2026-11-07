@@ -315,11 +315,7 @@ export const layerExecutor: Layer.Layer<
                       })
                       .pipe(
                         Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"),
-                        // The turn that just completed leaves no further retry
-                        // target once the instance is off: the completed turn
-                        // stands as the thread's result instead of going
-                        // through the outbox's bounded retry on a refusal that
-                        // retrying cannot change.
+                        // A disabled instance cannot accept a retry; keep the completed turn as the result.
                         Effect.catchTags({
                           ThreadManagementProviderInstanceDisabledError: (disabledError) =>
                             Effect.logInfo(

@@ -27,6 +27,7 @@ import { AppState, Linking, Modal, Pressable, View } from "react-native";
 import * as Effect from "effect/Effect";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
+import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { useEnvironmentServerConfig, useThreadShells } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -242,7 +243,7 @@ function EnvironmentMonitorSettings({
           label="Nia model"
           value={
             agent.modelSelection
-              ? `${agent.modelSelection.instanceId} · ${agent.modelSelection.model}`
+              ? formatModelSelectionLabel(config?.providers, agent.modelSelection)
               : "Choose model"
           }
           disabled={!allowed || saving}
@@ -272,7 +273,7 @@ function EnvironmentMonitorSettings({
           label="Task model"
           value={
             agent.taskModelSelection
-              ? `${agent.taskModelSelection.instanceId} · ${agent.taskModelSelection.model}`
+              ? formatModelSelectionLabel(config?.providers, agent.taskModelSelection)
               : "Choose model"
           }
           disabled={!allowed || saving}

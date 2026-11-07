@@ -200,6 +200,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     if (navigation.canGoBack()) navigation.goBack();
   }, [navigation]);
   const { uri, resource } = document;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Present the native document viewer once its asynchronously resolved file URI is available.
   useEffect(() => {
     if (nativeViewer !== "pending" || !uri) return;
     // oxlint-disable-next-line react/set-state-in-effect -- Presenting the viewer waits on the resolved file.

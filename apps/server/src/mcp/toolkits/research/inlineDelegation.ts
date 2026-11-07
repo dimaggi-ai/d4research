@@ -43,13 +43,8 @@ export type InlineDelegationTarget = {
   readonly providerName: string;
 };
 
-/**
- * Resolves a user-typed `!provider:model` directive against the live provider
- * snapshots. Reuses the pipeline resolver so ambiguous providers and models
- * fail with the same prose a pipeline would print, then re-checks readiness
- * with `exact` policy: inline delegation authors no scenario, so it has no
- * labeled fallbacks and must never substitute a target.
- */
+// Share pipeline resolution errors, then enforce exact readiness: inline delegation
+// creates no scenario or labeled fallback and must never substitute another target.
 export function resolveInlineDelegateTarget(
   directive: ResearchModelDirective,
   providers: ReadonlyArray<ServerProvider>,

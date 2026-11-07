@@ -41,6 +41,7 @@ function EnabledSystemNotifications({ environmentId }: { environmentId: Environm
   const pending = useRef(new Set<string>());
   const checked = useRef(new Set<string>());
   const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Prevent in-flight native notification delivery after this coordinator unmounts.
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -58,6 +59,7 @@ function EnabledSystemNotifications({ environmentId }: { environmentId: Environm
           check.reportKey === reportKey,
       ) === true,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Deliver eligible system-health reports through the native notification service.
   useEffect(() => {
     if (!allowed || (Platform.OS !== "ios" && Platform.OS !== "android")) return;
     for (const check of state.data?.systemHealth ?? []) {

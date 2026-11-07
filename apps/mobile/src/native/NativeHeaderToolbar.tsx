@@ -232,6 +232,7 @@ function NativeHeaderToolbarRoot(props: {
 
   // Update items in place. Clearing them on every render causes UIKit to run a
   // second transition and detach custom views while the stack is animating.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Update UIKit toolbar items in place to preserve custom views during stack transitions.
   useLayoutEffect(() => {
     if (!navigation || !tabActive) {
       return;
@@ -253,6 +254,7 @@ function NativeHeaderToolbarRoot(props: {
     navigation.setOptions({ unstable_headerRightItems: () => headerItems });
   }, [items, navigation, props.placement, tabActive]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Remove native toolbar items when their active screen relinquishes ownership.
   useLayoutEffect(() => {
     if (!navigation) return;
     return () => {

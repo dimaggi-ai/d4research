@@ -311,13 +311,9 @@ function useDelegationClock(enabled: boolean): number {
 }
 
 /**
- * Steps the research banner should render. Until the running turn writes its
- * own plan, the active plan falls back to the previous turn's so todo lists
- * persist across follow-ups — fine mid-research, where partial stages carry
- * across handoffs, but a *fully completed* plan inherited from an earlier turn
- * is history, not progress: rendering it shows a 100% bar the moment a new
- * research starts. Suppress exactly that case; the banner reappears when the
- * lead posts its stage plan.
+ * A fully completed plan inherited from an earlier turn is history, not new
+ * research progress. Hide it until the running turn posts its own plan;
+ * partial stages still carry across research handoffs.
  */
 export function deriveResearchBannerSteps(input: {
   readonly steps: ReadonlyArray<ResearchProgressStep>;

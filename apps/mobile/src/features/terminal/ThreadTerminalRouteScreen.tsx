@@ -253,6 +253,23 @@ type ThreadTerminalRouteScreenProps = StaticScreenProps<{
 }>;
 
 export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps) {
+  const { selectedThread } = useThreadSelection();
+  const terminalId = firstRouteParam(props.route.params.terminalId) ?? DEFAULT_TERMINAL_ID;
+  return (
+    <ThreadTerminalSession
+      key={JSON.stringify([
+        props.route.params.environmentId,
+        props.route.params.threadId,
+        selectedThread?.environmentId,
+        selectedThread?.id,
+        terminalId,
+      ])}
+      {...props}
+    />
+  );
+}
+
+function ThreadTerminalSession(props: ThreadTerminalRouteScreenProps) {
   const insets = useSafeAreaInsets();
   const nativeColumnMetrics = useNativeColumnLayoutMetrics();
   const navigation = useNavigation();
@@ -344,7 +361,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const launchTargetKey = launchTarget
     ? `${launchTarget.environmentId}:${launchTarget.threadId}:${launchTarget.terminalId}`
     : null;
-  const [pendingLaunchEntry, setPendingLaunchEntry] = useState<{
+  const [pendingLaunchEntry] = useState<{
     readonly key: string | null;
     readonly launch: PendingTerminalLaunch | null;
   }>(() => ({
@@ -493,6 +510,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
 
   const pendingExitNavigationRef = useRef<string | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Record committed terminal output and replay state in the external diagnostic log.
   useEffect(() => {
     terminalDebugLog("surface:props", {
       terminalKey,
@@ -513,6 +531,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     terminalSurfaceBuffer.length,
   ]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Record committed remote PTY status changes in the external diagnostic log.
   useEffect(() => {
     terminalDebugLog("session:status", {
       terminalKey,
@@ -531,6 +550,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     terminalKey,
   ]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Log the first received PTY output once for the mounted terminal session.
   useEffect(() => {
     if (terminal.buffer.length === 0 || firstNonEmptyBufferLoggedRef.current) {
       return;
@@ -541,7 +561,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       length: terminal.buffer.length,
       preview: terminal.buffer.slice(0, 160),
     });
-  }, [terminal.buffer, terminal.buffer.length, terminalKey]);
+  }, [terminal.buffer, terminalKey]);
   const cwd = terminal.summary?.cwd ?? selectedThreadProject?.workspaceRoot ?? null;
   const serverConfigs = useServerConfigs();
   const hostOs =
@@ -602,6 +622,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     (keyboardState.isVisible ? keyboardState.height : 0) +
     (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT : 0);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register native keyboard listeners to control the terminal accessory visibility.
   useEffect(() => {
     const keyboardWillShow = KeyboardEvents.addListener("keyboardWillShow", () => {
       setIsAccessoryDismissed(false);
@@ -642,20 +663,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     ],
   );
 
-  useEffect(() => {
-    if (pendingLaunchEntry.key === launchTargetKey) {
-      return;
-    }
-    setPendingLaunchEntry({
-      key: launchTargetKey,
-      launch: launchTarget === null ? null : takePendingTerminalLaunch(launchTarget),
-    });
-  }, [launchTarget, launchTargetKey, pendingLaunchEntry.key]);
-
-  useEffect(() => {
-    if (initialAttachGridEntry.key === launchTargetKey) {
-      return;
-    }
+  if (initialAttachGridEntry.key !== launchTargetKey) {
     setInitialAttachGridEntry({
       key: launchTargetKey,
       size: cachedRouteGridSize ?? {
@@ -663,29 +671,19 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         rows: DEFAULT_TERMINAL_ROWS,
       },
     });
-  }, [cachedRouteGridSize, initialAttachGridEntry.key, launchTargetKey]);
+  }
 
-  useEffect(() => {
-    if (
-      initialLaunchLocationEntry.key === launchTargetKey &&
-      initialLaunchLocationEntry.location !== null
-    ) {
-      return;
-    }
-    if (initialLaunchLocationEntry.key === launchTargetKey && launchLocationCandidate === null) {
-      return;
-    }
+  if (
+    initialLaunchLocationEntry.key !== launchTargetKey ||
+    (initialLaunchLocationEntry.location === null && launchLocationCandidate !== null)
+  ) {
     setInitialLaunchLocationEntry({
       key: launchTargetKey,
       location: launchLocationCandidate,
     });
-  }, [
-    initialLaunchLocationEntry.key,
-    initialLaunchLocationEntry.location,
-    launchLocationCandidate,
-    launchTargetKey,
-  ]);
+  }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Replace the native navigation route with the already running remote terminal when bootstrapping.
   useEffect(() => {
     if (!shouldRedirectToRunningTerminal || !selectedThread || !runningSession) {
       return;
@@ -699,6 +697,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     );
   }, [navigation, runningSession, selectedThread, shouldRedirectToRunningTerminal]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Write a pending launch command to the remote PTY only after its attachment has completed.
   useEffect(() => {
     const initialInput = pendingLaunch?.initialInput;
     if (
@@ -730,11 +729,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     canOperateTerminal,
   ]);
 
-  useEffect(() => {
-    firstNonEmptyBufferLoggedRef.current = false;
-    sentInitialInputKeyRef.current = null;
-  }, [terminalKey]);
-
   const clearBufferReplayTimer = useCallback(() => {
     if (bufferReplayTimerRef.current !== null) {
       clearTimeout(bufferReplayTimerRef.current);
@@ -756,6 +750,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     }, TERMINAL_BUFFER_REPLAY_STABILITY_DELAY_MS);
   }, [bufferReplayKey, clearBufferReplayTimer]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the native terminal replay stability timer when the surface identity or font size changes.
   useEffect(() => {
     if (lastBufferReplayKeyRef.current === bufferReplayKey) {
       return;
@@ -766,29 +761,21 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     setReadyBufferReplayKey(null);
   }, [bufferReplayKey, clearBufferReplayTimer]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the terminal replay stability timer when the route unmounts.
   useEffect(() => clearBufferReplayTimer, [clearBufferReplayTimer]);
 
-  useEffect(() => {
-    if (!routeEnvironmentId || !routeThreadId) {
-      setLastGridSize({
-        cols: DEFAULT_TERMINAL_COLS,
-        rows: DEFAULT_TERMINAL_ROWS,
-      });
-      return;
-    }
-
+  const gridTargetKey = `${routeEnvironmentId}:${routeThreadId}:${terminalId}`;
+  const [previousGridTargetKey, setPreviousGridTargetKey] = useState(gridTargetKey);
+  if (previousGridTargetKey !== gridTargetKey) {
+    setPreviousGridTargetKey(gridTargetKey);
     setLastGridSize(
-      getCachedTerminalGridSize({
-        environmentId: routeEnvironmentId,
-        threadId: routeThreadId,
-        terminalId,
-      }) ?? {
+      cachedRouteGridSize ?? {
         cols: DEFAULT_TERMINAL_COLS,
         rows: DEFAULT_TERMINAL_ROWS,
       },
     );
-    setHasMeasuredSurface(true);
-  }, [routeEnvironmentId, routeThreadId, terminalId]);
+    if (routeEnvironmentId && routeThreadId) setHasMeasuredSurface(true);
+  }
 
   const writeInput = useCallback(
     async (data: string): Promise<boolean> => {
@@ -815,12 +802,14 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
 
   const [pasteSession] = useState(createTerminalPasteSession);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidate pending native clipboard reads whenever the destination PTY changes or becomes unavailable.
   useEffect(() => {
     pasteSession.reset(canOperateTerminal && isRunning);
     return () => {
       pasteSession.reset(false);
     };
-  }, [canOperateTerminal, isRunning, pasteSession, terminal.lifecycleVersion, terminalKey]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- lifecycleVersion is the only signal that a new PTY replaced the old one.
+  }, [canOperateTerminal, isRunning, pasteSession, terminal.lifecycleVersion]);
 
   const pasteFromClipboard = useCallback(async () => {
     await pasteSession.paste({
@@ -1012,6 +1001,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     },
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the native focus listener to finish exit navigation deferred while another route was focused.
   useEffect(
     () =>
       navigation.addListener("focus", () => {

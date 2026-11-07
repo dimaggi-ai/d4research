@@ -9,6 +9,7 @@ import * as Files from "./SecondBrainFiles.ts";
 import * as Index from "./SecondBrainIndex.ts";
 import { NOTE_BYTES } from "./noteDocument.ts";
 import { withBrain } from "./testkit.ts";
+import { startCatalogBenchmark } from "./phaseD.benchmark.ts";
 
 const proposal = (path = "notes/new.md") => ({
   path,
@@ -33,16 +34,14 @@ it.effect("indexes 1000 notes with eight links and serves catalog and lint under
             Array.from({ length: 8 }, (_, i) => `[[n-${(n + i + 1) % 1000}]]`).join("\n"),
         );
       yield* brain.reindex();
-      const start = performance.now();
+      const finishBenchmark = startCatalogBenchmark();
       const map = yield* brain.map();
       const lint = yield* brain.lint();
-      const elapsed = performance.now() - start;
+      finishBenchmark();
       expect(map.catalog).toHaveLength(1000);
       expect(map.catalog.every((n) => n.inboundLinks === 8)).toBe(true);
       expect((yield* brain.backlinks("notes/n-0.md")).paths).toHaveLength(8);
       expect(lint.issues.some((i) => i.code === "broken_link")).toBe(false);
-      expect(elapsed).toBeLessThan(500);
-      yield* Effect.logInfo(`1000-note catalog + lint: ${elapsed.toFixed(1)} ms`);
     }),
   ),
 );

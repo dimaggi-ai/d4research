@@ -36,99 +36,101 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
   environment: NodeJS.ProcessEnv = process.env,
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const runAgyJson = <S extends Schema.Top>(input: {
-    readonly operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle"
-      | "generateReviewGuide";
-    readonly cwd: string;
-    readonly prompt: string;
-    readonly outputSchemaJson: S;
-    readonly modelSelection: ModelSelection;
-  }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
-    Effect.gen(function* () {
-      const args = [
-        ...tokenizeCliArgs(settings.launchArgs),
-        "--print",
-        input.prompt,
-        "--output-format",
-        "json",
-        "--json-schema",
-        encodeUnknownJson(toJsonSchemaObject(input.outputSchemaJson)),
-        "--print-timeout",
-        "5m",
-        "--model",
-        input.modelSelection.model,
-        "--sandbox",
-      ];
-      const command = settings.binaryPath || "agy";
-      const resolved = yield* resolveSpawnCommand(command, args, { env: environment });
-      const result = yield* spawnAndCollect(
-        command,
-        ChildProcess.make(resolved.command, resolved.args, {
-          cwd: input.cwd,
-          env: environment,
-          shell: resolved.shell,
-        }),
-      ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
-      if (result.code !== 0) {
-        return yield* new TextGenerationError({
-          operation: input.operation,
-          detail: result.stderr.trim() || `Agy exited with code ${result.code}.`,
-        });
-      }
-      return result.stdout;
-    }).pipe(
-      Effect.mapError((cause) =>
-        isTextGenerationError(cause)
-          ? cause
-          : new TextGenerationError({
-              operation: input.operation,
-              detail: "Agy text generation failed.",
-              cause,
-            }),
-      ),
-      Effect.flatMap((raw) =>
-        Effect.try({
-          try: () => decodeEnvelope(raw),
-          catch: (cause) =>
-            new TextGenerationError({
-              operation: input.operation,
-              detail: "Agy returned invalid JSON output.",
-              cause,
-            }),
-        }),
-      ),
-      Effect.flatMap((envelope) => {
-        if (envelope.status !== "SUCCESS") {
-          return Effect.fail(
-            new TextGenerationError({
-              operation: input.operation,
-              detail: `Agy returned status '${envelope.status}'.`,
-            }),
-          );
+  const runAgyJson = Effect.fn("AgyTextGeneration.runAgyJson")(
+    <S extends Schema.Top>(input: {
+      readonly operation:
+        | "generateCommitMessage"
+        | "generatePrContent"
+        | "generateBranchName"
+        | "generateThreadTitle"
+        | "generateReviewGuide";
+      readonly cwd: string;
+      readonly prompt: string;
+      readonly outputSchemaJson: S;
+      readonly modelSelection: ModelSelection;
+    }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
+      Effect.gen(function* () {
+        const args = [
+          ...tokenizeCliArgs(settings.launchArgs),
+          "--print",
+          input.prompt,
+          "--output-format",
+          "json",
+          "--json-schema",
+          encodeUnknownJson(toJsonSchemaObject(input.outputSchemaJson)),
+          "--print-timeout",
+          "5m",
+          "--model",
+          input.modelSelection.model,
+          "--sandbox",
+        ];
+        const command = settings.binaryPath || "agy";
+        const resolved = yield* resolveSpawnCommand(command, args, { env: environment });
+        const result = yield* spawnAndCollect(
+          command,
+          ChildProcess.make(resolved.command, resolved.args, {
+            cwd: input.cwd,
+            env: environment,
+            shell: resolved.shell,
+          }),
+        ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+        if (result.code !== 0) {
+          return yield* new TextGenerationError({
+            operation: input.operation,
+            detail: result.stderr.trim() || `Agy exited with code ${result.code}.`,
+          });
         }
-        const response =
-          typeof envelope.response === "string"
-            ? envelope.response
-            : JSON.stringify(envelope.response);
-        // oxlint-disable-next-line t3code/no-inline-schema-compile -- Each operation supplies its own output schema, so no module-level decoder exists.
-        return Schema.decodeEffect(Schema.fromJsonString(input.outputSchemaJson))(
-          extractJsonObject(response),
-        ).pipe(
-          Effect.mapError(
-            (cause) =>
-              new TextGenerationError({
+        return result.stdout;
+      }).pipe(
+        Effect.mapError((cause) =>
+          isTextGenerationError(cause)
+            ? cause
+            : new TextGenerationError({
                 operation: input.operation,
-                detail: "Agy returned invalid structured output.",
+                detail: "Agy text generation failed.",
                 cause,
               }),
-          ),
-        );
-      }),
-    );
+        ),
+        Effect.flatMap((raw) =>
+          Effect.try({
+            try: () => decodeEnvelope(raw),
+            catch: (cause) =>
+              new TextGenerationError({
+                operation: input.operation,
+                detail: "Agy returned invalid JSON output.",
+                cause,
+              }),
+          }),
+        ),
+        Effect.flatMap((envelope) => {
+          if (envelope.status !== "SUCCESS") {
+            return Effect.fail(
+              new TextGenerationError({
+                operation: input.operation,
+                detail: `Agy returned status '${envelope.status}'.`,
+              }),
+            );
+          }
+          const response =
+            typeof envelope.response === "string"
+              ? envelope.response
+              : JSON.stringify(envelope.response);
+          // oxlint-disable-next-line t3code/no-inline-schema-compile -- Each operation supplies its own output schema, so no module-level decoder exists.
+          return Schema.decodeEffect(Schema.fromJsonString(input.outputSchemaJson))(
+            extractJsonObject(response),
+          ).pipe(
+            Effect.mapError(
+              (cause) =>
+                new TextGenerationError({
+                  operation: input.operation,
+                  detail: "Agy returned invalid structured output.",
+                  cause,
+                }),
+            ),
+          );
+        }),
+      ),
+  );
 
   return {
     generateReviewGuide: (input) => {

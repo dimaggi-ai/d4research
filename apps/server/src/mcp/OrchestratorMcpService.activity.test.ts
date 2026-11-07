@@ -153,16 +153,16 @@ it("readThread preserves caller access errors and prefers activity-run status ov
                   }),
                 )
               : threadId === parentThreadId
-              ? Effect.succeed(projection)
-              : Effect.die(`unexpected thread ${threadId}`),
+                ? Effect.succeed(projection)
+                : Effect.die(`unexpected thread ${threadId}`),
           getThreadShell: (threadId) =>
             callerUnavailable
               ? Effect.die("A failed caller read must not reach the target")
               : Effect.succeed(
-              threadId === parentThreadId
-                ? (projection.thread as OrchestrationV2ThreadShell)
-                : null,
-            ),
+                  threadId === parentThreadId
+                    ? (projection.thread as OrchestrationV2ThreadShell)
+                    : null,
+                ),
           getProjectThreadRecords: (input) =>
             input.threadId === parentThreadId
               ? Effect.succeed(projection)

@@ -549,11 +549,8 @@ function escapeReviewCommentAttribute(value: string): string {
 }
 
 /**
- * Keeps a comment's own words from closing the block they travel in. The parser ends an
- * attachment at the first `</review_comment>`, so text carrying one would spill the rest of
- * itself into the prompt — and could open a forged attachment naming any file it liked. Only
- * ever the local reader's words before, but a pull request's review bodies come from whoever
- * wrote them.
+ * Untrusted review bodies can close their attachment and forge another one.
+ * Escape review tags so the parser cannot treat comment text as boundaries.
  */
 function neutralizeReviewCommentTags(text: string): string {
   return text.replace(/<(?=\/?review_comment\b)/giu, "&lt;");

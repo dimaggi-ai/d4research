@@ -1,13 +1,6 @@
-/**
- * Optional integration check against a real, signed-in `muse` install.
- * Enable with: T3_MUSE_MSP_PROBE=1 vp test run MuseCliProbe
- *
- * The mock host in `scripts/msp-mock-host.ts` was written from the exported
- * MSP schema, so it agrees with our own assumptions by construction. Only the
- * real CLI can disagree. This probe runs the status check, one adapter turn,
- * and one text generation through the real binary, in a scratch workspace
- * outside the repo so Muse's TMPDIR rule and session log never touch it.
- */
+// Real, authenticated Muse can reject assumptions shared by the schema-based mock.
+// Enable: T3_MUSE_MSP_PROBE=1 vp test run MuseCliProbe
+// Use a scratch workspace outside the repo for Muse's TMPDIR and session logs.
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -59,61 +52,55 @@ const scratchWorkspace = Effect.gen(function* () {
 
 describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
   it.layer(layer)("real muse serve", (it) => {
-    it.effect(
-      "status check reports a signed-in install with a model catalog",
-      () =>
-        Effect.gen(function* () {
-          const snapshot = yield* checkMuseProviderStatus(settings);
-          assert.equal(snapshot.status, "ready", snapshot.message);
-          assert.equal(snapshot.auth.status, "authenticated");
-          assert.isAtLeast(snapshot.models.length, 1);
-          assert.isTrue(snapshot.models.some((model) => model.isDefault));
-        }),
-      60_000,
+    it.effect("status check reports a signed-in install with a model catalog", () =>
+      Effect.gen(function* () {
+        const snapshot = yield* checkMuseProviderStatus(settings);
+        assert.equal(snapshot.status, "ready", snapshot.message);
+        assert.equal(snapshot.auth.status, "authenticated");
+        assert.isAtLeast(snapshot.models.length, 1);
+        assert.isTrue(snapshot.models.some((model) => model.isDefault));
+      }),
     );
 
-    it.effect(
-      "completes a real turn with streamed assistant text",
-      () =>
-        Effect.gen(function* () {
-          const cwd = yield* scratchWorkspace;
-          const adapter = yield* makeMuseAdapter(settings);
-          const queue = yield* Queue.unbounded<ProviderRuntimeEvent>();
-          const events: ProviderRuntimeEvent[] = [];
-          yield* adapter.streamEvents.pipe(
-            Stream.runForEach((event) => {
-              events.push(event);
-              return Queue.offer(queue, event);
-            }),
-            Effect.forkScoped({ startImmediately: true }),
-          );
-          const threadId = ThreadId.make("muse-cli-probe");
-          yield* adapter.startSession({ threadId, cwd, runtimeMode: "approval-required" });
-          const sent = yield* adapter.sendTurn({
-            threadId,
-            input: "Reply with exactly the word PONG and nothing else.",
-          });
-          assert.equal(sent.turnId[14], "7");
-          const completed = yield* Effect.gen(function* () {
-            while (true) {
-              const event = yield* Queue.take(queue);
-              if (event.type === "turn.completed") return event;
-            }
-          });
-          assert.equal(
-            completed.payload.state,
-            "completed",
-            completed.payload.state === "failed" ? completed.payload.errorMessage : undefined,
-          );
-          const text = events
-            .filter((event) => event.type === "content.delta")
-            .map((event) => (event.type === "content.delta" ? event.payload.delta : ""))
-            .join("");
-          assert.include(text, "PONG");
-          assert.isTrue(events.some((event) => event.type === "thread.started"));
-          yield* adapter.stopAll();
-        }),
-      120_000,
+    it.effect("completes a real turn with streamed assistant text", () =>
+      Effect.gen(function* () {
+        const cwd = yield* scratchWorkspace;
+        const adapter = yield* makeMuseAdapter(settings);
+        const queue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+        const events: ProviderRuntimeEvent[] = [];
+        yield* adapter.streamEvents.pipe(
+          Stream.runForEach((event) => {
+            events.push(event);
+            return Queue.offer(queue, event);
+          }),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        const threadId = ThreadId.make("muse-cli-probe");
+        yield* adapter.startSession({ threadId, cwd, runtimeMode: "approval-required" });
+        const sent = yield* adapter.sendTurn({
+          threadId,
+          input: "Reply with exactly the word PONG and nothing else.",
+        });
+        assert.equal(sent.turnId[14], "7");
+        const completed = yield* Effect.gen(function* () {
+          while (true) {
+            const event = yield* Queue.take(queue);
+            if (event.type === "turn.completed") return event;
+          }
+        });
+        assert.equal(
+          completed.payload.state,
+          "completed",
+          completed.payload.state === "failed" ? completed.payload.errorMessage : undefined,
+        );
+        const text = events
+          .filter((event) => event.type === "content.delta")
+          .map((event) => (event.type === "content.delta" ? event.payload.delta : ""))
+          .join("");
+        assert.include(text, "PONG");
+        assert.isTrue(events.some((event) => event.type === "thread.started"));
+        yield* adapter.stopAll();
+      }),
     );
 
     it.effect(
@@ -155,74 +142,65 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
           );
           yield* adapter.stopAll();
         }),
-      60_000,
     );
 
-    it.effect(
-      "switches to plan posture and back without losing the session",
-      () =>
-        Effect.gen(function* () {
-          const cwd = yield* scratchWorkspace;
-          const adapter = yield* makeMuseAdapter(settings);
-          const queue = yield* Queue.unbounded<ProviderRuntimeEvent>();
-          yield* adapter.streamEvents.pipe(
-            Stream.runForEach((event) => Queue.offer(queue, event)),
-            Effect.forkScoped({ startImmediately: true }),
-          );
-          const take = <T extends ProviderRuntimeEvent["type"]>(type: T) =>
-            Effect.gen(function* () {
-              while (true) {
-                const event = yield* Queue.take(queue);
-                if (event.type === type) return event as Extract<ProviderRuntimeEvent, { type: T }>;
-              }
-            });
-          const threadId = ThreadId.make("muse-cli-probe-plan");
-          yield* adapter.startSession({ threadId, cwd, runtimeMode: "approval-required" });
-          // The respawn and same-session resume inside sendTurn must succeed
-          // for the turn to complete; a failed resume surfaces as a turn error.
-          yield* adapter.sendTurn({
-            threadId,
-            input: "Reply with exactly the word PLAN.",
-            interactionMode: "plan",
+    it.effect("switches to plan posture and back without losing the session", () =>
+      Effect.gen(function* () {
+        const cwd = yield* scratchWorkspace;
+        const adapter = yield* makeMuseAdapter(settings);
+        const queue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+        yield* adapter.streamEvents.pipe(
+          Stream.runForEach((event) => Queue.offer(queue, event)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        const take = <T extends ProviderRuntimeEvent["type"]>(type: T) =>
+          Effect.gen(function* () {
+            while (true) {
+              const event = yield* Queue.take(queue);
+              if (event.type === type) return event as Extract<ProviderRuntimeEvent, { type: T }>;
+            }
           });
-          assert.equal((yield* take("turn.completed")).payload.state, "completed");
-          yield* adapter.sendTurn({
-            threadId,
-            input: "Reply with exactly the word BACK.",
-            interactionMode: "default",
-          });
-          assert.equal((yield* take("turn.completed")).payload.state, "completed");
-          yield* adapter.stopAll();
-        }),
-      240_000,
+        const threadId = ThreadId.make("muse-cli-probe-plan");
+        yield* adapter.startSession({ threadId, cwd, runtimeMode: "approval-required" });
+        // The respawn and same-session resume inside sendTurn must succeed
+        // for the turn to complete; a failed resume surfaces as a turn error.
+        yield* adapter.sendTurn({
+          threadId,
+          input: "Reply with exactly the word PLAN.",
+          interactionMode: "plan",
+        });
+        assert.equal((yield* take("turn.completed")).payload.state, "completed");
+        yield* adapter.sendTurn({
+          threadId,
+          input: "Reply with exactly the word BACK.",
+          interactionMode: "default",
+        });
+        assert.equal((yield* take("turn.completed")).payload.state, "completed");
+        yield* adapter.stopAll();
+      }),
     );
 
-    it.effect(
-      "text generation returns structured JSON without leaking history",
-      () =>
-        Effect.gen(function* () {
-          const cwd = yield* scratchWorkspace;
-          const generation = yield* makeMuseTextGeneration(settings);
-          const logsBefore = new Set(
-            NodeFS.existsSync(museSessionsRoot) ? listSessionLogs(museSessionsRoot) : [],
-          );
-          const result = yield* generation.generateThreadTitle({
-            cwd,
-            modelSelection: { instanceId: ProviderInstanceId.make("muse"), model: "default" },
-            message: "Add a Muse provider driver that speaks MSP over stdio",
-          });
-          assert.isString(result.title);
-          assert.isAbove(result.title.length, 0);
-          // The generation session must leave no log behind: any session
-          // log that appears during this generation is a leak. Snapshot by
-          // path, since live stores also hold unrelated sessions.
-          const after = NodeFS.existsSync(museSessionsRoot)
-            ? listSessionLogs(museSessionsRoot)
-            : [];
-          const leaked = after.filter((path) => !logsBefore.has(path));
-          assert.deepEqual(leaked, []);
-        }),
-      120_000,
+    it.effect("text generation returns structured JSON without leaking history", () =>
+      Effect.gen(function* () {
+        const cwd = yield* scratchWorkspace;
+        const generation = yield* makeMuseTextGeneration(settings);
+        const logsBefore = new Set(
+          NodeFS.existsSync(museSessionsRoot) ? listSessionLogs(museSessionsRoot) : [],
+        );
+        const result = yield* generation.generateThreadTitle({
+          cwd,
+          modelSelection: { instanceId: ProviderInstanceId.make("muse"), model: "default" },
+          message: "Add a Muse provider driver that speaks MSP over stdio",
+        });
+        assert.isString(result.title);
+        assert.isAbove(result.title.length, 0);
+        // The generation session must leave no log behind: any session
+        // log that appears during this generation is a leak. Snapshot by
+        // path, since live stores also hold unrelated sessions.
+        const after = NodeFS.existsSync(museSessionsRoot) ? listSessionLogs(museSessionsRoot) : [];
+        const leaked = after.filter((path) => !logsBefore.has(path));
+        assert.deepEqual(leaked, []);
+      }),
     );
   });
 });

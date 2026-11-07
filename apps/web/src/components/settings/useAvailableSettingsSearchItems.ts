@@ -1,7 +1,5 @@
 import { AuthEnvironmentMaintainScope } from "@d4research/contracts";
 
-import { AuthAccessWriteScope } from "@d4research/contracts";
-
 import { isElectron } from "~/env";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
@@ -11,8 +9,6 @@ import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
-
-import { usePrimarySessionState } from "~/environments/primary";
 
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 
@@ -59,29 +55,15 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
 
   return filterAvailableSettingsSearchItems({
     hasCloudPublicConfig: false,
-    hasEnvironment: environments.some((environment) => environment.serverConfig !== null),
-    hasProviderSettingsEnvironment: environments.some((environment) =>
-      isProviderSettingsEnvironmentAvailable({
-        connectionPhase: environment.connection.phase,
-        hasServerConfig: environment.serverConfig !== null,
-      }),
-    ),
-    hasMacProviderSettingsEnvironment: environments.some(
-      (environment) =>
-        (scopeSearch.machine === undefined || environment.environmentId === scopeSearch.machine) &&
-        environment.serverConfig?.environment.platform.os === "darwin" &&
-        isProviderSettingsEnvironmentAvailable({
-          connectionPhase: environment.connection.phase,
-          hasServerConfig: true,
-        }),
-    ),
+    hasEnvironment,
+    hasProviderSettingsEnvironment,
+    hasMacProviderSettingsEnvironment,
     canManageLocalBackend,
     isWslSettingsRowVisible: isWslSettingsRowVisible({
       state: desktopWsl.data,
       error: desktopWsl.error,
     }),
-    hasThreadAutoSettlement:
-      getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+    hasThreadAutoSettlement,
     hasPeerLinkHost,
   });
 }

@@ -78,9 +78,6 @@ it("requires confirmation before deleting a memory", async () => {
   const { screenPromise } = setup();
   state.entries = [{ name: "hosts", description: "Before deployment", updatedAt: "today" }];
   await using screen = await screenPromise();
-  const editor = () => screen.container.querySelector("textarea");
-  const alert = () => screen.container.querySelector('[role="alert"]');
-  const submit = () => act(async () => screen.container.querySelector("form")!.requestSubmit());
   await click(screen, "Delete");
   expect(state.remove).not.toHaveBeenCalled();
   await click(screen, "Cancel");

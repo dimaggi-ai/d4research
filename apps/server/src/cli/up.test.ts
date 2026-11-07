@@ -295,7 +295,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("t3 up", (it) => 
       if (input.prints !== undefined) {
         expect(lines.join("\n")).toContain(input.prints);
       }
-      expect(exit._tag).toBe(input.restartFails === true || input.expectedError ? "Failure" : "Success");
+      expect(exit._tag).toBe(
+        input.restartFails === true || input.expectedError ? "Failure" : "Success",
+      );
       if (input.expectedError && exit._tag === "Failure") {
         expect(Cause.pretty(exit.cause)).toContain(input.expectedError);
       }

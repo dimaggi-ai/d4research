@@ -169,11 +169,8 @@ export function D4AgentControls({
               }
             />
             <details className="pb-3">
-              <summary
-                aria-label={`${server.title} Setup`}
-                className="cursor-pointer rounded-sm py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-ring"
-              >
-                Setup
+              <summary className="cursor-pointer rounded-sm py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-ring">
+                {server.title} setup
               </summary>
               <div className="pl-3">
                 {server.id === "threads" ? (

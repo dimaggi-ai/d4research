@@ -522,6 +522,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
     },
     [cwd, environmentId, highlightTheme],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reveal the native workspace inspector once the file route has a resolved workspace.
   useEffect(() => {
     if (fileInspector.supported && cwd !== null && !revealedInspectorRef.current) {
       revealedInspectorRef.current = true;

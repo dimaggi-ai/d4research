@@ -16,7 +16,6 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { ResearchDelegationBudgetLive } from "../mcp/toolkits/research/budget.ts";

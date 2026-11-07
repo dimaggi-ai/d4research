@@ -1,7 +1,7 @@
+import { act, render as renderComponent, fakeTimers, type Screen } from "../../../test/render";
 import { EnvironmentId, RuntimeRequestId, ThreadId } from "@d4research/contracts";
-import { act, useState } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { useState } from "react";
+import { expect, it, vi } from "vite-plus/test";
 
 import {
   togglePendingUserInputOptionSelection,
@@ -66,21 +66,21 @@ function Questions({ initialIndex = 0 }: { initialIndex?: number }) {
   );
 }
 
-let root: Root;
+let root: Screen;
 let container: HTMLDivElement;
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+async function setupFixture() {
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
-});
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
-});
+  root = await renderComponent(null, { container: container, router: false });
+  return {
+    async [Symbol.asyncDispose]() {
+      await root[Symbol.asyncDispose]();
+      container.remove();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    },
+  };
+}
 
 function buttonWithText(text: string) {
   const button = [...document.querySelectorAll("button")].find((element) =>
@@ -103,7 +103,9 @@ function activeIndex() {
 }
 
 it("does not skip the next unanswered question after manual advance", async () => {
-  await act(async () => root.render(<Questions />));
+  using _timers = fakeTimers();
+  await using _fixture = await setupFixture();
+  await act(async () => await root.rerender(<Questions />));
   await chooseOption();
   await navigate("Next");
   expect(activeIndex()).toBe("1");
@@ -116,7 +118,9 @@ it("does not skip the next unanswered question after manual advance", async () =
 });
 
 it("does not undo previous-question navigation with a stale timer", async () => {
-  await act(async () => root.render(<Questions initialIndex={1} />));
+  using _timers = fakeTimers();
+  await using _fixture = await setupFixture();
+  await act(async () => await root.rerender(<Questions initialIndex={1} />));
   await chooseOption();
   await navigate("Previous");
   await act(async () => vi.advanceTimersByTime(200));
@@ -124,7 +128,9 @@ it("does not undo previous-question navigation with a stale timer", async () => 
 });
 
 it("still auto-advances once after the answer draft rerenders the same question", async () => {
-  await act(async () => root.render(<Questions />));
+  using _timers = fakeTimers();
+  await using _fixture = await setupFixture();
+  await act(async () => await root.rerender(<Questions />));
   await chooseOption();
   await act(async () => vi.advanceTimersByTime(200));
   expect(activeIndex()).toBe("1");

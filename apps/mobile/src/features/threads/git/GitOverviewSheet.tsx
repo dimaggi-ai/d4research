@@ -17,10 +17,10 @@ import { SymbolView } from "../../../components/ui/AppSymbol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 
-import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
+import { ScreenStack } from "react-native-screens";
+import { NativeHeader, NativeScreen } from "../../../native/ThemedScreenStack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeSheetContent } from "../../../native/NativeSheetContent";
-import { useUniwindTheme } from "../../../lib/useUniwindTheme";
 import {
   AndroidHeaderIconButton,
   AndroidSheetHeader,
@@ -62,6 +62,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const navigation = useNavigation();
   const { environmentId, threadId } = props.route.params;
   const isBlankLink = environmentId.trim().length === 0 || threadId.trim().length === 0;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Closes the navigation route when its deep-link identifiers are blank.
   useEffect(() => {
     if (isBlankLink) navigation.goBack();
   }, [isBlankLink, navigation]);
@@ -93,9 +94,6 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
-  const theme = useUniwindTheme();
-  const foregroundColor = theme["--color-foreground"];
-  const sheetColor = theme["--color-sheet"];
 
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -249,7 +247,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       }
       return undefined;
     },
-    [gitStatus.data, menuItems],
+    [gitStatus.data],
   );
 
   const behindCount = gitStatus.data?.behindCount ?? 0;
@@ -393,28 +391,28 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     return (
       <View collapsable={false} className="flex-1 border-l border-border bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
-          <Screen
+          <NativeScreen
             activityState={2}
             enabled
             isNativeStack
             screenId="thread-git-inspector-native"
             scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-            style={{ backgroundColor: sheetColor, flex: 1 }}
+            className="flex-1 bg-sheet"
           >
             <NativeSheetContent>{content}</NativeSheetContent>
-            <ScreenStackHeaderConfig
+            <NativeHeader
               backgroundColor="rgba(0,0,0,0)"
-              color={foregroundColor}
+              tintColorClassName="accent-foreground"
               hideBackButton
               hideShadow={false}
               navigationItemStyle="editor"
               title={currentBranchLabel}
-              titleColor={foregroundColor}
+              titleColorClassName="accent-foreground"
               titleFontSize={17}
               titleFontWeight="700"
               translucent
             />
-          </Screen>
+          </NativeScreen>
         </ScreenStack>
       </View>
     );
@@ -427,28 +425,28 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     return (
       <View collapsable={false} className="flex-1 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
-          <Screen
+          <NativeScreen
             activityState={2}
             enabled
             isNativeStack
             screenId="thread-git-sheet-native"
             scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-            style={{ backgroundColor: sheetColor, flex: 1 }}
+            className="flex-1 bg-sheet"
           >
             <NativeSheetContent>{content}</NativeSheetContent>
-            <ScreenStackHeaderConfig
+            <NativeHeader
               backgroundColor="rgba(0,0,0,0)"
-              color={foregroundColor}
+              tintColorClassName="accent-foreground"
               hideBackButton
               hideShadow={false}
               navigationItemStyle="editor"
               title={currentBranchLabel}
-              titleColor={foregroundColor}
+              titleColorClassName="accent-foreground"
               titleFontSize={18}
               titleFontWeight="800"
               translucent
             />
-          </Screen>
+          </NativeScreen>
         </ScreenStack>
       </View>
     );

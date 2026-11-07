@@ -1,6 +1,6 @@
 import type { useReviewHeaderPresentation as useIosReviewHeaderPresentation } from "./useReviewHeaderPresentation";
 
-export function useReviewHeaderPresentation(
+function getReviewHeaderPresentation(
   props: Parameters<typeof useIosReviewHeaderPresentation>[0],
 ): ReturnType<typeof useIosReviewHeaderPresentation> {
   return {
@@ -18,3 +18,5 @@ export function useReviewHeaderPresentation(
     },
   };
 }
+
+export { getReviewHeaderPresentation as useReviewHeaderPresentation };

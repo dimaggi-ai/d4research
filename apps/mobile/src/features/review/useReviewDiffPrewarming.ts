@@ -105,6 +105,7 @@ export function useReviewDiffPrewarming(input: {
 }): void {
   const { sections, selectedSectionId, threadKey } = input;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Schedule cancellable idle work to warm the shared diff parser cache for nearby review sections.
   useEffect(() => {
     if (!threadKey) {
       return;

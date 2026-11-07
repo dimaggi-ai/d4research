@@ -60,6 +60,7 @@ export function useFullscreenVideoOpen(): boolean {
 }
 
 export function useMediaAudioSessionHold(active: boolean): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hold the native audio playback session while this player is active.
   useEffect(() => {
     if (!active) return;
     mediaPlaybackStarted();

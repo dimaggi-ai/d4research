@@ -140,6 +140,29 @@ jobs:
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
 
+      # The CLI archive and the staged app install without a lockfile, so they
+      # ask the registry about every package and fetch platform packages the
+      # workspace store lacks. They share this registry metadata and store. A
+      # new week starts cold, which bounds how stale cached ranges can get.
+      - name: Resolve staged install cache
+        id: stage_pnpm
+        shell: bash
+        run: |
+          echo "dir=$RUNNER_TEMP/desktop-stage-pnpm" >> "$GITHUB_OUTPUT"
+          echo "prefix=desktop-stage-pnpm-v2-${{ inputs.platform }}-${{ inputs.arch }}-$(date -u +%G-%V)-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore staged install cache
+        id: stage_pnpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.stage_pnpm.outputs.prefix }}
+
+      - name: Mark staged install cache
+        shell: bash
+        run: mkdir -p "${{ steps.stage_pnpm.outputs.dir }}" && touch "$RUNNER_TEMP/desktop-stage-pnpm.marker"
+
       - name: Cache resource monitor
         id: resource_monitor_cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -267,7 +290,13 @@ jobs:
           set -euo pipefail
           name="node-v$VERSION-win-${{ inputs.arch }}"
           dir="$RUNNER_TEMP/node-download"
-          dest="${XDG_CACHE_HOME:-$HOME/.cache}/tsdown/node/v$VERSION/win-${{ inputs.arch }}"
+          # tsdown reads a different cache on a Windows host than on a Linux cross-build.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cache="$(cygpath -u "$LOCALAPPDATA")/tsdown/Caches"
+          else
+            cache="${XDG_CACHE_HOME:-$HOME/.cache}/tsdown"
+          fi
+          dest="$cache/node/v$VERSION/win-${{ inputs.arch }}"
           mkdir -p "$dest"
           (cd "$dir" && grep " $name.zip\$" SHASUMS256.txt | sha256sum -c -)
           unzip -p "$dir/$name.zip" "$name/node.exe" > "$dest/node.exe"

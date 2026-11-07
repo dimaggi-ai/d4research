@@ -7,15 +7,9 @@ import { resolveRemoteWebSocketConnectionUrl } from "./remote.ts";
 import { environmentMismatchError, mapRemoteEnvironmentError } from "../connection/errors.ts";
 import type { ConnectionAttemptError, PreparedHttpAuthorization } from "../connection/model.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
-import * as Option from "effect/Option";
-import * as Result from "effect/Result";
-import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/http/HttpClient";
 
 export interface AuthorizedRemoteEnvironment {
@@ -51,8 +45,6 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
   }
 >()("@d4research/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
 
-const BEARER_DESCRIPTOR_CACHE_TTL_MS = 10_000;
-
 const fetchDescriptor = Effect.fn("clientRuntime.connection.remote.fetchDescriptor")(function* (
   httpBaseUrl: string,
   connectionMethod: ClientConnectionMethod = "direct",
@@ -64,16 +56,6 @@ const fetchDescriptor = Effect.fn("clientRuntime.connection.remote.fetchDescript
 
 const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
-  const bearerDescriptors = yield* Ref.make<
-    ReadonlyMap<
-      EnvironmentId,
-      {
-        readonly httpBaseUrl: string;
-        readonly descriptor: ExecutionEnvironmentDescriptor;
-        readonly validatedAtEpochMs: number;
-      }
-    >
-  >(new Map());
 
   /**
    * A saved LAN address can belong to another machine on a different network.

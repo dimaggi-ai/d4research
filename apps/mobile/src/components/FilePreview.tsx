@@ -23,6 +23,7 @@ function DocumentPreview(props: {
         "A compatible viewer must be installed. Check your connection and try again.",
       );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Open the platform document viewer and cancel its request when this preview unmounts.
   useEffect(() => {
     const controller = new AbortController();
     const input = {

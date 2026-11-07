@@ -37,6 +37,7 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Schedules the wall-clock quota reset update and cancels obsolete timers.
   useEffect(() => {
     const delay = Date.parse(resetAt ?? "") - Math.max(nowMs, Date.now());
     if (!Number.isFinite(delay) || delay <= 0) return;

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { cn } from "../../lib/cn";
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import {
   buildFileTree,
@@ -118,7 +119,10 @@ export function FileTreeBrowser(props: {
   readonly onRefresh: () => void;
   readonly onSelectFile: (path: string) => void;
 }) {
-  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(
+    () => new Set(props.selectedPath ? ancestorPaths(props.selectedPath) : []),
+  );
+  const [previousSelectedPath, setPreviousSelectedPath] = useState(props.selectedPath);
   const [pendingSelection, setPendingSelection] = useState<{
     readonly path: string;
     readonly selectedPathAtPress: string | null;
@@ -155,27 +159,22 @@ export function FileTreeBrowser(props: {
     [expandedPaths, props.searchQuery, tree],
   );
 
-  useEffect(() => {
-    if (!controlledSelectedPath) {
-      return;
-    }
-    setExpandedPaths((current) => {
+  if (previousSelectedPath !== controlledSelectedPath) {
+    setPreviousSelectedPath(controlledSelectedPath);
+    if (controlledSelectedPath) {
       const ancestors = ancestorPaths(controlledSelectedPath);
-      if (ancestors.every((ancestor) => current.has(ancestor))) {
-        return current;
+      if (ancestors.some((ancestor) => !expandedPaths.has(ancestor))) {
+        setExpandedPaths(new Set([...expandedPaths, ...ancestors]));
       }
-      const next = new Set(current);
-      for (const ancestor of ancestors) {
-        next.add(ancestor);
-      }
-      return next;
-    });
-  }, [controlledSelectedPath]);
+    }
+  }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Load remote directory entries for ancestors opened by route navigation as well as user expansion.
   useEffect(() => {
     for (const path of expandedPaths) onLoadDirectory(path);
   }, [expandedPaths, onLoadDirectory]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the optimistic navigation selection timer when the file tree unmounts.
   useEffect(
     () => () => {
       if (pendingSelectionTimeoutRef.current !== null) {
@@ -248,6 +247,7 @@ export function FileTreeBrowser(props: {
   // list as direct screen content so automatic inset adjustment can find it.
   return (
     <LegendList
+      renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
       contentInsetStartAdjustment={headerInset}
       alwaysBounceVertical
       className="flex-1"

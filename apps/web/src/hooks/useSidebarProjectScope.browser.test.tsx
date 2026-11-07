@@ -22,6 +22,6 @@ it("retains the chosen project across closing and reopening the mobile sheet", a
   expect(scope[0]).toBe("environment:my-project");
   await act(async () => scope[1](null));
   await second.unmount();
-  await using third = await render(<Probe />);
+  await using _third = await render(<Probe />);
   expect(scope[0]).toBeNull();
 });

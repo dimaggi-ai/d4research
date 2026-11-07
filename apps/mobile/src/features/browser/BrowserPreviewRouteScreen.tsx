@@ -3,12 +3,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import {
-  EnvironmentId,
-  FILL_PREVIEW_VIEWPORT,
-  ThreadId,
-  type PreviewSessionSnapshot,
-} from "@d4research/contracts";
+import { EnvironmentId, ThreadId, type PreviewSessionSnapshot } from "@d4research/contracts";
 import { normalizePreviewUrl } from "@d4research/shared/preview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, TextInput, View } from "react-native";
@@ -93,12 +88,14 @@ function BrowserPreviewScreen({
     setPictureInPicture(NO_PICTURE_IN_PICTURE);
     setSelectedTabId(tabId);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes to native AppState so background views stop streaming.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       setForeground(state !== "background"),
     );
     return () => subscription.remove();
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Closes the navigation route after its server browser tabs disappear.
   useEffect(() => {
     if (focused && loaded && tabs.length === 0) onClose();
   }, [focused, loaded, tabs.length, onClose]);

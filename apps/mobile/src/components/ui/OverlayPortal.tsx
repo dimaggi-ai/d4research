@@ -26,11 +26,13 @@ export function OverlayPortal(props: { readonly children: ReactNode }) {
 
   // No dependency array: re-project after every render so the host always
   // shows the current content (menus re-render while open — drill-in, theme).
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Project the current children into the external native overlay host registry.
   useEffect(() => {
     entries.set(key, props.children);
     emit();
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Remove this external overlay registry entry when its owning portal unmounts.
   useEffect(
     () => () => {
       entries.delete(key);
@@ -45,6 +47,7 @@ export function OverlayPortal(props: { readonly children: ReactNode }) {
 export function OverlayPortalHost() {
   const [current, setCurrent] = useState<Entries>(() => new Map());
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe the native overlay host to external portal registry changes.
   useEffect(() => {
     listeners.add(setCurrent);
     return () => {

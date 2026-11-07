@@ -320,7 +320,8 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
     }
   }
   // It reads files other than the ones beside it, so no changed file selects it.
-  if (affected.includes("t3")) tests.add("apps/server/src/provider/AgentContextBudget.test.ts");
+  if (affected.includes("d4research"))
+    tests.add("apps/server/src/provider/AgentContextBudget.test.ts");
   const { vitestTests, nodeTests } = splitTests(tests);
 
   // React Compiler coverage compiles every client source file, so run only the

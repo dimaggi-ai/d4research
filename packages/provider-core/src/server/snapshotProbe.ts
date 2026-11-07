@@ -11,7 +11,6 @@ import type {
   ServerProviderModel,
   ServerProviderUpdateRequiredModel,
   ServerProviderState,
-  ServerProviderUsageLimits,
 } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
@@ -213,13 +212,8 @@ function humanizeModelSlug(slug: string): string {
   return tag && tag !== "latest" ? `${name} (${tag})` : name;
 }
 
-/**
- * Append the user's custom models after the built-ins. A custom entry that
- * declares its own capabilities keeps them; a bare slug gets the driver's
- * default set. A named entry whose slug matches a built-in renames that
- * built-in instead (for example `{ "slug": "gpt-5.5", "name": "GPT" }` in
- * `settings.json`); other fields on such an entry are ignored.
- */
+// Custom models keep explicit capabilities or inherit driver defaults.
+// A custom slug matching a built-in may rename it; ignore other overrides.
 export function providerModelsFromSettings(
   builtInModels: ReadonlyArray<ServerProviderModel>,
   customModels: ReadonlyArray<CustomModelSetting>,

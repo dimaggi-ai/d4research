@@ -45,6 +45,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
 
   const highlightedEntry = entries.find((entry) => entry.id === highlightedId) ?? entries[0];
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Installs the native outside-pointer listener while the stash drawer is mounted.
   useEffect(() => {
     const closeOnOutsidePointer = (event: PointerEvent) => {
       const drawer = drawerRef.current;
@@ -61,6 +62,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
   }, [onClose]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Installs native stash navigation shortcuts and focuses their corresponding DOM rows.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

@@ -126,6 +126,7 @@ The hosted app reads `host`, takes the token from the URL hash, exchanges it dir
 backend, strips the token from browser history, and saves the environment record locally. Helpers
 live in [`shared/remote.ts`](../../packages/shared/src/remote.ts) (`setPairingTokenOnUrl`,
 `getPairingTokenFromUrl`, `stripPairingTokenFromUrl`) and `apps/web/src/hostedPairing.ts`.
+
 ## Peer links
 
 A [peer link](../../apps/server/src/peer/PeerLinks.ts) lets one environment's

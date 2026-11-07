@@ -236,12 +236,8 @@ const layerDesktopApplicationRuntime = layerDesktopApplication.pipe(
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(NodeHttpClient.layerUndici),
   Layer.provideMerge(NetService.layer),
-  // ElectronProtocol (part of layerElectron) reads packaged assets through
-  // FileSystem/Path, so it needs its own NodeServices provision: the chain's
-  // earlier NodeServices.layer only satisfies layerDesktopApplication, not a
-  // layer merged in after it. Clerk used to carry this transitively through
-  // its own NodeServices provision; with Clerk removed, layerElectron needs
-  // it directly.
+  // ElectronProtocol needs its own NodeServices for packaged asset access: the earlier
+  // provision satisfies layerDesktopApplication, not a subsequently merged layerElectron.
   Layer.provideMerge(layerElectron.pipe(Layer.provideMerge(NodeServices.layer))),
 );
 

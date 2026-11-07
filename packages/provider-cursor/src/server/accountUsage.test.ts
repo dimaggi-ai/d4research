@@ -14,6 +14,10 @@ import * as Path from "effect/Path";
 import * as CursorKeychain from "./CursorKeychain.ts";
 import { readCursorAccountUsage } from "./accountUsage.ts";
 
+const decodeDashboardPage = Schema.decodePromise(
+  Schema.fromJsonString(Schema.Struct({ page: Schema.Number })),
+);
+
 const encodeJsonFixture = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /** A scoped temporary directory holding `auth.json` with `accessToken`. */
@@ -44,11 +48,7 @@ const dashboard = (answer: (request: DashboardRequest) => Response | Promise<Res
         const response = await answer({
           url: url.toString(),
           init: { ...init, signal, body },
-          page: (
-            await Schema.decodePromise(
-              Schema.fromJsonString(Schema.Struct({ page: Schema.Number })),
-            )(body)
-          ).page,
+          page: (await decodeDashboardPage(body)).page,
           headers: new Headers(request.headers),
         });
         return HttpClientResponse.fromWeb(request, response);

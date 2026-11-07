@@ -3,21 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { buildDefaultDevPipelinePrompt } from "./devPipeline";
 import { resolveResearchDirectives, type ResearchProviderCandidate } from "./researchPipeline";
 
-/**
- * Candidates shaped like a real environment rather than a convenient one,
- * transcribed from live provider instances. Two properties matter and neither
- * shows up in a hand-written fixture:
- *
- * 1. An "Ollama" instance is commonly a `claudeAgent` driver pointed at an
- *    OpenAI-compatible endpoint, so its `cli` is ALSO `claude`. A `!claude:`
- *    directive matches it on cli, and a `!ollama:` directive matches it on
- *    display name — the two provider namespaces overlap.
- * 2. That instance inherits the driver's built-in Claude models FIRST and
- *    appends its custom ones, so every real target sits past position 9.
- *
- * It is listed before the real Claude instance on purpose: resolution must not
- * depend on which one the server happens to stream first.
- */
+// Ollama shares the Claude driver/CLI namespace and appends custom models after built-ins.
+// Put it before the real Claude instance to catch resolution that depends on stream order.
 const CLAUDE_BUILT_INS = [
   "claude-fable-5",
   "claude-opus-5",
@@ -86,7 +73,7 @@ const targetOf = (raw: string) => {
 
 describe("default dev pipeline against an overlapping provider snapshot", () => {
   it("keeps the default planner and explicit Claude target unambiguous when Ollama is listed first", () => {
-    const planner = /STEP 1 — PLAN[\s\S]*?Directive: (\S+)/.exec(defaultPrompt)?.[1];
+    const planner = /STEP 1: PLAN[\s\S]*?Directive: (\S+)/.exec(defaultPrompt)?.[1];
     expect(planner).toBe("!codex:gpt-5.6-sol");
     expect(defaultPrompt).not.toMatch(/Directive: ![^\s]+:claude-/u);
     expect(targetOf("!claudeAgent:claude-opus-5")).toBe("claudeAgent:claude-opus-5");

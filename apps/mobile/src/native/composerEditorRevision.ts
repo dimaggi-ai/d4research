@@ -46,11 +46,8 @@ export function resolveComposerControlledEventCount(
   return mostRecentEventCount;
 }
 
-// A snapshot without a selection describes a state the editor applied itself
-// (an assumed controlled document, where the native side may have bounded the
-// caret). Echo detection must not reuse this wildcard: an echo payload
-// serializes `selection: null`, which would drop that caret move instead of
-// applying it.
+// A missing snapshot selection permits a native-bounded caret. Echo payloads
+// serialize null explicitly, so they must not use this wildcard or lose caret moves.
 function snapshotSelectionMatches(
   snapshot: ComposerNativeEventSnapshot,
   selection: ComposerEditorSelection,
@@ -82,13 +79,8 @@ export function isComposerNativeEcho(
   return false;
 }
 
-/**
- * Records that a parent-driven controlled document was handed to the native
- * editor. From that point the acknowledged snapshot history describes a
- * superseded native state, so it is replaced with the assumed applied state; a
- * later parent update back to a previously acknowledged value must classify as
- * a fresh edit, not as a native echo the editor would drop.
- */
+// Parent-controlled documents supersede acknowledged snapshots. Otherwise a
+// later return to an older value would be mistaken for an echo and dropped.
 export function assumeComposerControlledState(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
   eventCount: number,

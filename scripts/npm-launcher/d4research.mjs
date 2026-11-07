@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// The `d4research` npm package. Downloads this version's CLI archive from the GitHub
-// Release into <T3 home>/runtime/versions/<version> (the folder the install
-// scripts and `d4research update` use), verifies it against the release's SHA256SUMS,
-// then runs it. `dist/bin.mjs` re-enters here for background services
-// installed before 0.0.41, which start the npm package with Node and talk to
-// it over an IPC channel.
+// Download this version's CLI into <T3 home>/runtime/versions/<version> and verify SHA256SUMS.
+// Preserve IPC for pre-0.0.41 background services that enter through dist/bin.mjs.
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -111,13 +107,8 @@ const isComplete = (dir) => {
   }
 };
 
-/**
- * Moves a finished staging folder to `dir`. Rename never replaces an existing
- * folder, so a complete install another launcher (or `d4research update`) published
- * first is kept, never deleted from under a running process. Only a folder
- * without the completion marker, left by an interrupted older installer, is
- * cleared before trying again.
- */
+// Preserve a completed install published by another launcher or update process.
+// Only clear an existing folder when its missing completion marker proves it incomplete.
 function publish(staging, dir) {
   try {
     fs.renameSync(staging, dir);
@@ -168,7 +159,7 @@ async function main() {
   // Service IPC and signals must reach the child; terminal Ctrl-C already does, so do not forward SIGINT twice.
   const ipc = process.send !== undefined;
   const child = spawn(
-    path.join(dir, process.platform === "win32" ? "d4research.exe" : "d4research"),
+    path.join(dir, process.platform === "win32" ? "t3.exe" : "t3"),
     process.argv.slice(2),
     {
       stdio: ipc ? ["inherit", "inherit", "inherit", "ipc"] : "inherit",

@@ -34,7 +34,7 @@ describe("editing authorized client permissions", () => {
       );
     }
     // These dialog fixtures do not navigate.
-    await using screen = await render(<Settings />, { router: false });
+    await using _screen = await render(<Settings />, { router: false });
     await click("Edit permissions");
     await click("All available");
     await click("Save permissions");
@@ -53,7 +53,7 @@ describe("editing authorized client permissions", () => {
   });
   it("keeps edits open on save failure and leaves saved permissions unchanged when cancelled", async () => {
     // These dialog fixtures do not navigate.
-    await using screen = await render(
+    await using _screen = await render(
       <ClientScopesDialog
         label="iPhone Safari"
         scopes={["orchestration:read"]}
@@ -78,7 +78,7 @@ describe("editing authorized client permissions", () => {
   it("lets a limited manager remove higher permissions without granting unavailable ones", async () => {
     let saved: ReadonlyArray<AuthGrantScope> = [];
     // These dialog fixtures do not navigate.
-    await using screen = await render(
+    await using _screen = await render(
       <ClientScopesDialog
         label="Phone"
         scopes={["orchestration:read", "filesystem:write"]}

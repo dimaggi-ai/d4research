@@ -23,6 +23,7 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
   const [copied, setCopied] = useState(false);
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels the copy-feedback timer when its button unmounts.
   useEffect(
     () => () => {
       if (resetTimeoutRef.current) {

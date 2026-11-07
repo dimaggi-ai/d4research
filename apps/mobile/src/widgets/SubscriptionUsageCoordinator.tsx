@@ -22,6 +22,7 @@ export function SubscriptionUsageCoordinator() {
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const snapshot = useAtomValue(snapshotAtom);
   useSubscriptionUsage(catalog.isReady);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Publish the current usage snapshot to the native home-screen widget.
   useEffect(() => {
     if (!catalog.isReady) return;
     void Promise.resolve()

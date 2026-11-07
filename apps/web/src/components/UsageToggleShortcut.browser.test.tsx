@@ -19,7 +19,8 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
 vi.mock(import("../state/server"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");
-  const { compileResolvedKeybindingsConfig: compile } = await import("@d4research/shared/keybindings");
+  const { compileResolvedKeybindingsConfig: compile } =
+    await import("@d4research/shared/keybindings");
   // Factories are hoisted above the module's own constants.
   const compiled = compile([
     { key: "mod+u", command: "navigation.back", when: "usagePageOpen" },

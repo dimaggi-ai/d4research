@@ -65,74 +65,80 @@ export const AgyDriver: ProviderDriver<AgySettings, AgyDriverEnv> = {
   metadata: { displayName: "Agy", supportsMultipleInstances: true },
   configSchema: AgySettings,
   defaultConfig: () => decodeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
-    Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  create: Effect.fn("AgyDriver.create")(function* ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    config,
+  }) {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
-      const continuationIdentity = defaultProviderContinuationIdentity({
-        driverKind: DRIVER_KIND,
-        instanceId,
-      });
-      const stampIdentity = withIdentity({
-        instanceId,
-        displayName,
-        accentColor,
-        continuationGroupKey: continuationIdentity.continuationKey,
-      });
-      const effectiveConfig = { ...config, enabled } satisfies AgySettings;
-      const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
-        binaryPath: effectiveConfig.binaryPath,
-        env: processEnv,
-      });
-      const adapter = yield* makeAgyAdapter(effectiveConfig, {
-        environment: processEnv,
-        instanceId,
-      });
-      const textGeneration = yield* makeAgyTextGeneration(effectiveConfig, processEnv);
-      const checkProvider = checkAgyProviderStatus(effectiveConfig, processEnv).pipe(
-        Effect.map(stampIdentity),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-      );
-      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
-      const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<AgySettings>>({
-        resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
-        getSettings: snapshotSettings.getSettings,
-        streamSettings: snapshotSettings.streamSettings,
-        haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (settings) =>
-          // Agy model discovery is short but essential: publishing the
-          // optimistic "Checking" snapshot first lets the registry cache it
-          // before the background refresh result arrives. Probe before this
-          // instance enters the registry so Settings gets a real status.
-          checkAgyProviderStatus(settings.provider, processEnv).pipe(
-            Effect.map(stampIdentity),
-            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          ),
-        checkProvider,
-        enrichSnapshot: ({ snapshot: current, publishSnapshot }) => publishSnapshot(current),
-      }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: `Failed to build Agy snapshot: ${cause.message ?? String(cause)}`,
-              cause,
-            }),
+    const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const continuationIdentity = defaultProviderContinuationIdentity({
+      driverKind: DRIVER_KIND,
+      instanceId,
+    });
+    const stampIdentity = withIdentity({
+      instanceId,
+      displayName,
+      accentColor,
+      continuationGroupKey: continuationIdentity.continuationKey,
+    });
+    const effectiveConfig = { ...config, enabled } satisfies AgySettings;
+    const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
+      binaryPath: effectiveConfig.binaryPath,
+      env: processEnv,
+    });
+    const adapter = yield* makeAgyAdapter(effectiveConfig, {
+      environment: processEnv,
+      instanceId,
+    });
+    const textGeneration = yield* makeAgyTextGeneration(effectiveConfig, processEnv);
+    const checkProvider = checkAgyProviderStatus(effectiveConfig, processEnv).pipe(
+      Effect.map(stampIdentity),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+    const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
+    const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<AgySettings>>({
+      resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+      getSettings: snapshotSettings.getSettings,
+      streamSettings: snapshotSettings.streamSettings,
+      haveSettingsChanged: haveProviderSnapshotSettingsChanged,
+      initialSnapshot: (settings) =>
+        // Agy model discovery is short but essential: publishing the
+        // optimistic "Checking" snapshot first lets the registry cache it
+        // before the background refresh result arrives. Probe before this
+        // instance enters the registry so Settings gets a real status.
+        checkAgyProviderStatus(settings.provider, processEnv).pipe(
+          Effect.map(stampIdentity),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         ),
-      );
-      return {
-        instanceId,
-        driverKind: DRIVER_KIND,
-        continuationIdentity,
-        displayName,
-        accentColor,
-        enabled,
-        snapshot,
-        orchestrationAdapter: makeLegacyAdapterV2(adapter, instanceId),
-        textGeneration,
-      } satisfies ProviderInstance;
-    }),
+      checkProvider,
+      enrichSnapshot: ({ snapshot: current, publishSnapshot }) => publishSnapshot(current),
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: `Failed to build Agy snapshot: ${cause.message ?? String(cause)}`,
+            cause,
+          }),
+      ),
+    );
+    return {
+      instanceId,
+      driverKind: DRIVER_KIND,
+      continuationIdentity,
+      displayName,
+      accentColor,
+      enabled,
+      snapshot,
+      orchestrationAdapter: makeLegacyAdapterV2(adapter, instanceId),
+      textGeneration,
+    } satisfies ProviderInstance;
+  }),
 };
 import { makeLegacyAdapterV2 } from "../Layers/LegacyAdapterV2.ts";

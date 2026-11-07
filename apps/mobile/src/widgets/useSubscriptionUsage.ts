@@ -21,6 +21,7 @@ export function useSubscriptionUsage(enabled = true) {
     [refreshProviders],
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refresh widget usage on native app activation and release the refresh timer on unmount.
   useEffect(() => {
     const update = () => {
       if (!enabled || AppState.currentState !== "active") return;

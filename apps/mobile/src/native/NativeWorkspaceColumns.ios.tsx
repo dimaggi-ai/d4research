@@ -23,6 +23,7 @@ export function useNativeWorkspaceColumnsReady() {
     !!nativeControls?.ViewPrototypes?.T3NativeControls_LayoutMetrics &&
     metrics === null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the timer that stops waiting for native metrics
   useEffect(() => {
     if (!waiting) return;
     const timeout = setTimeout(() => setTimedOut(true), NATIVE_METRICS_TIMEOUT_MS);

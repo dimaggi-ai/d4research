@@ -1,4 +1,4 @@
-import { act, render } from "../../test/render";
+import { render } from "../../test/render";
 import { expect, it, vi } from "vite-plus/test";
 import { useSidebarThreadOrderStore } from "../sidebarThreadOrderStore";
 import { useSidebarOrderMigration } from "./useSidebarOrderMigration";
@@ -71,7 +71,7 @@ it("shares a saved order once and no longer overlays it on server updates", asyn
   expect(fixture.threads[1]!.activeOrderKey! < fixture.threads[0]!.activeOrderKey!).toBe(true);
   expect(useSidebarThreadOrderStore.getState().order).toEqual([]);
   await screen1.unmount();
-  await using screen2 = await mount();
+  await using _screen2 = await mount();
   expect(fixture.write).toHaveBeenCalledTimes(2);
 });
 it("retains a failed plan and resumes it after the drawer remounts", async () => {
@@ -83,7 +83,7 @@ it("retains a failed plan and resumes it after the drawer remounts", async () =>
   expect(useSidebarThreadOrderStore.getState().order).toEqual(["env:b", "env:a"]);
   expect(useSidebarThreadOrderStore.getState().migrating).toBe(false);
   await screen1.unmount();
-  await using screen2 = await mount();
+  await using _screen2 = await mount();
   expect(useSidebarThreadOrderStore.getState().pendingMigration).toEqual([]);
   expect(fixture.threads[1]!.activeOrderKey).toBe(pending[0]!.orderKey);
 });
@@ -115,7 +115,7 @@ it("resumes a partially written plan without reordering a thread changed elsewhe
   expect(useSidebarThreadOrderStore.getState().pendingMigration).toHaveLength(2);
   fixture.threads[1]!.activeOrderKey = "z";
   await screen1.unmount();
-  await using screen2 = await mount();
+  await using _screen2 = await mount();
   expect(fixture.threads[1]!.activeOrderKey).toBe("z");
   expect(fixture.threads[0]!.activeOrderKey).not.toBeNull();
   expect(useSidebarThreadOrderStore.getState().pendingMigration).toEqual([]);

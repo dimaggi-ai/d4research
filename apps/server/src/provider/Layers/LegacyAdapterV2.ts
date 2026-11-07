@@ -18,6 +18,9 @@ import * as V2 from "@d4research/provider-core/server/ProviderAdapter";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
 
+const isReadOnlySandbox = Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }));
+const isProviderAdapterV2Error = Schema.is(V2.ProviderAdapterV2Error);
+
 const decodeEvent = Schema.decodeUnknownSync(Schema.toType(V2.ProviderAdapterV2Event));
 const decodeCursor = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const encodeCursor = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -476,300 +479,294 @@ export function makeLegacyAdapterV2(
           ? { type: "apply_on_next_turn" }
           : { type: "restart_session" },
       ),
-    openSession: (input) =>
-      Effect.gen(function* () {
-        const now = yield* DateTime.now;
-        const providerSession = {
-          id: input.providerSessionId,
+    openSession: Effect.fn("LegacyAdapterV2.openSession")(function* (input) {
+      const now = yield* DateTime.now;
+      const providerSession = {
+        id: input.providerSessionId,
+        driver,
+        providerInstanceId: instanceId,
+        status: "ready" as const,
+        cwd: input.runtimePolicy.cwd ?? ".",
+        model: input.modelSelection.model,
+        capabilities,
+        createdAt: now,
+        updatedAt: now,
+        lastError: null,
+      };
+      const scope = yield* Effect.scope;
+      const events = yield* PubSub.unbounded<
+        V2.ProviderAdapterV2Event | V2.ProviderAdapterV2Error
+      >();
+      let thread: OrchestrationV2ProviderThread | undefined;
+      let translator: ReturnType<typeof makeLegacyTurnTranslator> | undefined;
+      let nativeTurnId: TurnId | undefined;
+      const publish = (event: V2.ProviderAdapterV2Event) =>
+        PubSub.publish(events, event).pipe(Effect.asVoid);
+      const protocol = (cause: unknown) =>
+        new V2.ProviderAdapterProtocolError({
+          driver,
+          detail: "Legacy provider event translation failed",
+          cause,
+        });
+      const updateCursor = Effect.fn("LegacyAdapterV2.updateCursor")(function* (
+        session: Pick<ProviderSession, "resumeCursor">,
+      ) {
+        if (!thread || session.resumeCursor === undefined) return;
+        thread = {
+          ...thread,
+          nativeThreadRef: {
+            driver,
+            nativeId: encodeCursor(session.resumeCursor),
+            strength: "weak",
+          },
+          updatedAt: yield* DateTime.now,
+        };
+        yield* publish({ type: "provider_thread.updated", driver, providerThread: thread });
+      });
+      yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === input.threadId),
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            if (event.turnId) nativeTurnId = event.turnId;
+            if (event.type === "session.state.changed") {
+              yield* publish({
+                type: "provider_session.updated",
+                driver,
+                providerSession: {
+                  ...providerSession,
+                  status: event.payload.state,
+                  updatedAt: DateTime.makeUnsafe(event.createdAt),
+                  lastError:
+                    event.payload.state === "error"
+                      ? (event.payload.reason ?? "Provider session failed.")
+                      : null,
+                },
+              });
+            }
+            if (event.type === "thread.token-usage.updated" && thread) {
+              thread = {
+                ...thread,
+                contextUsage: event.payload.usage,
+                updatedAt: DateTime.makeUnsafe(event.createdAt),
+              };
+              yield* publish({ type: "provider_thread.updated", driver, providerThread: thread });
+            }
+            if (event.type === "turn.completed" || event.type === "session.started") {
+              const sessions = yield* adapter.listSessions();
+              const native = sessions.find((session) => session.threadId === input.threadId);
+              if (native) yield* updateCursor(native);
+            }
+            const translated = yield* Effect.try({
+              try: () => translator?.convert(event) ?? [],
+              catch: protocol,
+            });
+            yield* Effect.forEach(translated, publish, { discard: true });
+          }),
+        ),
+        Effect.catch((error) => PubSub.publish(events, error)),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      yield* Effect.addFinalizer(() => adapter.stopSession(input.threadId).pipe(Effect.ignore));
+      const ensureThread: V2.ProviderAdapterV2SessionRuntime["ensureThread"] = Effect.fn(
+        "LegacyAdapterV2.ensureThread",
+      )(function* (args) {
+        if (thread && !args.forceNewNativeThread) return thread;
+        if (
+          ["agy", "muse", "junie"].includes(driver) &&
+          isReadOnlySandbox(args.runtimePolicy.sandboxPolicy)
+        ) {
+          return yield* new V2.ProviderAdapterEnsureThreadError({
+            driver,
+            threadId: input.threadId,
+            cause: "This native adapter cannot enforce an advisory read-only sandbox.",
+          });
+        }
+        const previous = args.existingProviderThread ?? thread;
+        const existing = args.forceNewNativeThread ? undefined : previous;
+        if (args.forceNewNativeThread) {
+          thread = undefined;
+          translator = undefined;
+          nativeTurnId = undefined;
+        }
+        const resumeCursor = existing?.nativeThreadRef?.nativeId;
+        const cursor = resumeCursor
+          ? yield* Effect.try({ try: () => decodeCursor(resumeCursor), catch: protocol })
+          : undefined;
+        const native = yield* adapter
+          .startSession({
+            threadId: input.threadId,
+            provider: driver,
+            providerInstanceId: instanceId,
+            cwd: args.runtimePolicy.cwd ?? undefined,
+            modelSelection: args.modelSelection,
+            runtimeMode: args.runtimePolicy.runtimeMode,
+            ...(isReadOnlySandbox(args.runtimePolicy.sandboxPolicy)
+              ? { sandboxMode: "read-only" as const }
+              : {}),
+            ...(cursor === undefined ? {} : { resumeCursor: cursor }),
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new V2.ProviderAdapterEnsureThreadError({
+                  driver,
+                  threadId: input.threadId,
+                  cause,
+                }),
+            ),
+          );
+        thread = {
+          id: previous?.id ?? ProviderThreadId.make(`${instanceId}:${input.threadId}`),
           driver,
           providerInstanceId: instanceId,
-          status: "ready" as const,
-          cwd: input.runtimePolicy.cwd ?? ".",
-          model: input.modelSelection.model,
-          capabilities,
-          createdAt: now,
-          updatedAt: now,
-          lastError: null,
-        };
-        const scope = yield* Effect.scope;
-        const events = yield* PubSub.unbounded<
-          V2.ProviderAdapterV2Event | V2.ProviderAdapterV2Error
-        >();
-        let thread: OrchestrationV2ProviderThread | undefined;
-        let translator: ReturnType<typeof makeLegacyTurnTranslator> | undefined;
-        let nativeTurnId: TurnId | undefined;
-        const publish = (event: V2.ProviderAdapterV2Event) =>
-          PubSub.publish(events, event).pipe(Effect.asVoid);
-        const protocol = (cause: unknown) =>
-          new V2.ProviderAdapterProtocolError({
-            driver,
-            detail: "Legacy provider event translation failed",
-            cause,
-          });
-        const updateCursor = (session: Pick<ProviderSession, "resumeCursor">) =>
-          Effect.gen(function* () {
-            if (!thread || session.resumeCursor === undefined) return;
-            thread = {
-              ...thread,
-              nativeThreadRef: {
-                driver,
-                nativeId: encodeCursor(session.resumeCursor),
-                strength: "weak",
-              },
-              updatedAt: yield* DateTime.now,
-            };
-            yield* publish({ type: "provider_thread.updated", driver, providerThread: thread });
-          });
-        yield* adapter.streamEvents.pipe(
-          Stream.filter((event) => event.threadId === input.threadId),
-          Stream.runForEach((event) =>
-            Effect.gen(function* () {
-              if (event.turnId) nativeTurnId = event.turnId;
-              if (event.type === "session.state.changed") {
-                yield* publish({
-                  type: "provider_session.updated",
-                  driver,
-                  providerSession: {
-                    ...providerSession,
-                    status: event.payload.state,
-                    updatedAt: DateTime.makeUnsafe(event.createdAt),
-                    lastError:
-                      event.payload.state === "error"
-                        ? (event.payload.reason ?? "Provider session failed.")
-                        : null,
-                  },
-                });
-              }
-              if (event.type === "thread.token-usage.updated" && thread) {
-                thread = {
-                  ...thread,
-                  contextUsage: event.payload.usage,
-                  updatedAt: DateTime.makeUnsafe(event.createdAt),
-                };
-                yield* publish({ type: "provider_thread.updated", driver, providerThread: thread });
-              }
-              if (event.type === "turn.completed" || event.type === "session.started") {
-                const sessions = yield* adapter.listSessions();
-                const native = sessions.find((session) => session.threadId === input.threadId);
-                if (native) yield* updateCursor(native);
-              }
-              const translated = yield* Effect.try({
-                try: () => translator?.convert(event) ?? [],
-                catch: protocol,
-              });
-              yield* Effect.forEach(translated, publish, { discard: true });
-            }),
-          ),
-          Effect.catch((error) => PubSub.publish(events, error)),
-          Effect.forkScoped({ startImmediately: true }),
-        );
-        yield* Effect.addFinalizer(() => adapter.stopSession(input.threadId).pipe(Effect.ignore));
-        const ensureThread: V2.ProviderAdapterV2SessionRuntime["ensureThread"] = (args) =>
-          Effect.gen(function* () {
-            if (thread && !args.forceNewNativeThread) return thread;
-            if (
-              ["agy", "muse", "junie"].includes(driver) &&
-              Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }))(
-                args.runtimePolicy.sandboxPolicy,
-              )
-            ) {
-              return yield* new V2.ProviderAdapterEnsureThreadError({
-                driver,
-                threadId: input.threadId,
-                cause: "This native adapter cannot enforce an advisory read-only sandbox.",
-              });
-            }
-            const previous = args.existingProviderThread ?? thread;
-            const existing = args.forceNewNativeThread ? undefined : previous;
-            if (args.forceNewNativeThread) {
-              thread = undefined;
-              translator = undefined;
-              nativeTurnId = undefined;
-            }
-            const resumeCursor = existing?.nativeThreadRef?.nativeId;
-            const cursor = resumeCursor
-              ? yield* Effect.try({ try: () => decodeCursor(resumeCursor), catch: protocol })
-              : undefined;
-            const native = yield* adapter
-              .startSession({
-                threadId: input.threadId,
-                provider: driver,
-                providerInstanceId: instanceId,
-                cwd: args.runtimePolicy.cwd ?? undefined,
-                modelSelection: args.modelSelection,
-                runtimeMode: args.runtimePolicy.runtimeMode,
-                ...(Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }))(
-                  args.runtimePolicy.sandboxPolicy,
-                )
-                  ? { sandboxMode: "read-only" as const }
-                  : {}),
-                ...(cursor === undefined ? {} : { resumeCursor: cursor }),
-              })
-              .pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new V2.ProviderAdapterEnsureThreadError({
-                      driver,
-                      threadId: input.threadId,
-                      cause,
-                    }),
-                ),
-              );
-            thread = {
-              id: previous?.id ?? ProviderThreadId.make(`${instanceId}:${input.threadId}`),
-              driver,
-              providerInstanceId: instanceId,
-              providerSessionId: input.providerSessionId,
-              appThreadId: input.threadId,
-              ownerNodeId: null,
-              nativeThreadRef: null,
-              nativeConversationHeadRef: null,
-              status: "idle",
-              firstRunOrdinal: existing?.firstRunOrdinal ?? null,
-              lastRunOrdinal: existing?.lastRunOrdinal ?? null,
-              handoffIds: existing?.handoffIds ?? [],
-              forkedFrom: existing?.forkedFrom ?? null,
-              createdAt: existing?.createdAt ?? now,
-              updatedAt: yield* DateTime.now,
-            };
-            yield* updateCursor(native);
-            return thread;
-          });
-        return {
-          instanceId,
-          driver,
           providerSessionId: input.providerSessionId,
-          providerSession,
-          events: Stream.fromPubSub(events).pipe(
-            Stream.mapEffect((event) =>
-              Schema.is(V2.ProviderAdapterV2Error)(event)
-                ? Effect.fail(event)
-                : Effect.succeed(event),
-            ),
+          appThreadId: input.threadId,
+          ownerNodeId: null,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "idle",
+          firstRunOrdinal: existing?.firstRunOrdinal ?? null,
+          lastRunOrdinal: existing?.lastRunOrdinal ?? null,
+          handoffIds: existing?.handoffIds ?? [],
+          forkedFrom: existing?.forkedFrom ?? null,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: yield* DateTime.now,
+        };
+        yield* updateCursor(native);
+        return thread;
+      });
+      return {
+        instanceId,
+        driver,
+        providerSessionId: input.providerSessionId,
+        providerSession,
+        events: Stream.fromPubSub(events).pipe(
+          Stream.mapEffect((event) =>
+            isProviderAdapterV2Error(event) ? Effect.fail(event) : Effect.succeed(event),
           ),
-          ensureThread,
-          resumeThread: (args) =>
-            ensureThread({
+        ),
+        ensureThread,
+        resumeThread: (args) =>
+          ensureThread({
+            threadId: input.threadId,
+            modelSelection: args.modelSelection ?? input.modelSelection,
+            runtimePolicy: args.runtimePolicy ?? input.runtimePolicy,
+            existingProviderThread: args.providerThread,
+          }),
+        startTurn: Effect.fn("LegacyAdapterV2.startTurn")(function* (args) {
+          translator = makeLegacyTurnTranslator(args, driver);
+          nativeTurnId = undefined;
+          const send = adapter
+            .sendTurn({
               threadId: input.threadId,
-              modelSelection: args.modelSelection ?? input.modelSelection,
-              runtimePolicy: args.runtimePolicy ?? input.runtimePolicy,
-              existingProviderThread: args.providerThread,
-            }),
-          startTurn: (args) =>
-            Effect.gen(function* () {
-              translator = makeLegacyTurnTranslator(args, driver);
-              nativeTurnId = undefined;
-              const send = adapter
-                .sendTurn({
-                  threadId: input.threadId,
-                  input: args.message.text,
-                  attachments: args.message.attachments,
-                  modelSelection: args.modelSelection,
-                  interactionMode: args.runtimePolicy.interactionMode,
-                })
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new V2.ProviderAdapterTurnStartError({
-                        driver,
-                        threadId: input.threadId,
-                        providerThreadId: args.providerThread.id,
-                        runId: args.runId,
-                        cause,
-                      }),
-                  ),
-                  Effect.flatMap((result) => {
-                    nativeTurnId = result.turnId;
-                    return updateCursor(result);
-                  }),
-                );
-              if (adapter.capabilities.turnSendResolvesAtCompletion) {
-                yield* send.pipe(
-                  Effect.catch((error) => PubSub.publish(events, error)),
-                  Effect.forkIn(scope, { startImmediately: true }),
-                );
-              } else {
-                yield* send;
-              }
-            }),
-          steerTurn: (args) =>
-            Effect.fail(
-              new V2.ProviderAdapterSteerRunUnsupportedError({
-                driver,
-                providerThreadId: args.providerThread.id,
-              }),
-            ),
-          interruptTurn: (args) =>
-            adapter.interruptTurn(input.threadId, nativeTurnId).pipe(
+              input: args.message.text,
+              attachments: args.message.attachments,
+              modelSelection: args.modelSelection,
+              interactionMode: args.runtimePolicy.interactionMode,
+            })
+            .pipe(
               Effect.mapError(
                 (cause) =>
-                  new V2.ProviderAdapterInterruptError({
+                  new V2.ProviderAdapterTurnStartError({
                     driver,
+                    threadId: input.threadId,
                     providerThreadId: args.providerThread.id,
-                    providerTurnId: args.providerTurnId,
+                    runId: args.runId,
                     cause,
                   }),
               ),
+              Effect.flatMap((result) => {
+                nativeTurnId = result.turnId;
+                return updateCursor(result);
+              }),
+            );
+          if (adapter.capabilities.turnSendResolvesAtCompletion) {
+            yield* send.pipe(
+              Effect.catch((error) => PubSub.publish(events, error)),
+              Effect.forkIn(scope, { startImmediately: true }),
+            );
+          } else {
+            yield* send;
+          }
+        }),
+        steerTurn: (args) =>
+          Effect.fail(
+            new V2.ProviderAdapterSteerRunUnsupportedError({
+              driver,
+              providerThreadId: args.providerThread.id,
+            }),
+          ),
+        interruptTurn: (args) =>
+          adapter.interruptTurn(input.threadId, nativeTurnId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new V2.ProviderAdapterInterruptError({
+                  driver,
+                  providerThreadId: args.providerThread.id,
+                  providerTurnId: args.providerTurnId,
+                  cause,
+                }),
             ),
-          respondToRuntimeRequest: (args) =>
-            Effect.suspend(
-              (): Effect.Effect<
-                void,
-                ProviderAdapterError | V2.ProviderAdapterRuntimeRequestResponseError
-              > =>
-                args.answers
-                  ? adapter.respondToUserInput(
+          ),
+        respondToRuntimeRequest: (args) =>
+          Effect.suspend(
+            (): Effect.Effect<
+              void,
+              ProviderAdapterError | V2.ProviderAdapterRuntimeRequestResponseError
+            > =>
+              args.answers
+                ? adapter.respondToUserInput(
+                    input.threadId,
+                    ApprovalRequestId.make(args.requestId),
+                    args.answers,
+                  )
+                : args.decision
+                  ? adapter.respondToRequest(
                       input.threadId,
                       ApprovalRequestId.make(args.requestId),
-                      args.answers,
+                      args.decision,
                     )
-                  : args.decision
-                    ? adapter.respondToRequest(
-                        input.threadId,
-                        ApprovalRequestId.make(args.requestId),
-                        args.decision,
-                      )
-                    : Effect.fail(
-                        new V2.ProviderAdapterRuntimeRequestResponseError({
-                          driver,
-                          requestId: args.requestId,
-                        }),
-                      ),
-            ).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new V2.ProviderAdapterRuntimeRequestResponseError({
-                    driver,
-                    requestId: args.requestId,
-                    cause,
-                  }),
-              ),
+                  : Effect.fail(
+                      new V2.ProviderAdapterRuntimeRequestResponseError({
+                        driver,
+                        requestId: args.requestId,
+                      }),
+                    ),
+          ).pipe(
+            Effect.mapError(
+              (cause) =>
+                new V2.ProviderAdapterRuntimeRequestResponseError({
+                  driver,
+                  requestId: args.requestId,
+                  cause,
+                }),
             ),
-          readThreadSnapshot: (args) =>
-            Effect.fail(
-              new V2.ProviderAdapterReadThreadSnapshotError({
-                driver,
-                providerThreadId: args.providerThread.id,
-                cause: "The native adapter does not expose a V2 conversation snapshot.",
-              }),
-            ),
-          rollbackThread: (args) =>
-            Effect.fail(
-              new V2.ProviderAdapterRollbackThreadError({
-                driver,
-                providerThreadId: args.providerThread.id,
-                cause: "The native adapter does not support conversation rollback.",
-              }),
-            ),
-          forkThread: (args) =>
-            Effect.fail(
-              new V2.ProviderAdapterForkThreadError({
-                driver,
-                providerThreadId: args.sourceProviderThread.id,
-                cause: "The native adapter does not support conversation forks.",
-              }),
-            ),
-        } satisfies V2.ProviderAdapterV2SessionRuntime;
-      }),
+          ),
+        readThreadSnapshot: (args) =>
+          Effect.fail(
+            new V2.ProviderAdapterReadThreadSnapshotError({
+              driver,
+              providerThreadId: args.providerThread.id,
+              cause: "The native adapter does not expose a V2 conversation snapshot.",
+            }),
+          ),
+        rollbackThread: (args) =>
+          Effect.fail(
+            new V2.ProviderAdapterRollbackThreadError({
+              driver,
+              providerThreadId: args.providerThread.id,
+              cause: "The native adapter does not support conversation rollback.",
+            }),
+          ),
+        forkThread: (args) =>
+          Effect.fail(
+            new V2.ProviderAdapterForkThreadError({
+              driver,
+              providerThreadId: args.sourceProviderThread.id,
+              cause: "The native adapter does not support conversation forks.",
+            }),
+          ),
+      } satisfies V2.ProviderAdapterV2SessionRuntime;
+    }),
   };
 }

@@ -41,6 +41,7 @@ function stageElapsedMs(stage: WorktreeSetupStage, nowMs: number): number | null
 
 function useNowWhile(active: boolean): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Runs a wall-clock timer only while worktree setup is active.
   useEffect(() => {
     if (!active) return;
     const id = setInterval(() => setNowMs(Date.now()), 1_000);

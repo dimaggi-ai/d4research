@@ -880,7 +880,7 @@ export function ProviderInstanceCard({
     : ollamaDiscoveryResult === null
       ? null
       : !ollamaDiscoveryResult.reachable
-        ? "Could not reach the Ollama daemon on port 11434 — added the bundled cloud models instead. Start Ollama (`ollama serve`) and press Refresh."
+        ? "Could not reach the Ollama daemon on port 11434. Added the bundled cloud models instead. Start Ollama (`ollama serve`) and press Refresh."
         : ollamaDiscoveryResult.count === 0
           ? "The Ollama daemon answered but has no models. Run `ollama pull <model>` or `ollama signin` for cloud models."
           : `Discovered ${ollamaDiscoveryResult.count} Ollama model${ollamaDiscoveryResult.count === 1 ? "" : "s"}.`;

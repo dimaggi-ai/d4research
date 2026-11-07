@@ -1,22 +1,6 @@
-/**
- * skillExpansion — make `$skill` attachments meaningful on providers that have
- * no native skill support.
- *
- * Claude and Codex resolve `$name` themselves. Every other provider we drive
- * (Agy, Cursor, Grok, Junie, OpenCode) receives the token as a meaningless
- * string. For those, the server appends a compact reference block naming the
- * skill, its description, and the absolute SKILL.md path — progressive
- * disclosure, not the body. Every provider here is a local CLI with file-read
- * tools, so the agent fetches the instructions itself.
- *
- * The block is deliberately honest: it says the skill is attached for
- * reference. It never implies the skill ran.
- *
- * This module is pure. Filesystem and provider lookups happen in the caller
- * (the Normalizer), which passes the resolved inventory in.
- *
- * @module skillExpansion
- */
+// Providers without native $skill resolution receive reference paths, not skill bodies.
+// Keep visible tokens and describe attachments honestly without implying execution.
+// Inventory and filesystem lookups stay in the caller so expansion remains pure.
 
 export interface SkillTokenMatch {
   readonly name: string;
@@ -101,12 +85,12 @@ export function buildSkillReferenceBlock(skills: ReadonlyArray<ExpandableSkill>)
     return "";
   }
   const lines: Array<string> = [
-    "Attached skills (reference material — attaching a skill does not run it):",
+    "Attached skills (reference material; attaching a skill does not run it):",
   ];
   for (const skill of skills) {
     const available = skill.available !== false;
     lines.push("");
-    lines.push(`- $${skill.name}${skill.description ? ` — ${skill.description}` : ""}`);
+    lines.push(`- $${skill.name}${skill.description ? `: ${skill.description}` : ""}`);
     if (available) {
       lines.push(`  Instructions: ${skill.path}`);
       lines.push("  Read that file before applying this skill.");
@@ -118,14 +102,8 @@ export function buildSkillReferenceBlock(skills: ReadonlyArray<ExpandableSkill>)
   return lines.join("\n");
 }
 
-/**
- * Append a reference block for every `$name` token that names a known
- * workspace skill the target provider cannot resolve natively.
- *
- * The original token stays in place — it is the user's visible attachment —
- * and a provider that already resolves the token is skipped so the skill is
- * never delivered twice.
- */
+// Keep the visible $name attachment, appending references only for known skills
+// the target provider cannot resolve natively, to avoid delivering skills twice.
 export function expandSkillTokens(input: ExpandSkillTokensInput): ExpandSkillTokensResult {
   const tokens = findSkillTokens(input.text);
   if (tokens.length === 0) {

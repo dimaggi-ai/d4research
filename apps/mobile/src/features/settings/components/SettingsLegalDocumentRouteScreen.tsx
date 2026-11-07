@@ -76,6 +76,7 @@ export function SettingsLegalDocumentRouteScreen({
     [externalUrl],
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the native navigation header linked to the current legal-document URL.
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: renderExternalHeaderButton,

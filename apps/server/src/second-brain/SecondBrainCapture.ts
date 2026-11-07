@@ -81,55 +81,57 @@ const make = Effect.gen(function* () {
   const brain = yield* Brain.SecondBrainService;
   const index = yield* Index.SecondBrainIndex;
   const lock = yield* Semaphore.make(1);
-  const enqueue: SecondBrainCapture["Service"]["enqueue"] = (threadId, throughRun) =>
-    Effect.gen(function* () {
-      if (yield* owns(threadId)) return yield* new SecondBrainError({ code: "disabled" });
-      const status = yield* brain.status();
-      if (!status.vault) return yield* new SecondBrainError({ code: "disabled" });
-      const records = yield* projections.getThreadRecords(threadId, ["runs", "attempts"]);
-      const completed = yield* index.completedCaptureRun(status.vault, threadId);
-      const runs = records.runs
-        .filter(
-          (r) => r.ordinal > completed && (throughRun === undefined || r.ordinal <= throughRun),
-        )
-        .sort((a, b) => a.ordinal - b.ordinal);
-      const runIds = new Set(runs.map((r) => r.id));
-      const history = yield* projections.getTurnStartHistory(threadId, [...runIds]);
-      const visible = createOrchestrationV2TurnItemVisibility({
-        runs,
-        attempts: records.attempts,
-        items: history,
-      });
-      let budget = 32000;
-      const messages: Index.CaptureJob["messages"] = [];
-      for (const item of history.toReversed()) {
-        if (!visible(item) || (item.type !== "user_message" && item.type !== "assistant_message"))
-          continue;
-        const text = redactSecrets(item.text).slice(-Math.min(budget, 8000));
-        if (!text) continue;
-        messages.unshift({ messageId: item.messageId, text });
-        budget -= text.length;
-        if (budget <= 0 || messages.length >= 100) break;
-      }
-      const transcriptHash = contentHash(encodeJson(messages));
-      const runFrom = runs[0]?.ordinal ?? completed;
-      const runTo = runs.at(-1)?.ordinal ?? completed;
-      const version = "capture-v1";
-      return yield* index.enqueueCapture({
-        id: contentHash(
-          encodeJson([status.vault, threadId, runFrom, runTo, transcriptHash, version]),
-        ),
-        vault: status.vault,
-        threadId,
-        runFrom,
-        runTo,
-        transcriptHash,
-        version,
-        messages,
-        state: "pending",
-        proposalIds: [],
-      });
-    }).pipe(Effect.mapError(() => new SecondBrainError({ code: "unavailable" })));
+  const enqueue: SecondBrainCapture["Service"]["enqueue"] = Effect.fn("SecondBrainCapture.enqueue")(
+    (threadId, throughRun) =>
+      Effect.gen(function* () {
+        if (yield* owns(threadId)) return yield* new SecondBrainError({ code: "disabled" });
+        const status = yield* brain.status();
+        if (!status.vault) return yield* new SecondBrainError({ code: "disabled" });
+        const records = yield* projections.getThreadRecords(threadId, ["runs", "attempts"]);
+        const completed = yield* index.completedCaptureRun(status.vault, threadId);
+        const runs = records.runs
+          .filter(
+            (r) => r.ordinal > completed && (throughRun === undefined || r.ordinal <= throughRun),
+          )
+          .sort((a, b) => a.ordinal - b.ordinal);
+        const runIds = new Set(runs.map((r) => r.id));
+        const history = yield* projections.getTurnStartHistory(threadId, [...runIds]);
+        const visible = createOrchestrationV2TurnItemVisibility({
+          runs,
+          attempts: records.attempts,
+          items: history,
+        });
+        let budget = 32000;
+        const messages: Index.CaptureJob["messages"] = [];
+        for (const item of history.toReversed()) {
+          if (!visible(item) || (item.type !== "user_message" && item.type !== "assistant_message"))
+            continue;
+          const text = redactSecrets(item.text).slice(-Math.min(budget, 8000));
+          if (!text) continue;
+          messages.unshift({ messageId: item.messageId, text });
+          budget -= text.length;
+          if (budget <= 0 || messages.length >= 100) break;
+        }
+        const transcriptHash = contentHash(encodeJson(messages));
+        const runFrom = runs[0]?.ordinal ?? completed;
+        const runTo = runs.at(-1)?.ordinal ?? completed;
+        const version = "capture-v1";
+        return yield* index.enqueueCapture({
+          id: contentHash(
+            encodeJson([status.vault, threadId, runFrom, runTo, transcriptHash, version]),
+          ),
+          vault: status.vault,
+          threadId,
+          runFrom,
+          runTo,
+          transcriptHash,
+          version,
+          messages,
+          state: "pending",
+          proposalIds: [],
+        });
+      }).pipe(Effect.mapError(() => new SecondBrainError({ code: "unavailable" }))),
+  );
   const process: SecondBrainCapture["Service"]["process"] = (input) =>
     lock.withPermits(1)(
       Effect.gen(function* () {

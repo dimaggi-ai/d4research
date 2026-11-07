@@ -1200,20 +1200,18 @@ export function createServerEnvironmentAtoms<R, E>(
   });
   const d4AgentState = createEnvironmentQueryAtomFamily(runtime, {
     label: "environment-data:server:d4-agent-state",
-    // @effect-diagnostics-next-line effectFnOpportunity:off -- one-shot command body, not a reusable function
-    execute: () =>
-      Effect.gen(function* () {
-        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-        const registry = yield* AtomRegistry.AtomRegistry;
-        const state = yield* request(WS_METHODS.d4AgentGetState, {});
-        const identity = d4AgentIdentity({
-          environmentId: supervisor.target.environmentId,
-          input: {},
-        });
-        const known = Option.getOrNull(AsyncResult.value(registry.get(identity)));
-        if ((known?.threadId ?? null) !== state.threadId) registry.refresh(identity);
-        return state;
-      }),
+    execute: Effect.fn("clientRuntime.server.d4AgentState")(function* () {
+      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+      const registry = yield* AtomRegistry.AtomRegistry;
+      const state = yield* request(WS_METHODS.d4AgentGetState, {});
+      const identity = d4AgentIdentity({
+        environmentId: supervisor.target.environmentId,
+        input: {},
+      });
+      const known = Option.getOrNull(AsyncResult.value(registry.get(identity)));
+      if ((known?.threadId ?? null) !== state.threadId) registry.refresh(identity);
+      return state;
+    }),
     staleTimeMs: 5_000,
     idleTtlMs: 0,
     refreshTrigger: ({ environmentId }) => settingsValueAtom(environmentId),

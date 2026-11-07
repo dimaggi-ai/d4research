@@ -89,11 +89,13 @@ export function WorkspaceToolbar(props: {
     else cancelSearch();
     return true;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the Android back-button listener while the workspace toolbar is mounted.
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
     return () => subscription.remove();
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Focus the native search input when the workspace requests keyboard focus.
   useEffect(() => {
     if (focusRequest > 0) input.current?.focus();
   }, [focusRequest]);

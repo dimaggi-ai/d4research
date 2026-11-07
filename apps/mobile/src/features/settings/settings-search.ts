@@ -1,4 +1,8 @@
-import { foldSearchQuery, rankSearchItems, scoreSearchTerms } from "@d4research/shared/paletteSearch";
+import {
+  foldSearchQuery,
+  rankSearchItems,
+  scoreSearchTerms,
+} from "@d4research/shared/paletteSearch";
 
 import type { SettingsPageTarget } from "./components/settings-page-targets";
 

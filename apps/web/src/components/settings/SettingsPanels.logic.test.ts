@@ -5,7 +5,6 @@ import {
   backgroundActivitySharedPolicySettings,
   getChangedBrowserSettingLabels,
   hasChangedBackgroundActivitySettings,
-  getChangedTypographySettingLabels,
 } from "./SettingsPanels.logic";
 
 describe("background activity settings restore", () => {

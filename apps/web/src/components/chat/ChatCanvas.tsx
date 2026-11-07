@@ -54,6 +54,7 @@ export function ChatCanvas({
   };
   const clearPreview = (key: string) =>
     setPreview((current) => (current?.key === key ? null : current));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes canvas, find bar and composer DOM geometry to position the surrounding layout.
   useLayoutEffect(() => {
     const element = elementRef.current;
     const probe = widthProbeRef.current;

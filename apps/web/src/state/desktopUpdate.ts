@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { BundledServerRuntime, DesktopBridge, DesktopUpdateState } from "@d4research/contracts";
+import type {
+  BundledServerRuntime,
+  DesktopBridge,
+  DesktopUpdateState,
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";

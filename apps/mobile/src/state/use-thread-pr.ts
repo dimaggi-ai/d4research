@@ -94,6 +94,7 @@ export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentatio
         });
   }, [pullRequestRef, pullRequestSummary.data]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retain the last live PR presentation in the shared registry across query disposal.
   useEffect(() => {
     if (live === undefined) return;
     registry.modify(threadPrSnapshotsAtom, (current) => {

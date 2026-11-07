@@ -100,6 +100,7 @@ export function D4AgentComposer({
   const [cursor, setCursor] = useState(0);
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const focusAfterMention = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves DOM focus after a mention insert commits
   useLayoutEffect(() => {
     if (!focusAfterMention.current) return;
     focusAfterMention.current = false;
@@ -108,6 +109,7 @@ export function D4AgentComposer({
   const [origin, setOrigin] = useState<AgentDraftOrigin | null>(null);
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const draftAttachments = useRef(attachments);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- gives the unmount cleanup the latest attachments
   useLayoutEffect(() => {
     draftAttachments.current = attachments;
   }, [attachments]);
@@ -171,6 +173,7 @@ export function D4AgentComposer({
   });
 
   if (!text.trim() && attachments.length === 0 && !preparing && origin !== null) setOrigin(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases draft attachments and preview URLs on unmount
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -755,9 +758,11 @@ function NiaVoice({
     onError,
   });
   const stop = useRef(voice.stopConversation);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest stop handler for the error effect
   useLayoutEffect(() => {
     stop.current = voice.stopConversation;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- an error stops the live voice session, an external system
   useEffect(() => {
     if (error) stop.current();
   }, [error]);

@@ -1,7 +1,8 @@
-import { ProviderDriverKind } from "@d4research/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  formatModelSelectionLabel,
   normalizeProviderAccentColor,
   providerAccentForegroundColor,
   providerInstanceInitials,
@@ -81,5 +82,28 @@ describe("shouldShowInstanceBadge", () => {
     expect(shouldShowInstanceBadge(disabled, [enabled, disabled])).toBe(true);
     expect(shouldShowInstanceBadge(disabled, [disabled, { ...disabled }])).toBe(true);
     expect(shouldShowInstanceBadge(disabled, [disabled])).toBe(false);
+  });
+});
+
+describe("formatModelSelectionLabel", () => {
+  const provider = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    driver: ProviderDriverKind.make("claudeAgent"),
+    models: [{ slug: "claude-sonnet-5-5", name: "Sonnet 5.5" }],
+  } as unknown as ServerProvider;
+
+  it("names the provider and model from the catalog", () => {
+    expect(
+      formatModelSelectionLabel([provider], {
+        instanceId: provider.instanceId,
+        model: "claude-sonnet-5-5",
+      }),
+    ).toBe("Claude · Sonnet 5.5");
+  });
+
+  it("keeps the saved IDs when the catalog lacks the model", () => {
+    expect(
+      formatModelSelectionLabel([provider], { instanceId: provider.instanceId, model: "retired" }),
+    ).toBe("claudeAgent · retired");
   });
 });

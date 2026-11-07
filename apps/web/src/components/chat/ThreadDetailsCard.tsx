@@ -72,6 +72,7 @@ export function ThreadDetailsCard({
     preferredPlacement && measurements.key === measurementKey && measurements.fullContentHeight > 0
       ? preferredPlacement.y + Math.min(measurements.fullContentHeight, preferredPlacement.height)
       : undefined;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Publishes measured card DOM bounds to the surrounding layout.
   useLayoutEffect(() => {
     reportDetailsCard?.(
       inlineOpen && cardLeft !== undefined && cardRight !== undefined && cardBottom !== undefined
@@ -79,12 +80,15 @@ export function ThreadDetailsCard({
         : null,
     );
   }, [reportDetailsCard, inlineOpen, cardLeft, cardRight, cardBottom]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the mounted details-card bounds registration on unmount.
   useLayoutEffect(() => () => reportDetailsCard?.(null), [reportDetailsCard]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained presentation publication and popover reconciliation; moving it requires shared ownership of responsive panel state.
   useLayoutEffect(() => {
     onPresentationChange(mode);
     if (mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
   }, [mode, onPresentationChange, threadRef, popoverOpen]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes details-card DOM height to choose a density that fits.
   useLayoutEffect(() => {
     const element = contentElement;
     if (!element || density === "essential") return;

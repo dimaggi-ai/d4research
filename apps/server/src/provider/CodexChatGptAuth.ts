@@ -10,7 +10,6 @@ import {
 } from "@d4research/contracts";
 import { codexCallbackUrl } from "@d4research/shared/codexAuthHandoff";
 import * as Clock from "effect/Clock";
-import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
 import * as Exit from "effect/Exit";

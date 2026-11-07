@@ -10,41 +10,43 @@ import * as Overview from "../../../d4Agent/overview.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { D4AgentToolkit } from "./tools.ts";
-const call = <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4AgentError>) =>
-  Effect.gen(function* () {
-    const scope = yield* McpInvocationContext.McpInvocationContext;
-    const store = yield* Effect.serviceOption(AgentStore.D4AgentStore);
-    if (Option.isNone(store)) return yield* new D4AgentError({ reason: "context" });
-    const state = yield* store.value.get;
-    // MCP credential IDs are per-thread bearer identities, separate from shared provider transports.
-    const sessions = yield* Effect.serviceOption(McpProviderSessions.McpProviderSessions);
-    const credential =
-      scope.thread === undefined || Option.isNone(sessions)
-        ? undefined
-        : yield* sessions.value.read(scope.thread.threadId);
-    if (
-      scope.thread === undefined ||
-      !(
-        scope.thread.threadId === state.threadId ||
-        state.sessions?.some((entry) => entry.threadId === scope.thread!.threadId)
-      ) ||
-      credential === undefined ||
-      credential.providerSessionId !== scope.thread.providerSessionId ||
-      credential.providerInstanceId !== scope.thread.providerInstanceId ||
-      !state.bindings.some(
-        (entry) =>
-          entry.threadId === scope.thread!.threadId &&
-          entry.context ===
-            (state.sessions?.find((session) => session.threadId === scope.thread!.threadId)
-              ?.context ?? state.brainContext),
+const call = Effect.fn("d4AgentToolkit.call")(
+  <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4AgentError>) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const store = yield* Effect.serviceOption(AgentStore.D4AgentStore);
+      if (Option.isNone(store)) return yield* new D4AgentError({ reason: "context" });
+      const state = yield* store.value.get;
+      // MCP credential IDs are per-thread bearer identities, separate from shared provider transports.
+      const sessions = yield* Effect.serviceOption(McpProviderSessions.McpProviderSessions);
+      const credential =
+        scope.thread === undefined || Option.isNone(sessions)
+          ? undefined
+          : yield* sessions.value.read(scope.thread.threadId);
+      if (
+        scope.thread === undefined ||
+        !(
+          scope.thread.threadId === state.threadId ||
+          state.sessions?.some((entry) => entry.threadId === scope.thread!.threadId)
+        ) ||
+        credential === undefined ||
+        credential.providerSessionId !== scope.thread.providerSessionId ||
+        credential.providerInstanceId !== scope.thread.providerInstanceId ||
+        !state.bindings.some(
+          (entry) =>
+            entry.threadId === scope.thread!.threadId &&
+            entry.context ===
+              (state.sessions?.find((session) => session.threadId === scope.thread!.threadId)
+                ?.context ?? state.brainContext),
+        )
       )
-    )
-      return yield* new D4AgentError({ reason: "context" });
-    const service = yield* Agent.D4Agent;
-    return yield* run(service).pipe(
-      Effect.provideService(AgentAccess.ToolCaller, scope.thread.threadId),
-    );
-  }).pipe(Effect.mapError((error) => error.message));
+        return yield* new D4AgentError({ reason: "context" });
+      const service = yield* Agent.D4Agent;
+      return yield* run(service).pipe(
+        Effect.provideService(AgentAccess.ToolCaller, scope.thread.threadId),
+      );
+    }).pipe(Effect.mapError((error) => error.message)),
+);
 export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
   d4_agent_overview: McpToolAccess.reads(({ since, until, limit, offset, ...filter }) =>
     call((service) =>

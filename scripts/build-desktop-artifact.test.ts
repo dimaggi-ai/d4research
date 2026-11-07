@@ -59,6 +59,8 @@ import {
   WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE,
   WSL_RUNTIME_ARCHIVE_HASH_NAME,
   WSL_RUNTIME_ARCHIVE_NAME,
+  bundlesMacServerRuntime,
+  isBundledServerBuildUsable,
   wslRuntimeArchiveStem,
 } from "./build-desktop-artifact.ts";
 import {
@@ -1547,6 +1549,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }),
     ),
   );
+
+  it("bundles the SSH runtime only into arm64 Mac apps", () => {
+    assert.isTrue(bundlesMacServerRuntime("mac", "arm64"));
+    assert.isFalse(bundlesMacServerRuntime("mac", "x64"));
+    assert.isFalse(bundlesMacServerRuntime("linux", "arm64"));
+  });
+
+  it("accepts a missing bundled server stamp only with --skip-build", () => {
+    assert.isTrue(isBundledServerBuildUsable(undefined, "expected", true));
+    assert.isFalse(isBundledServerBuildUsable(undefined, "expected", false));
+    assert.isTrue(isBundledServerBuildUsable("expected", "expected", false));
+    assert.isFalse(isBundledServerBuildUsable("stale", "expected", true));
+  });
 
   it.effect("rejects universal builds on Linux and Windows before staging binaries", () =>
     Effect.gen(function* () {

@@ -69,6 +69,7 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
       ? requestedExitingItemId
       : null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels the pending banner dismissal timer when the stack unmounts.
   useEffect(() => {
     return () => {
       if (dismissTimeoutRef.current) {
@@ -82,6 +83,7 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
     setStackExpanded(false);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Transfers native focus between the expanded notice and collapsed peek control.
   useLayoutEffect(() => {
     if (stackExpanded && pendingFocusRef.current === "notice") {
       pendingFocusRef.current = null;
@@ -272,6 +274,7 @@ export function NoticeText({
   const [detailsAtWidth, setDetailsAtWidth] = useState<number | null>(null);
   const showDetails = detailsAtWidth !== null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes banner DOM overflow and mutations to expose clipped details.
   useLayoutEffect(() => {
     const text = textRef.current;
     if (!text) return;

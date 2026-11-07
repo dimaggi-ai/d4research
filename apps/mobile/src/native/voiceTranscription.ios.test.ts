@@ -52,6 +52,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -101,6 +102,7 @@ describe("getLocalVoiceTranscriber", () => {
   it.each(["prepare", "transcribe"] as const)(
     "waits for native %s to finish before settling cancellation",
     async (phase) => {
+      vi.useFakeTimers();
       const enteredNative = deferred<void>();
       const finishNative = deferred<void>();
       if (phase === "prepare") {
@@ -128,7 +130,7 @@ describe("getLocalVoiceTranscriber", () => {
 
       await enteredNative.promise;
       controller.abort();
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await vi.runAllTimersAsync();
       expect(settled).not.toHaveBeenCalled();
       finishNative.resolve();
 

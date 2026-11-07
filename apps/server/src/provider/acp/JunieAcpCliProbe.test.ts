@@ -1,15 +1,6 @@
-/**
- * Optional integration check against a real `junie --acp=true` install.
- * Enable with: T3_JUNIE_ACP_PROBE=1 vp test run JunieAcpCliProbe
- *
- * This is the counterpart to GrokAcpCliProbe, and the test whose absence let a
- * real bug ship: Junie's discovery was written against Grok's shape
- * (`models.availableModels`), a field Junie never sends. Every fake in the
- * suite was hand-written from that same assumption, so nothing disagreed with
- * it. Only the real CLI does.
- *
- * The probe assumes Junie is already authenticated (`junie` once, interactively).
- */
+// The real CLI catches model-discovery assumptions shared by handwritten mocks.
+// Authenticate Junie interactively first, then enable:
+// T3_JUNIE_ACP_PROBE=1 vp test run JunieAcpCliProbe
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import { it } from "@effect/vitest";
@@ -19,7 +10,6 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
 import { junieModelsFromSessionSetup } from "../Layers/JunieProvider.ts";
@@ -115,58 +105,55 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect(
-    "streams assistant output from a real selected-model prompt",
-    () =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-junie-prompt-probe-" });
-        const diagnostics: Array<string> = [];
-        const runtime = yield* makeProbeRuntime(cwd, diagnostics);
-        yield* runtime.handleRequestPermission((request) => {
-          const option = request.options.find(
-            (candidate) => candidate.kind === "allow_always" || candidate.kind === "allow_once",
-          );
-          return Effect.succeed({
-            outcome: option
-              ? { outcome: "selected" as const, optionId: option.optionId }
-              : ({ outcome: "cancelled" } as const),
-          });
-        });
-        yield* runtime.start();
-        // The generated default dev pipeline prefers Junie's Grok 4.5 for its
-        // BUILD role, so the ungated model in this live probe must exercise
-        // that actual route rather than a merely available catalog entry.
-        const model = process.env.T3_JUNIE_MODEL_PROBE ?? "grok-4.5";
-        yield* runtime.setModel(model);
-        const output = yield* Ref.make<ReadonlyArray<string>>([]);
-        const eventsFiber = yield* runtime.getEvents().pipe(
-          Stream.runForEach((event) => {
-            recordDiagnostic(diagnostics, `event:${event._tag}`);
-            if (event._tag === "EventStreamBarrier") {
-              return Deferred.succeed(event.acknowledge, undefined);
-            }
-            return event._tag === "ContentDelta" && event.streamKind === "assistant_text"
-              ? Ref.update(output, (current) => [...current, event.text])
-              : Effect.void;
-          }),
-          Effect.forkChild,
+  it.effect("streams assistant output from a real selected-model prompt", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-junie-prompt-probe-" });
+      const diagnostics: Array<string> = [];
+      const runtime = yield* makeProbeRuntime(cwd, diagnostics);
+      yield* runtime.handleRequestPermission((request) => {
+        const option = request.options.find(
+          (candidate) => candidate.kind === "allow_always" || candidate.kind === "allow_once",
         );
+        return Effect.succeed({
+          outcome: option
+            ? { outcome: "selected" as const, optionId: option.optionId }
+            : ({ outcome: "cancelled" } as const),
+        });
+      });
+      yield* runtime.start();
+      // The generated default dev pipeline prefers Junie's Grok 4.5 for its
+      // BUILD role, so the ungated model in this live probe must exercise
+      // that actual route rather than a merely available catalog entry.
+      const model = process.env.T3_JUNIE_MODEL_PROBE ?? "grok-4.5";
+      yield* runtime.setModel(model);
+      const output = yield* Ref.make<ReadonlyArray<string>>([]);
+      const eventsFiber = yield* runtime.getEvents().pipe(
+        Stream.runForEach((event) => {
+          recordDiagnostic(diagnostics, `event:${event._tag}`);
+          if (event._tag === "EventStreamBarrier") {
+            return Deferred.succeed(event.acknowledge, undefined);
+          }
+          return event._tag === "ContentDelta" && event.streamKind === "assistant_text"
+            ? Ref.update(output, (current) => [...current, event.text])
+            : Effect.void;
+        }),
+        Effect.forkChild,
+      );
 
-        const sentinel = "T3_JUNIE_REAL_OUTPUT_OK";
-        const result = yield* runtime
-          .prompt({
-            prompt: [{ type: "text", text: `Return exactly this token and no prose: ${sentinel}` }],
-          })
-          .pipe(Effect.timeoutOption("60 seconds"));
-        if (Option.isSome(result)) yield* runtime.drainEvents;
-        yield* Fiber.interrupt(eventsFiber);
+      const sentinel = "T3_JUNIE_REAL_OUTPUT_OK";
+      const result = yield* runtime
+        .prompt({
+          prompt: [{ type: "text", text: `Return exactly this token and no prose: ${sentinel}` }],
+        })
+        .pipe(Effect.timeoutOption("60 seconds"));
+      if (Option.isSome(result)) yield* runtime.drainEvents;
+      yield* Fiber.interrupt(eventsFiber);
 
-        expect(Option.isSome(result), diagnostics.join("\n")).toBe(true);
-        if (Option.isNone(result)) return;
-        expect(result.value.stopReason).not.toBe("cancelled");
-        expect((yield* Ref.get(output)).join("").trim()).toBe(sentinel);
-      }).pipe(Effect.scoped, Effect.timeout("90 seconds"), Effect.provide(NodeServices.layer)),
-    100_000,
+      expect(Option.isSome(result), diagnostics.join("\n")).toBe(true);
+      if (Option.isNone(result)) return;
+      expect(result.value.stopReason).not.toBe("cancelled");
+      expect((yield* Ref.get(output)).join("").trim()).toBe(sentinel);
+    }).pipe(Effect.scoped, Effect.timeout("90 seconds"), Effect.provide(NodeServices.layer)),
   );
 });

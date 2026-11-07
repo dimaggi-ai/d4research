@@ -75,6 +75,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   }, []);
 
   const submenuDepth = path.length;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the native Android back listener while the keyboard-preserving menu is open.
   useEffect(() => {
     if (anchor === null || !anchor.keyboardWasVisible) {
       return;

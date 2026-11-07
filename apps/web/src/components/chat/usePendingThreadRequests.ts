@@ -209,6 +209,7 @@ export function usePendingThreadRequests(input: {
     activeThreadId,
     activePendingUserInput?.requestId,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained pending-question answer seeding; moving it requires preserving drafts across server request replacement.
   useEffect(() => {
     if (!activePendingUserInput) return;
     setPendingUserInputAnswersByRequestId((existing) => {
@@ -253,6 +254,7 @@ export function usePendingThreadRequests(input: {
       Object.fromEntries(pendingQuestionDraftKeys.map((key) => [key, state.counts[key] ?? 0])),
     ),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases question attachment drafts and preparation resources after their server requests disappear.
   useEffect(() => {
     if (!activeThread || serverProjection === null) return;
     const questionThread = activeThread;

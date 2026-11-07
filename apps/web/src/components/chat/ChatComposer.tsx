@@ -454,6 +454,7 @@ function SnapShotAttachmentFrame({
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scrolls the arriving attachment DOM into view and registers its snapshot animation destination.
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (!frame || (!animationId && !arrival)) return;
@@ -580,6 +581,7 @@ function useComposerRestingTransition(
     clearOverlayPin();
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the ResizeObserver callback current with the committed composer collapse state.
   useLayoutEffect(() => {
     isCollapsedRef.current = isCollapsed;
   });
@@ -924,6 +926,7 @@ function useComposerRestingTransition(
     };
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures and animates composer DOM geometry after parent layout updates settle.
   useLayoutEffect(() => {
     const requestId = transitionLayoutRequestRef.current + 1;
     transitionLayoutRequestRef.current = requestId;
@@ -942,6 +945,7 @@ function useComposerRestingTransition(
     };
   }, [isCollapsed, transitionToCurrentGeometry]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Publishes measured overlay DOM height when the composer enters or leaves its resting layout.
   useLayoutEffect(() => {
     if (previousRestingRef.current === isResting) return;
     previousRestingRef.current = isResting;
@@ -950,6 +954,7 @@ function useComposerRestingTransition(
     if (overlay) onOverlayHeightChange(overlay.getBoundingClientRect().height);
   }, [isResting, onOverlayHeightChange]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes composer DOM size to update transition geometry without rerendering every animation frame.
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
@@ -994,6 +999,7 @@ function useComposerRestingTransition(
     });
   }, [restingControlsRef, transitionToCurrentGeometry]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases composer animations, transition timers and temporary DOM styles on unmount.
   useEffect(() => {
     hasCompletedInitialLayoutRef.current = true;
     return () => {
@@ -1027,6 +1033,7 @@ function composerCommandMenuPositionsEqual(
 function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children: ReactNode }) {
   const [position, setPosition] = useState<ComposerCommandMenuPosition | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Tracks menu position against anchor DOM geometry, scrolling and window resizing.
   useLayoutEffect(() => {
     const anchor = props.anchor;
     if (!anchor) return;
@@ -1212,6 +1219,7 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
     });
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes control DOM size, mutations and font loading to measure the resting controls.
   useLayoutEffect(() => {
     const currentHost = useControlsAsHost ? controls : host;
     if (!currentHost || !controls) return;
@@ -1613,6 +1621,7 @@ function useProviderWorkspaceSnapshotRefresh(input: {
     selectedProviderStatus?.workspaceSnapshots?.some(
       (snapshot) => snapshot.cwd === gitCwd && snapshot.slashCommandsPending === true,
     ) ?? false;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the workspace snapshot retry timer while the slash-command snapshot is pending.
   useEffect(() => {
     if (
       !workspaceSlashCommandsPending ||
@@ -1687,6 +1696,7 @@ function useProviderWorkspaceSnapshotRefresh(input: {
     }, retryLater);
   };
   const refreshWorkspaceSnapshotOnChange = useEffectEvent(refreshWorkspaceSnapshotIfStale);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained workspace snapshot refresh orchestration after snapshot loss; changing it requires retry and scope isolation tests.
   useEffect(() => {
     refreshWorkspaceSnapshotOnChange(
       Date.now(),
@@ -1952,9 +1962,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...pendingApprovals.map((request) => request.requestId),
     ...incomingPendingUserInputs.map((request) => request.requestId),
   ]);
+  const onHeldRequestIdsChange = props.onHeldRequestIdsChange;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained held-request publication to the parent; moving it requires coordinating typing-idle releases and server arrivals.
   useLayoutEffect(() => {
-    props.onHeldRequestIdsChange?.(heldRequestIds);
-  }, [heldRequestIds, props.onHeldRequestIdsChange]);
+    onHeldRequestIdsChange?.(heldRequestIds);
+  }, [heldRequestIds, onHeldRequestIdsChange]);
   const activePendingApproval =
     incomingPendingApproval && !heldRequestIds.has(incomingPendingApproval.requestId)
       ? incomingPendingApproval
@@ -1972,6 +1984,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isEditingQueuedMessage = editingQueuedAttachments !== null;
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const composerDraftTargetKeyRef = useRef("");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps async draft completion guards aligned with the committed composer target.
   useLayoutEffect(() => {
     composerDraftTargetKeyRef.current = composerDraftTargetKey;
   });
@@ -1990,6 +2003,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // An import that finishes after a draft change must compare against the draft open *now*, not
   // the one captured in the closure that started it.
   const attachmentTargetKeyRef = useRef(attachmentTargetKey);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps async attachment upload guards aligned with the committed attachment target.
   useLayoutEffect(() => {
     attachmentTargetKeyRef.current = attachmentTargetKey;
   });
@@ -2157,6 +2171,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Starts and releases attachment upload resources as server capabilities and draft files change.
   useEffect(() => {
     if (!attachmentUploadsCapabilityKnown) {
       return;
@@ -2207,6 +2222,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     supportsAttachmentUploads,
   ]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained completed-upload persistence into draft files; moving it requires coordinating upload and hydration ownership.
   useEffect(() => {
     for (const file of composerFiles) {
       if (
@@ -2461,6 +2477,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const pendingImageCompressionsRef = useRef<Map<string, number>>(new Map());
   const pendingThreadImportsRef = useRef<Map<string, number>>(new Map());
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps asynchronous import handlers aware of checkpoint reverts before applying results.
   useLayoutEffect(() => {
     isRevertingCheckpointRef.current = isRevertingCheckpoint;
   });
@@ -2835,6 +2852,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activeComposerMenuItem =
     composerMenuItems.find((item) => item.id === activeComposerMenuItemId) ?? null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps imperative composer keyboard handlers aligned with the committed menu selection.
   useLayoutEffect(() => {
     composerMenuOpenRef.current = composerMenuOpen;
     composerMenuItemsRef.current = composerMenuItems;
@@ -3322,6 +3340,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextRecords(fragment.records, fragment.source.environmentId);
   const importContextFragmentStable = useStableCallback(importContextFragment);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative composer send handle current with the committed non-answer prompt.
   useEffect(() => {
     if (isLiteralPendingAnswer) return;
     promptRef.current = prompt;
@@ -3360,14 +3379,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setProviderInputSubmissionError(null);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative composer send handle current with committed image attachments.
   useEffect(() => {
     composerImagesRef.current = composerImages;
   }, [composerImages, composerImagesRef]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative composer send handle current with committed file attachments.
   useEffect(() => {
     composerFilesRef.current = composerFiles;
   }, [composerFiles, composerFilesRef]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative composer send handle current with committed terminal context.
   useEffect(() => {
     composerTerminalContextsRef.current = composerTerminalContexts;
   }, [composerTerminalContexts, composerTerminalContextsRef]);
@@ -3388,6 +3410,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     questionId: string | null;
   } | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained pending-answer cursor reconciliation with external answer drafts; changing it risks overwriting in-progress input.
   useEffect(() => {
     const nextCustomAnswer = activePendingProgress?.customAnswer;
     if (typeof nextCustomAnswer !== "string") {
@@ -3451,6 +3474,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsComposerScrollCollapsed(false);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes composer form DOM width to select controls that fit the available space.
   useLayoutEffect(() => {
     const composerForm = composerFormRef.current;
     if (!composerForm) return;
@@ -3487,6 +3511,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
   }, [composerFooterHasWideActions]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Serializes image blob resources into persistent draft attachments and cancels obsolete completions.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -4179,6 +4204,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Entries are built on the keypress, not per render: the timeline changes
   // on every streamed delta and ArrowUp is rare.
   const promptHistoryMessagesRef = useRef(promptHistoryMessages);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative history-navigation callback current without rebuilding history on streamed deltas.
   useLayoutEffect(() => {
     promptHistoryMessagesRef.current = promptHistoryMessages;
   });
@@ -4329,6 +4355,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const takeStashEntry = usePromptStashStore((state) => state.takeEntry);
   const finalizeStashEntryImages = usePromptStashStore((state) => state.finalizeEntryImages);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels the stash highlight timer when the composer unmounts.
   useEffect(() => {
     return () => {
       if (stashPulseTimeoutRef.current !== null) {
@@ -4699,11 +4726,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ...(file.source ? { source: file.source } : {}),
       });
     }
-    // A repeat ⌘S on the *same* still-unencoded snapshot would stash it
-    // twice. Guard on the snapshot itself rather than a bare boolean: once
-    // the composer has been cleared the user can type something genuinely
-    // new (or switch threads) while encoding continues, and that deserves its
-    // own entry.
+    // Deduplicate the still-encoding snapshot, not all stash requests: after
+    // clearing the composer, new text or another thread deserves its own entry.
     const attachmentKey = images
       .map((image) => `image:${image.id}`)
       .concat(files.map((file) => `file:${file.id}`))
@@ -4949,14 +4973,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   if (composerControlsHidden && isComposerModelPickerOpen) {
     setIsComposerModelPickerOpen(false);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained resting-control visibility publication to the parent layout; moving it requires shared layout ownership.
   useLayoutEffect(() => {
     onRestingControlsVisibilityChange(composerControlsVisibleInStrip);
   }, [composerControlsVisibleInStrip, onRestingControlsVisibilityChange]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained resting-state publication to the parent layout; moving it requires preserving collapse animation ordering.
   useLayoutEffect(() => {
     onRestingChange(isComposerResting);
   }, [isComposerResting, onRestingChange]);
   const [restingActionsElement, setRestingActionsElement] = useState<HTMLDivElement | null>(null);
   const [restingActionsWidth, setRestingActionsWidth] = useState<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures and observes resting action DOM width for composer layout.
   useLayoutEffect(() => {
     if (!isComposerResting || !restingActionsElement) return;
     const measure = () => setRestingActionsWidth(restingActionsElement.offsetWidth);
@@ -5052,10 +5079,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !composerHasExpandedChrome &&
     !showInlineTasksBadge;
   const composerScrollCollapseEligible = canScrollCollapseComposer && !isComposerResting;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the native wheel listener current with committed composer collapse eligibility.
   useLayoutEffect(() => {
     composerScrollCollapseEligibleRef.current = composerScrollCollapseEligible;
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained parent-owned scroll-collapse reset when eligibility changes; moving it requires coordinating all eligibility sources.
   useEffect(() => {
     if (!canScrollCollapseComposer) {
       setIsComposerScrollCollapsed(false);
@@ -5065,6 +5094,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Returning to the window re-fires focus on the element that already held
   // it. That focus arrives after the window's own event, so a window focus
   // marks the frame in which it should be ignored by the form's capture.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Tracks native window focus restoration for one animation frame to avoid expanding on restored focus.
   useEffect(() => {
     if (!isComposerScrollCollapsed) return;
     let frame: number | null = null;
@@ -5084,6 +5114,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [isComposerScrollCollapsed]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the native wheel listener and gesture-reset timer used to collapse the composer.
   useEffect(() => {
     if (!canTrackComposerScrollGesture) return;
 
@@ -5359,6 +5390,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (stashMenuClosesOn.prompt !== prompt || composerMenuOpen) setIsStashMenuOpen(false);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Installs the native stash shortcut listener while the composer is mounted.
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       const command = resolveShortcutCommand(event, keybindings, {
@@ -5723,6 +5755,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onTranscript: submitVoiceTranscriptStable,
     onError: reportVoiceErrorStable,
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the imperative composer send handle current with committed pasted context.
   useEffect(() => {
     composerPastedContextsRef.current = composerPastedContexts;
   }, [composerPastedContexts, composerPastedContextsRef]);
@@ -5923,6 +5956,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setContextInsertionHandler = useComposerDraftStore(
     (store) => store.setContextInsertionHandler,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Registers the mounted composer insertion handler and releases it when the draft target changes.
   useEffect(() => {
     return setContextInsertionHandler(composerDraftTarget, insertContextReferencesAtCaretStable);
   }, [composerDraftTarget, insertContextReferencesAtCaretStable, setContextInsertionHandler]);
@@ -6071,6 +6105,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // target, which would leave the drop highlight stuck. dragend always fires
   // on the in-page drag source and bubbles to window, so it is the reset of
   // last resort while the highlight is up.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the composer highlight when the native drag session ends outside its DOM.
   useEffect(() => {
     if (!isDragOverComposer) return;
     const onWindowDragEnd = () => {
@@ -6118,6 +6153,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels pending blur and mobile expansion animation frames on unmount.
   useEffect(() => {
     return () => {
       if (composerBlurFrameRef.current !== null) {

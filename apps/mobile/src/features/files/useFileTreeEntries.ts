@@ -47,6 +47,7 @@ export function useFileTreeEntries(input: {
   const [refreshingDirectories, setRefreshingDirectories] = useState<typeof directories | null>(
     null,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Abort outstanding directory requests when their workspace changes or the browser unmounts.
   useEffect(
     () => () => {
       refreshVersion.current++;

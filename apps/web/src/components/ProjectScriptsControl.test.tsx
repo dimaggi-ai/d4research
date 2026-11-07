@@ -1,11 +1,10 @@
 import { EnvironmentId } from "@d4research/contracts";
-import type { ProjectScript, ResolvedKeybindingsConfig } from "@d4research/contracts";
+import type { ProjectScript } from "@d4research/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import ProjectScriptsControl from "./ProjectScriptsControl";
 
-const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const PRIMARY_SCRIPT: ProjectScript = {
   id: "dev",
   name: "Dev",

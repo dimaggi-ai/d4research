@@ -1,6 +1,6 @@
-import { act, type ComponentProps } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { type ComponentProps } from "react";
+import { render as renderComponent } from "../../../test/render";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   projection: null as unknown,
@@ -30,16 +30,6 @@ vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
 
 import { QueuedRunsControl } from "./QueuedRunsControl";
 
-const roots: Root[] = [];
-
-afterEach(async () => {
-  await act(async () => {
-    for (const root of roots.splice(0)) root.unmount();
-  });
-  document.body.replaceChildren();
-  vi.unstubAllGlobals();
-});
-
 const baseProps = {
   environmentId: "environment:test" as never,
   optimisticMessages: [],
@@ -50,13 +40,7 @@ const baseProps = {
 } satisfies ComponentProps<typeof QueuedRunsControl>;
 
 async function render(props: Partial<ComponentProps<typeof QueuedRunsControl>> = {}) {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  roots.push(root);
-  await act(async () => root.render(<QueuedRunsControl {...baseProps} {...props} />));
-  return container;
+  return renderComponent(<QueuedRunsControl {...baseProps} {...props} />, { router: false });
 }
 
 const labels = (container: HTMLElement) =>
@@ -87,9 +71,9 @@ describe("QueuedRunsControl automatic completion delivery", () => {
       queuedRuns: [],
     };
 
-    const view = await render();
+    await using screen = await render();
 
-    expect(view.childElementCount).toBe(0);
+    expect(screen.container.childElementCount).toBe(0);
   });
 });
 
@@ -119,13 +103,17 @@ describe("QueuedRunsControl attachments and edit mode", () => {
     state.projection = { projection: { messages: [] } };
     state.workflow = workflowWithAttachment();
 
-    const view = await render();
+    await using screen = await render();
 
-    expect(view.querySelector("img")?.getAttribute("src")).toBe("https://assets.test/attachment-1");
-    expect(view.textContent).toContain("Queued with a screenshot");
-    expect(labels(view)).toContain("Edit queued message");
-    expect(labels(view)).toContain("Reorder queued message (drag, or press the arrow keys)");
-    expect(labels(view)).not.toContain("Move queued message up");
+    expect(screen.container.querySelector("img")?.getAttribute("src")).toBe(
+      "https://assets.test/attachment-1",
+    );
+    expect(screen.container.textContent).toContain("Queued with a screenshot");
+    expect(labels(screen.container)).toContain("Edit queued message");
+    expect(labels(screen.container)).toContain(
+      "Reorder queued message (drag, or press the arrow keys)",
+    );
+    expect(labels(screen.container)).not.toContain("Move queued message up");
   });
 
   it("drops the optimistic pending row once the projection holds its message", async () => {
@@ -139,7 +127,7 @@ describe("QueuedRunsControl attachments and edit mode", () => {
       queuedRuns: [],
     };
 
-    const view = await render({
+    await using screen = await render({
       optimisticMessages: [
         {
           id: "message:acknowledged" as never,
@@ -150,15 +138,15 @@ describe("QueuedRunsControl attachments and edit mode", () => {
       ],
     });
 
-    expect(view.childElementCount).toBe(0);
+    expect(screen.container.childElementCount).toBe(0);
   });
 
   it("keeps the original queued message visible while editing", async () => {
     state.projection = { projection: { messages: [] } };
     state.workflow = workflowWithAttachment();
 
-    const view = await render({ editingRunId: "run:queued" as never });
+    await using screen = await render({ editingRunId: "run:queued" as never });
 
-    expect(view.textContent).toContain("Queued with a screenshot");
+    expect(screen.container.textContent).toContain("Queued with a screenshot");
   });
 });

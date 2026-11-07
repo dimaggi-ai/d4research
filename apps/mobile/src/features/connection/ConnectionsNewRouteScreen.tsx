@@ -61,14 +61,18 @@ export function ConnectionsNewRouteScreen({
 
   const connectDisabled = isSubmitting || hostInput.trim().length === 0;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a new pairing URL reseeds fields the user can then edit
   useEffect(() => {
     const { host, code } = parsePairingUrl(connectionPairingUrl);
+    // oxlint-disable-next-line react/set-state-in-effect -- reseeds editable fields from a URL that arrives after mount
     setHostInput(host);
     setCodeInput(code);
   }, [connectionPairingUrl]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- an error from the pairing flow ends the submit in flight
   useEffect(() => {
     if (pairingConnectionError) {
+      // oxlint-disable-next-line react/set-state-in-effect -- only a new error ends the submit; a stale one must not cancel a retry
       setIsSubmitting(false);
     }
   }, [pairingConnectionError]);
@@ -83,6 +87,7 @@ export function ConnectionsNewRouteScreen({
     setPendingConnectionError(null);
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the shared pairing error when the screen unmounts
   useEffect(() => () => setPendingConnectionError(null), []);
 
   const handleScanPress = useCallback(async () => {

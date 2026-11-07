@@ -1,25 +1,5 @@
-/**
- * Normalizers for provider rate-limit payloads.
- *
- * Both adapters emit `account.rate-limits.updated` runtime events whose
- * payload is whatever the provider produced:
- *
- * - Claude, full set: the SDK usage control response
- *   (`{ subscription_type, rate_limits: { five_hour, seven_day, ... } }`).
- * - Claude, streamed: the `rate_limit_event` SDK message. Current versions
- *   carry all windows in `rate_limit_info.unifiedWindows`; older versions
- *   expose one binding window through `rateLimitType` and `utilization`.
- * - Codex, live: the `account/rateLimits/updated` app-server notification
- *   (`{ rateLimits: { limitId, primary, secondary, planType, ... } }`,
- *   camelCase).
- * - Codex, transcript: the `rate_limits` object Codex writes beside every
- *   `token_count` line in its session files (same snapshot, snake_case).
- *
- * Everything folds into the `AccountLimitsWindow` contract shape here so the
- * service and clients never see a provider-specific field name.
- *
- * @module accountLimitsNormalize
- */
+// Fold Claude SDK windows and Codex live/transcript snapshots into the shared
+// AccountLimitsWindow shape so provider field names stay at this boundary.
 import type { AccountLimitsWindow } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -108,14 +88,8 @@ interface ClaudeWindowMeta {
   readonly minutes: number | null;
 }
 
-/**
- * Maps a Claude window key to its display identity, or null for hidden keys.
- *
- * Unrecognised keys still become windows (with a humanized label) so a window
- * Anthropic adds or renames shows up without a code change. The Fable weekly
- * has already lived under more than one name, so anything fable-ish is
- * normalised onto one id.
- */
+// Preserve unknown Claude windows with humanized labels, and normalize renamed
+// Fable weekly windows onto one stable identity.
 function claudeWindowMeta(key: string): ClaudeWindowMeta | null {
   if (CLAUDE_HIDDEN_WINDOW_KEYS.has(key)) return null;
   if (key === "five_hour") return { id: "five_hour", label: "5h", minutes: FIVE_HOUR_MINUTES };
@@ -146,15 +120,8 @@ function claudeWindowFromEntry(meta: ClaudeWindowMeta, entry: unknown): AccountL
   };
 }
 
-/**
- * A window the provider has never metered says nothing: untouched windows
- * report 0% used with no reset clock (the reset only exists once there is
- * traffic). Dropping them here - the one place windows are assembled -
- * keeps every client rendering the array as-is while sparing all of them a
- * row like a bare provider-side slug at a permanent 0%. A window appears
- * the moment it first carries usage, which is also when its reset clock
- * starts meaning something.
- */
+// Untouched windows report zero usage without a reset clock. Hide them until
+// metering starts so clients do not display permanently empty provider windows.
 export function windowHasTraffic(window: AccountLimitsWindow): boolean {
   return window.usedPercent > 0 || window.resetsAt !== null;
 }

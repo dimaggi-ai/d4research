@@ -547,10 +547,6 @@
       "types": "./src/markdownFrontmatter.ts",
       "import": "./src/markdownFrontmatter.ts"
     },
-    "./markdownWindowsPaths": {
-      "types": "./src/markdownWindowsPaths.ts",
-      "import": "./src/markdownWindowsPaths.ts"
-    },
     "./environmentGateway": {
       "types": "./src/environmentGateway.ts",
       "import": "./src/environmentGateway.ts"

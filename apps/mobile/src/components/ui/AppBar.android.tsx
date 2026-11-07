@@ -34,6 +34,7 @@ export function AppBar(props: AppBarProps) {
     setSearchOpen(false);
     Keyboard.dismiss();
   }, [onSearchChange]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the native Android back listener while fullscreen search is active.
   useEffect(() => {
     if (!searching || search?.mode === "inline") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {

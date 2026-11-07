@@ -1,5 +1,10 @@
 import { makeThreadRequestsResolvedAnnouncer } from "@d4research/client-runtime/state/thread-requests";
-import { ApprovalRequestId, EnvironmentId, RuntimeRequestId, ThreadId } from "@d4research/contracts";
+import {
+  ApprovalRequestId,
+  EnvironmentId,
+  RuntimeRequestId,
+  ThreadId,
+} from "@d4research/contracts";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
 import { useComposerDraftStore } from "./composerDraftStore";
 import {

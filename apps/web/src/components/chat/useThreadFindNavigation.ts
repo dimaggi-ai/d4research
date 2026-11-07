@@ -48,9 +48,11 @@ export function useThreadFindNavigation({
     null,
   );
   const currentEntriesRef = useRef(entries);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the native scroll listener current with committed timeline entries.
   useLayoutEffect(() => {
     currentEntriesRef.current = entries;
   }, [entries]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Tracks native scrolling to retain the active find range position while paging.
   useEffect(() => {
     if (!container) return;
     const onScroll = () => {
@@ -72,6 +74,7 @@ export function useThreadFindNavigation({
     return () => container.removeEventListener("scroll", onScroll);
   }, [container]);
   const revealRef = useRef<(range: Range | null) => void>(() => {});
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidates pending asynchronous find reveals when their match changes or unmounts.
   useLayoutEffect(() => {
     currentMatchKeyRef.current = matchKey;
     return () => {
@@ -84,6 +87,7 @@ export function useThreadFindNavigation({
     key: null,
     pages: new Set(),
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retained history paging to reveal an unloaded search match; changing it requires preserving cursor deduplication.
   useEffect(() => {
     if (requestedPagesRef.current.key !== matchKey)
       requestedPagesRef.current = { key: matchKey, pages: new Set() };
@@ -229,6 +233,7 @@ export function useThreadFindNavigation({
     }
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps asynchronous DOM range callbacks current with the committed reveal handler.
   useLayoutEffect(() => {
     revealRef.current = reveal;
   }, [reveal]);

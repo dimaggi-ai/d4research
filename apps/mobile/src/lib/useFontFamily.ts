@@ -4,6 +4,6 @@ const FONT_FAMILIES = {
   bold: "DMSans-Bold",
 } as const;
 
-export function useFontFamily(weight: keyof typeof FONT_FAMILIES): string {
+export function getFontFamily(weight: keyof typeof FONT_FAMILIES): string {
   return FONT_FAMILIES[weight];
 }

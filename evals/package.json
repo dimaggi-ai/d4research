@@ -11,10 +11,10 @@
     "test": "vp test run --config ../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@effect/platform-node": "catalog:",
     "@d4research/contracts": "workspace:*",
     "@d4research/provider-core": "workspace:*",
     "@d4research/shared": "workspace:*",
+    "@effect/platform-node": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

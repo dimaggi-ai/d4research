@@ -176,6 +176,7 @@ export function DraftHeroHeadline({
   // The picker can change the draft's target while the no-project home is
   // still being opened; a stale continuation must not retarget it again.
   const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps asynchronous title-generation completion guards aligned with the committed draft target.
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
   }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);

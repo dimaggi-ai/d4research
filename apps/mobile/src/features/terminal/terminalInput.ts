@@ -10,7 +10,7 @@ export type ModifiedTerminalInput =
   | { readonly kind: "write"; readonly data: string }
   | { readonly kind: "paste" };
 
-// eslint-disable-next-line no-control-regex -- Pasted text must not carry raw terminal controls.
+// Pasted text must not carry raw terminal controls.
 const UNSAFE_PASTE_BYTES = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 
 export function applyCtrlModifier(input: string): string {
@@ -35,14 +35,8 @@ export function applyCtrlModifier(input: string): string {
   return input;
 }
 
-/**
- * The host's paste chord (cmd+v on a macOS host, ctrl+v elsewhere) pastes the
- * device clipboard instead of reaching the remote shell as a raw control byte,
- * which matches what the web terminal does with the same chord. Forwarding the
- * byte is never what a phone user means: PowerShell binds ctrl+v to paste from
- * the host machine's clipboard, so the shell inserts whatever the desktop last
- * copied rather than the text on the phone.
- */
+// Intercept the host's paste chord to send the phone clipboard; forwarding Ctrl+V
+// would make PowerShell paste the host machine's clipboard instead.
 export function resolveModifiedTerminalInput(input: {
   readonly data: string;
   readonly modifier: PendingModifier;
@@ -59,14 +53,8 @@ export function resolveModifiedTerminalInput(input: {
   };
 }
 
-/**
- * Encodes clipboard text for the remote pty the way the web terminal does when
- * bracketed paste is off: unsafe control bytes become spaces (which also
- * defuses an embedded bracketed-paste end marker, since its ESC goes too) and
- * line breaks become carriage returns, since a bare LF is Ctrl+J to a raw-mode
- * TUI. The native mobile surface does not expose DECSET 2004, so mobile never
- * wraps a paste in bracketed-paste markers.
- */
+// The native surface cannot report bracketed-paste mode: strip unsafe control
+// bytes and send CR for line breaks because raw-mode TUIs interpret LF as Ctrl+J.
 export function encodeTerminalPaste(text: string): string {
   return text.replace(UNSAFE_PASTE_BYTES, " ").replace(/\r\n|\n/g, "\r");
 }

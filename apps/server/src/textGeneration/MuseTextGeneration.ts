@@ -38,50 +38,52 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   // so the turn text never arrives. Instead remove exactly the durable log
   // Muse returned, and only when it sits under Muse's own session store.
   // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-  const removeSessionLog = (museHome: string, sessionId: string, sessionPath: string) =>
-    Effect.gen(function* () {
-      if (!sessionPath) return;
-      const root = NodePath.resolve(museHome, "sessions");
-      const target = NodePath.resolve(sessionPath);
-      if (target === root || !target.startsWith(`${root}${NodePath.sep}`)) return;
-      if (NodePath.basename(target) !== "session.jsonl") return;
-      if (NodePath.basename(NodePath.dirname(target)) !== sessionId) return;
-      const info = yield* fs.stat(target).pipe(Effect.orElseSucceed(() => undefined));
-      if (info?.type !== "File") return;
-      yield* fs.remove(target).pipe(Effect.orElseSucceed(() => undefined));
-    }).pipe(Effect.orElseSucceed(() => undefined));
-  const runMuseJson = <S extends Schema.Top>({
-    operation,
-    cwd,
-    prompt,
-    outputSchemaJson,
-    modelSelection,
-  }: {
-    operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle"
-      | "generateReviewGuide";
-    cwd: string;
-    prompt: string;
-    outputSchemaJson: S;
-    modelSelection: ModelSelection;
-  }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
-    Effect.gen(function* () {
-      const completed = yield* Deferred.make<void, TextGenerationError>();
-      const commandId = yield* crypto.randomUUIDv7();
-      const items = new Set<string>();
-      let output = "";
-      const runtime = yield* (options?.makeRuntime ?? makeMuseMspRuntime)({
-        settings,
-        environment,
-        spawner,
-        cwd,
-        clientInfo: { name: "t3_code", version: "0.0.1" },
-        // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-        onEvent: (method, params) =>
-          Effect.gen(function* () {
+  const removeSessionLog = Effect.fn("MuseTextGeneration.removeSessionLog")(
+    (museHome: string, sessionId: string, sessionPath: string) =>
+      Effect.gen(function* () {
+        if (!sessionPath) return;
+        const root = NodePath.resolve(museHome, "sessions");
+        const target = NodePath.resolve(sessionPath);
+        if (target === root || !target.startsWith(`${root}${NodePath.sep}`)) return;
+        if (NodePath.basename(target) !== "session.jsonl") return;
+        if (NodePath.basename(NodePath.dirname(target)) !== sessionId) return;
+        const info = yield* fs.stat(target).pipe(Effect.orElseSucceed(() => undefined));
+        if (info?.type !== "File") return;
+        yield* fs.remove(target).pipe(Effect.orElseSucceed(() => undefined));
+      }).pipe(Effect.orElseSucceed(() => undefined)),
+  );
+  const runMuseJson = Effect.fn("MuseTextGeneration.runMuseJson")(
+    <S extends Schema.Top>({
+      operation,
+      cwd,
+      prompt,
+      outputSchemaJson,
+      modelSelection,
+    }: {
+      operation:
+        | "generateCommitMessage"
+        | "generatePrContent"
+        | "generateBranchName"
+        | "generateThreadTitle"
+        | "generateReviewGuide";
+      cwd: string;
+      prompt: string;
+      outputSchemaJson: S;
+      modelSelection: ModelSelection;
+    }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
+      Effect.gen(function* () {
+        const completed = yield* Deferred.make<void, TextGenerationError>();
+        const commandId = yield* crypto.randomUUIDv7();
+        const items = new Set<string>();
+        let output = "";
+        const runtime = yield* (options?.makeRuntime ?? makeMuseMspRuntime)({
+          settings,
+          environment,
+          spawner,
+          cwd,
+          clientInfo: { name: "t3_code", version: "0.0.1" },
+          // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
+          onEvent: Effect.fn("MuseTextGeneration.onEvent")(function* (method, params) {
             const event = yield* Effect.try(() => decodeMspNotification(method, params)).pipe(
               Effect.orElseSucceed(() => undefined),
             );
@@ -108,47 +110,53 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
                 );
             }
           }),
+        }).pipe(
+          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(FileSystem.FileSystem, fs),
+        );
+        const session = yield* runtime.startSession({
+          approvalMode: "denyUnmatched",
+          modelId: modelSelection.model,
+        });
+        const started = {
+          sessionId: session.session.sessionId,
+          path: session.session.path,
+          home: runtime.museHome,
+        };
+        yield* runtime.startTurn({
+          commandId,
+          sessionId: started.sessionId,
+          input: [{ type: "text", text: prompt }],
+        });
+        // Stop the host before deleting: a live host can flush its log buffers
+        // back to disk after the removal.
+        yield* Effect.raceFirst(Deferred.await(completed), runtime.ended).pipe(
+          Effect.ensuring(
+            runtime.stop
+              .pipe(Effect.ignore)
+              .pipe(
+                Effect.andThen(removeSessionLog(started.home, started.sessionId, started.path)),
+              ),
+          ),
+        );
+        if (!output.trim())
+          return yield* new TextGenerationError({
+            operation,
+            detail: "Muse returned empty output.",
+          });
+        return yield* Schema.decodeEffect(Schema.fromJsonString(outputSchemaJson))(
+          extractJsonObject(output.trim()),
+        );
       }).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
-        Effect.provideService(FileSystem.FileSystem, fs),
-      );
-      const session = yield* runtime.startSession({
-        approvalMode: "denyUnmatched",
-        modelId: modelSelection.model,
-      });
-      const started = {
-        sessionId: session.session.sessionId,
-        path: session.session.path,
-        home: runtime.museHome,
-      };
-      yield* runtime.startTurn({
-        commandId,
-        sessionId: started.sessionId,
-        input: [{ type: "text", text: prompt }],
-      });
-      // Stop the host before deleting: a live host can flush its log buffers
-      // back to disk after the removal.
-      yield* Effect.raceFirst(Deferred.await(completed), runtime.ended).pipe(
-        Effect.ensuring(
-          runtime.stop
-            .pipe(Effect.ignore)
-            .pipe(Effect.andThen(removeSessionLog(started.home, started.sessionId, started.path))),
+        Effect.timeout(MUSE_TIMEOUT_MS),
+        Effect.scoped,
+        Effect.mapError((cause) =>
+          isTextGenerationError(cause)
+            ? cause
+            : new TextGenerationError({ operation, detail: "Muse text generation failed.", cause }),
         ),
-      );
-      if (!output.trim())
-        return yield* new TextGenerationError({ operation, detail: "Muse returned empty output." });
-      return yield* Schema.decodeEffect(Schema.fromJsonString(outputSchemaJson))(
-        extractJsonObject(output.trim()),
-      );
-    }).pipe(
-      Effect.timeout(MUSE_TIMEOUT_MS),
-      Effect.scoped,
-      Effect.mapError((cause) =>
-        isTextGenerationError(cause)
-          ? cause
-          : new TextGenerationError({ operation, detail: "Muse text generation failed.", cause }),
       ),
-    );
+  );
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("MuseTextGeneration.generateCommitMessage")(function* (input) {

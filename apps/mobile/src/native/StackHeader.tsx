@@ -151,6 +151,7 @@ export function NativeStackScreenOptions(props: {
   const latestOptionFunctionsRef = useRef(new Map<string, (...args: unknown[]) => unknown>());
   const optionFunctionWrappersRef = useRef(new Map<string, (...args: unknown[]) => unknown>());
   const normalizedOptions = useMemo(() => normalizeScreenOptions(props.options), [props.options]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Apply committed screen options to the native stack navigator.
   useLayoutEffect(() => {
     if (!tabActive) {
       lastAppliedOptionsSignatureRef.current = undefined;
@@ -173,6 +174,7 @@ export function NativeStackScreenOptions(props: {
     navigation.setOptions(stableOptions);
   }, [navigation, props.optionsVersion, normalizedOptions, tabActive]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep native navigation event subscriptions attached to the current screen listeners.
   useEffect(() => {
     if (!navigation || !props.listeners) {
       return;

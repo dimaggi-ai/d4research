@@ -52,13 +52,8 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = HOSTED_MODELS.map(([
   capabilities: EMPTY_CAPABILITIES,
 }));
 
-/**
- * Junie's catalog arrives as the session's model-category config option, not as
- * `models.availableModels` — it never sends that field, so reading it left
- * discovery empty and silently fell back to the hardcoded list above. Models
- * defined under `~/.junie/models/*.json` come back through here too, as
- * `custom:<file stem>`, which is the id the CLI actually accepts.
- */
+// Junie returns its catalog in the session model-category config option, not availableModels.
+// Local ~/.junie/models/*.json models use the CLI id custom:<file stem>.
 export function junieModelsFromSessionSetup(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
   modelConfigId: string | undefined,
@@ -117,33 +112,37 @@ export const buildInitialJunieProviderSnapshot = Effect.fn("buildInitialJuniePro
   },
 );
 
-const runVersion = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
-  Effect.gen(function* () {
-    const command = settings.binaryPath || "junie";
-    const resolved = yield* resolveSpawnCommand(command, ["--version"], { env: environment });
-    return yield* spawnAndCollect(
-      command,
-      ChildProcess.make(resolved.command, resolved.args, {
-        env: environment,
-        shell: resolved.shell,
-      }),
-    );
-  });
+const runVersion = Effect.fn("JunieProvider.runVersion")(function* (
+  settings: JunieSettings,
+  environment: NodeJS.ProcessEnv,
+) {
+  const command = settings.binaryPath || "junie";
+  const resolved = yield* resolveSpawnCommand(command, ["--version"], { env: environment });
+  return yield* spawnAndCollect(
+    command,
+    ChildProcess.make(resolved.command, resolved.args, {
+      env: environment,
+      shell: resolved.shell,
+    }),
+  );
+});
 
-const discoverModels = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
-  Effect.gen(function* () {
-    const runtime = yield* makeJunieAcpRuntime({
-      junieSettings: settings,
-      environment,
-      cwd: process.cwd(),
-      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
-    });
-    const started = yield* runtime.start();
-    return junieModelsFromSessionSetup(
-      started.sessionSetupResult.configOptions,
-      started.modelConfigId,
-    );
-  }).pipe(Effect.scoped);
+const discoverModels = Effect.fn("JunieProvider.discoverModels")(
+  (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
+    Effect.gen(function* () {
+      const runtime = yield* makeJunieAcpRuntime({
+        junieSettings: settings,
+        environment,
+        cwd: process.cwd(),
+        clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+      });
+      const started = yield* runtime.start();
+      return junieModelsFromSessionSetup(
+        started.sessionSetupResult.configOptions,
+        started.modelConfigId,
+      );
+    }).pipe(Effect.scoped),
+);
 
 export const checkJunieProviderStatus = Effect.fn("checkJunieProviderStatus")(function* (
   settings: JunieSettings,

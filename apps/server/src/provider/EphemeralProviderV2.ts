@@ -22,79 +22,85 @@ export class EphemeralProviderError extends Data.TaggedError("EphemeralProviderE
 }> {}
 
 /** Advisory sessions never register a durable thread or mint an MCP credential. */
-export const runEphemeralProviderV2 = function <R = never>(input: {
-  readonly adapter: ProviderAdapterV2["Service"];
-  readonly threadId: ThreadId;
-  readonly modelSelection: ModelSelection;
-  readonly cwd: string;
-  readonly prompts: ReadonlyArray<{
-    readonly text: string;
-    readonly attachments?: ReadonlyArray<ChatAttachment>;
-    readonly timeoutMillis: number;
-  }>;
-  readonly startTimeoutMillis: number;
-  /** Assistant text only; never native events, tool payloads, or provider logs. */
-  readonly onAssistantText?: (text: string) => Effect.Effect<void, never, R>;
-}) {
-  return Effect.gen(function* () {
-    const scope = yield* Scope.make();
-    return yield* Effect.gen(function* () {
-      const now = yield* DateTime.now;
-      const runtimePolicy = {
-        cwd: input.cwd,
-        runtimeMode: "approval-required" as const,
-        interactionMode: "default" as const,
-        approvalPolicy: "untrusted",
-        sandboxPolicy: { type: "readOnly" },
-      };
-      const runtime = yield* input.adapter
-        .openSession({
-          threadId: input.threadId,
-          providerSessionId: ProviderSessionId.make(`${input.threadId}:session`),
+export const runEphemeralProviderV2 = Effect.fn("EphemeralProviderV2.runEphemeralProviderV2")(
+  function <R = never>(input: {
+    readonly adapter: ProviderAdapterV2["Service"];
+    readonly threadId: ThreadId;
+    readonly modelSelection: ModelSelection;
+    readonly cwd: string;
+    readonly prompts: ReadonlyArray<{
+      readonly text: string;
+      readonly attachments?: ReadonlyArray<ChatAttachment>;
+      readonly timeoutMillis: number;
+    }>;
+    readonly startTimeoutMillis: number;
+    /** Assistant text only; never native events, tool payloads, or provider logs. */
+    readonly onAssistantText?: (text: string) => Effect.Effect<void, never, R>;
+  }) {
+    return Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      return yield* Effect.gen(function* () {
+        const now = yield* DateTime.now;
+        const runtimePolicy = {
+          cwd: input.cwd,
+          runtimeMode: "approval-required" as const,
+          interactionMode: "default" as const,
+          approvalPolicy: "untrusted",
+          sandboxPolicy: { type: "readOnly" },
+        };
+        const runtime = yield* input.adapter
+          .openSession({
+            threadId: input.threadId,
+            providerSessionId: ProviderSessionId.make(`${input.threadId}:session`),
+            modelSelection: input.modelSelection,
+            runtimePolicy,
+          })
+          .pipe(Effect.timeout(input.startTimeoutMillis));
+        const providerThread = yield* runtime
+          .ensureThread({
+            threadId: input.threadId,
+            modelSelection: input.modelSelection,
+            runtimePolicy,
+          })
+          .pipe(Effect.timeout(input.startTimeoutMillis));
+        const appThread: OrchestrationV2AppThread = {
+          id: input.threadId,
+          projectId: ProjectId.make(`${input.threadId}:ephemeral`),
+          title: "Advisory session",
+          providerInstanceId: input.modelSelection.instanceId,
           modelSelection: input.modelSelection,
-          runtimePolicy,
-        })
-        .pipe(Effect.timeout(input.startTimeoutMillis));
-      const providerThread = yield* runtime
-        .ensureThread({
-          threadId: input.threadId,
-          modelSelection: input.modelSelection,
-          runtimePolicy,
-        })
-        .pipe(Effect.timeout(input.startTimeoutMillis));
-      const appThread: OrchestrationV2AppThread = {
-        id: input.threadId,
-        projectId: ProjectId.make(`${input.threadId}:ephemeral`),
-        title: "Advisory session",
-        providerInstanceId: input.modelSelection.instanceId,
-        modelSelection: input.modelSelection,
-        runtimeMode: runtimePolicy.runtimeMode,
-        interactionMode: "default",
-        branch: null,
-        worktreePath: input.cwd,
-        activeProviderThreadId: providerThread.id,
-        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: input.threadId },
-        forkedFrom: null,
-        createdBy: "system",
-        creationSource: "server",
-        createdAt: now,
-        updatedAt: now,
-        archivedAt: null,
-        settledOverride: null,
-        settledAt: null,
-        lastVisitedAt: null,
-        deletedAt: null,
-      };
-      let active:
-        | {
-            runId: RunId;
-            ordinal: number;
-            completion: Deferred.Deferred<void, EphemeralProviderError>;
-            messages: Map<string, string>;
-          }
-        | undefined;
-      const handle = (event: ProviderAdapterV2Event) =>
-        Effect.gen(function* () {
+          runtimeMode: runtimePolicy.runtimeMode,
+          interactionMode: "default",
+          branch: null,
+          worktreePath: input.cwd,
+          activeProviderThreadId: providerThread.id,
+          lineage: {
+            parentThreadId: null,
+            relationshipToParent: null,
+            rootThreadId: input.threadId,
+          },
+          forkedFrom: null,
+          createdBy: "system",
+          creationSource: "server",
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        };
+        let active:
+          | {
+              runId: RunId;
+              ordinal: number;
+              completion: Deferred.Deferred<void, EphemeralProviderError>;
+              messages: Map<string, string>;
+            }
+          | undefined;
+        const handle = Effect.fn("EphemeralProviderV2.handle")(function* (
+          event: ProviderAdapterV2Event,
+        ) {
           if (
             event.type === "runtime_request.updated" &&
             event.runtimeRequest.status === "pending"
@@ -148,63 +154,64 @@ export const runEphemeralProviderV2 = function <R = never>(input: {
               );
           }
         });
-      const listener = yield* runtime.events.pipe(
-        Stream.runForEach(handle),
-        Effect.andThen(
-          Effect.fail(
-            new EphemeralProviderError({
-              detail: "Advisory provider stream ended before completion.",
-            }),
+        const listener = yield* runtime.events.pipe(
+          Stream.runForEach(handle),
+          Effect.andThen(
+            Effect.fail(
+              new EphemeralProviderError({
+                detail: "Advisory provider stream ended before completion.",
+              }),
+            ),
           ),
-        ),
-        Effect.forkScoped({ startImmediately: true }),
-      );
-      let result = "";
-      for (const [index, prompt] of input.prompts.entries()) {
-        const runId = RunId.make(`${input.threadId}:run:${index}`);
-        const completion = yield* Deferred.make<void, EphemeralProviderError>();
-        const messages = new Map<string, string>();
-        active = { runId, ordinal: index + 1, completion, messages };
-        yield* Effect.gen(function* () {
-          yield* runtime.startTurn({
-            appThread,
-            threadId: input.threadId,
-            runId,
-            runOrdinal: index + 1,
-            providerTurnOrdinal: index + 1,
-            attemptId: RunAttemptId.make(`${runId}:attempt`),
-            rootNodeId: NodeId.make(`${runId}:root`),
-            providerThread,
-            message: {
-              messageId: MessageId.make(`${runId}:prompt`),
-              text: prompt.text,
-              attachments: prompt.attachments ?? [],
-              createdBy: "system",
-              creationSource: "server",
-            },
-            modelSelection: input.modelSelection,
-            runtimePolicy,
-          });
-          yield* Deferred.await(completion);
-        }).pipe(Effect.raceFirst(Fiber.join(listener)), Effect.timeout(prompt.timeoutMillis));
-        // A terminal receipt is authoritative. Read back when the provider offers
-        // a snapshot to recover native final text that was not streamed.
-        const capabilities = yield* input.adapter.getCapabilities();
-        if (capabilities.threads.canReadThreadSnapshot) {
-          const snapshot = yield* runtime
-            .readThreadSnapshot({ providerThread })
-            .pipe(Effect.timeout(input.startTimeoutMillis));
-          for (const message of snapshot.messages) {
-            if (message.role === "assistant" && message.runId === runId)
-              messages.set(message.id, message.text);
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        let result = "";
+        for (const [index, prompt] of input.prompts.entries()) {
+          const runId = RunId.make(`${input.threadId}:run:${index}`);
+          const completion = yield* Deferred.make<void, EphemeralProviderError>();
+          const messages = new Map<string, string>();
+          active = { runId, ordinal: index + 1, completion, messages };
+          yield* Effect.gen(function* () {
+            yield* runtime.startTurn({
+              appThread,
+              threadId: input.threadId,
+              runId,
+              runOrdinal: index + 1,
+              providerTurnOrdinal: index + 1,
+              attemptId: RunAttemptId.make(`${runId}:attempt`),
+              rootNodeId: NodeId.make(`${runId}:root`),
+              providerThread,
+              message: {
+                messageId: MessageId.make(`${runId}:prompt`),
+                text: prompt.text,
+                attachments: prompt.attachments ?? [],
+                createdBy: "system",
+                creationSource: "server",
+              },
+              modelSelection: input.modelSelection,
+              runtimePolicy,
+            });
+            yield* Deferred.await(completion);
+          }).pipe(Effect.raceFirst(Fiber.join(listener)), Effect.timeout(prompt.timeoutMillis));
+          // A terminal receipt is authoritative. Read back when the provider offers
+          // a snapshot to recover native final text that was not streamed.
+          const capabilities = yield* input.adapter.getCapabilities();
+          if (capabilities.threads.canReadThreadSnapshot) {
+            const snapshot = yield* runtime
+              .readThreadSnapshot({ providerThread })
+              .pipe(Effect.timeout(input.startTimeoutMillis));
+            for (const message of snapshot.messages) {
+              if (message.role === "assistant" && message.runId === runId)
+                messages.set(message.id, message.text);
+            }
           }
+          result = [...messages.values()].join("\n\n").trim();
         }
-        result = [...messages.values()].join("\n\n").trim();
-      }
-      return result;
-    }).pipe(
-      Effect.provideService(Scope.Scope, scope),
-      Effect.ensuring(Scope.close(scope, Exit.void).pipe(Effect.timeout(10_000), Effect.ignore)),
-    );
-  });
-};
+        return result;
+      }).pipe(
+        Effect.provideService(Scope.Scope, scope),
+        Effect.ensuring(Scope.close(scope, Exit.void).pipe(Effect.timeout(10_000), Effect.ignore)),
+      );
+    });
+  },
+);

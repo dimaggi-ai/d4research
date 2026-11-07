@@ -67,7 +67,7 @@ const chooseEnvironment = (page) =>
 export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
-  const setup = page.locator('summary[aria-label="Threads and system Setup"]');
+  const setup = page.locator("summary", { hasText: "Threads and system setup" });
   await setup.waitFor();
   NodeAssert.equal(await setup.evaluate((element) => element.parentElement.open), false);
   await setup.click();
@@ -99,7 +99,10 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
         .and(page.locator(':not([aria-disabled="true"])'))
         .first()
         .click(),
-    (value) => typeof value.modelSelection?.model === "string",
+    // Saved values merge over the defaults, so a string alone would match before the save lands.
+    (value) =>
+      typeof value.modelSelection?.model === "string" &&
+      value.modelSelection.model !== DEFAULT_D4_AGENT_SETTINGS.modelSelection?.model,
     "d4Agent",
   );
   NodeAssert.ok(selected.modelSelection.instanceId);

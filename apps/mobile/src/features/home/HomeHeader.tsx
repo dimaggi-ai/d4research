@@ -1,12 +1,12 @@
 import { Toolbar } from "../../components/ui/Toolbar";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { use, useCallback, useEffect, useRef } from "react";
+import { use, useCallback, useEffect, useRef, type ComponentProps } from "react";
 import { useNavigation, type ParamListBase } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Platform } from "react-native";
+import { Platform, type ColorValue } from "react-native";
+import { withUniwind } from "uniwind";
 import type { SearchBarCommands } from "react-native-screens";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { createNativeMailSearchToolbarItem } from "../layout/native-mail-search-toolbar";
@@ -18,6 +18,21 @@ import type { HomeHeaderProps } from "./HomeHeader.types";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
+
+const HomeHeaderOptions = withUniwind(
+  function HomeHeaderOptions({
+    tintColor,
+    ...props
+  }: ComponentProps<typeof NativeStackScreenOptions> & { readonly tintColor?: ColorValue }) {
+    return (
+      <NativeStackScreenOptions
+        {...props}
+        options={{ ...props.options, headerTintColor: tintColor }}
+      />
+    );
+  },
+  { tintColor: { fromClassName: "tintColorClassName", styleProperty: "accentColor" } },
+);
 
 export function HomeHeader(props: HomeHeaderProps) {
   const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
@@ -32,6 +47,7 @@ export function HomeHeader(props: HomeHeaderProps) {
   const showsCompactCompose = deviceType === "pad" && !layout.usesSplitView;
   const searchBarRef = useRef<SearchBarCommands>(null);
   const focusAfterReveal = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Waits for the native navigation transition before focusing its search bar.
   useEffect(
     () =>
       navigation.addListener("transitionEnd", (event) => {
@@ -42,7 +58,6 @@ export function HomeHeader(props: HomeHeaderProps) {
       }),
     [navigation],
   );
-  const iconColor = useUniwindTheme()["--color-icon"];
   const hasCustomListOptions =
     props.selectedEnvironmentId !== null || props.selectedProjectKey !== null;
   const focusSearch = useCallback(() => {
@@ -63,10 +78,10 @@ export function HomeHeader(props: HomeHeaderProps) {
 
   return (
     <>
-      <NativeStackScreenOptions
+      <HomeHeaderOptions
+        tintColorClassName="accent-icon"
         optionsVersion={[filterMenu.items, showsCompactCompose]}
         options={{
-          headerTintColor: iconColor,
           unstable_headerRightItems: () =>
             sidebarHeader
               ? [

@@ -47,11 +47,9 @@ import Migration0041 from "./Migrations/041_ProjectionThreadTurnUsage.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadResumeSchedule.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadsPinOrderKey.ts";
 import Migration0044 from "./Migrations/044_ProjectionTurnsKeysetIndex.ts";
-// d4research already shipped its turn-usage and resume-schedule migrations in
-// historical slots 37 and 38, then repeated them in 41 and 42 while remapping
-// upstream's keyset and pin-order migrations to 43 and 44. Keep every collided
-// upstream migration in its original order from slot 47. Slots 45 and 46 were
-// already shipped for the retired queued-message projection and stay reserved.
+// Fork slots 37/38 and 41/42 already contain usage/resume migrations; upstream
+// keyset/pin-order use 43/44. Preserve collided upstream order from slot 47,
+// leaving shipped queued-message slots 45/46 reserved.
 import Migration0045 from "./Migrations/041_AuthSessionClientConnection.ts";
 import Migration0046 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
 import Migration0047 from "./Migrations/045_ProjectionThreadsUnsettledAt.ts";

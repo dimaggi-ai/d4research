@@ -10,6 +10,7 @@ export function useVisibleSecondClock(enabled: boolean): number {
   const focused = useIsFocused();
   const [appActive, setAppActive] = useState(() => AppState.currentState === "active");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes to native AppState to pause the visible clock in background.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       setAppActive(state === "active"),
@@ -19,6 +20,7 @@ export function useVisibleSecondClock(enabled: boolean): number {
     return () => subscription.remove();
   }, []);
   const ticking = enabled && focused && appActive;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the wall-clock interval only while this screen is active and visible.
   useLayoutEffect(() => {
     if (!ticking) return;
     // oxlint-disable-next-line react/set-state-in-effect -- Resuming reads the clock that stood still.

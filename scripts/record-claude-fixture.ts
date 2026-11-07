@@ -1,20 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off, globalConsoleInEffect:off, globalConsole:off, globalDateInEffect:off, outdatedApi:off
-/**
- * Records a real Claude CLI session as a replayable fixture.
- *
- * Adapter unit tests drive a hand-written fake, so they only ever reproduce
- * message shapes we already imagined. Real failures (a stop that returns an
- * `[ede_diagnostic]`-only result, an aborted tool call, a rate limit) have
- * shapes nobody wrote down. This captures the actual SDK message stream so
- * those shapes become regression fixtures.
- *
- * Usage:
- *   vp tsx scripts/record-claude-fixture.ts <name> "<prompt>" [--interrupt-after-ms N]
- *
- * Writes a sanitized fixture that retains SDK control-flow shape while
- * discarding prompts, tool inputs, paths, identifiers, and provider text.
- * Inspect the result before committing it.
- */
+// Capture real SDK control-flow shapes that handwritten adapter fakes can miss.
+// Usage: vp tsx scripts/record-claude-fixture.ts <name> "<prompt>" [--interrupt-after-ms N]
+// Sanitization removes provider text and identifying inputs; inspect before committing.
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 

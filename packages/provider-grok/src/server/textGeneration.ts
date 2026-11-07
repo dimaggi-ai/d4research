@@ -13,6 +13,7 @@ import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import * as TextGenerationOperations from "@d4research/provider-core/server/textGenerationOperations";
 import {
   applyGrokAcpModelSelection,
+  currentGrokReasoningEffortFromSessionSetup,
   currentGrokModelIdFromSessionSetup,
   makeGrokAcpRuntime,
   resolveGrokAcpBaseModelId,
@@ -60,10 +61,18 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       const promptResult = yield* Effect.gen(function* () {
         const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
         const started = yield* runtime.start();
+        const requestedReasoningEffort = getModelSelectionStringOptionValue(
+          modelSelection,
+          "reasoningEffort",
+        );
         yield* applyGrokAcpModelSelection({
           runtime,
           currentModelId: currentGrokModelIdFromSessionSetup(started.sessionSetupResult),
+          currentReasoningEffort: currentGrokReasoningEffortFromSessionSetup(
+            started.sessionSetupResult,
+          ),
           requestedModelId: resolvedModel,
+          requestedReasoningEffort,
           mapError: (cause) =>
             new TextGenerationError({
               operation,

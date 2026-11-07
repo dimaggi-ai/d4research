@@ -70,15 +70,9 @@ export function threadLastActivityAt(shell: QueuedThreadShell): string | null {
   return latest;
 }
 
-/**
- * A user message no turn has picked up yet: the turn.start command was
- * dispatched (message-sent + turn-start-requested) but no session has
- * adopted it, so `session` is still null and the pending work is invisible
- * to the session-status checks. Detectable as a user message strictly newer
- * than every timestamp on the latest turn — on adoption the new turn's
- * requestedAt equals the message time, clearing the condition — and only
- * within the adoption grace window.
- */
+// Before session adoption, detect queued work by a user message newer than
+// all latest-turn timestamps. Limit it to the adoption grace window so
+// failed starts do not keep threads active indefinitely.
 export function hasQueuedTurnStart(
   shell: QueuedThreadShell,
   options: { readonly now: string },
@@ -241,13 +235,8 @@ export function threadWokeAt(
   return wakeAtMs <= Date.parse(options.now) ? shell.snoozedUntil : null;
 }
 
-/**
- * Settled resolution over the server-backed settled lifecycle. Activity
- * blockers (pending approval/user-input, a live session, an unadjudicated
- * queued turn) hold a thread active regardless of any override. Past the
- * blockers, explicit user overrides win; without one, merged/closed change
- * requests or configured inactivity can settle the thread.
- */
+// Pending work and live sessions block settling despite overrides.
+// After blockers, explicit overrides win over change-request and inactivity signals.
 export function effectiveSettled(
   shell: ThreadSettledShell,
   options: {

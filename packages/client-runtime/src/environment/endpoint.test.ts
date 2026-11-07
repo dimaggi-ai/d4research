@@ -2,13 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { deriveWsBaseUrl, normalizeHttpBaseUrl, environmentEndpointUrl } from "./endpoint.ts";
 
-const coreProvider = {
-  id: "desktop-core",
-  label: "Desktop",
-  kind: "core",
-  isAddon: false,
-} as const;
-
 describe("advertised endpoint helpers", () => {
   it("normalizes HTTP and WebSocket base URLs", () => {
     expect(normalizeHttpBaseUrl("https://example.com/path?x=1#hash")).toBe("https://example.com/");

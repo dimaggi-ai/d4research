@@ -113,6 +113,40 @@ it.layer(layerGrokTextGenerationTest)("GrokTextGeneration", (it) => {
     );
   });
 
+  it.effect("forwards the requested reasoning effort with the model selection", () => {
+    const requestLogDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-grok-text-log-"),
+    );
+    const requestLogPath = NodePath.join(requestLogDir, "requests.ndjson");
+
+    return withFakeAcpGrok(
+      {
+        T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({ subject: "Tune effort", body: "" }),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/grok",
+            stagedSummary: "M packages/provider-grok/src/server/textGeneration.ts",
+            stagedPatch: "diff --git a/textGeneration.ts b/textGeneration.ts",
+            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-mock-alt", [
+              { id: "reasoningEffort", value: "high" },
+            ]),
+          });
+
+          const setModel = readJsonRpcRequests(requestLogPath).find(
+            (request) => request.method === "session/set_model",
+          );
+          expect(setModel?.params).toMatchObject({
+            modelId: "grok-mock-alt",
+            _meta: { reasoningEffort: "high" },
+          });
+        }),
+    );
+  });
+
   it.effect("extracts the JSON object when Grok wraps it in conversational text", () =>
     withFakeAcpGrok(
       {

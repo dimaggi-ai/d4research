@@ -2,6 +2,7 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ServerProvider,
+  type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ServerProviderUsage,
   type ServerProviderResetCredits,
@@ -17,7 +18,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import { createModelCapabilities } from "@d4research/shared/model";
+import { createModelCapabilities, readCustomModelEntries } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 
 import {
@@ -132,6 +133,26 @@ const CLAUDE_DEFAULT_MODEL_ENV_KEYS = [
 ] as const;
 
 /** Exact model identities exposed by a loopback Anthropic-compatible gateway. */
+/**
+ * Clients read custom models from settings and drop the snapshot's custom entries, so models the
+ * endpoint serves must not carry that flag or the picker never shows them.
+ * @public
+ */
+export function claudeProviderModels(
+  builtInModels: ReadonlyArray<ServerProviderModel>,
+  settingsModels: ClaudeSettings["customModels"],
+  endpointModels: ReadonlyArray<string>,
+): ReadonlyArray<ServerProviderModel> {
+  const settingsSlugs = new Set(readCustomModelEntries(settingsModels).map((entry) => entry.slug));
+  return providerModelsFromSettings(
+    builtInModels,
+    [...settingsModels, ...endpointModels],
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  ).map((model) =>
+    model.isCustom && !settingsSlugs.has(model.slug) ? { ...model, isCustom: false } : model,
+  );
+}
+
 function claudeLocalModelOverrides(environment: NodeJS.ProcessEnv): ReadonlyArray<string> {
   const raw = environment.ANTHROPIC_BASE_URL?.trim();
   if (!raw) return [];
@@ -686,10 +707,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const usesLocalOllama = claudeUsesLocalOllama(resolvedEnvironment);
   const localModelOverrides = claudeLocalModelOverrides(resolvedEnvironment);
   const usesLocalModelGateway = usesLocalOllama || localModelOverrides.length > 0;
-  const allModels = providerModelsFromSettings(
+  const allModels = claudeProviderModels(
     usesLocalModelGateway ? [] : modelCatalog.models.map((entry) => entry.model),
-    [...claudeSettings.customModels, ...localModelOverrides],
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    claudeSettings.customModels,
+    localModelOverrides,
   );
 
   if (!claudeSettings.enabled) {
@@ -713,10 +734,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   // actually hosts (with the probe's warning/error status alongside).
   const ollamaDiscovery = yield* discoverLocalOllamaModels(resolvedEnvironment);
   const discoveredOllamaModels = ollamaDiscovery.models;
-  const modelsWithDiscovery = providerModelsFromSettings(
+  const modelsWithDiscovery = claudeProviderModels(
     usesLocalModelGateway ? [] : modelCatalog.models.map((entry) => entry.model),
-    [...claudeSettings.customModels, ...localModelOverrides, ...discoveredOllamaModels],
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    claudeSettings.customModels,
+    [...localModelOverrides, ...discoveredOllamaModels],
   );
 
   const versionProbe = yield* runClaudeCommand(
@@ -797,11 +818,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     : resolveClaudeModelsForVersion(modelCatalog, parsedVersion);
   // Reuse the discovery performed above rather than shelling out to `ollama`
   // a second time for the same snapshot.
-  const models = providerModelsFromSettings(
-    builtInModels,
-    [...claudeSettings.customModels, ...localModelOverrides, ...discoveredOllamaModels],
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-  );
+  const models = claudeProviderModels(builtInModels, claudeSettings.customModels, [
+    ...localModelOverrides,
+    ...discoveredOllamaModels,
+  ]);
   const updateRequiredModels = resolveClaudeUpdateRequiredModels(modelCatalog, parsedVersion);
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
 
@@ -963,12 +983,12 @@ export const makePendingClaudeProvider = Effect.fn("ClaudeProvider.makePendingCl
   ): Effect.fn.Return<ServerProviderDraft> {
     const checkedAt = yield* nowIso;
     const localModelOverrides = claudeLocalModelOverrides(environment);
-    const models = providerModelsFromSettings(
+    const models = claudeProviderModels(
       claudeUsesLocalOllama(environment) || localModelOverrides.length > 0
         ? []
         : modelCatalog.models.map((entry) => entry.model),
-      [...claudeSettings.customModels, ...localModelOverrides],
-      DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+      claudeSettings.customModels,
+      localModelOverrides,
     );
 
     if (!claudeSettings.enabled) {

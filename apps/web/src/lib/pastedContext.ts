@@ -1,18 +1,9 @@
 import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@d4research/contracts";
 
 /**
- * Pasted / dropped text carried as an attachment instead of raw prompt body.
- *
- * A large paste (a log, a transcript, a document) and a dropped text file are
- * the same thing to the model but very different to read: inline they bury the
- * actual instruction under thousands of lines. Claude and ChatGPT collapse
- * both into an attachment chip; this does the same without a new control —
- * the composer converts on paste/drop, and the transcript renders the chip.
- *
- * The content rides inside the message text in a trailing `<pasted_context>`
- * block, mirroring `elementContext`/`terminalContext`. That keeps every
- * provider working unchanged (they see the text) while the UI can strip and
- * render it as a bubble.
+ * Large pastes become attachments so they do not bury the instruction.
+ * Trailing `<pasted_context>` blocks preserve provider-visible text while
+ * allowing the UI to render attachment chips.
  */
 
 /** Pastes at least this long become an attachment instead of inline text. */

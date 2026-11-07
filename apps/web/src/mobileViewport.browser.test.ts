@@ -38,7 +38,7 @@ function setup() {
 }
 it("follows keyboard shrink and subsequent Safari panning without another resize", () => {
   using fixture = setup();
-  const { viewport, flush, dispose } = fixture;
+  const { viewport, flush } = fixture;
   viewport.height = 420;
   viewport.dispatchEvent(new Event("resize"));
   flush();
@@ -72,7 +72,7 @@ it("coalesces keyboard animation events and cancels pending work on unmount", ()
 });
 it("leaves magnification to the browser and resumes after zoom ends", () => {
   using fixture = setup();
-  const { viewport, flush, dispose } = fixture;
+  const { viewport, flush } = fixture;
   viewport.scale = 2;
   viewport.height = 210;
   viewport.offsetTop = 50;

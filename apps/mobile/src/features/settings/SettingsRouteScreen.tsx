@@ -237,9 +237,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
     {
       rows: [
         serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
-        ...(Platform.OS === "ios"
-          ? [page("LocalDevelopment", "hammer", "Local development")]
-          : []),
+        ...(Platform.OS === "ios" ? [page("LocalDevelopment", "hammer", "Local development")] : []),
         page("SettingsLabs", "sparkles", "Labs"),
         page("SettingsAbout", "info.circle", "About"),
         page("SettingsArchive", "archivebox", "Archive"),

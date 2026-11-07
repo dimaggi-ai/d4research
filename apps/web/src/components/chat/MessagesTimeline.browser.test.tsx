@@ -11,9 +11,9 @@ import {
   ThreadId,
 } from "@d4research/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
-import { act, createRef, useState, type ComponentProps, type ReactElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { createRef, useState, type ComponentProps, type ReactElement } from "react";
+import { act, render, fakeTimers, type Screen } from "../../../test/render";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -147,25 +147,23 @@ function longText(tail = "deep hidden detail only after expand") {
   ).join("\n");
 }
 
-const roots: Root[] = [];
+const roots: Screen[] = [];
+let resources: AsyncDisposableStack;
 let container: HTMLDivElement;
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-});
-
-afterEach(async () => {
-  for (const root of roots.splice(0)) await act(async () => root.unmount());
-  document.body.replaceChildren();
-  vi.unstubAllGlobals();
-});
+function setupFixture() {
+  resources = new AsyncDisposableStack();
+  resources.defer(() => {
+    roots.length = 0;
+  });
+  return resources;
+}
 
 async function renderElement(element: ReactElement) {
   container = document.body.appendChild(document.createElement("div"));
   container.style.cssText = "height: 1200px; width: 900px; display: flex; flex-direction: column;";
-  const root = createRoot(container);
-  roots.push(root);
-  await act(async () => root.render(element));
+  const screen = resources.use(await render(element, { container, router: false }));
+  roots.push(screen);
   return container;
 }
 
@@ -198,6 +196,7 @@ async function click(element: HTMLElement) {
 
 describe("MessagesTimeline work rows", () => {
   it("shows dynamic tool input without cached output when the row is expanded", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       work("tool-with-cached-output", {
         label: "Example tool",
@@ -219,6 +218,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("expands and collapses a tool call through its header", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       work("work-standalone", {
         toolCallId: "call-standalone",
@@ -238,6 +238,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("leads an unanswered question row with the question text", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       work("question-work", {
         label: "User input requested",
@@ -259,6 +260,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("collapses settled tool runs behind a generated summary and names a failure", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       work("work-1", {
         label: "Ran command",
@@ -283,6 +285,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("keeps mixed work logs neutral after a later tool call succeeds", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       work("work-failed", {
         label: "Run search",
@@ -302,6 +305,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("marks a failed tool inside an expanded work log", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       work("work-info", { label: "Status updated", tone: "info" }),
       work("work-1", {
@@ -318,11 +322,13 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("renders context compaction entries in the normal work log", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([work("work-1", { label: "Context compacted", tone: "info" })]);
     expect(text()).toContain("Context compacted");
   });
 
   it("formats changed file paths from the workspace root", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline(
       [
         work("context-info", { label: "Session started", tone: "info" }),
@@ -342,6 +348,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("renders T3 MCP dynamic tools with their pretty name", async () => {
+    await using _fixture = setupFixture();
     const item = {
       id: "tool-t3-thread-read",
       type: "dynamic_tool",
@@ -369,6 +376,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("keeps a provider retry collapsed in the work log", async () => {
+    await using _fixture = setupFixture();
     const retryItem = {
       id: "provider-error",
       status: "running",
@@ -423,6 +431,7 @@ describe("MessagesTimeline work rows", () => {
   ] as const)(
     "shows plain text for a V2 reasoning preview: %s",
     async (markdown, expected, strongCount) => {
+      await using _fixture = setupFixture();
       await renderTimeline([
         work("reasoning-preview", {
           label: markdown,
@@ -447,6 +456,7 @@ describe("MessagesTimeline work rows", () => {
 
 describe("MessagesTimeline messages", () => {
   it("preserves XML-like tags and comparisons in user messages as text", async () => {
+    await using _fixture = setupFixture();
     const source = [
       'Without reading a file, do you have <global-agent-instructions scope="workspace">',
       'Before <nested data-value="a&b">inside</nested> after',
@@ -459,6 +469,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("preserves XML-like source inside user code spans and fences", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         [
@@ -475,6 +486,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("does not show markdown titles in user messages", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         '[link](https://example.com "link tip") ![image](https://example.com/image.png "image tip")',
@@ -486,6 +498,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("renders unsafe user HTML as inert source text", async () => {
+    await using _fixture = setupFixture();
     const source =
       '<script>globalThis.__t3Xss = 1</script><img src="x" onerror="globalThis.__t3Xss = 2">';
     await renderTimeline([message(source)]);
@@ -495,6 +508,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("renders sanitized raw HTML in assistant messages", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         [
@@ -519,6 +533,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("collapses long user messages behind a toggle and keeps their copy button", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([message(longText())]);
     const toggle = button("Show full message");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -528,11 +543,13 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("does not offer a collapse toggle for short user messages", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([message("Short prompt.")]);
     expect(buttons(/Show full message|Show less/)).toHaveLength(0);
   });
 
   it("identifies user-role messages sent by another agent", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message("Review this area", { createdBy: "agent", creationSource: "provider" }),
     ]);
@@ -543,12 +560,14 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("shows steer intent ahead of committed user messages", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([message("Adjust the current turn", { inputIntent: "steer" })]);
     expect(text().indexOf("Steer")).toBeGreaterThanOrEqual(0);
     expect(text().indexOf("Steer")).toBeLessThan(text().indexOf("Adjust the current turn"));
   });
 
   it("renders inline terminal labels as chips", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         [
@@ -569,6 +588,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("renders chips for standalone element-pick context messages", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         [
@@ -588,6 +608,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         [
@@ -607,6 +628,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("renders file review comments as source code", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       message(
         [
@@ -625,6 +647,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("collapses superseded attempt output behind a disclosure", async () => {
+    await using _fixture = setupFixture();
     const runId = RunId.make("run-steered");
     const attempt = (id: string, ordinal: number, status: string) =>
       ({
@@ -667,6 +690,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("forks from a completed assistant response", async () => {
+    await using _fixture = setupFixture();
     const onForkFromRun = vi.fn(async () => {});
     await renderTimeline(
       [
@@ -687,6 +711,7 @@ describe("MessagesTimeline messages", () => {
   });
 
   it("opens the changed files of an assistant response", async () => {
+    await using _fixture = setupFixture();
     const assistantMessageId = MessageId.make("assistant-with-files");
     const runId = RunId.make("run-with-files");
     const onOpenTurnDiff = vi.fn();
@@ -729,6 +754,7 @@ describe("MessagesTimeline attachments", () => {
     });
 
   it("offers preview and download actions for PDF attachments", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       withAttachment({
         id: "attachment-report-pdf",
@@ -741,18 +767,21 @@ describe("MessagesTimeline attachments", () => {
   });
 
   it("does not create a download URL before the download is requested", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([withAttachment({ id: "attachment-report-pdf" })]);
     expect(buttons("Download report.pdf")).toHaveLength(1);
     expect(container.querySelector("a[href]")).toBeNull();
   });
 
   it("does not download an optimistic file before the server supplies its attachment ID", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([withAttachment({ id: "composer-local-report", downloadable: false })]);
     expect(text()).toContain("report.pdf");
     expect(buttons("Download report.pdf")).toHaveLength(0);
   });
 
   it("renders unknown attachment types as inert rows instead of crashing", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       withAttachment({
         type: "recording",
@@ -767,6 +796,7 @@ describe("MessagesTimeline attachments", () => {
   });
 
   it("shows SnapShot window details only after the preview resolves", async () => {
+    await using _fixture = setupFixture();
     const snapShot = (previewUrl?: string) =>
       message("First prompt.", {
         attachments: [
@@ -799,6 +829,7 @@ describe("MessagesTimeline attachments", () => {
 
 describe("MessagesTimeline history and thread links", () => {
   it("loads earlier turns from a control ahead of the bounded timeline", async () => {
+    await using _fixture = setupFixture();
     const onLoadEarlier = vi.fn();
     await renderTimeline([message("Recent activity")], {
       historyControls: {
@@ -815,6 +846,7 @@ describe("MessagesTimeline history and thread links", () => {
   });
 
   it("keeps an empty bounded timeline busy while earlier history loads", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([], {
       historyControls: {
         hasMoreHistory: true,
@@ -829,6 +861,7 @@ describe("MessagesTimeline history and thread links", () => {
   });
 
   it("opens the parent thread from the top of an empty subagent timeline", async () => {
+    await using _fixture = setupFixture();
     const onOpenThread = vi.fn();
     await renderTimeline([], {
       onOpenThread,
@@ -842,6 +875,7 @@ describe("MessagesTimeline history and thread links", () => {
   });
 
   it("does not render the transient V2 interruption request", async () => {
+    await using _fixture = setupFixture();
     await renderTimeline([
       {
         id: "interrupt-request",
@@ -858,6 +892,7 @@ describe("MessagesTimeline history and thread links", () => {
   });
 
   it("opens created threads from a lean row", async () => {
+    await using _fixture = setupFixture();
     const onOpenThread = vi.fn();
     await renderTimeline(
       [
@@ -886,6 +921,7 @@ describe("MessagesTimeline history and thread links", () => {
   });
 
   it("renders context handoffs as from → to model endpoints instead of the summary", async () => {
+    await using _fixture = setupFixture();
     const provider = (instanceId: string, driver: string, slug: string, name: string) => ({
       instanceId,
       driver,
@@ -1014,6 +1050,7 @@ describe("MessagesTimeline subagents", () => {
   )(
     "shows $count $status subagents with '$preview', grouping only multiple agents",
     async ({ status, progress, result, preview, count }) => {
+      await using _fixture = setupFixture();
       const onOpenThread = vi.fn();
       await renderTimeline(
         Array.from(
@@ -1116,6 +1153,7 @@ describe("timeline tooltip scroll dismissal", () => {
   it.each([false, true])(
     "closes a hovered tooltip on scroll but keeps a focused one (pull request=%s)",
     async (pullRequest) => {
+      await using _fixture = setupFixture();
       const { trigger, scrollable } = await renderTooltip(pullRequest, false);
       await userEvent.hover(trigger);
       await vi.waitFor(() => expect(openPopup()).toBe("https://example.com"));
@@ -1133,6 +1171,7 @@ describe("timeline tooltip scroll dismissal", () => {
   );
 
   it("leaves tooltips outside the timeline open when it scrolls", async () => {
+    await using _fixture = setupFixture();
     const { trigger, scrollable } = await renderTooltip(false, true);
     await userEvent.hover(trigger);
     await vi.waitFor(() => expect(openPopup()).toBe("https://example.com"));
@@ -1141,6 +1180,7 @@ describe("timeline tooltip scroll dismissal", () => {
   });
 
   it("keeps a hovered tooltip open on a wheel that does not scroll", async () => {
+    await using _fixture = setupFixture();
     const { trigger, scrollable } = await renderTooltip(false, false);
     await userEvent.hover(trigger);
     await vi.waitFor(() => expect(openPopup()).toBe("https://example.com"));
@@ -1169,6 +1209,7 @@ describe("MessagesTimeline scroll position", () => {
   }
 
   it("remembers a manual reading position when the chat closes", async () => {
+    await using _fixture = setupFixture();
     const props = baseProps();
     function Chat() {
       const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
@@ -1198,6 +1239,7 @@ describe("MessagesTimeline scroll position", () => {
   });
 
   it("restores the composer after closing tool output only at the end", async () => {
+    await using _fixture = setupFixture();
     const props = baseProps();
     function Thread() {
       const composer = useComposerFocusState();
@@ -1234,13 +1276,13 @@ describe("MessagesTimeline scroll position", () => {
     await userEvent.wheel(viewport, { delta: { y: -2000 } });
     await click(toggle());
     await click(toggle());
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    expect(composerState()).toBe("collapsed");
+    await vi.waitFor(() => expect(composerState()).toBe("collapsed"));
   });
 });
 
 describe("MessagesTimeline send anchor", () => {
   it("reports the anchored sent message once it is laid out", async () => {
+    await using _fixture = setupFixture();
     const onAnchorReady = vi.fn();
     const sent = message("Newest prompt.", {}, "message-2");
     await renderTimeline([message("Earlier reply.", { role: "assistant" }), sent], {
@@ -1254,18 +1296,21 @@ describe("MessagesTimeline send anchor", () => {
   });
 
   it("does not anchor a follow-up user message that is not the newest turn", async () => {
+    using _timers = fakeTimers();
+    await using _fixture = setupFixture();
     const onAnchorReady = vi.fn();
     await renderTimeline([message("First prompt."), message("Newest prompt.", {}, "message-2")], {
       anchorMessageId: MessageId.make("message-2"),
       onAnchorReady,
     });
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await act(async () => vi.advanceTimersByTimeAsync(32));
     expect(onAnchorReady).not.toHaveBeenCalled();
   });
 });
 
 describe("d4 handoff and skill rendering", () => {
   it("folds provider handoff prompts to a compact row", async () => {
+    await using _fixture = setupFixture();
     await renderElement(
       <MessagesTimeline
         {...baseProps()}
@@ -1299,6 +1344,7 @@ describe("d4 handoff and skill rendering", () => {
     expect(text()).not.toContain("context synchronization only");
   });
   it("keeps the instruction visible and the attached context folded on a combined handoff", async () => {
+    await using _fixture = setupFixture();
     await renderElement(
       <MessagesTimeline
         {...baseProps()}
@@ -1336,6 +1382,7 @@ describe("d4 handoff and skill rendering", () => {
     expect(text()).toContain("Rerun the failing suite and report what broke.");
   });
   it("renders enabled skills as badges without leaking server transport markup", async () => {
+    await using _fixture = setupFixture();
     const messageText = appendEnabledSkillsContext("Fix the flaky test", [
       {
         name: "focus-mode",

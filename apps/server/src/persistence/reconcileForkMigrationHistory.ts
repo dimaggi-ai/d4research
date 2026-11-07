@@ -29,14 +29,9 @@ const FORK_NAME_ALIASES: Readonly<Record<string, ReadonlyArray<string>>> = {
   OrchestrationV2RedundantIndexes: ["RemoveRedundantProjectionIndexes"],
 };
 
-/**
- * Databases written by upstream T3 Code or the pilshchikov fork record the same
- * migrations under other ids. The migrator only compares ids, so it would skip
- * or repeat work. Translate such a ledger by migration name into this build's
- * ids, run the migrations that history lacks below its newest translated id,
- * and rewrite the ledger, all in one transaction. A ledger with a name this
- * build does not know is rejected before any schema change.
- */
+// Upstream and fork ledgers reuse migration IDs for different names. Translate
+// known names, fill history gaps and rewrite IDs in one transaction; reject
+// unknown names before changing the schema.
 export const reconcileForkMigrationHistory = Effect.fn("reconcileForkMigrationHistory")(function* <
   E,
   R,

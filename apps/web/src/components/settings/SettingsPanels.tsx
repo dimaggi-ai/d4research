@@ -1557,331 +1557,336 @@ function HandoffSettingsSection() {
   const textGenInstanceId = selection.instanceId;
   const textGenModel = selection.model;
   const textGenerationModelInstanceEntries = providerInstanceEntriesFor(
-    textGenerationProviders, settings, target?.projectId ?? null,
+    textGenerationProviders,
+    settings,
+    target?.projectId ?? null,
   );
   const textGenerationModelOptionsByInstance = getCustomModelOptionsByInstance(
-    settings, textGenerationProviders, textGenInstanceId, textGenModel,
+    settings,
+    textGenerationProviders,
+    textGenInstanceId,
+    textGenModel,
   );
   return (
-      <SettingsSection title="Handoff" id="handoff">
-        <MekoHandoffSettings />
-        <SettingsRow
-          id="handoff-mode"
-          title="Automatic handoff"
-          description="Direct sends covered history without compaction when it fits the transfer allowance, and uses Smart recovery when it does not. Smart selects context for your current task using local models."
-          control={
-            <Select
-              value={settings.handoff.contextCompression.mode}
-              onValueChange={(mode) => {
-                if (mode !== "bounded" && mode !== "direct" && mode !== "smart") return;
-                updateSettings({ handoff: { contextCompression: { mode } } });
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-48" aria-label="Automatic handoff">
-                <SelectValue>
-                  {settings.handoff.contextCompression.mode === "direct"
-                    ? "Direct (no compaction)"
-                    : settings.handoff.contextCompression.mode === "smart"
-                      ? "Smart compaction"
-                      : "Bounded history"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value="bounded">Bounded history</SelectItem>
-                <SelectItem value="direct">Direct (no compaction)</SelectItem>
-                <SelectItem value="smart">Smart compaction</SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-        {settings.handoff.contextCompression.mode === "smart" ? (
-          <>
-            <SettingsRow
-              title="Judge model"
-              description="Leave blank to use the local summary model. The judge scores relevance to the receiving task."
-              control={
-                <Input
-                  aria-label="Judge model"
-                  value={settings.handoff.contextCompression.judgeModel}
-                  placeholder="bonsai2-27b:latest"
-                  onChange={(event) =>
-                    updateSettings({
-                      handoff: { contextCompression: { judgeModel: event.target.value } },
-                    })
-                  }
-                />
-              }
-            />
-            <SettingsRow
-              title="Judge endpoint"
-              description="OpenAI-compatible local endpoint. Leave blank to use Bonsai on port 8094."
-              control={
-                <Input
-                  aria-label="Judge endpoint"
-                  value={settings.handoff.contextCompression.judgeBaseUrl}
-                  placeholder="http://127.0.0.1:8094"
-                  onChange={(event) =>
-                    updateSettings({
-                      handoff: { contextCompression: { judgeBaseUrl: event.target.value } },
-                    })
-                  }
-                />
-              }
-            />
-            <SettingsRow
-              title="Second judge model"
-              description="Optional second local judge. When judges disagree, the higher importance score wins. Configure both its model and endpoint to enable it."
-              control={
-                <Input
-                  aria-label="Second judge model"
-                  value={settings.handoff.contextCompression.secondaryJudgeModel}
-                  onChange={(event) =>
-                    updateSettings({
-                      handoff: { contextCompression: { secondaryJudgeModel: event.target.value } },
-                    })
-                  }
-                />
-              }
-            />
-            <SettingsRow
-              title="Second judge endpoint"
-              control={
-                <Input
-                  aria-label="Second judge endpoint"
-                  value={settings.handoff.contextCompression.secondaryJudgeBaseUrl}
-                  placeholder="http://127.0.0.1:8094"
-                  onChange={(event) =>
-                    updateSettings({
-                      handoff: {
-                        contextCompression: { secondaryJudgeBaseUrl: event.target.value },
-                      },
-                    })
-                  }
-                />
-              }
-            />
-          </>
-        ) : null}
-        <SettingsRow
-          id="handoff-context-compression"
-          title="Context compression"
-          description="Enable compression for explicit preparation requests and older clients. Automatic handoffs use the mode selected above."
-          control={
-            <Switch
-              checked={settings.handoff.contextCompression.enabled}
-              onCheckedChange={(checked) =>
-                updateSettings({
-                  handoff: {
-                    contextCompression: { enabled: Boolean(checked) },
-                  },
-                })
-              }
-              aria-label="Enable handoff context compression"
-            />
-          }
-        />
-
-        {settings.handoff.contextCompression.enabled ||
-        settings.handoff.contextCompression.mode === "smart" ? (
-          <>
-            <SettingsRow
-              id="handoff-compression-backend"
-              title="Explicit preparation backend"
-              description="Controls explicit preparation requests. Automatic smart handoffs always use local models. Provider session starts a provider CLI session and may spend cloud tokens."
-              control={
-                <Select
-                  value={settings.handoff.contextCompression.backend}
-                  onValueChange={(value) => {
-                    if (value !== "local" && value !== "provider") return;
-                    updateSettings({
-                      handoff: { contextCompression: { backend: value } },
-                    });
-                  }}
-                >
-                  <SelectTrigger className="w-full sm:w-48" aria-label="Compression backend">
-                    <SelectValue>
-                      {settings.handoff.contextCompression.backend === "provider"
-                        ? "Provider session"
-                        : "Local Ollama model"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem hideIndicator value="local">
-                      Local Ollama model
-                    </SelectItem>
-                    <SelectItem hideIndicator value="provider">
-                      Provider session
-                    </SelectItem>
-                  </SelectPopup>
-                </Select>
-              }
-            />
-
-            {settings.handoff.contextCompression.backend === "local" ||
-            settings.handoff.contextCompression.mode === "smart" ? (
-              <SettingsRow
-                id="handoff-compression-local-model"
-                title="Local model"
-                description="Summarizes selected context through the local Ollama-compatible gateway on port 11434. Smart handoffs use the judge settings above."
-                control={
-                  <DraftInput
-                    value={settings.handoff.contextCompression.localModel}
-                    onCommit={(value) => {
-                      const localModel = value.trim();
-                      if (!localModel) return;
-                      updateSettings({
-                        handoff: { contextCompression: { localModel } },
-                      });
-                    }}
-                    placeholder={DEFAULT_HANDOFF_LOCAL_MODEL}
-                    className="w-full max-w-xs text-xs"
-                  />
+    <SettingsSection title="Handoff" id="handoff">
+      <MekoHandoffSettings />
+      <SettingsRow
+        id="handoff-mode"
+        title="Automatic handoff"
+        description="Direct sends covered history without compaction when it fits the transfer allowance, and uses Smart recovery when it does not. Smart selects context for your current task using local models."
+        control={
+          <Select
+            value={settings.handoff.contextCompression.mode}
+            onValueChange={(mode) => {
+              if (mode !== "bounded" && mode !== "direct" && mode !== "smart") return;
+              updateSettings({ handoff: { contextCompression: { mode } } });
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-48" aria-label="Automatic handoff">
+              <SelectValue>
+                {settings.handoff.contextCompression.mode === "direct"
+                  ? "Direct (no compaction)"
+                  : settings.handoff.contextCompression.mode === "smart"
+                    ? "Smart compaction"
+                    : "Bounded history"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem value="bounded">Bounded history</SelectItem>
+              <SelectItem value="direct">Direct (no compaction)</SelectItem>
+              <SelectItem value="smart">Smart compaction</SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+      {settings.handoff.contextCompression.mode === "smart" ? (
+        <>
+          <SettingsRow
+            title="Judge model"
+            description="Leave blank to use the local summary model. The judge scores relevance to the receiving task."
+            control={
+              <Input
+                aria-label="Judge model"
+                value={settings.handoff.contextCompression.judgeModel}
+                placeholder="bonsai2-27b:latest"
+                onChange={(event) =>
+                  updateSettings({
+                    handoff: { contextCompression: { judgeModel: event.target.value } },
+                  })
                 }
               />
-            ) : (
-              <SettingsRow
-                id="handoff-compression-provider"
-                title="Compression provider"
-                description="Choose a provider and model to compress the conversation context before handoff."
-                control={
-                  <ProviderModelPicker
-                    environmentId={environmentId}
-                    activeInstanceId={
-                      settings.handoff.contextCompression.instanceId ?? textGenInstanceId
-                    }
-                    model={settings.handoff.contextCompression.model ?? textGenModel}
-                    lockedProvider={null}
-                    instanceEntries={textGenerationModelInstanceEntries}
-                    modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                    triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                    onInstanceModelChange={(instanceId, model) => {
-                      updateSettings({
-                        handoff: {
-                          contextCompression: { instanceId, model },
-                        },
-                      });
-                    }}
-                  />
+            }
+          />
+          <SettingsRow
+            title="Judge endpoint"
+            description="OpenAI-compatible local endpoint. Leave blank to use Bonsai on port 8094."
+            control={
+              <Input
+                aria-label="Judge endpoint"
+                value={settings.handoff.contextCompression.judgeBaseUrl}
+                placeholder="http://127.0.0.1:8094"
+                onChange={(event) =>
+                  updateSettings({
+                    handoff: { contextCompression: { judgeBaseUrl: event.target.value } },
+                  })
                 }
               />
-            )}
+            }
+          />
+          <SettingsRow
+            title="Second judge model"
+            description="Optional second local judge. When judges disagree, the higher importance score wins. Configure both its model and endpoint to enable it."
+            control={
+              <Input
+                aria-label="Second judge model"
+                value={settings.handoff.contextCompression.secondaryJudgeModel}
+                onChange={(event) =>
+                  updateSettings({
+                    handoff: { contextCompression: { secondaryJudgeModel: event.target.value } },
+                  })
+                }
+              />
+            }
+          />
+          <SettingsRow
+            title="Second judge endpoint"
+            control={
+              <Input
+                aria-label="Second judge endpoint"
+                value={settings.handoff.contextCompression.secondaryJudgeBaseUrl}
+                placeholder="http://127.0.0.1:8094"
+                onChange={(event) =>
+                  updateSettings({
+                    handoff: {
+                      contextCompression: { secondaryJudgeBaseUrl: event.target.value },
+                    },
+                  })
+                }
+              />
+            }
+          />
+        </>
+      ) : null}
+      <SettingsRow
+        id="handoff-context-compression"
+        title="Context compression"
+        description="Enable compression for explicit preparation requests and older clients. Automatic handoffs use the mode selected above."
+        control={
+          <Switch
+            checked={settings.handoff.contextCompression.enabled}
+            onCheckedChange={(checked) =>
+              updateSettings({
+                handoff: {
+                  contextCompression: { enabled: Boolean(checked) },
+                },
+              })
+            }
+            aria-label="Enable handoff context compression"
+          />
+        }
+      />
 
-            <SettingsRow
-              id="handoff-max-input"
-              title="Max input characters"
-              description="Maximum characters of conversation transcript sent to the compression provider."
-              resetAction={
-                settings.handoff.contextCompression.maxInputCharacters !==
-                DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS ? (
-                  <SettingResetButton
-                    label="max input characters"
-                    onClick={() =>
-                      updateSettings({
-                        handoff: {
-                          contextCompression: {
-                            maxInputCharacters: DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
-                          },
-                        },
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <NumberField
-                  value={settings.handoff.contextCompression.maxInputCharacters}
-                  min={500}
-                  step={500}
-                  size="sm"
-                  className="w-28"
-                  onValueChange={(value) => {
-                    if (value === null) return;
-                    updateSettings({
-                      handoff: {
-                        contextCompression: {
-                          maxInputCharacters: Math.max(500, Math.round(value)),
-                        },
-                      },
-                    });
-                  }}
-                >
-                  <NumberFieldGroup>
-                    <NumberFieldDecrement aria-label="Decrease max input characters" />
-                    <NumberFieldInput aria-label="Max input characters" />
-                    <NumberFieldIncrement aria-label="Increase max input characters" />
-                  </NumberFieldGroup>
-                </NumberField>
-              }
-            />
+      {settings.handoff.contextCompression.enabled ||
+      settings.handoff.contextCompression.mode === "smart" ? (
+        <>
+          <SettingsRow
+            id="handoff-compression-backend"
+            title="Explicit preparation backend"
+            description="Controls explicit preparation requests. Automatic smart handoffs always use local models. Provider session starts a provider CLI session and may spend cloud tokens."
+            control={
+              <Select
+                value={settings.handoff.contextCompression.backend}
+                onValueChange={(value) => {
+                  if (value !== "local" && value !== "provider") return;
+                  updateSettings({
+                    handoff: { contextCompression: { backend: value } },
+                  });
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-48" aria-label="Compression backend">
+                  <SelectValue>
+                    {settings.handoff.contextCompression.backend === "provider"
+                      ? "Provider session"
+                      : "Local Ollama model"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="local">
+                    Local Ollama model
+                  </SelectItem>
+                  <SelectItem hideIndicator value="provider">
+                    Provider session
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
 
+          {settings.handoff.contextCompression.backend === "local" ||
+          settings.handoff.contextCompression.mode === "smart" ? (
             <SettingsRow
-              id="handoff-max-output"
-              title="Max output characters"
-              description="Maximum characters the compression provider should produce."
-              resetAction={
-                settings.handoff.contextCompression.maxOutputCharacters !==
-                DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS ? (
-                  <SettingResetButton
-                    label="max output characters"
-                    onClick={() =>
-                      updateSettings({
-                        handoff: {
-                          contextCompression: {
-                            maxOutputCharacters: DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
-                          },
-                        },
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <NumberField
-                  value={settings.handoff.contextCompression.maxOutputCharacters}
-                  min={200}
-                  step={200}
-                  size="sm"
-                  className="w-28"
-                  onValueChange={(value) => {
-                    if (value === null) return;
-                    updateSettings({
-                      handoff: {
-                        contextCompression: {
-                          maxOutputCharacters: Math.max(200, Math.round(value)),
-                        },
-                      },
-                    });
-                  }}
-                >
-                  <NumberFieldGroup>
-                    <NumberFieldDecrement aria-label="Decrease max output characters" />
-                    <NumberFieldInput aria-label="Max output characters" />
-                    <NumberFieldIncrement aria-label="Increase max output characters" />
-                  </NumberFieldGroup>
-                </NumberField>
-              }
-            />
-
-            <SettingsRow
-              id="handoff-custom-prompt"
-              title="Custom compression prompt"
-              description="Optional system prompt for the compression model. Leave blank to use the default summarization prompt."
+              id="handoff-compression-local-model"
+              title="Local model"
+              description="Summarizes selected context through the local Ollama-compatible gateway on port 11434. Smart handoffs use the judge settings above."
               control={
                 <DraftInput
-                  value={settings.handoff.contextCompression.customPrompt}
-                  onCommit={(value) =>
+                  value={settings.handoff.contextCompression.localModel}
+                  onCommit={(value) => {
+                    const localModel = value.trim();
+                    if (!localModel) return;
                     updateSettings({
-                      handoff: { contextCompression: { customPrompt: value } },
-                    })
-                  }
-                  placeholder="Summarize the conversation context…"
+                      handoff: { contextCompression: { localModel } },
+                    });
+                  }}
+                  placeholder={DEFAULT_HANDOFF_LOCAL_MODEL}
                   className="w-full max-w-xs text-xs"
                 />
               }
             />
-          </>
-        ) : null}
-      </SettingsSection>
+          ) : (
+            <SettingsRow
+              id="handoff-compression-provider"
+              title="Compression provider"
+              description="Choose a provider and model to compress the conversation context before handoff."
+              control={
+                <ProviderModelPicker
+                  environmentId={environmentId}
+                  activeInstanceId={
+                    settings.handoff.contextCompression.instanceId ?? textGenInstanceId
+                  }
+                  model={settings.handoff.contextCompression.model ?? textGenModel}
+                  lockedProvider={null}
+                  instanceEntries={textGenerationModelInstanceEntries}
+                  modelOptionsByInstance={textGenerationModelOptionsByInstance}
+                  triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                  onInstanceModelChange={(instanceId, model) => {
+                    updateSettings({
+                      handoff: {
+                        contextCompression: { instanceId, model },
+                      },
+                    });
+                  }}
+                />
+              }
+            />
+          )}
+
+          <SettingsRow
+            id="handoff-max-input"
+            title="Max input characters"
+            description="Maximum characters of conversation transcript sent to the compression provider."
+            resetAction={
+              settings.handoff.contextCompression.maxInputCharacters !==
+              DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS ? (
+                <SettingResetButton
+                  label="max input characters"
+                  onClick={() =>
+                    updateSettings({
+                      handoff: {
+                        contextCompression: {
+                          maxInputCharacters: DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
+                        },
+                      },
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <NumberField
+                value={settings.handoff.contextCompression.maxInputCharacters}
+                min={500}
+                step={500}
+                size="sm"
+                className="w-28"
+                onValueChange={(value) => {
+                  if (value === null) return;
+                  updateSettings({
+                    handoff: {
+                      contextCompression: {
+                        maxInputCharacters: Math.max(500, Math.round(value)),
+                      },
+                    },
+                  });
+                }}
+              >
+                <NumberFieldGroup>
+                  <NumberFieldDecrement aria-label="Decrease max input characters" />
+                  <NumberFieldInput aria-label="Max input characters" />
+                  <NumberFieldIncrement aria-label="Increase max input characters" />
+                </NumberFieldGroup>
+              </NumberField>
+            }
+          />
+
+          <SettingsRow
+            id="handoff-max-output"
+            title="Max output characters"
+            description="Maximum characters the compression provider should produce."
+            resetAction={
+              settings.handoff.contextCompression.maxOutputCharacters !==
+              DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS ? (
+                <SettingResetButton
+                  label="max output characters"
+                  onClick={() =>
+                    updateSettings({
+                      handoff: {
+                        contextCompression: {
+                          maxOutputCharacters: DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
+                        },
+                      },
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <NumberField
+                value={settings.handoff.contextCompression.maxOutputCharacters}
+                min={200}
+                step={200}
+                size="sm"
+                className="w-28"
+                onValueChange={(value) => {
+                  if (value === null) return;
+                  updateSettings({
+                    handoff: {
+                      contextCompression: {
+                        maxOutputCharacters: Math.max(200, Math.round(value)),
+                      },
+                    },
+                  });
+                }}
+              >
+                <NumberFieldGroup>
+                  <NumberFieldDecrement aria-label="Decrease max output characters" />
+                  <NumberFieldInput aria-label="Max output characters" />
+                  <NumberFieldIncrement aria-label="Increase max output characters" />
+                </NumberFieldGroup>
+              </NumberField>
+            }
+          />
+
+          <SettingsRow
+            id="handoff-custom-prompt"
+            title="Custom compression prompt"
+            description="Optional system prompt for the compression model. Leave blank to use the default summarization prompt."
+            control={
+              <DraftInput
+                value={settings.handoff.contextCompression.customPrompt}
+                onCommit={(value) =>
+                  updateSettings({
+                    handoff: { contextCompression: { customPrompt: value } },
+                  })
+                }
+                placeholder="Summarize the conversation context…"
+                className="w-full max-w-xs text-xs"
+              />
+            }
+          />
+        </>
+      ) : null}
+    </SettingsSection>
   );
 }
 
@@ -2271,7 +2276,6 @@ export function ThreadsSettingsPanel() {
           />
         </AdvancedSettings>
       </SettingsSection>
-
 
       <SettledThreadCleanupSection />
     </SettingsPageContainer>

@@ -10,12 +10,9 @@ import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
 export const WORKTREE_BRANCH_PREFIX = "t3";
-// Canonical form is `t3/<8 hex>`. `t3-<8 hex>` is the fallback when a plain `t3`
-// branch blocks the namespace. The matcher also accepts every legacy shape, so
-// existing threads stay eligible for branch regeneration: `t3code/<8 hex>` and
-// `t3code-<8 hex>` from before the prefix was shortened, and `t3code/<uuid>` from
-// older mobile builds that used Crypto.randomUUID() (always RFC 4122 v4, so version
-// nibble `4` and variant nibble `[89ab]`). Nothing looser than what was generated.
+// Accept only generated branch shapes: canonical t3/<8 hex>, its namespace
+// fallback t3-<8 hex>, and legacy t3code hex or RFC 4122 v4 UUID names.
+// This keeps existing threads eligible for branch regeneration.
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
   "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";

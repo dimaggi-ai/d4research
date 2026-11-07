@@ -270,11 +270,9 @@ const config: ExpoConfig = {
       // picture in picture needs it to start and to stay up outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
-      // The App Store screenshot harness rotates the iPad interface from
-      // inside the app (CI denies osascript the Accessibility access that
-      // Simulator menu scripting needs), and iPadOS ignores programmatic
-      // orientation requests for multitasking-capable apps — so the capture
-      // build opts out of multitasking and declares landscape support.
+      // The screenshot harness rotates the iPad from inside the app because CI
+      // denies osascript Accessibility access. iPadOS ignores that request for
+      // multitasking apps, so the capture build opts out and declares landscape.
       ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
             "UISupportedInterfaceOrientations~ipad": [
@@ -408,12 +406,9 @@ const config: ExpoConfig = {
       {
         android: {
           minSdkVersion: 24,
-          // kotlinx-io uses Kotlin 2.3's return-value checker annotation, while
-          // SDK 58 builds with Kotlin 2.2. It has no runtime behavior.
-          // WorkManager 2.9 keeps InputMerger classes but not their constructors,
-          // and R8 full mode no longer keeps a default constructor implicitly.
-          // Without it no work request can start, so the Glance session behind
-          // the widget never renders and it stays on "Loading widget".
+          // kotlinx-io's Kotlin 2.3 annotation has no runtime effect under SDK 58's 2.2.
+          // R8 full mode drops WorkManager 2.9 InputMerger constructors; without them
+          // no work request starts and the widget stays on "Loading widget".
           extraProguardRules: [
             "-dontwarn kotlin.MustUseReturnValues",
             "-keep class * extends androidx.work.InputMerger { <init>(); }",
@@ -434,11 +429,9 @@ const config: ExpoConfig = {
     // Only the accelerometer is used (device viewer shake). Compile out the
     // pedometer so iOS needs no motion purpose string.
     ["expo-sensors", { motionPermission: false }],
-    // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
-    // first, so registering earlier makes this plugin's mods run AFTER
-    // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
-    // would delete the asset catalog) and its xcodeproj mod creates the widget
-    // target (which must exist before the compile phase can be attached).
+    // Must precede expo-widgets: same-type mods run last-registered-first, so this
+    // plugin runs after expo-widgets wipes ios/ExpoWidgetsTarget/ (the asset catalog
+    // would go with it) and creates the widget target its compile phase attaches to.
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",

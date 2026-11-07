@@ -12,15 +12,8 @@ import {
   extractUserMessageContexts,
 } from "./userMessageContextComposition";
 
-/**
- * Each context type round-trips alone — that was already covered. What was NOT
- * covered, and what broke, is COMBINING them: every extractor matches an
- * anchored trailing block, so append order at send must be the exact mirror of
- * strip order at display. These tests pin that contract.
- *
- * The tests call the production composition helpers used by ChatView and the
- * transcript. They do not reimplement either order in a fixture.
- */
+// Each extractor matches an anchored trailing block, so append order must mirror strip order.
+// Exercise production helpers together to catch ordering regressions between context types.
 
 const paste = (name: string, content: string) =>
   makePastedContext({ name, content, fromFile: true });

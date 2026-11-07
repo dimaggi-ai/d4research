@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidSheetHeader } from "../../components/ui/AndroidScreenHeader";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { NativeSheetContent } from "../../native/NativeSheetContent";
 import { NativeStackScreenOptions, nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
@@ -53,6 +54,7 @@ export function ThreadPullRequestsSheet(
   const content = (
     <View className="flex-1 android:bg-sheet-solid ios:bg-screen">
       <LegendList
+        renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
         data={lines}
         keyExtractor={linkedPullRequestKey}
         extraData={rowInputs}

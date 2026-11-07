@@ -53,7 +53,7 @@ function captureAssistantOutput<E>(
   },
   input: ProviderSendTurnInput,
 ) {
-  return Effect.gen(function* () {
+  return Effect.fn("captureAssistantOutput")(function* () {
     const deltas = yield* Ref.make<ReadonlyArray<string>>([]);
     const completed =
       yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "turn.completed" }>>();
@@ -82,7 +82,7 @@ function captureAssistantOutput<E>(
       );
     }
     return (yield* Ref.get(deltas)).join("");
-  });
+  })();
 }
 
 const runAgy = Effect.gen(function* () {

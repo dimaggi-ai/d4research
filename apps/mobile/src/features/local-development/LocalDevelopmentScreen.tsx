@@ -52,7 +52,7 @@ const MODE_OPTIONS = [
   },
   {
     mode: "cloud",
-    label: "Cloud API — optional",
+    label: "Cloud API: optional",
     description: "Sends your task, conversation, and selected file to the HTTPS API you configure.",
   },
 ] as const;
@@ -90,6 +90,7 @@ export function LocalDevelopmentScreen() {
   const mounted = useRef(true);
   const operation = useRef(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Load the native workspace and keychain credentials, and refresh model availability on app activation.
   useEffect(() => {
     mounted.current = true;
     const check = () => {

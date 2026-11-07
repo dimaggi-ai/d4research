@@ -44,23 +44,18 @@ export const fetchEnvironmentSkillsInventory = Effect.fn(
   );
 });
 
-// @effect-diagnostics-next-line effectFnOpportunity:off -- one-shot command body, not a reusable function
-export function preparedEnvironmentFetchAuthorization(
-  prepared: PreparedConnection,
-  method: "GET" | "POST",
-  url: string,
-) {
-  return Effect.gen(function* () {
-    const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
-    const headers = yield* buildEnvironmentAuthHeaders(
-      prepared.httpAuthorization,
-      method,
-      url,
-      signer,
-    );
-    return {
-      headers,
-      credentials: prepared.httpAuthorization === null ? ("include" as const) : undefined,
-    };
-  });
-}
+export const preparedEnvironmentFetchAuthorization = Effect.fn(
+  "clientRuntime.state.preparedEnvironmentFetchAuthorization",
+)(function* (prepared: PreparedConnection, method: "GET" | "POST", url: string) {
+  const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
+  const headers = yield* buildEnvironmentAuthHeaders(
+    prepared.httpAuthorization,
+    method,
+    url,
+    signer,
+  );
+  return {
+    headers,
+    credentials: prepared.httpAuthorization === null ? ("include" as const) : undefined,
+  };
+});

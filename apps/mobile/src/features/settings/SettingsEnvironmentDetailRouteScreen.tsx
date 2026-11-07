@@ -72,6 +72,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     targetVersion: string | null;
   } | null>(null);
   const checkController = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Abort the outstanding release-check request when its screen unmounts.
   useEffect(() => () => checkController.current?.abort(), []);
 
   const connected = environment?.isEnabled === true && environment.connectionState === "connected";

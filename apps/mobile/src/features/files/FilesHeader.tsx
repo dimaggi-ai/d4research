@@ -29,6 +29,7 @@ export function FilesHeader(props: {
     Keyboard.dismiss();
   }, [onSearchQueryChange]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the Android back listener only while file search is visible.
   useEffect(() => {
     if (!searching) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {

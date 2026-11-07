@@ -17,12 +17,9 @@ export async function linkProjects(
   logicalProjectKey: string | null,
 ): Promise<void> {
   await persistClientSettingsUpdate((current) => {
-    let settings = selectProjectGroupingSettings(current);
+    const settings = { ...selectProjectGroupingSettings(current) };
     for (const project of projects) {
-      settings = {
-        ...settings,
-        sidebarProjectLinks: withProjectLink(project, logicalProjectKey, settings),
-      };
+      settings.sidebarProjectLinks = withProjectLink(project, logicalProjectKey, settings);
     }
     return { ...current, sidebarProjectLinks: settings.sidebarProjectLinks ?? {} };
   });

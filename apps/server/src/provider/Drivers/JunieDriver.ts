@@ -77,79 +77,85 @@ export const JunieDriver: ProviderDriver<JunieSettings, JunieDriverEnv> = {
   metadata: { displayName: "Junie", supportsMultipleInstances: true },
   configSchema: JunieSettings,
   defaultConfig: () => decodeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
-    Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  create: Effect.fn("JunieDriver.create")(function* ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    config,
+  }) {
+    const crypto = yield* Crypto.Crypto;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-      const eventLoggers = yield* ProviderEventLoggers;
-      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
-      const continuationIdentity = defaultProviderContinuationIdentity({
-        driverKind: DRIVER_KIND,
-        instanceId,
-      });
-      const stampIdentity = withIdentity({
-        instanceId,
-        displayName,
-        accentColor,
-        continuationGroupKey: continuationIdentity.continuationKey,
-      });
-      const effectiveConfig = { ...config, enabled } satisfies JunieSettings;
-      const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
-        binaryPath: effectiveConfig.binaryPath,
-        env: processEnv,
-      });
+    const eventLoggers = yield* ProviderEventLoggers;
+    const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const continuationIdentity = defaultProviderContinuationIdentity({
+      driverKind: DRIVER_KIND,
+      instanceId,
+    });
+    const stampIdentity = withIdentity({
+      instanceId,
+      displayName,
+      accentColor,
+      continuationGroupKey: continuationIdentity.continuationKey,
+    });
+    const effectiveConfig = { ...config, enabled } satisfies JunieSettings;
+    const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
+      binaryPath: effectiveConfig.binaryPath,
+      env: processEnv,
+    });
 
-      const adapter = yield* makeJunieAdapter(effectiveConfig, {
-        environment: processEnv,
-        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
-        instanceId,
-      });
-      const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv, {
-        makeRuntime: (input) => makeJunieAcpRuntime({ ...input, junieSettings: effectiveConfig }),
-      });
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const checkProvider = checkJunieProviderStatus(effectiveConfig, processEnv).pipe(
-        Effect.map(stampIdentity),
-        Effect.provideService(Crypto.Crypto, crypto),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-      );
-      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
-      const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<JunieSettings>>({
-        resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
-        getSettings: snapshotSettings.getSettings,
-        streamSettings: snapshotSettings.streamSettings,
-        haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (settings) =>
-          buildInitialJunieProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
-        checkProvider,
-        enrichSnapshot: ({ snapshot: current, publishSnapshot }) => publishSnapshot(current),
-      }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: `Failed to build Junie snapshot: ${cause.message ?? String(cause)}`,
-              cause,
-            }),
-        ),
-      );
+    const adapter = yield* makeJunieAdapter(effectiveConfig, {
+      environment: processEnv,
+      ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
+      instanceId,
+    });
+    const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv, {
+      makeRuntime: (input) => makeJunieAcpRuntime({ ...input, junieSettings: effectiveConfig }),
+    });
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const checkProvider = checkJunieProviderStatus(effectiveConfig, processEnv).pipe(
+      Effect.map(stampIdentity),
+      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+    const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
+    const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<JunieSettings>>({
+      resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+      getSettings: snapshotSettings.getSettings,
+      streamSettings: snapshotSettings.streamSettings,
+      haveSettingsChanged: haveProviderSnapshotSettingsChanged,
+      initialSnapshot: (settings) =>
+        buildInitialJunieProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
+      checkProvider,
+      enrichSnapshot: ({ snapshot: current, publishSnapshot }) => publishSnapshot(current),
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: `Failed to build Junie snapshot: ${cause.message ?? String(cause)}`,
+            cause,
+          }),
+      ),
+    );
 
-      return {
-        instanceId,
-        driverKind: DRIVER_KIND,
-        continuationIdentity,
-        displayName,
-        accentColor,
-        enabled,
-        snapshot,
-        orchestrationAdapter: makeLegacyAdapterV2(adapter, instanceId),
-        textGeneration,
-      } satisfies ProviderInstance;
-    }),
+    return {
+      instanceId,
+      driverKind: DRIVER_KIND,
+      continuationIdentity,
+      displayName,
+      accentColor,
+      enabled,
+      snapshot,
+      orchestrationAdapter: makeLegacyAdapterV2(adapter, instanceId),
+      textGeneration,
+    } satisfies ProviderInstance;
+  }),
 };
 import { makeLegacyAdapterV2 } from "../Layers/LegacyAdapterV2.ts";

@@ -30,6 +30,7 @@ export function ProviderSubagentBar(props: {
 
   // The label is written from an effect, and live bars tick through DOM
   // writes, so a running timer never re-renders the chat view.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Updates native status text from the wall clock while a subagent is live.
   useLayoutEffect(() => {
     const update = () => {
       if (statusRef.current) {

@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useRef } from "react";
+import type { TerminalOutputState } from "@d4research/client-runtime/state/terminal";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -17,6 +18,8 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import {
   getNativeTerminalHardwareKeyRevision,
   resolveNativeTerminalSurfaceView,
+  supportsNativeTerminalOutput,
+  type NativeTerminalSurfaceHandle,
 } from "./nativeTerminalModule";
 import {
   buildGhosttyThemeConfig,
@@ -26,6 +29,7 @@ import {
 } from "./terminalTheme";
 import { terminalDebugLog } from "./terminalDebugLog";
 import { useTerminalSurfaceBuffer } from "./useTerminalSurfaceBuffer";
+import { createTerminalOutputWriter } from "./terminalOutputWriter";
 
 interface TerminalInputEvent {
   readonly data: string;
@@ -39,6 +43,7 @@ interface TerminalResizeEvent {
 interface TerminalSurfaceProps extends ViewProps {
   readonly terminalKey: string;
   readonly buffer: string | null;
+  readonly output: TerminalOutputState | null;
   readonly fontSize?: number;
   readonly isRunning: boolean;
   readonly readOnly?: boolean;
@@ -188,7 +193,7 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(
 
 export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurfaceProps) {
   const buffer = useTerminalSurfaceBuffer(props);
-  return <ReadyTerminalSurface {...props} buffer={buffer} />;
+  return <ReadyTerminalSurface key={props.terminalKey} {...props} buffer={buffer} />;
 });
 
 const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerminalSurfaceProps) {
@@ -198,6 +203,30 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerm
   const { onInput, onResize } = props;
   const NativeTerminalSurfaceView = resolveNativeTerminalSurfaceView();
   const hasNativeSurface = Boolean(NativeTerminalSurfaceView);
+  const streaming = supportsNativeTerminalOutput();
+  const nativeRef = useRef<NativeTerminalSurfaceHandle>(null);
+  const writerRef = useRef<ReturnType<typeof createTerminalOutputWriter> | null>(null);
+  const [nativeReady, setNativeReady] = useState(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the output writer for the native terminal view once it is ready and disposes it on cleanup
+  useEffect(() => {
+    const view = nativeRef.current;
+    if (!streaming || !nativeReady || view === null) return;
+    const writer = createTerminalOutputWriter((data, reset) => view.writeOutput(data, reset));
+    writerRef.current = writer;
+    return () => {
+      writerRef.current = null;
+      writer.dispose();
+    };
+  }, [nativeReady, streaming]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- streams new terminal output into the native terminal view through its writer
+  useEffect(() => {
+    if (!streaming || !nativeReady || props.output === null) return;
+    void writerRef.current?.write(props.output).catch((error: unknown) => {
+      console.error("Terminal output delivery failed", error);
+    });
+  }, [nativeReady, props.output, streaming]);
 
   useEffect(() => {
     terminalDebugLog("native:surface", {
@@ -222,6 +251,8 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerm
   );
   const handleNativeResize = useCallback(
     (event: NativeSyntheticEvent<TerminalResizeEvent>) => {
+      // The first grid event comes from the mounted native surface, after registration.
+      setNativeReady(true);
       onResize({
         cols: event.nativeEvent.cols,
         rows: event.nativeEvent.rows,
@@ -234,6 +265,7 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerm
     return (
       <View style={props.style}>
         <NativeTerminalSurfaceView
+          ref={nativeRef}
           appearanceScheme={appearanceScheme}
           autoFocus={!props.readOnly && (props.autoFocus ?? true)}
           readOnly={props.readOnly ?? false}
@@ -242,7 +274,7 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerm
           foregroundColor={theme.foreground}
           mutedForegroundColor={theme.mutedForeground}
           terminalKey={props.terminalKey}
-          initialBuffer={props.buffer}
+          initialBuffer={streaming ? "" : props.buffer}
           fontSize={fontSize}
           style={{ flex: 1 }}
           themeConfig={buildGhosttyThemeConfig(theme)}

@@ -3173,7 +3173,7 @@ async function exerciseNotes() {
     });
     return threadId;
   }, workspace);
-  await page.getByRole("treeitem", { name: /^QA notes fixture,/ }).click();
+  await page.getByRole("button", { name: /^QA notes fixture,/ }).click();
   const notes = page.getByRole("button", { name: "Open thread notes", exact: true });
   await notes.waitFor();
   await notes.click();

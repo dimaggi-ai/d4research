@@ -3135,6 +3135,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         if (mcpAvailable) state.mcp = wanted;
       }
       const instructions = [
+        turnInput.runtimePolicy.additionalInstructions,
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
         t3OrchestrationSystemPrompt(mcpAvailable, mcpSession?.capabilities?.has("device") === true),
       ]
@@ -3573,6 +3574,12 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         runtime.startTurn({ ...turnInput, message: { ...turnInput.message, text: "/compact" } }),
       startTurn: Effect.fn("OpenCode2Adapter.startTurn")(
         function* (turnInput) {
+          if (turnInput.runtimePolicy.toolPolicy === "d4-agent") {
+            return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+              operation: "nia",
+              detail: "NIA_OPENCODE_2_UNSUPPORTED",
+            });
+          }
           // Waited out before the session's gate, so a rollback or fork is not
           // held behind a reconnect.
           if (streamFailure !== undefined) {
@@ -4143,6 +4150,12 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     // spawned server is not idle-stopped under a long tool call.
     openSession: Effect.fn("OpenCode2Adapter.borrowAndOpenSession")(
       function* (input) {
+        if (input.runtimePolicy.toolPolicy === "d4-agent") {
+          return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+            operation: "nia",
+            detail: "NIA_OPENCODE_2_UNSUPPORTED",
+          });
+        }
         const scope = yield* Scope.make();
         yield* Effect.addFinalizer((exit) => Scope.close(scope, exit));
         const connection = yield* borrow.pipe(Effect.provideService(Scope.Scope, scope));

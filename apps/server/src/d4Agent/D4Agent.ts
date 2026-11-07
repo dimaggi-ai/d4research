@@ -458,6 +458,15 @@ const REFERENCE_EVENT_TYPES = [
   "thread.deleted",
 ] as const;
 
+function overBudget(
+  session: { readonly inputTokens: number; readonly contextWindow: number | null },
+  fallbackWindow: number | null,
+  budgetPercent: number,
+) {
+  const window = session.contextWindow ?? fallbackWindow;
+  return window !== null && session.inputTokens >= (window * budgetPercent) / 100;
+}
+
 export const layer = Layer.effect(
   D4Agent,
   Effect.gen(function* () {
@@ -1250,8 +1259,8 @@ export const layer = Layer.effect(
         !heartbeat &&
         !resumedAfterRotation &&
         input.followUpBehavior !== "steer" &&
-        session?.contextWindow != null &&
-        session.inputTokens >= (session.contextWindow * budget) / 100
+        session !== undefined &&
+        overBudget(session, sendConfig.contextWindowTokens, budget)
       ) {
         yield* beginRotation(input.text, heartbeat, id, { ...input, taskModelSelection });
         return identity;
@@ -3998,8 +4007,8 @@ export const layer = Layer.effect(
         );
         if (
           !(yield* store.get).rotation &&
-          active?.contextWindow != null &&
-          active.inputTokens >= (active.contextWindow * config.sessionBudgetPercent) / 100
+          active !== undefined &&
+          overBudget(active, config.contextWindowTokens, config.sessionBudgetPercent)
         ) {
           const shell = yield* threads
             .getThreadShell(active.threadId)
@@ -4370,7 +4379,14 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound();
-            // One point lookup with the same checks scopedThreads applies to the whole list.
+            if (threadId.startsWith("mcp:"))
+              return yield* new D4AgentError({
+                reason: "context",
+                detail:
+                  "This is an MCP session ID, not a thread ID. Use d4_agent_list to find a thread ID.",
+              });
+            // Global may read its own conversation, but other agent sessions remain private.
+            const ownGlobalThread = state.brainContext === "Global" && threadId === state.threadId;
             // Archived threads stay readable: Nia must report on work it started after it closed.
             const thread = yield* threads
               .getThreadShell(threadId)
@@ -4378,9 +4394,10 @@ export const layer = Layer.effect(
             if (
               thread === null ||
               thread.deletedAt !== null ||
-              thread.projectId === state.projectId ||
-              !projectInScope(state.brainContext, config, thread.projectId) ||
-              !projectContentInScope(state.brainContext, config, thread.projectId)
+              (!ownGlobalThread &&
+                (thread.projectId === state.projectId ||
+                  !projectInScope(state.brainContext, config, thread.projectId) ||
+                  !projectContentInScope(state.brainContext, config, thread.projectId)))
             )
               return yield* new D4AgentError({
                 reason: "context",

@@ -1604,6 +1604,12 @@ importers:
         specifier: 4.1.2
         version: 4.1.2
     devDependencies:
+      '@d4research/provider-testing':
+        specifier: workspace:*
+        version: link:../provider-testing
+      '@effect/platform-node':
+        specifier: 4.1.2
+        version: 4.1.2(bufferutil@4.1.0)(effect@4.1.2)(redis@6.2.1)(utf-8-validate@6.0.6)
       '@effect/vitest':
         specifier: 4.1.2
         version: 4.1.2(patch_hash=299510b71c36537a832a67e9d160a5f112a5f326a29e95c41cb45fc8234e47c7)(@astrojs/compiler-rs@0.5.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(typescript@6.0.3))(bufferutil@4.1.0)(effect@4.1.2)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
@@ -1789,6 +1795,9 @@ importers:
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
+      opencode-ai:
+        specifier: 1.19.3
+        version: 1.19.3
       vite-plus:
         specifier: 1.4.0
         version: 1.4.0(@astrojs/compiler-rs@0.5.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(typescript@6.0.3))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
@@ -9321,6 +9330,75 @@ packages:
   open@8.4.2:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
+
+  opencode-ai@1.19.3:
+    resolution: {integrity: sha512-wDRcUlMDibaLzecIGvVGUA9naghXVqzCWcUE7N3qagpGiLSUlU4VbixI+bpsErwJp+AAuSO2lhSr/XxJl7XbrQ==}
+    cpu: [arm64, x64]
+    os: [darwin, linux, win32]
+    hasBin: true
+
+  opencode-darwin-arm64@1.19.3:
+    resolution: {integrity: sha512-NmDF28jD8W7m9a/k4mc3rajEWftDemGecrzBJItzTWwN0Eu5WFSEFBocvmmasUr4nh8ei9Zl1pwRvv66R4dN6A==}
+    cpu: [arm64]
+    os: [darwin]
+
+  opencode-darwin-x64-baseline@1.19.3:
+    resolution: {integrity: sha512-YQhL8HrHp4SUIHLR3JKY3uVRvIlhiZPFFK5AZH2avzCQuBG7gBAice2B/DbT0leANzhvY3SocEd+rVM/GcebMw==}
+    cpu: [x64]
+    os: [darwin]
+
+  opencode-darwin-x64@1.19.3:
+    resolution: {integrity: sha512-z9uxw1QZ+0CcweMQnrh8s/VXXr+UhqxwUh+vYEcwicETBOxwNSLFqFFE598s0ComYEoM1bXDul1e83AG7m143A==}
+    cpu: [x64]
+    os: [darwin]
+
+  opencode-linux-arm64-musl@1.19.3:
+    resolution: {integrity: sha512-0shzHjgWf9exkIcIO+g9pGqpGmxeeqVxAhcUvLnNmzveXYdveLcQMiXF5jkt/njZwwMuz0WFRsvbbmuPT+F1mw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  opencode-linux-arm64@1.19.3:
+    resolution: {integrity: sha512-Y1HIsJNK+zxbtd54TCrEI/G3m/RSALCaKbzAaaxJYF+ZHQE2PFlHmueqWDigQoT1tbiPi/8tPMirxpGgcXEprg==}
+    cpu: [arm64]
+    os: [linux]
+
+  opencode-linux-x64-baseline-musl@1.19.3:
+    resolution: {integrity: sha512-EdRsAv1QFA1z2iC8ZmKKdTItalfb5es3zRJJWNyxHWh/C+KwA4speA3/Qq2rPeKzx4xfjdqsUZq0BhcBj/7Dxg==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  opencode-linux-x64-baseline@1.19.3:
+    resolution: {integrity: sha512-FnhCNzuPrjNxjZjfE3J5H5lPjcP6//7kMzaVnRPjvqZzznRQcMoOJhb0ApkyAUtP+6FgvBNNUNI7vy7G+85hcw==}
+    cpu: [x64]
+    os: [linux]
+
+  opencode-linux-x64-musl@1.19.3:
+    resolution: {integrity: sha512-6wdrvDPyFzGj3iW8QJ9EdLgbmT7oWDQ0+nBV5F9fKsFGIpavCZTWEyQfsiolGT7RFkb7lYdxQeJQnoNSd75weQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  opencode-linux-x64@1.19.3:
+    resolution: {integrity: sha512-wz+kXi7ZkvLW04hEIocW3RoEznALJ3YGnvNlZdXFarYF0v1jyDyAwpPGZkxb4JZDrw4oy48/LDZ8wCFIQDTxhw==}
+    cpu: [x64]
+    os: [linux]
+
+  opencode-windows-arm64@1.19.3:
+    resolution: {integrity: sha512-ejMAoGdzmD62C1LoG6AXfFZ7wdLyvLH+TuQL4wJaFHo1JewOIDqE8K0EX8pqRt0YE8/LbuiK5bdjENsIsCxGyg==}
+    cpu: [arm64]
+    os: [win32]
+
+  opencode-windows-x64-baseline@1.19.3:
+    resolution: {integrity: sha512-tmTCxrPbssM9bq8T84l+HJJfgkw/Z5UlTat4K1n+1Ho2kwwoDoIOV5svY5777jqfV05PEZ8585tgNdhcecrJ2w==}
+    cpu: [x64]
+    os: [win32]
+
+  opencode-windows-x64@1.19.3:
+    resolution: {integrity: sha512-4kw8H0Qfp0t7CyU7+yvbUbilHdUUfkO6y+Nmf5YCe1z9DR301vmO8WdyC7xqyOP4OvCCCE4gGK2cwDEem1iwBg==}
+    cpu: [x64]
+    os: [win32]
 
   ora@3.4.0:
     resolution: {integrity: sha512-eNwHudNbO1folBP3JsZ19v9azXWtQZjICdr3Q0TDPIaeBQ3mXLrh54wM+er0+hSp+dWKf+Z8KM58CYzEyIYxYg==}
@@ -18602,6 +18680,57 @@ snapshots:
       define-lazy-prop: 2.0.0
       is-docker: 2.2.1
       is-wsl: 2.2.0
+
+  opencode-ai@1.19.3:
+    optionalDependencies:
+      opencode-darwin-arm64: 1.19.3
+      opencode-darwin-x64: 1.19.3
+      opencode-darwin-x64-baseline: 1.19.3
+      opencode-linux-arm64: 1.19.3
+      opencode-linux-arm64-musl: 1.19.3
+      opencode-linux-x64: 1.19.3
+      opencode-linux-x64-baseline: 1.19.3
+      opencode-linux-x64-baseline-musl: 1.19.3
+      opencode-linux-x64-musl: 1.19.3
+      opencode-windows-arm64: 1.19.3
+      opencode-windows-x64: 1.19.3
+      opencode-windows-x64-baseline: 1.19.3
+
+  opencode-darwin-arm64@1.19.3:
+    optional: true
+
+  opencode-darwin-x64-baseline@1.19.3:
+    optional: true
+
+  opencode-darwin-x64@1.19.3:
+    optional: true
+
+  opencode-linux-arm64-musl@1.19.3:
+    optional: true
+
+  opencode-linux-arm64@1.19.3:
+    optional: true
+
+  opencode-linux-x64-baseline-musl@1.19.3:
+    optional: true
+
+  opencode-linux-x64-baseline@1.19.3:
+    optional: true
+
+  opencode-linux-x64-musl@1.19.3:
+    optional: true
+
+  opencode-linux-x64@1.19.3:
+    optional: true
+
+  opencode-windows-arm64@1.19.3:
+    optional: true
+
+  opencode-windows-x64-baseline@1.19.3:
+    optional: true
+
+  opencode-windows-x64@1.19.3:
+    optional: true
 
   ora@3.4.0:
     dependencies:

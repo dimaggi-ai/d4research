@@ -531,6 +531,7 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
 }));
 vi.mock("../../state/use-terminal-session", () => ({ useKnownTerminalSessions: vi.fn() }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: vi.fn() }));
+vi.mock("../../state/assets", () => ({ useAssetUrl: () => null }));
 vi.mock("../../state/session", () => ({
   readEnvironmentScope: vi.fn(),
   useEnvironmentScope: vi.fn(),

@@ -41,6 +41,17 @@ function provider(usedPercent: number): ServerProvider {
 }
 
 describe("d4AgentTaskFailureMessage", () => {
+  it("explains a Nia model mismatch without blaming the task model", () => {
+    const message = d4AgentTaskFailureMessage({
+      failure: new D4AgentError({ reason: "model-mismatch" }),
+      preserved: "Your draft is preserved.",
+      providers: [],
+      selection,
+    });
+    expect(message).toContain("Select the configured Nia model in the composer");
+    expect(message).toContain("Your draft is preserved.");
+    expect(message).not.toContain("task model is unavailable");
+  });
   it("distinguishes quota exhaustion from provider availability or authentication", () => {
     const failure = new D4AgentError({ reason: "provider-unavailable" });
     expect(

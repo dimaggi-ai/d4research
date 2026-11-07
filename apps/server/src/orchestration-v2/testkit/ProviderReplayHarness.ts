@@ -26,6 +26,7 @@ import * as ProjectService from "../../project/ProjectService.ts";
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
 import * as SecondBrain from "../../second-brain/SecondBrainService.ts";
 import * as ManagedPolicy from "../../policy/ManagedPolicy.ts";
+import * as D4AgentContext from "../../d4Agent/D4AgentContext.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
@@ -279,6 +280,7 @@ export function layerWithRegistry<Error>(
     McpProviderSessions.McpProviderSessions
   >,
   options: {
+    readonly layerD4AgentContext?: Layer.Layer<D4AgentContext.D4AgentContext>;
     readonly layerProjectService?: Layer.Layer<ProjectService.ProjectService>;
     readonly layerSecondBrain?: Layer.Layer<SecondBrain.SecondBrainService>;
     readonly layerServerSettings?: Layer.Layer<ServerSettings.ServerSettingsService>;
@@ -426,6 +428,7 @@ export function layerWithRegistry<Error>(
     ),
   );
   const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
+    Layer.provide(options.layerD4AgentContext ?? Layer.empty),
     Layer.provide(layerServerSettings),
     Layer.provide(options.layerSecondBrain ?? Layer.empty),
     Layer.provide(McpProviderSessions.layer),

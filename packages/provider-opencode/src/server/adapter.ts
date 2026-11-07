@@ -1,3 +1,8 @@
+import { D4_AGENT_PREFIX } from "@d4research/provider-core/server/d4AgentPolicy";
+import { niaPermissions, prepareNiaRuntime, requireNiaMcp } from "./nia.ts";
+import * as Digest from "effect/crypto/Digest";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import type {
   Event as OpenCodeEvent,
   Message as OpenCodeMessage,
@@ -226,6 +231,7 @@ interface OpenCodeTurnTokenUsageAccumulator {
   reasoningTokens: number;
   hasSubagents: boolean;
   complete: boolean;
+  lastStep?: OpenCodeStepUsage;
 }
 
 function makeOpenCodeTurnTokenUsageAccumulator(): OpenCodeTurnTokenUsageAccumulator {
@@ -250,11 +256,35 @@ function accumulateOpenCodeStepUsage(
 ): void {
   if (accumulator.partIds.has(part.id)) return;
   accumulator.partIds.add(part.id);
+  accumulator.lastStep = part;
   accumulator.inputTokens += part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
   accumulator.cachedInputTokens += part.tokens.cache.read;
   accumulator.cacheCreationTokens += part.tokens.cache.write;
   accumulator.outputTokens += part.tokens.output + part.tokens.reasoning;
   accumulator.reasoningTokens += part.tokens.reasoning;
+}
+
+export function openCodeContextUsage(
+  part: OpenCodeStepUsage,
+  settings: OpenCodeSettings,
+  model: string,
+  updatedAt: string,
+) {
+  const parsed = OpenCodeRuntime.parseOpenCodeModelSlug(model);
+  const window =
+    parsed === null
+      ? undefined
+      : settings.config.provider[parsed.providerID]?.models[parsed.modelID]?.limit.context;
+  const inputTokens = part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
+  return {
+    usedTokens: inputTokens + part.tokens.output,
+    maxTokens: window ?? null,
+    inputTokens,
+    cachedInputTokens: part.tokens.cache.read,
+    outputTokens: part.tokens.output,
+    reasoningOutputTokens: part.tokens.reasoning,
+    updatedAt,
+  };
 }
 
 interface ActiveOpenCodeTurn {
@@ -598,6 +628,7 @@ const OPENCODE_RESTRICTED_PERMISSIONS = [
 export function openCodePermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionRuleset {
+  if (runtimePolicy.toolPolicy === "d4-agent") return niaPermissions();
   const sandboxPolicy = recordValue(runtimePolicy, "sandboxPolicy");
   const sandboxType = recordString(sandboxPolicy, "type");
   const rawApprovalPolicy = runtimePolicy.approvalPolicy;
@@ -705,6 +736,7 @@ export function openCodeChildPermissionRules(
   childRules: PermissionRuleset,
   previousParentRules: PermissionRuleset = [],
 ): PermissionRuleset {
+  if (runtimePolicy.toolPolicy === "d4-agent") return niaPermissions();
   const parentRules = openCodePermissionRules(runtimePolicy);
   const inheritedRules = [
     ...parentRules.filter(
@@ -934,6 +966,9 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const digest = yield* Digest.Digest;
   const messageIdClock = yield* Ref.make({ epochMillis: -1, counter: 0 });
 
   return ProviderAdapter.ProviderAdapterV2.of({
@@ -948,7 +983,26 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
     openSession: Effect.fn("OpenCodeAdapterV2.openSession")(
       function* (input: ProviderAdapter.ProviderAdapterV2OpenSessionInput) {
         const scope = yield* Effect.scope;
-        const cwd = input.runtimePolicy.cwd ?? host.paths.cwd;
+        const nia = input.runtimePolicy.toolPolicy === "d4-agent";
+        if (nia && options.settings.serverUrl.trim()) {
+          return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+            operation: "nia",
+            detail: "NIA_EXTERNAL_SERVER_DENIED",
+          });
+        }
+        const isolated = nia
+          ? yield* prepareNiaRuntime({
+              stateDir: host.paths.stateDir,
+              threadId: input.threadId,
+              settings: options.settings,
+              path: options.environment.PATH,
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
+              Effect.provideService(Digest.Digest, digest),
+            )
+          : undefined;
+        const cwd = isolated?.directory ?? input.runtimePolicy.cwd ?? host.paths.cwd;
         const connection = yield* runtime.connectToOpenCodeServer({
           binaryPath: options.settings.binaryPath,
           directory: cwd,
@@ -956,8 +1010,19 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           ...(settingsSecretLiteral(options.settings.serverPassword)
             ? { serverPassword: settingsSecretLiteral(options.settings.serverPassword) }
             : {}),
-          environment: options.environment,
+          environment:
+            isolated?.environment ??
+            OpenCodeRuntime.withOpenCodeConfigEnvironment(
+              options.environment,
+              options.settings.config,
+            ),
         });
+        if (nia && connection.version !== "1.19.3") {
+          return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+            operation: "nia",
+            detail: "NIA_OPENCODE_VERSION_UNVERIFIED",
+          });
+        }
         const client = runtime.createOpenCodeSdkClient({
           baseUrl: connection.url,
           directory: cwd,
@@ -968,11 +1033,17 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 
         const mcpSession = yield* mcpSessions.read(input.threadId);
         const hasT3Mcp = mcpSession !== undefined && !connection.external;
+        if (nia && (!hasT3Mcp || !mcpSession.authorizationHeader)) {
+          return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+            operation: "nia",
+            detail: "NIA_MCP_UNAVAILABLE",
+          });
+        }
         const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(
           hasT3Mcp,
           mcpSession?.capabilities?.has("device") === true,
         );
-        if (hasT3Mcp) {
+        if (hasT3Mcp && !nia) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
               name: "t3-code",
@@ -986,6 +1057,34 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           );
         }
 
+        const checkNiaMcp = Effect.fn("OpenCode.checkNiaMcp")(function* () {
+          const current = yield* mcpSessions.read(input.threadId);
+          if (!current?.authorizationHeader) {
+            return yield* Effect.fail(
+              new OpenCodeRuntime.OpenCodeRuntimeError({
+                operation: "nia",
+                detail: "NIA_MCP_UNAVAILABLE",
+              }),
+            );
+          }
+          // Reconnect before each turn so stale connected status cannot conceal revoked auth.
+          yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", async (signal) => {
+            const response = await client.mcp.add(
+              {
+                name: "t3-code",
+                config: {
+                  type: "remote",
+                  url: current.endpoint,
+                  headers: { Authorization: current.authorizationHeader },
+                  oauth: false,
+                },
+              },
+              { signal, throwOnError: true },
+            );
+            requireNiaMcp(response.data);
+          });
+        });
+        if (nia) yield* checkNiaMcp();
         const now = yield* DateTime.now;
         let sessionEntity: OrchestrationV2ProviderSession = {
           id: input.providerSessionId,
@@ -1151,6 +1250,16 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 : providerRef(turn.nativeUserMessageId, "weak"),
             status,
             completedAt,
+            ...(completedAt === null || turn.usage.lastStep === undefined
+              ? {}
+              : {
+                  tokenUsage: openCodeContextUsage(
+                    turn.usage.lastStep,
+                    options.settings,
+                    turn.modelSelection.model,
+                    DateTime.formatIso(completedAt),
+                  ),
+                }),
             ...(completedAt === null
               ? {}
               : {
@@ -2956,6 +3065,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         // OpenCode runs each step with the agent and system prompt of the latest
         // user message, so every prompt in a turn, steers included, repeats them.
         const turnPromptOptions = (turn: ActiveOpenCodeTurn) => {
+          if (nia) return { agent: "nia", system: D4_AGENT_PREFIX };
           const agent =
             getModelSelectionStringOptionValue(turn.modelSelection, "agent") ??
             (turn.runtimePolicy.interactionMode === "plan" ? "plan" : undefined);
@@ -2965,6 +3075,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             ...(variant === undefined ? {} : { variant }),
             system: [
               orchestrationSystemPrompt,
+              turn.runtimePolicy.additionalInstructions,
               buildRuntimeInstructions({ harness: "OpenCode", model: turn.modelSelection.model }),
             ]
               .filter(Boolean)
@@ -2987,7 +3098,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             .map((part) => part.text)
             .join("\n")
             .trim();
-          const match = text?.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+          const match = nia ? undefined : text?.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
           const command = match
             ? (yield* OpenCodeRuntime.loadOpenCodeCommands(client).pipe(
                 Effect.timeout("10 seconds"),
@@ -3158,6 +3269,9 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             }),
           startTurn: Effect.fn("OpencodeAdapter.startTurn")(
             function* (turnInput) {
+              if ((turnInput.runtimePolicy.toolPolicy === "d4-agent") !== nia)
+                return yield* protocolError("NIA_POLICY_TRANSITION_DENIED");
+              if (nia) yield* checkNiaMcp();
               if (nativeStreamFailure !== null) {
                 return yield* protocolError(
                   "OpenCode event stream has ended; reconnect the provider session before starting another turn.",
@@ -3187,7 +3301,13 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const isCompaction =
                 turnInput.message.text.trim() === "/compact" &&
                 turnInput.message.attachments.length === 0;
-              const parts = isCompaction ? [] : yield* resolvePromptParts(turnInput);
+              if (nia && (isCompaction || turnInput.message.attachments.length > 0))
+                return yield* protocolError("NIA_NATIVE_INPUT_DENIED");
+              const parts = nia
+                ? [{ type: "text" as const, text: turnInput.message.text }]
+                : isCompaction
+                  ? []
+                  : yield* resolvePromptParts(turnInput);
               const startedAt = yield* DateTime.now;
               const syntheticNativeTurnId = `${sessionId}:attempt:${turnInput.attemptId}`;
               const providerTurnId = idAllocator.derive.providerTurn({
@@ -3369,6 +3489,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 return yield* protocolError(
                   `OpenCode model '${turn.modelSelection.model}' must use provider/model format`,
                 );
+              }
+              if (nia) {
+                if (steerInput.message.attachments.length > 0)
+                  return yield* protocolError("NIA_NATIVE_INPUT_DENIED");
+                yield* checkNiaMcp();
               }
               const text = (yield* providerMessageTextWithAttachmentPaths({
                 text: steerInput.message.text,
@@ -3759,6 +3884,9 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 });
 
 export type OpenCodeAdapterV2DriverEnv =
+  | FileSystem.FileSystem
+  | Path.Path
+  | Digest.Digest
   | OpenCodeRuntime.OpenCodeRuntime
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions

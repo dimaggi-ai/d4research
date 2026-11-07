@@ -302,6 +302,7 @@ function makeLocalCommandHarness(input: {
   readonly failReadsAfterRunning?: boolean;
   readonly d4AgentPrepare?: D4AgentContext.D4AgentContext["Service"]["prepare"];
   readonly niaUserTurn?: boolean;
+  readonly providerDriver?: "codex" | "deepseek";
   readonly messageCreatedBy?: "user" | "system";
   readonly allowNative?: boolean;
   readonly nativeIdentity?: string;
@@ -367,7 +368,7 @@ function makeLocalCommandHarness(input: {
   };
   const providerThread: OrchestrationV2ThreadProjection["providerThreads"][number] = {
     id: providerThreadId,
-    driver: ProviderDriverKind.make("codex"),
+    driver: ProviderDriverKind.make(input.providerDriver ?? "codex"),
     providerInstanceId: newInstanceId,
     providerSessionId,
     appThreadId: threadId,
@@ -1188,6 +1189,13 @@ function makeLocalCommandHarness(input: {
     projection: () => projection,
     start: Effect.gen(function* () {
       yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({ threadId, runId });
+    }).pipe(Effect.provide(layer)),
+    startLastAttempt: Effect.gen(function* () {
+      yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
+        threadId,
+        runId,
+        willRetry: false,
+      });
     }).pipe(Effect.provide(layer)),
     startWithRetry: Effect.gen(function* () {
       yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
@@ -2035,42 +2043,56 @@ for (const text of [
   );
 }
 
-effectIt.effect("Nia user chat turns use the normal provider policy from home", () =>
-  Effect.gen(function* () {
-    const prepare = vi.fn(() => Effect.succeed("restricted prefix"));
-    const harness = makeLocalCommandHarness({
-      text: "show my active threads",
-      d4AgentPrepare: prepare,
-      niaUserTurn: true,
-      allowNative: true,
-    });
-    yield* harness.start;
-    expect(prepare).not.toHaveBeenCalled();
-    expect(harness.nativeStart).toHaveBeenCalledOnce();
-    expect(harness.nativeStart.mock.calls[0]![0].runtimePolicy).toMatchObject({
-      runtimeMode: "full-access",
-      cwd: "/home/nia",
-      additionalInstructions: NIA_USER_INSTRUCTIONS,
-    });
-  }),
+effectIt.effect(
+  "Nia user chat turns retain scoped context with the normal provider policy from home",
+  () =>
+    Effect.gen(function* () {
+      const prepare = vi.fn(() => Effect.succeed("scoped Nia context"));
+      const harness = makeLocalCommandHarness({
+        text: "show my active threads",
+        d4AgentPrepare: prepare,
+        niaUserTurn: true,
+        allowNative: true,
+      });
+      yield* harness.start;
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(harness.nativeStart).toHaveBeenCalledOnce();
+      expect(harness.nativeStart.mock.calls[0]![0].runtimePolicy).toMatchObject({
+        runtimeMode: "full-access",
+        cwd: "/home/nia",
+        additionalInstructions: NIA_USER_INSTRUCTIONS,
+      });
+      expect(harness.nativeStart.mock.calls[0]![0].runtimePolicy.toolPolicy).toBeUndefined();
+      expect(harness.nativeStart.mock.calls[0]![0].message.text).toContain("scoped Nia context");
+      expect(harness.nativeStart.mock.calls[0]![0].message.text).toContain(
+        "User message:\nshow my active threads",
+      );
+      expect(harness.buildTurnContext).not.toHaveBeenCalled();
+    }),
 );
 
-effectIt.effect("system-created Nia turns retain the restricted provider policy", () =>
-  Effect.gen(function* () {
-    const prepare = vi.fn(() => Effect.succeed("restricted prefix"));
-    const harness = makeLocalCommandHarness({
-      text: "heartbeat result",
-      d4AgentPrepare: prepare,
-      niaUserTurn: true,
-      messageCreatedBy: "system",
-      openFailure: "restricted native boundary",
-    });
-    yield* harness.start;
-    expect(prepare).toHaveBeenCalledOnce();
-    expect(harness.open.mock.calls[0]).toMatchObject([
-      { runtimePolicy: { toolPolicy: "d4-agent", runtimeMode: "approval-required" } },
-    ]);
-  }),
+effectIt.effect.each([
+  { createdBy: "system", driver: "codex" },
+  { createdBy: "user", driver: "deepseek" },
+] as const)(
+  "$createdBy Nia turns on $driver retain the restricted provider policy",
+  ({ createdBy, driver }) =>
+    Effect.gen(function* () {
+      const prepare = vi.fn(() => Effect.succeed("restricted prefix"));
+      const harness = makeLocalCommandHarness({
+        text: "heartbeat result",
+        d4AgentPrepare: prepare,
+        niaUserTurn: true,
+        messageCreatedBy: createdBy,
+        providerDriver: driver,
+        openFailure: "restricted native boundary",
+      });
+      yield* harness.start;
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(harness.open.mock.calls[0]).toMatchObject([
+        { runtimePolicy: { toolPolicy: "d4-agent", runtimeMode: "approval-required" } },
+      ]);
+    }),
 );
 
 effectIt.effect(
@@ -2273,3 +2295,71 @@ for (const failureTag of [
     }),
   );
 }
+
+effectIt.effect("reads bounded run identity before taking the startup lease", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({ text: "/logout", previousNativeSession: true });
+    yield* harness.start;
+    expect(harness.getThreadRecords).toHaveBeenCalledExactlyOnceWith(
+      harness.projection().thread.id,
+      ["runs"],
+      { runIds: [harness.projection().runs.at(-1)!.id] },
+    );
+    expect(harness.getTurnStartContext).toHaveBeenCalledOnce();
+    expect(harness.projection().runs.at(-1)?.status).toBe("completed");
+  }),
+);
+
+effectIt.effect.each(["interrupted", "superseded"] as const)(
+  "does not settle an exhausted startup after its run was %s",
+  (change) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        d4AgentPrepare: () =>
+          Effect.gen(function* () {
+            const projection = harness.projection();
+            harness.setProjection({
+              ...projection,
+              runs: projection.runs.map((run) => ({
+                ...run,
+                ...(change === "interrupted"
+                  ? { status: "interrupted" as const }
+                  : {
+                      activeAttemptId: RunAttemptId.make("attempt:replacement"),
+                    }),
+              })),
+            });
+            return yield* new D4AgentError({ reason: "context" });
+          }),
+      });
+      yield* Effect.exit(harness.startLastAttempt);
+      expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();
+      expect(harness.events).toEqual([]);
+    }),
+);
+
+effectIt.effect("settles an exhausted startup defect but preserves fiber interruption", () =>
+  Effect.gen(function* () {
+    const defective = makeLocalCommandHarness({
+      text: "Continue",
+      d4AgentPrepare: () => Effect.die("startup defect"),
+    });
+    const defectiveExit = yield* Effect.exit(defective.startLastAttempt);
+    expect(
+      defective.projection().runs.at(-1)?.status,
+      defectiveExit._tag === "Failure" ? Cause.pretty(defectiveExit.cause) : undefined,
+    ).toBe("failed");
+    expect(defective.projection().turnItems).toMatchObject([
+      { type: "error", failure: { class: "provider_error" } },
+    ]);
+    const interrupted = makeLocalCommandHarness({
+      text: "Continue",
+      d4AgentPrepare: () => Effect.interrupt,
+    });
+    const exit = yield* Effect.exit(interrupted.startLastAttempt);
+    expect(exit._tag === "Failure" && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+    expect(interrupted.writeIfRunCurrent).not.toHaveBeenCalled();
+    expect(interrupted.projection().runs.at(-1)?.status).toBe("starting");
+  }),
+);

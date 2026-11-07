@@ -63,6 +63,7 @@
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
+    "opencode-ai": "1.19.3",
     "vite-plus": "catalog:"
   }
 }

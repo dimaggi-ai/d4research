@@ -1,17 +1,25 @@
 import { assert, it } from "@effect/vitest";
-import { describe } from "vite-plus/test";
+import { afterEach, describe, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as TestClock from "effect/testing/TestClock";
 import { requestCompletion } from "./http.ts";
 import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
+import * as Queue from "effect/Queue";
+import * as Layer from "effect/Layer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import {
+  EnvironmentId,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderTurnId,
@@ -23,15 +31,25 @@ import {
   NodeId,
   MessageId,
   type OrchestrationV2AppThread,
+  type OrchestrationV2ProviderThread,
 } from "@d4research/contracts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import type * as Adapter from "@d4research/provider-core/server/ProviderAdapter";
+import type { ProviderAdapterV2RuntimePolicy } from "@d4research/provider-core/server/ProviderAdapter";
+import { D4_AGENT_PREFIX } from "@d4research/provider-core/server/d4AgentPolicy";
 import { historicalMessage } from "@d4research/provider-core/server/handoffBudget";
 import { DeepSeekSettings, isLoopbackEndpoint } from "../settings.ts";
 import { DeepSeekAdapterV2Driver } from "./adapter.ts";
+import { makeNiaJournal } from "./niaJournal.ts";
+import type { NiaMessage } from "./nia.ts";
 import { probeDeepSeek } from "./health.ts";
 
 const config = Schema.decodeSync(DeepSeekSettings)({});
 const instanceId = ProviderInstanceId.make("deepseek-test");
 const threadId = ThreadId.make("deepseek-thread");
+const providerSessionId = ProviderSessionId.make(
+  `provider-session:${instanceId}:thread:${threadId}:9a731222-c053-4b87-a108-658f7f0292d8`,
+);
 const selection = { instanceId, model: config.model };
 const policy = {
   runtimeMode: "approval-required" as const,
@@ -48,25 +66,41 @@ const reply = (body: unknown, status = 200) =>
       HttpClientResponse.fromWeb(request, new Response(JSON.stringify(body), { status })),
     ),
   );
-const open = (client: HttpClient.HttpClient) =>
+const open = (
+  client: HttpClient.HttpClient,
+  options: {
+    policy?: ProviderAdapterV2RuntimePolicy;
+    config?: typeof config;
+    appContext?: ReadonlyArray<{ key: string; text: string }>;
+    existingProviderThread?: OrchestrationV2ProviderThread;
+    /** Reuse a host to simulate a restart that keeps the server state directory. */
+    host?: Context.Context<ProviderHost.ProviderHost | FileSystem.FileSystem | Path.Path>;
+  } = {},
+) =>
   Effect.gen(function* () {
+    const host =
+      options.host ??
+      (yield* Layer.build(TestProviderHost.layer().pipe(Layer.provideMerge(NodeServices.layer))));
     const adapter = yield* DeepSeekAdapterV2Driver.create({
       instanceId,
       displayName: undefined,
       environment: [],
       enabled: true,
-      config,
-    });
+      config: options.config ?? config,
+    }).pipe(Effect.provide(host));
     const runtime = yield* adapter.openSession({
       threadId,
-      providerSessionId: ProviderSessionId.make("deepseek-session"),
+      providerSessionId,
       modelSelection: selection,
-      runtimePolicy: policy,
+      runtimePolicy: options.policy ?? policy,
     });
     const providerThread = yield* runtime.ensureThread({
+      ...(options.existingProviderThread
+        ? { existingProviderThread: options.existingProviderThread }
+        : {}),
       threadId,
       modelSelection: selection,
-      runtimePolicy: policy,
+      runtimePolicy: options.policy ?? policy,
     });
     const now = yield* DateTime.now;
     const appThread: OrchestrationV2AppThread = {
@@ -92,32 +126,74 @@ const open = (client: HttpClient.HttpClient) =>
       lastVisitedAt: null,
       deletedAt: null,
     };
-    const start = (ordinal: number, text = "Hello") =>
-      runtime.startTurn({
-        appThread,
-        threadId,
-        providerThread,
-        runId: RunId.make(`run-${ordinal}`),
-        runOrdinal: ordinal,
-        providerTurnOrdinal: ordinal,
-        attemptId: RunAttemptId.make(`attempt-${ordinal}`),
-        rootNodeId: NodeId.make(`node-${ordinal}`),
-        message: {
-          messageId: MessageId.make(`message-${ordinal}`),
-          text,
-          attachments: [],
-          createdBy: "user",
-          creationSource: "web",
-        },
-        modelSelection: selection,
-        runtimePolicy: policy,
-      });
-    const takeTurn = runtime.events.pipe(
-      Stream.takeUntil((event) => event.type === "turn.terminal"),
-      Stream.runCollect,
+    const start = (ordinal: number, text = "Hello", turnProviderThread = providerThread) =>
+      runtime
+        .startTurn({
+          ...(options.appContext ? { appContext: options.appContext } : {}),
+          appThread,
+          threadId,
+          providerThread: turnProviderThread,
+          runId: RunId.make(`run-${ordinal}`),
+          runOrdinal: ordinal,
+          providerTurnOrdinal: ordinal,
+          attemptId: RunAttemptId.make(`attempt-${ordinal}`),
+          rootNodeId: NodeId.make(`node-${ordinal}`),
+          message: {
+            messageId: MessageId.make(`message-${ordinal}`),
+            text,
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+          modelSelection: selection,
+          runtimePolicy: options.policy ?? policy,
+        })
+        .pipe(Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch));
+    // One long-lived consumer: a per-turn Stream run would drop events that share a pulled chunk
+    // with the terminal, hiding duplicate terminals.
+    const observed = yield* Queue.unbounded<Adapter.ProviderAdapterV2Event>();
+    yield* runtime.events.pipe(
+      Stream.runForEach((event) => Queue.offer(observed, event)),
+      Effect.forkScoped,
     );
-    return { runtime, providerThread, start, takeTurn };
+    const takeTurn = Effect.gen(function* () {
+      const events: Adapter.ProviderAdapterV2Event[] = [];
+      while (true) {
+        const event = yield* Queue.take(observed);
+        events.push(event);
+        if (event.type === "turn.terminal") return events;
+      }
+    });
+    // A later turn is the ordering boundary: a duplicate terminal from an earlier turn would be
+    // queued ahead of it and become the first terminal observed here.
+    const expectNoLateTerminal = (nextOrdinal: number) =>
+      Effect.gen(function* () {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async () => {
+            throw new Error("boundary turn");
+          }),
+        );
+        yield* start(nextOrdinal);
+        const events = yield* takeTurn;
+        const terminal = events.find((event) => event.type === "turn.terminal");
+        assert.equal(
+          terminal?.type === "turn.terminal" ? terminal.providerTurnId : undefined,
+          ProviderTurnId.make(`deepseek:${instanceId}:attempt-${nextOrdinal}`),
+        );
+      });
+    return { runtime, providerThread, start, takeTurn, expectNoLateTerminal, host };
   }).pipe(Effect.provideService(HttpClient.HttpClient, client));
+
+const corruptOnlyJournal = (stateDir: string, contents: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const directory = `${stateDir}/deepseek-nia`;
+    const [name] = yield* fs.readDirectory(directory);
+    const path = `${directory}/${name}`;
+    yield* fs.writeFileString(path, contents);
+    return { contents: () => fs.readFileString(path) };
+  });
 
 describe("local DeepSeek adapter", () => {
   it.effect("completes text turns with usage and preserves conversation context", () =>
@@ -408,6 +484,7 @@ describe("local DeepSeek adapter", () => {
             HttpClient.HttpClient,
             HttpClient.make(() => Effect.die("Unexpected network request")),
           ),
+          Effect.provide(TestProviderHost.layer().pipe(Layer.provideMerge(NodeServices.layer))),
         );
         const capabilities = yield* adapter.getCapabilities();
         assert.equal(capabilities.tools.supportsMcpTools, false);
@@ -440,5 +517,538 @@ describe("local DeepSeek adapter", () => {
       ]).pipe(Effect.result);
       assert.equal(large._tag === "Failure" && large.failure.category, "context");
     }),
+  );
+});
+
+const niaPolicy = { ...policy, toolPolicy: "d4-agent" as const };
+const toolName = "d4_agent_environment";
+const mcpEndpoint = "http://127.0.0.1:3000/mcp";
+const niaRegistration = {
+  environmentId: EnvironmentId.make("test-env"),
+  threadId,
+  providerInstanceId: instanceId,
+  providerSessionId: "ab43911a-d9fa-4a61-b62e-f923a80ca132",
+  endpoint: mcpEndpoint,
+  authorizationHeader: "Bearer test-secret",
+  browserToolsAvailable: false,
+};
+const mcpService = (present = true) =>
+  McpProviderSessions.McpProviderSessions.of({
+    set: () => Effect.void,
+    clear: () => Effect.void,
+    recordHtmlRender: () => Effect.void,
+    takeHtmlRender: () => Effect.undefined,
+    read: () => Effect.succeed(present ? niaRegistration : undefined),
+  });
+const sse = (toolCall: boolean) =>
+  new Response(
+    [
+      {
+        choices: [
+          {
+            index: 0,
+            delta: toolCall
+              ? {
+                  // Text beside the call and unnormalized arguments must survive verbatim.
+                  content: "Checking.",
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call-1",
+                      type: "function",
+                      function: { name: toolName, arguments: '{ "scope": "current" }' },
+                    },
+                  ],
+                }
+              : { content: "Verified answer" },
+            finish_reason: toolCall ? "tool_calls" : "stop",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 },
+      },
+    ]
+      .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+      .join("") + "data: [DONE]\n\n",
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+const mockNiaFetch = (
+  options: { failAfterTool?: boolean; stallTool?: (signal: AbortSignal) => Promise<Response> } = {},
+) => {
+  const modelRequests: { messages: readonly unknown[]; tools: readonly unknown[] }[] = [];
+  const toolCalls: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const body = Schema.decodeUnknownSync(
+        Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+      )(String(init?.body));
+      if (String(url).endsWith("/chat/completions")) {
+        assert.equal(new Headers(init?.headers).has("Authorization"), false);
+        modelRequests.push(
+          Schema.decodeUnknownSync(
+            Schema.Struct({
+              messages: Schema.Array(Schema.Unknown),
+              tools: Schema.Array(Schema.Unknown),
+            }),
+          )(body),
+        );
+        if (options.failAfterTool && modelRequests.length > 1)
+          return new Response(null, { status: 503 });
+        return sse(modelRequests.length === 1);
+      }
+      assert.equal(String(url), mcpEndpoint);
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-secret");
+      if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (body.method === "tools/call") {
+        toolCalls.push(body.params);
+        if (options.stallTool) return options.stallTool(init!.signal!);
+      }
+      const result =
+        body.method === "initialize"
+          ? { protocolVersion: "2025-03-26" }
+          : body.method === "tools/list"
+            ? {
+                tools: [
+                  { name: toolName, inputSchema: { type: "object" } },
+                  { name: "shell", inputSchema: { type: "object" } },
+                ],
+              }
+            : { content: [{ type: "text", text: "Observed result" }] };
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
+  return { modelRequests, toolCalls };
+};
+afterEach(() => vi.unstubAllGlobals());
+
+describe("Nia DeepSeek adapter", () => {
+  it.effect(
+    "persists tool protocol history, exposes tool events and configured usage, and resumes after restart",
+    () =>
+      Effect.gen(function* () {
+        const server = mockNiaFetch();
+        const test = yield* open(reply(completion("unused")), {
+          policy: niaPolicy,
+          config: { ...config, contextWindowTokens: 250000 },
+          appContext: [{ key: "project", text: "EXCLUDED APP CONTEXT" }],
+        });
+        assert.equal(test.runtime.providerSession.capabilities.tools.supportsMcpTools, true);
+        yield* test.runtime.injectHistory!({
+          providerThread: test.providerThread,
+          context: "EXCLUDED APP INSTRUCTIONS",
+          messages: [],
+        });
+        yield* test.start(1);
+        const events = yield* test.takeTurn;
+        assert.equal(events.filter((event) => event.type === "turn.terminal").length, 1);
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
+        const snapshots = events.flatMap((event) =>
+          event.type === "provider_thread.updated" &&
+          event.providerThread.nativeMetadata?.deepSeekNiaHistory
+            ? [event.providerThread.nativeMetadata.deepSeekNiaHistory]
+            : [],
+        );
+        assert.equal(snapshots.length, 4);
+        assert.equal(
+          new Set(snapshots.map((snapshot) => JSON.stringify(snapshot))).size,
+          snapshots.length,
+        );
+
+        assert.deepStrictEqual(server.toolCalls, [
+          { name: toolName, arguments: { scope: "current" } },
+        ]);
+        assert.deepStrictEqual(server.modelRequests[0]?.messages, [
+          { role: "system", content: D4_AGENT_PREFIX },
+          { role: "user", content: "Hello" },
+        ]);
+        const toolItems = events
+          .filter((event) => event.type === "turn_item.updated")
+          .filter((event) => event.turnItem.type === "dynamic_tool");
+        assert.equal(toolItems.length, 2);
+        assert.equal(toolItems[0]?.turnItem.id, toolItems[1]?.turnItem.id);
+        assert.equal(toolItems[0]?.turnItem.status, "running");
+        assert.equal(toolItems[1]?.turnItem.status, "completed");
+        assert.ok(toolItems[1]?.turnItem.type === "dynamic_tool");
+        assert.deepStrictEqual(toolItems[1].turnItem.input, { scope: "current" });
+        assert.match(String(toolItems[1].turnItem.output), /Observed result/);
+        assert.deepStrictEqual(
+          events.filter((event) => event.type === "node.updated").map((event) => event.node.status),
+          ["running", "completed"],
+        );
+        const completed = events.find(
+          (event) =>
+            event.type === "provider_turn.updated" && event.providerTurn.status === "completed",
+        );
+        assert.ok(completed?.type === "provider_turn.updated");
+        assert.equal(completed.providerTurn.tokenUsage?.maxTokens, 250000);
+        assert.equal(completed.providerTurn.tokenUsage?.usedTokens, 13);
+        const saved = events.findLast((event) => event.type === "provider_thread.updated")!;
+        assert.ok(saved.type === "provider_thread.updated");
+        assert.equal(
+          JSON.stringify(saved.providerThread.nativeMetadata).includes("test-secret"),
+          false,
+        );
+        const restarted = yield* open(reply(completion("unused")), {
+          policy: niaPolicy,
+          existingProviderThread: saved.providerThread,
+        });
+        yield* restarted.runtime.injectHistory!({
+          providerThread: restarted.providerThread,
+          context: "EXCLUDED",
+          messages: [],
+        });
+        yield* restarted.start(2, "After restart");
+        yield* restarted.takeTurn;
+        const history = yield* Schema.decodeUnknownEffect(
+          Schema.Array(
+            Schema.Struct({ role: Schema.String, tool_call_id: Schema.optional(Schema.String) }),
+          ),
+        )(server.modelRequests[2]?.messages);
+        assert.deepStrictEqual(
+          history.map((message) => message.role),
+          ["system", "user", "assistant", "tool", "assistant", "user"],
+        );
+        assert.equal(history[3]?.tool_call_id, "call-1");
+        yield* test.expectNoLateTerminal(2);
+      }).pipe(
+        Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect.each(["session", "instance"] as const)(
+    "rejects a provider thread belonging to another orchestration %s",
+    (binding) =>
+      Effect.gen(function* () {
+        const server = mockNiaFetch();
+        const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+        yield* test.start(1, "Hello", {
+          ...test.providerThread,
+          ...(binding === "session"
+            ? {
+                providerSessionId: ProviderSessionId.make(
+                  `provider-session:${instanceId}:thread:${threadId}:67bab0bc-8b50-488f-b0ef-249953cab281`,
+                ),
+              }
+            : { providerInstanceId: ProviderInstanceId.make("another-instance") }),
+        });
+        const events = yield* test.takeTurn;
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "failed");
+        assert.equal(
+          events.find((event) => event.type === "turn.terminal")?.failure?.code,
+          "configuration",
+        );
+        assert.equal(server.modelRequests.length, 0);
+        assert.equal(server.toolCalls.length, 0);
+      }).pipe(
+        Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect.each(["instance", "thread", "credential", "endpoint", "authorization"] as const)(
+    "rejects a registered MCP %s replacement after opening a Nia session",
+    (replacement) =>
+      Effect.gen(function* () {
+        const fetch = vi.fn(() => Promise.reject(new Error("Unexpected request")));
+        vi.stubGlobal("fetch", fetch);
+        let current = niaRegistration;
+        const test = yield* open(reply(completion("unused")), { policy: niaPolicy }).pipe(
+          Effect.provideService(McpProviderSessions.McpProviderSessions, {
+            ...mcpService(),
+            read: () => Effect.sync(() => current),
+          }),
+        );
+        current = {
+          ...niaRegistration,
+          ...(replacement === "instance"
+            ? { providerInstanceId: ProviderInstanceId.make("another-instance") }
+            : replacement === "thread"
+              ? { threadId: ThreadId.make("another-thread") }
+              : replacement === "endpoint"
+                ? { endpoint: "http://127.0.0.1:3001/mcp" }
+                : replacement === "authorization"
+                  ? { authorizationHeader: "Bearer replaced-test-secret" }
+                  : { providerSessionId: "6d3977c9-3945-481c-8c9b-7118d7fbff31" }),
+        };
+        yield* test.start(1);
+        const events = yield* test.takeTurn;
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "failed");
+        assert.equal(
+          events.find((event) => event.type === "turn.terminal")?.failure?.code,
+          "configuration",
+        );
+        assert.equal(fetch.mock.calls.length, 0);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.each([false, true])(
+    "fails closed without a registered Nia MCP session (service present: %s)",
+    (servicePresent) =>
+      Effect.gen(function* () {
+        const fetch = vi.fn(() => Promise.reject(new Error("Unexpected request")));
+        vi.stubGlobal("fetch", fetch);
+        const effect = open(reply(completion("unused")), { policy: niaPolicy });
+        const test = yield* servicePresent
+          ? effect.pipe(
+              Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService(false)),
+            )
+          : effect;
+        yield* test.start(1);
+        const events = yield* test.takeTurn;
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "failed");
+        assert.equal(
+          events.find((event) => event.type === "turn.terminal")?.failure?.code,
+          "configuration",
+        );
+        assert.equal(fetch.mock.calls.length, 0);
+        const saved = events.findLast((event) => event.type === "provider_thread.updated");
+        assert.ok(saved?.type === "provider_thread.updated");
+        assert.deepStrictEqual(saved.providerThread.nativeMetadata?.deepSeekNiaHistory, [
+          { role: "user", content: "Hello" },
+        ]);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("retains completed tool history when subsequent generation fails", () =>
+    Effect.gen(function* () {
+      mockNiaFetch({ failAfterTool: true });
+      const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      yield* test.start(1);
+      const events = yield* test.takeTurn;
+      assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "failed");
+      const saved = events.findLast((event) => event.type === "provider_thread.updated");
+      assert.ok(saved?.type === "provider_thread.updated");
+      assert.deepStrictEqual(
+        saved.providerThread.nativeMetadata?.deepSeekNiaHistory?.map((message) => message.role),
+        ["user", "assistant", "tool"],
+      );
+      // The tool result must be committed before generation continues, not only at turn end.
+      const committed = events.findIndex(
+        (event) =>
+          event.type === "provider_thread.updated" &&
+          JSON.stringify(event.providerThread.nativeMetadata).includes("Observed result"),
+      );
+      const toolCompleted = events.findIndex(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.status === "completed",
+      );
+      assert.ok(committed !== -1 && committed < toolCompleted);
+      assert.equal(events.filter((event) => event.type === "turn.terminal").length, 1);
+      yield* test.expectNoLateTerminal(2);
+      const failed = events.find(
+        (event) => event.type === "provider_turn.updated" && event.providerTurn.status === "failed",
+      );
+      assert.ok(failed?.type === "provider_turn.updated");
+      assert.equal(failed.providerTurn.tokenUsage?.usedTokens, 13);
+      assert.equal(failed.providerTurn.tokenUsage?.maxTokens, config.contextWindowTokens);
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("restores a tool call from the journal when the server dies before events commit", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<ReadonlyArray<NiaMessage> | undefined>();
+      let journalAtToolCall: (() => Promise<ReadonlyArray<NiaMessage> | undefined>) | undefined;
+      mockNiaFetch({
+        stallTool: () => {
+          void journalAtToolCall?.().then((history) =>
+            Deferred.doneUnsafe(started, Effect.succeed(history)),
+          );
+          return new Promise<Response>(() => {});
+        },
+      });
+      const crashed = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      const journal = yield* makeNiaJournal(
+        Context.get(crashed.host, ProviderHost.ProviderHost).paths.stateDir,
+      ).pipe(Effect.provide(crashed.host));
+      journalAtToolCall = () => Effect.runPromise(journal.read(crashed.providerThread.id));
+      // Production prompts carry runtime context that the visible message does not.
+      yield* crashed.start(1, "[runtime context]\nHello");
+      // The tool runs only after its call is on disk.
+      const atToolCall = yield* Deferred.await(started);
+      assert.deepStrictEqual(
+        atToolCall?.map((message) => message.role),
+        ["user", "assistant", "tool"],
+      );
+      assert.deepStrictEqual(atToolCall?.[1], {
+        role: "assistant",
+        content: "Checking.",
+        tool_calls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: { name: toolName, arguments: '{ "scope": "current" }' },
+          },
+        ],
+      });
+      // Restart from the thread as stored before any of the turn's events were committed.
+      const server = mockNiaFetch();
+      const restarted = yield* open(reply(completion("unused")), {
+        policy: niaPolicy,
+        existingProviderThread: crashed.providerThread,
+        host: crashed.host,
+      });
+      yield* restarted.runtime.injectHistory!({
+        providerThread: restarted.providerThread,
+        context: "EXCLUDED",
+        messages: [
+          {
+            role: "user",
+            text: "Hello",
+            threadId,
+            runId: null,
+            itemId: TurnItemId.make("visible-1"),
+            providerThreadId: null,
+            status: "completed",
+            kind: "message",
+          },
+        ],
+      });
+      yield* restarted.start(2, "After crash");
+      yield* restarted.takeTurn;
+      const resumed = yield* Schema.decodeUnknownEffect(
+        Schema.Array(
+          Schema.Struct({ role: Schema.String, content: Schema.optional(Schema.Unknown) }),
+        ),
+      )(server.modelRequests[0]?.messages);
+      assert.deepStrictEqual(
+        resumed?.map((message) => message.role),
+        ["system", "user", "assistant", "tool", "user"],
+      );
+      assert.deepStrictEqual(resumed?.[1], { role: "user", content: "[runtime context]\nHello" });
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("clears durable Nia history when recovery forces a fresh thread", () =>
+    Effect.gen(function* () {
+      mockNiaFetch();
+      const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      yield* test.start(1, "Old prompt");
+      yield* test.takeTurn;
+      const fresh = yield* test.runtime.ensureThread({
+        threadId,
+        modelSelection: selection,
+        runtimePolicy: niaPolicy,
+        existingProviderThread: test.providerThread,
+        forceNewNativeThread: true,
+      });
+      assert.equal(fresh.id, test.providerThread.id);
+      const journal = yield* makeNiaJournal(
+        Context.get(test.host, ProviderHost.ProviderHost).paths.stateDir,
+      ).pipe(Effect.provide(test.host));
+      assert.deepStrictEqual(yield* journal.read(fresh.id), []);
+      // Reopen before the fresh turn to prove the reset survives a process restart.
+      const server = mockNiaFetch();
+      const restarted = yield* open(reply(completion("unused")), {
+        policy: niaPolicy,
+        existingProviderThread: fresh,
+        host: test.host,
+      });
+      yield* restarted.start(2, "Fresh prompt");
+      yield* restarted.takeTurn;
+      assert.deepStrictEqual(server.modelRequests[0]?.messages, [
+        { role: "system", content: D4_AGENT_PREFIX },
+        { role: "user", content: "Fresh prompt" },
+      ]);
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("refuses a Nia turn rather than overwrite an unreadable journal", () =>
+    Effect.gen(function* () {
+      const fetch = vi.fn(() => Promise.reject(new Error("Unexpected request")));
+      vi.stubGlobal("fetch", fetch);
+      const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      const stateDir = Context.get(test.host, ProviderHost.ProviderHost).paths.stateDir;
+      const journal = yield* makeNiaJournal(stateDir).pipe(Effect.provide(test.host));
+      yield* journal.write(test.providerThread.id, []);
+      const corrupt = yield* corruptOnlyJournal(stateDir, '{"history":').pipe(
+        Effect.provide(test.host),
+      );
+      const exit = yield* Effect.exit(test.start(1));
+      assert.equal(exit._tag, "Failure");
+      assert.equal(yield* corrupt.contents(), '{"history":');
+      assert.equal(fetch.mock.calls.length, 0);
+      const reset = yield* Effect.exit(
+        test.runtime.ensureThread({
+          threadId,
+          modelSelection: selection,
+          runtimePolicy: niaPolicy,
+          existingProviderThread: test.providerThread,
+          forceNewNativeThread: true,
+        }),
+      );
+      assert.equal(reset._tag, "Failure");
+      assert.equal(yield* corrupt.contents(), '{"history":');
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("aborts a pending Nia tool request and closes its tool node with one terminal", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      let requestSignal: AbortSignal | undefined;
+      mockNiaFetch({
+        stallTool: (signal) => {
+          requestSignal = signal;
+          Deferred.doneUnsafe(started, Effect.void);
+          return new Promise<Response>((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+          );
+        },
+      });
+      const test = yield* open(reply(completion("unused")), { policy: niaPolicy });
+      yield* test.start(1);
+      yield* Deferred.await(started);
+      yield* test.runtime.interruptTurn({
+        providerThread: test.providerThread,
+        providerTurnId: ProviderTurnId.make("deepseek:deepseek-test:attempt-1"),
+      });
+      const events = yield* test.takeTurn;
+      assert.equal(requestSignal?.aborted, true);
+      // The admitted request is committed before any model or tool work can be lost to a crash.
+      const firstCommit = events.find(
+        (event) =>
+          event.type === "provider_thread.updated" &&
+          event.providerThread.nativeMetadata?.deepSeekNiaHistory !== undefined,
+      );
+      assert.ok(firstCommit?.type === "provider_thread.updated");
+      assert.deepStrictEqual(firstCommit.providerThread.nativeMetadata?.deepSeekNiaHistory, [
+        { role: "user", content: "Hello" },
+      ]);
+      assert.equal(events.filter((event) => event.type === "turn.terminal").length, 1);
+      yield* test.expectNoLateTerminal(2);
+      assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "interrupted");
+      assert.equal(
+        events.findLast((event) => event.type === "node.updated")?.node.status,
+        "interrupted",
+      );
+      const saved = events.findLast((event) => event.type === "provider_thread.updated");
+      assert.ok(saved?.type === "provider_thread.updated");
+      const history = saved.providerThread.nativeMetadata?.deepSeekNiaHistory;
+      assert.deepStrictEqual(
+        history?.map((message) => message.role),
+        ["user", "assistant", "tool"],
+      );
+      assert.equal(history?.at(-1)?.tool_call_id, "call-1");
+      assert.match(history?.at(-1)?.content ?? "", /completionVerified/);
+    }).pipe(
+      Effect.provideService(McpProviderSessions.McpProviderSessions, mcpService()),
+      Effect.scoped,
+    ),
   );
 });

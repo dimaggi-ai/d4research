@@ -1095,6 +1095,7 @@ const makeGrokConfig = (overrides: Partial<GrokSettings>): GrokSettings => ({
 });
 
 const makeOpenCodeConfig = (overrides: Partial<OpenCodeSettings>): OpenCodeSettings => ({
+  config: { provider: {} },
   enabled: false,
   binaryPath: "opencode",
   serverUrl: "",

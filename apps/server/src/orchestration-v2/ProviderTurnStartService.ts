@@ -37,6 +37,7 @@ import { setActiveMcpTurn } from "../mcp/McpSessionRegistry.ts";
 import { projectComposerContextForProvider } from "@d4research/shared/composerContextReferences";
 import {
   CommandId,
+  D4AgentError,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ExecutionNode,
@@ -49,6 +50,7 @@ import {
   TurnId,
 } from "@d4research/contracts";
 import * as Context from "effect/Context";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -476,15 +478,19 @@ export const layer: Layer.Layer<
         : false;
       const isNiaUserTurn =
         // Task threads and server-created messages must never inherit the interactive chat policy.
-        !scopedAgentTask && message.createdBy === "user" && isNiaChatThread;
-      const d4AgentPrefix =
-        !isNiaUserTurn && Option.isSome(d4AgentContext)
-          ? yield* d4AgentContext.value.prepare(
-              projection.thread.id,
-              run.modelSelection,
-              providerThread.providerSessionId,
-            )
-          : null;
+        !scopedAgentTask &&
+        message.createdBy === "user" &&
+        isNiaChatThread &&
+        // DeepSeek exposes Nia tools only through its restricted manager loop.
+        ["codex", "claudeAgent", "pi", "opencode"].includes(providerThread.driver);
+      // Interactive tool permissions do not replace context validation or scoped prompt data.
+      const d4AgentContextText = Option.isSome(d4AgentContext)
+        ? yield* d4AgentContext.value.prepare(
+            projection.thread.id,
+            run.modelSelection,
+            providerThread.providerSessionId,
+          )
+        : null;
       const settleRunBeforeStart = Effect.fn("orchestrationV2.providerTurnStart.settleBeforeStart")(
         function* (input: {
           readonly signal: string;
@@ -620,7 +626,7 @@ export const layer: Layer.Layer<
             .map((item) => item.ordinal),
         ) + 1;
       if (
-        d4AgentPrefix === null &&
+        d4AgentContextText === null &&
         (yield* tryRunInlineResearchTurn({
           run,
           attempt,
@@ -643,7 +649,7 @@ export const layer: Layer.Layer<
         ? acceptedPrompt.slice("Ultrathink:\n".length)
         : acceptedPrompt;
       const pipelineKind =
-        d4AgentPrefix !== null
+        d4AgentContextText !== null
           ? null
           : parseDevTrigger(pipelinePrompt) !== null
             ? "development"
@@ -677,7 +683,7 @@ export const layer: Layer.Layer<
       }
       const researchCandidates = deriveResearchProviderCandidatesFromProviders(providers);
       const manifest =
-        d4AgentPrefix !== null
+        d4AgentContextText !== null
           ? null
           : buildResearchRunManifest(
               pipelinePrompt,
@@ -729,7 +735,7 @@ export const layer: Layer.Layer<
         if (!written.committed) return;
       }
       const providerMessageText =
-        d4AgentPrefix !== null
+        d4AgentContextText !== null
           ? message.text
           : withPersistedSkillsContext(
               expandProviderResearchMessage(
@@ -746,7 +752,7 @@ export const layer: Layer.Layer<
               message.text,
             );
       if (
-        d4AgentPrefix === null &&
+        d4AgentContextText === null &&
         message.attachments.length === 0 &&
         acceptedPrompt.trimStart().startsWith("/")
       ) {
@@ -966,7 +972,7 @@ export const layer: Layer.Layer<
               resolvedPolicy.success.cwd,
             additionalInstructions: NIA_USER_INSTRUCTIONS,
           }
-        : d4AgentPrefix === null
+        : d4AgentContextText === null
           ? resolvedPolicy.success
           : {
               ...resolvedPolicy.success,
@@ -1158,7 +1164,7 @@ export const layer: Layer.Layer<
         extractTrailingEnabledSkillsContext(userText).promptText,
       ).handoff;
       if (
-        d4AgentPrefix === null &&
+        d4AgentContextText === null &&
         !scopedAgentTask &&
         settings.handoff.memoryBackend === "meko" &&
         attachedHandoff !== null
@@ -1193,7 +1199,7 @@ export const layer: Layer.Layer<
       // continued by the next plain message; the server ledger tells the
       // orchestrator what already ran so it does not delegate it again.
       const resumeNote =
-        d4AgentPrefix !== null
+        d4AgentContextText !== null
           ? ""
           : yield* Effect.gen(function* () {
               const project = yield* projects.getById(projection.thread.projectId).pipe(
@@ -1918,7 +1924,7 @@ export const layer: Layer.Layer<
           sameNativeThread &&
           !acceptedAttempts.some((source) => source.nativeThreadId !== undefined));
       const brainContext =
-        d4AgentPrefix !== null ||
+        d4AgentContextText !== null ||
         scopedAgentTask ||
         !settings.secondBrain.path ||
         !settings.secondBrain.injection.enabled ||
@@ -1974,10 +1980,10 @@ export const layer: Layer.Layer<
       ) =>
         Effect.gen(function* () {
           const compression =
-            d4AgentPrefix === null && !scopedAgentTask
+            d4AgentContextText === null && !scopedAgentTask
               ? settings.handoff.contextCompression
               : { ...settings.handoff.contextCompression, mode: "bounded" as const };
-          compact = compact && d4AgentPrefix === null && !scopedAgentTask;
+          compact = compact && d4AgentContextText === null && !scopedAgentTask;
           let deliveryHandoffs = [...effectiveHandoffs, ...retryHandoff];
           if (compression.mode !== "bounded" && deliveryHandoffs.length > 0) {
             // Preparation is pure and bounded. Recover intact covered items here,
@@ -1988,7 +1994,7 @@ export const layer: Layer.Layer<
             );
           }
           if (
-            d4AgentPrefix === null &&
+            d4AgentContextText === null &&
             !scopedAgentTask &&
             settings.handoff.memoryBackend === "meko" &&
             deliveryHandoffs.length > 0
@@ -2076,7 +2082,7 @@ export const layer: Layer.Layer<
                 Effect.gen(function* () {
                   if (
                     compact ||
-                    d4AgentPrefix !== null ||
+                    d4AgentContextText !== null ||
                     scopedAgentTask ||
                     !nativeThreadHasTurns ||
                     handoffBudget({
@@ -2138,8 +2144,8 @@ export const layer: Layer.Layer<
             message: {
               ...turnInput.message,
               text:
-                d4AgentPrefix !== null
-                  ? `${d4AgentPrefix}\n\n${context === "" ? "" : `${context}\n\n`}User message:\n${userText}`
+                d4AgentContextText !== null
+                  ? `${d4AgentContextText}\n\n${context === "" ? "" : `${context}\n\n`}User message:\n${userText}`
                   : goalCommand
                     ? userText
                     : withInlineContext(context, userText),
@@ -2206,7 +2212,7 @@ export const layer: Layer.Layer<
           ),
         );
       const deliverySession =
-        d4AgentPrefix === null &&
+        d4AgentContextText === null &&
         !session.providerSession.capabilities.context.requiresAppHistory &&
         effectiveHandoffs.length === 0 &&
         retryHandoff.length === 0 &&
@@ -2272,15 +2278,130 @@ export const layer: Layer.Layer<
       });
     });
 
+    const settleExhaustedStart = Effect.fn("orchestrationV2.providerTurnStart.settleExhausted")(
+      function* (initialRun: OrchestrationV2Run, cause: unknown) {
+        if (initialRun.activeAttemptId === null) return;
+        const projection = yield* projectionStore.getThreadRecords(
+          initialRun.threadId,
+          ["runs", "nodes", "attempts", "turnItems"],
+          { runIds: [initialRun.id] },
+        );
+        const run = projection.runs.find((run) => run.id === initialRun.id);
+        if (run?.status !== "starting" || run.activeAttemptId !== initialRun.activeAttemptId)
+          return;
+        const now = yield* DateTime.now;
+        const node = projection.nodes.find((node) => node.id === run.rootNodeId);
+        const attempt = projection.attempts.find((attempt) => attempt.id === run.activeAttemptId);
+        const agentError = Schema.is(D4AgentError)(cause) ? cause : undefined;
+        const failure = makeProviderFailure({
+          cause,
+          message:
+            agentError?.message ??
+            "The provider could not start this turn. Retry the turn; if it keeps failing, check the provider setup and server logs.",
+          class:
+            agentError !== undefined && agentError.reason !== "storage"
+              ? "validation_error"
+              : "provider_error",
+        });
+        const item: OrchestrationV2TurnItem = {
+          id: idAllocator.derive.runSignalTurnItem({
+            runId: run.id,
+            signal: "provider-start-failure",
+          }),
+          type: "error",
+          threadId: initialRun.threadId,
+          runId: run.id,
+          nodeId: run.rootNodeId,
+          providerThreadId: run.providerThreadId,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: Math.max(0, ...projection.turnItems.map((item) => item.ordinal)) + 1,
+          status: "failed",
+          title: "Provider turn failed to start",
+          failure,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+        };
+        const payloads = [
+          { type: "turn-item.updated", payload: item },
+          { type: "run.updated", payload: { ...run, status: "failed", completedAt: now } },
+          ...(attempt === undefined
+            ? []
+            : [
+                {
+                  type: "run-attempt.updated" as const,
+                  payload: { ...attempt, status: "failed" as const, completedAt: now },
+                },
+              ]),
+          ...(node === undefined
+            ? []
+            : [
+                {
+                  type: "node.updated" as const,
+                  payload: { ...node, status: "failed" as const, completedAt: now },
+                },
+              ]),
+        ] as const;
+        const events = yield* Effect.forEach(payloads, (event) =>
+          Effect.gen(function* () {
+            return {
+              ...event,
+              id: yield* idAllocator.allocate.event({ threadId: initialRun.threadId }),
+              threadId: initialRun.threadId,
+              runId: run.id,
+              providerInstanceId: run.providerInstanceId,
+              occurredAt: now,
+            } satisfies OrchestrationV2DomainEvent;
+          }),
+        );
+        const written = yield* eventSink.writeIfRunCurrent({
+          threadId: initialRun.threadId,
+          runId: run.id,
+          activeAttemptId: initialRun.activeAttemptId,
+          expectedStatus: "starting",
+          events,
+        });
+        if (written.committed)
+          yield* turnAnalytics.runSettled({
+            runId: run.id,
+            status: "failed",
+            completedAt: now,
+            childrenRunning: false,
+          });
+      },
+    );
+
     return ProviderTurnStartServiceV2.of({
       start: (input) =>
         Effect.gen(function* () {
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
-          const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
-          const providerTurn = yield* thread.worktreePath === null
-            ? start(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+          const { thread, runs } = yield* projectionStore.getThreadRecords(
+            input.threadId,
+            ["runs"],
+            {
+              runIds: [input.runId],
+            },
+          );
+          const initialRun = runs.find((run) => run.id === input.runId);
+          const providerTurn = yield* (
+            thread.worktreePath === null
+              ? start(input)
+              : withWorkspaceLease(path.resolve(thread.worktreePath), start(input))
+          ).pipe(
+            // Retry exhaustion must settle validation and other pre-session failures too.
+            Effect.catchCause((cause) =>
+              input.willRetry !== false ||
+              initialRun === undefined ||
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : settleExhaustedStart(initialRun, Cause.squash(cause)).pipe(
+                    Effect.andThen(Effect.failCause(cause)),
+                  ),
+            ),
+          );
           if (providerTurn !== undefined) yield* providerTurn;
         }).pipe(
           Effect.mapError((cause) =>

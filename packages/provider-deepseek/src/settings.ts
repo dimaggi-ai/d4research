@@ -47,7 +47,6 @@ export const DeepSeekSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(DEFAULT_DEEPSEEK_ENDPOINT)),
       Schema.annotateKey({
         title: "Local endpoint",
-        description: "HTTP endpoint on 127.0.0.1 or ::1. Text only; tools and MCP are unavailable.",
       }),
     ),
     model: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)).pipe(

@@ -17,8 +17,15 @@ export const D4AgentPermissionMode = Schema.Literals(["read-only", "ask", "act"]
 export const D4_BRAIN_CONTEXTS = ["Global", "Personal", "YB", "Dimaggi"] as const;
 export const D4BrainContext = Schema.Literals(D4_BRAIN_CONTEXTS);
 export type D4BrainContext = typeof D4BrainContext.Type;
-// Only these adapters enforce the d4 Agent's MCP tool allowlist and read-only sandbox.
-const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = ["codex", "claudeAgent", "pi"];
+// These adapters enforce Nia's MCP-only tool boundary and disable built-in tools. OpenCode fails
+// closed outside its verified Linux 1.19.3 runtime.
+const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = [
+  "codex",
+  "claudeAgent",
+  "pi",
+  "opencode",
+  "deepseek",
+];
 // A fresh install has no local model, so Nia starts on the bundled Claude instance.
 const DEFAULT_D4_AGENT_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -60,6 +67,10 @@ export const D4AgentSettings = Schema.Struct({
   sessionBudgetPercent: Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 90 })).pipe(
     Schema.withDecodingDefault(Effect.succeed(60)),
   ),
+  // A configured window applies only when the provider reports none.
+  contextWindowTokens: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ minimum: 8192, maximum: 2_000_000 })),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   // Opt-in. Null keeps completed task threads until the user archives them; 0 archives a
   // completed task as soon as it is reported, 24 a day later.
   agentThreadArchiveHours: Schema.NullOr(Schema.Literals([0, 24])).pipe(
@@ -125,6 +136,7 @@ export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   sessionIdleMinutes: 120,
   sessionBudgetPercent: 60,
+  contextWindowTokens: null,
   agentThreadArchiveHours: null,
   projectWorktreeBaseRefs: {},
   pipelineProjects: {},
@@ -541,6 +553,7 @@ export const D4AgentState = Schema.Struct({
       "model-not-selected",
       "provider-unavailable",
       "model-unavailable",
+      "model-mismatch",
       "option-unavailable",
       "sandbox-unavailable",
     ]),
@@ -588,6 +601,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     "model-not-selected",
     "provider-unavailable",
     "model-unavailable",
+    "model-mismatch",
     "option-unavailable",
     "sandbox-unavailable",
     "read-only",
@@ -612,6 +626,8 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     const suffix = this.detail === undefined ? "" : ` ${this.detail}`;
     if (this.reason === "context")
       return `Context operation refused; inspect the selected scope configuration.${suffix}`;
+    if (this.reason === "model-mismatch")
+      return "This thread's model differs from the Nia model in Settings. Select the configured Nia model in the composer, or change the Nia model in Settings.";
     if (this.reason === "cto-unreachable") return "CTO server unreachable";
     if (this.reason === "stale")
       return "Nia's context or session changed after you wrote this message. Check it, then send again.";

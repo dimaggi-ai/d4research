@@ -204,7 +204,11 @@ export const OpenCodeDriver: ProviderDriver<
     const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
     const digest = yield* Digest.Digest;
     const host = yield* ProviderHost.ProviderHost;
-    const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const instanceEnvironment = yield* mergeProviderInstanceEnvironment(environment);
+    const processEnv = OpenCodeRuntime.withOpenCodeConfigEnvironment(
+      instanceEnvironment,
+      config.config,
+    );
     const continuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -284,7 +288,11 @@ export const OpenCodeDriver: ProviderDriver<
       serverUrl: effectiveConfig.serverUrl,
       serverPassword: effectiveConfig.serverPassword,
       directory: host.paths.cwd,
-      environment: processEnv,
+      environment: OpenCodeRuntime.withOpenCodeConfigEnvironment(
+        instanceEnvironment,
+        config.config,
+        "v2",
+      ),
     }).pipe(
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       Effect.provideService(

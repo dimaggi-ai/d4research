@@ -239,3 +239,9 @@ it("shows why Nia could not open", () => {
     "Could not open Nia. Try again.",
   );
 });
+
+it("explains how to resolve a model mismatch", () => {
+  expect(agentUnavailableMessage("model-mismatch")).toContain(
+    "Select the configured Nia model in the composer",
+  );
+});

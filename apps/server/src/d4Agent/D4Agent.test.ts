@@ -1724,7 +1724,7 @@ it.effect(
             instanceId: ProviderInstanceId.make("deepseek"),
             driver: ProviderDriverKind.make("deepseek"),
             available: true,
-            canRunD4Agent: false,
+            canRunD4Agent: true,
             models: [
               {
                 slug: "deepseek-local",
@@ -3846,6 +3846,33 @@ it.effect("closing the session of a pending rotation tells the user the message 
   }),
 );
 
+it.effect("a session without a reported window rotates on the configured fallback window", () =>
+  Effect.gen(function* () {
+    const fill = (f: { readonly state: Ref.Ref<Store.StoredState> }) =>
+      Ref.update(f.state, (state) => ({
+        ...state,
+        sessions: (state.sessions ?? []).map((entry) => ({
+          ...entry,
+          inputTokens: 70_000,
+          contextWindow: null,
+        })),
+      }));
+    const unknown = yield* fixture("ask");
+    yield* unknown.service.ensureThread();
+    yield* fill(unknown);
+    yield* unknown.send({ text: "No window known" });
+    assert.isUndefined((yield* Ref.get(unknown.state)).rotation);
+
+    const configured = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      contextWindowTokens: 100_000,
+    });
+    yield* configured.service.ensureThread();
+    yield* fill(configured);
+    yield* configured.send({ text: "Window configured" });
+    assert.isDefined((yield* Ref.get(configured.state)).rotation);
+  }),
+);
+
 it.effect("send original keeps the pending user text after a size rotation", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");
@@ -5178,6 +5205,61 @@ it.effect(
         ],
       );
     }),
+);
+
+it.effect("read_tail allows only the bound Global agent thread in its own project", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const own = yield* f.service.ensureThread();
+    const ownShell = (yield* Ref.get(f.agentShell))!;
+    yield* Ref.set(f.projection, {
+      ...(yield* Ref.get(f.projection)),
+      thread: { ...ownShell, lastVisitedAt: null },
+      messages: [
+        {
+          id: MessageId.make("own-global-reply"),
+          threadId: own.threadId,
+          role: "assistant",
+          text: "Own reply",
+          createdAt: now,
+          updatedAt: now,
+          runId: null,
+          nodeId: null,
+          attachments: [],
+          streaming: false,
+          createdBy: "agent",
+          creationSource: "provider",
+        },
+      ],
+    });
+    const tail = yield* f.service.readTail(own.threadId, 10);
+    assert.equal(tail.threadId, own.threadId);
+    assert.equal(tail.messages[0]?.text, "Own reply");
+    const sibling = ThreadId.make("other-agent-session");
+    yield* Ref.update(f.shells, (all) => [...all, { ...ownShell, id: sibling }]);
+    assert.equal((yield* Effect.result(f.service.readTail(sibling, 10)))._tag, "Failure");
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      brainContext: "Personal" as const,
+      contextScopeHash: contextScopeHash("Personal", DEFAULT_D4_AGENT_SETTINGS),
+    }));
+    assert.equal((yield* Effect.result(f.service.readTail(own.threadId, 10)))._tag, "Failure");
+  }),
+);
+
+it.effect("read_tail identifies MCP session IDs before looking up a thread", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const reads = (yield* Ref.get(f.reads)).shells;
+    const result = yield* Effect.result(f.service.readTail(ThreadId.make("mcp:1234"), 10));
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") {
+      assert.include(result.failure.message, "MCP session ID");
+      assert.include(result.failure.message, "d4_agent_list");
+      assert.notInclude(result.failure.message, "does not exist");
+    }
+    assert.equal((yield* Ref.get(f.reads)).shells, reads);
+  }),
 );
 
 it.effect("read_tail refusals name the thread and the bound context", () =>

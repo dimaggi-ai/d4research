@@ -27,6 +27,7 @@ import {
   DpopFailureReason,
   type DpopFailureReason as DpopFailureReasonType,
   mcpClientScopes,
+  expandLegacyClientScopeRequest,
 } from "@d4research/contracts";
 import { isLocalLoopbackHost } from "@d4research/shared/hostClassification";
 import { encodeOAuthScope } from "@d4research/shared/oauthScope";
@@ -1030,7 +1031,9 @@ export const make = Effect.gen(function* () {
             const grantedScopes =
               requestedScopes === undefined
                 ? grant.scopes
-                : [...new Set(requestedScopes)].filter((scope) => grant.scopes.includes(scope));
+                : expandLegacyClientScopeRequest([...new Set(requestedScopes)]).filter((scope) =>
+                    grant.scopes.includes(scope),
+                  );
             if (grantedScopes.length === 0) {
               return yield* new ServerAuthScopeNotGrantedError({});
             }

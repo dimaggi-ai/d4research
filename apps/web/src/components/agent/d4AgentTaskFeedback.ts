@@ -32,6 +32,7 @@ export function d4AgentTaskFailureMessage(input: {
       ? `The selected task provider is out of quota. Choose another task model or try again after the quota resets. ${preserved}`
       : `The selected task provider is unavailable or not authenticated. Check the provider connection or choose another task model. ${preserved}`;
   }
+  if (failure.reason === "model-mismatch") return `${failure.message} ${preserved}`;
   if (failure.detail) return `${failure.detail} ${preserved}`;
   if (failure.reason === "model-unavailable")
     return `The selected task model is unavailable. Choose another task model. ${preserved}`;

@@ -66,13 +66,15 @@ database errors: if the server cannot verify whether a thread belongs to Nia, it
 blocks access that requires the check.
 
 The default permission level is **Read-only** for Nia's managed actions. These approval rules
-apply to managed actions proposed through approval cards. Direct chat runs with full access and
-no provider approval prompts unless the environment's runtime limit restricts it. Starting a
-managed thread, research run, or pipeline, interrupting a run, answering an input request,
+apply to managed actions proposed through approval cards. With Codex, Claude, Pi, or OpenCode,
+direct chat runs with full access and no provider approval prompts unless the environment's
+runtime limit restricts it. DeepSeek uses Nia's restricted manager tools and approval cards for
+direct chat. Starting a managed thread, research run, or pipeline, interrupting a run,
+answering an input request,
 running a command, and creating or deleting a schedule require your approval at every permission
 level, even when Tool Guard allows them. Direct chat runs from the home directory of the account
-running the connected server. Its provider tools and the full T3 Code toolkit are available
-there; system-created overview and follow-up turns remain restricted. **Ask** queues every
+running the connected server. Codex, Claude, Pi, and OpenCode can use their provider tools and
+the full T3 Code toolkit there; system-created overview and follow-up turns remain restricted. **Ask** queues every
 managed action for your approval. **Act** sets reminders without asking, creates pending memory
 proposals, and sends CTO questions when those features are enabled for the selected context.
 Memory proposals always need human review. Approval does not change the vault.
@@ -95,8 +97,9 @@ Dividers show each switch in the same conversation. Idle sessions close after 2 
 by default; choose 30 minutes, 2 hours, 8 hours, or Never in Settings. The default size budget is
 60% of the model's reported context window. At that limit, the old session produces a short
 summary for its replacement in the same context. If a summary fails or the scope changes,
-the replacement starts without it. Models that report no context window cannot use this
-size check. Changing the vault path or relevant project or pipeline mappings requires a fresh session.
+the replacement starts without it. If the model reports no context window, Nia uses the
+configured fallback window when one is set. Without either window, the size check is unavailable.
+Changing the vault path or relevant project or pipeline mappings requires a fresh session.
 
 Nia's chat starts in the home directory of the account running the connected server. To find active work, ask it to use
 `t3_thread_list` and `t3_thread_read`; its report includes each thread's title and link.

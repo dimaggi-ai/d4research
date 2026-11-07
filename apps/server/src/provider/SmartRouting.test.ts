@@ -1,3 +1,5 @@
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   ProjectId,
@@ -129,7 +131,9 @@ function testLayer(
         enabled: true,
         environment: [],
         config,
-      });
+      }).pipe(
+        Effect.provide(TestProviderHost.layer().pipe(Layer.provideMerge(NodeServices.layer))),
+      );
       const localCapabilities = yield* local.getCapabilities();
       const fallback = {
         ...local,
@@ -411,4 +415,26 @@ it.effect("does not load durable history when smart routing is disabled", () => 
     assert.deepEqual(yield* routing.select(input()), { selection, route: null });
     assert.deepEqual(historyReads, []);
   }).pipe(Effect.provide(testLayer({ config: { smartRouting: false }, historyReads })));
+});
+
+it.effect("keeps Nia on its selected provider without probes, history reads, or fallback", () => {
+  const requests: string[] = [];
+  const historyReads: ThreadId[] = [];
+  return Effect.gen(function* () {
+    const routing = yield* SmartRouting.SmartRouting;
+    const result = yield* routing.select({ ...input(), toolPolicy: "d4-agent" });
+    assert.deepEqual(result, { selection, route: null });
+    assert.deepEqual(requests, []);
+    assert.deepEqual(historyReads, []);
+  }).pipe(
+    Effect.provide(
+      testLayer({
+        requests,
+        historyReads,
+        config: { taskMode: "tools" },
+        missingFallback: true,
+        localAvailable: false,
+      }),
+    ),
+  );
 });

@@ -27,6 +27,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
+import { NIA_USER_INSTRUCTIONS } from "@d4research/provider-core/server/d4AgentPolicy";
 import * as Config from "../config.ts";
 import * as Agent from "../d4Agent/D4Agent.ts";
 import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
@@ -741,9 +742,11 @@ it.effect.each([
           );
           expect(second.nativeThreadHasTurns).toBe(false);
           expect(second.runtimePolicy).toMatchObject({
-            toolPolicy: "d4-agent",
+            runtimeMode: "full-access",
             approvalPolicy: "never",
+            additionalInstructions: NIA_USER_INSTRUCTIONS,
           });
+          expect(second.runtimePolicy.toolPolicy).toBeUndefined();
           const serialized = JSON.stringify({ opened: opened[1], input: second });
           for (const marker of [
             "YB-prior-user-transcript",

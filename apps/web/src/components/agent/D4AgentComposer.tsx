@@ -635,18 +635,20 @@ export function D4AgentComposer({
                     }}
                   />
                 ) : null}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={taskSelection === null ? "secondary" : "ghost"}
-                  disabled={sending}
-                  onClick={() => {
-                    setTaskSelectionOverride(null);
-                    bindDraft();
-                  }}
-                >
-                  No task model
-                </Button>
+                {taskSelection ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={sending}
+                    onClick={() => {
+                      setTaskSelectionOverride(null);
+                      bindDraft();
+                    }}
+                  >
+                    No task model
+                  </Button>
+                ) : null}
               </ComposerFooter.Controls>
               <ComposerFooter.Actions>
                 <input

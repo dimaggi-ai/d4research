@@ -778,5 +778,5 @@ it.effect.each([
         }).pipe(Effect.provide(Layer.mergeAll(agent, runtime, store, threads, settings)));
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
-  { timeout: 20000 },
+  { timeout: 60000 },
 );

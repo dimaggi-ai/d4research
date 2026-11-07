@@ -23,10 +23,12 @@ import { useLinkTo } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
 import { useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
 import { flattenThemeColor } from "../../lib/mobileTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -185,6 +187,7 @@ export function D4AgentChat({
   refresh: () => void;
 }) {
   const markdownStyles = useNiaMarkdownStyles();
+  const insets = useSafeAreaInsets();
   const transcript = (state.transcript ?? []).filter((entry) => !isSessionNotice(entry));
   const config = useEnvironmentServerConfig(environmentId);
   const projects = useProjects();
@@ -262,13 +265,15 @@ export function D4AgentChat({
       className="flex-1 bg-background"
     >
       <AppBar title="Nia" />
-      {state.threadId ? (
-        <D4AgentPanel environmentId={environmentId} threadId={state.threadId} />
-      ) : null}
       <ScrollView
         ref={conversation}
         className="flex-1"
-        contentContainerClassName="gap-4 px-4 py-6"
+        contentContainerClassName="gap-4 px-4 pb-6"
+        // The glass header floats over this column. Padding, not an adjusted inset, because
+        // scrollToEnd ignores adjusted insets and would pull short chats under the header.
+        contentContainerStyle={{
+          paddingTop: (NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top : 0) + 24,
+        }}
         scrollEventThrottle={16}
         onScroll={(event) => {
           const { contentSize, contentOffset, layoutMeasurement } = event.nativeEvent;
@@ -279,6 +284,9 @@ export function D4AgentChat({
           if (followConversation.current) conversation.current?.scrollToEnd({ animated: false });
         }}
       >
+        {state.threadId ? (
+          <D4AgentPanel environmentId={environmentId} threadId={state.threadId} />
+        ) : null}
         {transcript.map((entry) => {
           const segments =
             entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
@@ -406,6 +414,8 @@ export function D4AgentChat({
             <ComposerEditor
               placeholder="Message Nia"
               multiline
+              // The native iOS editor has no intrinsic height; unsized it collapses to zero and cannot be tapped.
+              style={{ minHeight: 64 }}
               value={text}
               editable={enabled && allowed && !sending}
               onChangeText={(value) => {
@@ -430,15 +440,17 @@ export function D4AgentChat({
                 }
                 onPress={() => setTaskPickerOpen(true)}
               />
-              <ComposerInlineControl
-                disabled={sending || taskSelection === null}
-                label="No task model"
-                onPress={() => {
-                  setTaskSelectionOverride(null);
-                  bindDraft();
-                }}
-                showChevron={false}
-              />
+              {taskSelection ? (
+                <ComposerInlineControl
+                  disabled={sending}
+                  label="No task model"
+                  onPress={() => {
+                    setTaskSelectionOverride(null);
+                    bindDraft();
+                  }}
+                  showChevron={false}
+                />
+              ) : null}
             </ComposerToolbarScroller>
             <ComposerActionButton
               accessibilityLabel={sending ? "Sending" : "Send"}

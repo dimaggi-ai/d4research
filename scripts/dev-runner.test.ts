@@ -555,6 +555,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         Effect.gen(function* () {
           const { env, vpArgs, tailscaleCalls } = yield* shareSpawned({ built: true });
           assert.include(vpArgs, "dev:built");
+          assert.include(vpArgs, "--filter=d4research");
           assert.equal(env?.T3CODE_BUILT_DEV, "1");
           assert.equal(env?.T3CODE_BUNDLED_DEV, undefined);
           assert.equal(env?.VITE_DEV_SERVER_URL, `https://host.example.ts.net:${env?.PORT}/`);

@@ -82,7 +82,7 @@ const MODE_ARGS = {
 const BUILT_DEV_ARGS = [
   "run",
   "--filter=@d4research/web",
-  "--filter=t3",
+  "--filter=d4research",
   "--parallel",
   "dev:built",
 ] as const;

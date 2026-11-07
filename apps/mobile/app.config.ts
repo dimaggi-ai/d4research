@@ -251,6 +251,8 @@ const config: ExpoConfig = {
     fallbackToCacheTimeout: 0,
   },
   ios: {
+    // expo-widgets reads this key for its target and falls back to 16.4, below its own minimum.
+    deploymentTarget: "18.0",
     icon: variant.assets.iosIcon,
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",

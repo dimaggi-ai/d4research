@@ -1,6 +1,7 @@
 import { requireOptionalNativeModule } from "expo";
 import { useEffect, useState } from "react";
 import { Platform } from "react-native";
+import type { NativeLayoutMetrics } from "../lib/reserved-regions";
 import { useNativeLayoutMetrics } from "./native-layout-metrics";
 
 const nativeControls = requireOptionalNativeModule<{
@@ -12,7 +13,7 @@ export const NATIVE_WORKSPACE_COLUMNS_SUPPORTED =
 
 // Binaries without the native no-hinge fallback never report metrics on ordinary
 // iPhones running iOS 27.1 or later. Use the compact navigator rather than staying blank.
-const NATIVE_METRICS_TIMEOUT_MS = 1000;
+export const NATIVE_METRICS_TIMEOUT_MS = 1000;
 
 export function useNativeWorkspaceColumnsReady() {
   const metrics = useNativeLayoutMetrics();
@@ -31,10 +32,13 @@ export function useNativeWorkspaceColumnsReady() {
   return !waiting || timedOut;
 }
 
-export function useNativeWorkspaceColumnsSupported() {
-  const metrics = useNativeLayoutMetrics();
+export function nativeWorkspaceColumnsSupportedFor(metrics: NativeLayoutMetrics | null) {
   return (
     NATIVE_WORKSPACE_COLUMNS_SUPPORTED ||
     (nativeControls?.supportsWorkspaceColumns === true && metrics?.hasHinge === true)
   );
+}
+
+export function useNativeWorkspaceColumnsSupported() {
+  return nativeWorkspaceColumnsSupportedFor(useNativeLayoutMetrics());
 }

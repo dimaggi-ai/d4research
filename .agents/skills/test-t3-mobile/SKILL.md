@@ -44,7 +44,7 @@ preferences before the app loads.
 
 A JavaScript-only diff, bundle identifier, app version, or recent install date does not prove native compatibility. Always check the whole checkout. Expo fingerprints are computed locally with `APP_VARIANT=development`; no EAS credentials or cloud build are required. Generated `ios/` and `android/` directories are excluded by `.fingerprintignore`, so edit native source modules or config plugins rather than generated output.
 
-The development identity is `T3 Code Dev`, bundle/package `ai.dimaggi.d4research.dev`, scheme `t3code-dev`. If a build fails, investigate the build error and fix the local prerequisites. Report the concrete failure if it cannot be resolved, not "no compatible client."
+The development identity is `d4research Dev`, bundle/package `ai.dimaggi.d4research.dev`, scheme `t3code-dev`. If a build fails, investigate the build error and fix the local prerequisites. Report the concrete failure if it cannot be resolved, not "no compatible client."
 
 ## Start one disposable T3 environment
 
@@ -104,8 +104,8 @@ Run Metro from `apps/mobile`.
 
 Use `ios-debugger-agent` to select one UDID and set these XcodeBuildMCP session defaults:
 
-- Workspace: `<repo>/apps/mobile/ios/T3CodeDev.xcworkspace`
-- Scheme: `T3CodeDev`
+- Workspace: `<repo>/apps/mobile/ios/d4researchDev.xcworkspace`
+- Scheme: `d4researchDev`
 - Configuration: `Debug`
 - Simulator ID: the selected UDID
 - Bundle ID: `ai.dimaggi.d4research.dev`
@@ -178,7 +178,7 @@ Exercise only the affected flow on one representative device unless the change s
 
 1. Confirm the app connected to the intended disposable environment instead of merely rendering an empty disconnected state.
 2. Capture the relevant final state.
-3. Remove the disposable environment from T3 Code Dev.
+3. Remove the disposable environment from d4research Dev.
 4. Remove any `adb reverse` rule created for this test with `adb -s <emulator-serial> reverse --remove tcp:<metro-port>`.
 5. Stop only the serve-sim, Metro, backend, emulator, and log processes started by this test.
 6. Remove only base directories and temporary Git repositories deliberately created for this test. Preserve them when they contain useful reproduction evidence.

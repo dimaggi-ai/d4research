@@ -44,6 +44,7 @@ import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
 
 import { ProjectRail } from "./sidebar/ProjectRail";
+import { useProjects } from "../state/entities";
 import {
   resolveProjectRailWidth,
   useProjectRailDragWidth,
@@ -432,6 +433,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   const [projectRailVisible] = useProjectRailVisible();
+  // The rail renders nothing without projects, so it must not reserve its width.
+  const hasProjects = useProjects().length > 0;
   const [projectRailLayout] = useProjectRailLayout();
   const projectRailDragWidth = useProjectRailDragWidth((state) => state.width);
   const isMobile = useIsMobile();
@@ -467,7 +470,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarProviderStyle = {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--project-rail-width":
-      projectRailVisible && !isMobile
+      projectRailVisible && hasProjects && !isMobile
         ? `${resolveProjectRailWidth(projectRailLayout, projectRailDragWidth)}px`
         : "0px",
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,

@@ -215,6 +215,14 @@ function D4AgentPanelContent({
     (proposal) => proposal.status === "pending",
   ).length;
   const pendingProposals = Math.max(state.memoryProposalCount ?? 0, shownPendingProposals);
+  const hasContent =
+    (state.reminders ?? []).length > 0 ||
+    state.actionLog.length > 0 ||
+    !state.modelAvailable ||
+    proposals.some((proposal) => proposal.status !== "rejected") ||
+    (state.otherContextProposalCounts ?? []).length > 0 ||
+    Boolean(query.error || actionError || decisionState?.error);
+  if (!hasContent) return null;
   return (
     <View className="max-h-64 border-b border-border bg-surface">
       <ScrollView contentContainerClassName="gap-2 px-4 py-2">

@@ -11,7 +11,7 @@ import {
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -156,6 +156,20 @@ export function ConnectionsNewRouteScreen({
     },
     [navigation, onChangeConnectionPairingUrl, onConnectPress, params.routeFor],
   );
+
+  // Simulators cannot type pairing tokens reliably, so development builds accept them by link.
+  const routePairingUrl = __DEV__ ? (params.pairingUrl?.trim() ?? "") : "";
+  const routeAutoConnect = params.autoConnect === "1" || params.autoConnect === "true";
+  const handledRoutePairingUrl = useRef<string | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- consumes a link delivered through the router, once per URL
+  useEffect(() => {
+    if (routePairingUrl.length === 0 || handledRoutePairingUrl.current === routePairingUrl) return;
+    handledRoutePairingUrl.current = routePairingUrl;
+    // oxlint-disable-next-line react/set-state-in-effect -- the link arrives after mount, so it cannot seed the initial state
+    if (routeAutoConnect) void connectAndClose(routePairingUrl);
+    else onChangeConnectionPairingUrl(routePairingUrl);
+  }, [connectAndClose, onChangeConnectionPairingUrl, routeAutoConnect, routePairingUrl]);
 
   const handleSubmit = useCallback(async () => {
     await connectAndClose(buildPairingUrl(hostInput, codeInput));

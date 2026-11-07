@@ -1,4 +1,10 @@
-import { type BrainProposalQuery, type EnvironmentId, WS_METHODS } from "@d4research/contracts";
+import {
+  type BrainProposalQuery,
+  type BrainReadInput,
+  type BrainSearchInput,
+  type EnvironmentId,
+  WS_METHODS,
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 
@@ -38,8 +44,38 @@ export function createSecondBrainEnvironmentAtoms<R, E>(
     staleTimeMs: 5_000,
     refreshTrigger,
   });
+  const catalog = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "second-brain:catalog",
+    tag: WS_METHODS.secondBrainCatalog,
+    staleTimeMs: 5_000,
+    refreshTrigger,
+  });
+  const note = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "second-brain:note",
+    tag: WS_METHODS.secondBrainRead,
+    staleTimeMs: 5_000,
+    refreshTrigger,
+  });
+  const search = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "second-brain:search",
+    tag: WS_METHODS.secondBrainSearch,
+    staleTimeMs: 5_000,
+    refreshTrigger,
+  });
   return {
     refresh,
+    secondBrainCatalogQuery: (environmentId: EnvironmentId) =>
+      catalog({ environmentId, input: {} }),
+    secondBrainNoteQuery: ({
+      environmentId,
+      ...input
+    }: { readonly environmentId: EnvironmentId } & BrainReadInput) =>
+      note({ environmentId, input }),
+    secondBrainSearchQuery: ({
+      environmentId,
+      ...input
+    }: { readonly environmentId: EnvironmentId } & BrainSearchInput) =>
+      search({ environmentId, input }),
     secondBrainStatusQuery: (environmentId: EnvironmentId) => status({ environmentId, input: {} }),
     secondBrainProposalsQuery: ({
       environmentId,

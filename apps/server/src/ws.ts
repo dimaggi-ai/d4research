@@ -14,6 +14,7 @@ import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts"
 import * as D4Agent from "./d4Agent/D4Agent.ts";
 import * as D4AgentStore from "./d4Agent/D4AgentStore.ts";
 import { resumePipelineRun } from "./orchestration-v2/PipelineRunResume.ts";
+import * as Almanac from "./almanac/AlmanacService.ts";
 import * as SecondBrain from "./second-brain/SecondBrainService.ts";
 import { OrchestrationDispatchCommandError } from "@d4research/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -1524,6 +1525,7 @@ const makeWsHandlers = Effect.fn("ws.makeHandlers")(function* (
   const agentMonitor = yield* AgentMonitorReactor.AgentMonitorReactor;
   const d4Agent = yield* D4Agent.D4Agent;
   const secondBrain = yield* SecondBrain.SecondBrainService;
+  const almanac = yield* Almanac.AlmanacService;
   const threadWorkspaces = yield* ThreadWorkspaces.ThreadWorkspaces;
   const memorySql = sql;
   const resumableSessions = yield* ResumableSessionDiscovery;
@@ -2682,6 +2684,17 @@ const makeWsHandlers = Effect.fn("ws.makeHandlers")(function* (
     [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
     [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
     [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
+    [WS_METHODS.secondBrainCatalog]: () => secondBrain.catalog(),
+    [WS_METHODS.secondBrainRead]: (input) => secondBrain.read(input),
+    [WS_METHODS.secondBrainSearch]: (input) => secondBrain.search(input),
+    [WS_METHODS.almanacStatus]: () => almanac.status(),
+    [WS_METHODS.almanacBrowse]: (input) => almanac.browse(input),
+    [WS_METHODS.almanacSearch]: (input) => almanac.search(input),
+    [WS_METHODS.almanacRecall]: (input) => almanac.recall(input),
+    [WS_METHODS.almanacRead]: (input) => almanac.read(input),
+    [WS_METHODS.almanacRemember]: (input) => almanac.remember(input),
+    [WS_METHODS.almanacUpdate]: (input) => almanac.update(input),
+    [WS_METHODS.almanacForget]: (input) => almanac.forget(input),
     [WS_METHODS.secondBrainStatus]: () => secondBrain.status(),
     [WS_METHODS.secondBrainListProposals]: (input) => secondBrain.listProposalSummaries(input),
     [WS_METHODS.secondBrainGetProposal]: ({ id }) => secondBrain.reviewProposal(id),

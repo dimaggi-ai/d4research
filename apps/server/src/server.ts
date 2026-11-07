@@ -7,6 +7,7 @@ import * as D4AgentSystemProbe from "./d4Agent/SystemProbe.ts";
 import * as D4AgentPcCommand from "./d4Agent/PcCommand.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as HandoffMemory from "./handoffMemory.ts";
+import * as AlmanacService from "./almanac/AlmanacService.ts";
 import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
 import * as SecondBrainCaptureReactor from "./second-brain/SecondBrainCaptureReactor.ts";
 import * as Scheduler from "./scheduling/Scheduler.ts";
@@ -680,6 +681,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     ),
     Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
     Layer.provideMerge(layerSecondBrain),
+    Layer.provideMerge(AlmanacService.layer),
     Layer.provideMerge(
       D4Agent.layer.pipe(
         Layer.provide(D4AgentSystemProbe.layer),

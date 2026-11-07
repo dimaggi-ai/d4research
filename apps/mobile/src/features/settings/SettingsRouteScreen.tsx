@@ -236,7 +236,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
         serverPage("SettingsThreads", "text.bubble", "Nia and threads"),
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
-        serverPage("SettingsSecondBrain", "text.alignleft", "Second brain"),
+        serverPage("SettingsSecondBrain", "text.alignleft", "Memory"),
         serverPage("SettingsDecisions", "checkmark.circle", "Decisions"),
       ],
     },

@@ -259,15 +259,15 @@ Use one topic per file in `notes/`, `people/`, `projects/`, `decisions/`, or `le
 `MEMORY.md` holds core knowledge; `AGENTS.md` maps the folder. Memo remains separate session
 and handoff memory.
 
-Open **Settings → Second brain**, select the environment, and set its folder path. Leave the
-path empty to disable the brain. Enable context injection and set the core and retrieval
+Open **Settings → Memory**, select the environment, and set its folder path in the **Settings**
+tab. Leave the path empty to disable the brain. Enable context injection and set the core and retrieval
 budgets there. Agents receive bounded core context at the start of a provider thread, and again
 after handoffs or indexed changes. On ordinary turns they receive relevant excerpts. They can search and
 read notes with `brain_search` and `brain_read`, and cite the returned file and line ranges.
 Slash commands and compact turns skip injection.
 
-Keep **Write mode** set to **Review** to require approval for agent proposals. Open the review
-inbox from Second brain settings or the web command palette. Check the diff, source quotes,
+Keep **Write mode** set to **Review** to require approval for agent proposals. Open the
+**Review** tab of Memory settings or use the web command palette. Check the diff, source quotes,
 and possible duplicates before accepting; you can edit the proposed file on the web. Reject
 with a reason to suppress identical proposals. If the file changed, reject the conflicting
 proposal and ask the agent for a new one. Accepting requires settings-write access to that
@@ -282,6 +282,23 @@ Use **Reindex** to rebuild search data, **Lint** to find note and link issues, a
 **Regenerate INDEX** to refresh the generated catalog. Lint does not rename files. Optional
 embeddings use local Ollama; search falls back to text matching if the model is unavailable.
 An unmarked, manually maintained `INDEX.md` is preserved.
+
+## Almanac
+
+Almanac is a separate knowledge service for past conversations, documents, and short memories.
+To connect it, enter the command that starts its MCP server in the **Settings** tab of
+**Settings → Memory**. The command can run Almanac on another machine, for example through
+`ssh`. Almanac's text then travels between that machine and this environment.
+
+Use the **Library** tab to read your memory. Search covers notes and Almanac together, or you can
+browse each one. Select an item to read its full text. Long Almanac memories appear shortened
+because Almanac returns only their first 280 characters; editing one replaces all of its text.
+Documents open in full, one window at a time. You can add, edit, and forget Almanac memories
+with settings-write access.
+
+Every agent can search Almanac with `almanac_search`, read sources with `almanac_read`, and find
+short memories with `almanac_recall`. Agents with write access can also use `almanac_remember`,
+`almanac_update`, and `almanac_forget`.
 
 Files and the index stay on that environment, but retrieved context is sent to the selected
 agent provider. Capture uses visible user and assistant text, excludes tools and reasoning,

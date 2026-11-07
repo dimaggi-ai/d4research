@@ -89,6 +89,7 @@ export * from "./settingsSecretValue.ts";
 export * from "./clientRpcPermissions.ts";
 
 export * from "./secondBrain.ts";
+export * from "./almanac.ts";
 
 export * from "./d4Agent.ts";
 export * from "./providerRouting.ts";

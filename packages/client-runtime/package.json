@@ -475,6 +475,10 @@
       "types": "./src/pullRequestQuery.ts",
       "default": "./src/pullRequestQuery.ts"
     },
+    "./state/almanac": {
+      "types": "./src/state/almanac.ts",
+      "default": "./src/state/almanac.ts"
+    },
     "./state/second-brain": {
       "types": "./src/state/secondBrain.ts",
       "default": "./src/state/secondBrain.ts"

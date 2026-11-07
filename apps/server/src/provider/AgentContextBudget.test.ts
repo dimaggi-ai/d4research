@@ -58,6 +58,7 @@ import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
+import { AlmanacService } from "../almanac/AlmanacService.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
 
 // Registration only stores tool definitions, so the handlers' services are never called.
@@ -100,6 +101,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ThreadManagementService)({}),
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
+  Layer.mock(AlmanacService)({}),
   Layer.mock(D4AgentModule.D4Agent)({}),
   Layer.mock(HandoffMemoryModule.HandoffMemory)({}),
   Layer.mock(ProjectStoreModule.ProjectStoreV2)({}),

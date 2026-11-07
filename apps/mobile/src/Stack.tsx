@@ -203,7 +203,7 @@ const SETTINGS_SCREENS = {
   SettingsSecondBrain: createNativeStackScreen({
     screen: SettingsSecondBrainRouteScreen,
     linking: "second-brain",
-    options: settingsPage("Second brain"),
+    options: settingsPage("Memory"),
   }),
   SettingsDecisions: createNativeStackScreen({
     screen: SettingsDecisionsRouteScreen,

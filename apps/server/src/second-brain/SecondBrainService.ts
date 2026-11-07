@@ -19,6 +19,7 @@ import {
   BrainProposalQuery,
   SecondBrainError,
   type BrainStatus,
+  type BrainCatalogEntry,
   type BrainMap,
   type BrainReadResult,
   type BrainSearchResponse,
@@ -76,6 +77,7 @@ export class SecondBrainService extends Context.Service<
     readonly markContextDelivered: (context: BrainTurnContext) => BrainEffect<void>;
     readonly status: () => BrainEffect<BrainStatus>;
     readonly map: () => BrainEffect<BrainMap>;
+    readonly catalog: () => BrainEffect<readonly BrainCatalogEntry[]>;
     readonly read: (input: BrainReadInput) => BrainEffect<BrainReadResult>;
     readonly search: (input: BrainSearchInput) => BrainEffect<BrainSearchResponse>;
     readonly backlinks: (file: string) => BrainEffect<{ paths: string[]; truncated: boolean }>;
@@ -846,6 +848,9 @@ const make = Effect.gen(function* () {
           }),
         ),
       ),
+    ),
+    catalog: Effect.fn("SecondBrainService.catalog")(() =>
+      locked(Effect.map(ready(), ({ snapshot }) => catalogOf(snapshot))),
     ),
     map: Effect.fn("SecondBrainService.map")(() =>
       locked(

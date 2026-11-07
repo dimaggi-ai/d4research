@@ -38,6 +38,14 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 export const RPC_REQUIRED_SCOPES = {
   ...CLIENT_GUARDED_RPC_SCOPES,
+  [WS_METHODS.secondBrainCatalog]: AuthFilesystemReadScope,
+  [WS_METHODS.secondBrainRead]: AuthFilesystemReadScope,
+  [WS_METHODS.secondBrainSearch]: AuthFilesystemReadScope,
+  [WS_METHODS.almanacStatus]: AuthFilesystemReadScope,
+  [WS_METHODS.almanacBrowse]: AuthFilesystemReadScope,
+  [WS_METHODS.almanacSearch]: AuthFilesystemReadScope,
+  [WS_METHODS.almanacRecall]: AuthFilesystemReadScope,
+  [WS_METHODS.almanacRead]: AuthFilesystemReadScope,
   [WS_METHODS.secondBrainStatus]: AuthFilesystemReadScope,
   [WS_METHODS.secondBrainListProposals]: AuthFilesystemReadScope,
   [WS_METHODS.secondBrainGetProposal]: AuthFilesystemReadScope,

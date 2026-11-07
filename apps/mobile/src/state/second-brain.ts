@@ -4,6 +4,9 @@ import { connectionAtomRuntime } from "../connection/runtime";
 export const {
   refresh: refreshSecondBrain,
   secondBrainStatusQuery,
+  secondBrainCatalogQuery,
+  secondBrainNoteQuery,
+  secondBrainSearchQuery,
   secondBrainProposalsQuery,
   secondBrainProposalQuery,
   secondBrainAcceptCommand,

@@ -4,6 +4,7 @@ import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as D4AgentModule from "../../../d4Agent/D4Agent.ts";
 import * as ProjectStoreModule from "../../../orchestration-v2/ProjectStore.ts";
 import { ResearchDelegationBudget } from "../research/budget.ts";
+import { AlmanacService } from "../../../almanac/AlmanacService.ts";
 import * as SecondBrainCaptureModule from "../../../second-brain/SecondBrainCapture.ts";
 import * as SecondBrainServiceModule from "../../../second-brain/SecondBrainService.ts";
 import * as HandoffMemory from "../../../handoffMemory.ts";
@@ -59,6 +60,7 @@ import * as UsageLimitSources from "../../../usage/UsageLimitSources.ts";
 
 const layerStubServices = Layer.mergeAll(
   Layer.mock(AssetSigner.AssetSigner)({}),
+  Layer.mock(AlmanacService)({}),
   Layer.mock(RemoteDelegation)({}),
   Layer.mock(PeerLinkRequests)({}),
   Layer.mock(PeerLinks)({}),

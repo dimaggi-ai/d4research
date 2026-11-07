@@ -130,6 +130,8 @@ class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoB
   }
 }
 
+const isD4AgentError = Schema.is(D4AgentError);
+
 const isProviderAdapterOpenSessionError = Schema.is(
   ProviderAdapter.ProviderAdapterOpenSessionError,
 );
@@ -2288,7 +2290,7 @@ export const layer: Layer.Layer<
         const now = yield* DateTime.now;
         const node = projection.nodes.find((node) => node.id === run.rootNodeId);
         const attempt = projection.attempts.find((attempt) => attempt.id === run.activeAttemptId);
-        const agentError = Schema.is(D4AgentError)(cause) ? cause : undefined;
+        const agentError = isD4AgentError(cause) ? cause : undefined;
         const failure = makeProviderFailure({
           cause,
           message:

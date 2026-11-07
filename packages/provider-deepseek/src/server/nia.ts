@@ -30,6 +30,11 @@ export interface NiaRegistration {
   headers?: Record<string, string>;
 }
 
+const decodeToolArguments = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+const encodeToolResult = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
 const isRequestError = Schema.is(DeepSeekRequestError);
 const allowedTools = new Set<string>(D4_AGENT_TOOLS);
 
@@ -394,9 +399,7 @@ export const runNiaTurn = Effect.fn("DeepSeekNia.runTurn")(function* <E, R>(
           )
             return yield* new DeepSeekRequestError({ category: "tools" });
           ids.add(call.id);
-          const args = yield* Schema.decodeUnknownEffect(
-            Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-          )(call.function.arguments).pipe(
+          const args = yield* decodeToolArguments(call.function.arguments).pipe(
             Effect.mapError((cause) => new DeepSeekRequestError({ category: "tools", cause })),
           );
           validated.push({ call, args });
@@ -430,9 +433,7 @@ export const runNiaTurn = Effect.fn("DeepSeekNia.runTurn")(function* <E, R>(
             const result = yield* promise(() =>
               mcp.request("tools/call", { name: call.function.name, arguments: args }),
             );
-            const raw = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
-              result,
-            ).pipe(
+            const raw = yield* encodeToolResult(result).pipe(
               Effect.mapError((cause) => new DeepSeekRequestError({ category: "protocol", cause })),
             );
             const output =

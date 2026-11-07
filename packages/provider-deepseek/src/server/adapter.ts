@@ -34,6 +34,8 @@ import { makeNiaJournal, preferJournal } from "./niaJournal.ts";
 import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import { DeepSeekRequestError, requestCompletion, type ChatMessage } from "./http.ts";
 
+const encodeNiaHistory = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
 const DRIVER = ProviderDriverKind.make("deepseek");
 export type DeepSeekAdapterV2DriverEnv =
   | HttpClient.HttpClient
@@ -301,9 +303,7 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
               const deepSeekNiaHistory = workingNiaHistory.flatMap((message) =>
                 message.role === "system" ? [] : [{ ...message, role: message.role }],
               );
-              const serialized = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
-                deepSeekNiaHistory,
-              ).pipe(
+              const serialized = yield* encodeNiaHistory(deepSeekNiaHistory).pipe(
                 Effect.mapError(
                   (cause) => new DeepSeekRequestError({ category: "protocol", cause }),
                 ),

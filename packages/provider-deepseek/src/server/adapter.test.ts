@@ -41,7 +41,6 @@ import { historicalMessage } from "@d4research/provider-core/server/handoffBudge
 import { DeepSeekSettings, isLoopbackEndpoint } from "../settings.ts";
 import { DeepSeekAdapterV2Driver } from "./adapter.ts";
 import { makeNiaJournal } from "./niaJournal.ts";
-import type { NiaMessage } from "./nia.ts";
 import { probeDeepSeek } from "./health.ts";
 
 const config = Schema.decodeSync(DeepSeekSettings)({});
@@ -571,6 +570,21 @@ const sse = (toolCall: boolean) =>
       .join("") + "data: [DONE]\n\n",
     { headers: { "Content-Type": "text/event-stream" } },
   );
+const decodeNiaRequest = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+const decodeModelRequest = Schema.decodeUnknownSync(
+  Schema.Struct({ messages: Schema.Array(Schema.Unknown), tools: Schema.Array(Schema.Unknown) }),
+);
+const decodeToolHistory = Schema.decodeUnknownEffect(
+  Schema.Array(
+    Schema.Struct({ role: Schema.String, tool_call_id: Schema.optional(Schema.String) }),
+  ),
+);
+const decodeContentHistory = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ role: Schema.String, content: Schema.optional(Schema.Unknown) })),
+);
+
 const mockNiaFetch = (
   options: { failAfterTool?: boolean; stallTool?: (signal: AbortSignal) => Promise<Response> } = {},
 ) => {
@@ -579,19 +593,10 @@ const mockNiaFetch = (
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      const body = Schema.decodeUnknownSync(
-        Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-      )(String(init?.body));
+      const body = decodeNiaRequest(String(init?.body));
       if (String(url).endsWith("/chat/completions")) {
         assert.equal(new Headers(init?.headers).has("Authorization"), false);
-        modelRequests.push(
-          Schema.decodeUnknownSync(
-            Schema.Struct({
-              messages: Schema.Array(Schema.Unknown),
-              tools: Schema.Array(Schema.Unknown),
-            }),
-          )(body),
-        );
+        modelRequests.push(decodeModelRequest(body));
         if (options.failAfterTool && modelRequests.length > 1)
           return new Response(null, { status: 503 });
         return sse(modelRequests.length === 1);
@@ -701,11 +706,7 @@ describe("Nia DeepSeek adapter", () => {
         });
         yield* restarted.start(2, "After restart");
         yield* restarted.takeTurn;
-        const history = yield* Schema.decodeUnknownEffect(
-          Schema.Array(
-            Schema.Struct({ role: Schema.String, tool_call_id: Schema.optional(Schema.String) }),
-          ),
-        )(server.modelRequests[2]?.messages);
+        const history = yield* decodeToolHistory(server.modelRequests[2]?.messages);
         assert.deepStrictEqual(
           history.map((message) => message.role),
           ["system", "user", "assistant", "tool", "assistant", "user"],
@@ -854,13 +855,10 @@ describe("Nia DeepSeek adapter", () => {
 
   it.effect("restores a tool call from the journal when the server dies before events commit", () =>
     Effect.gen(function* () {
-      const started = yield* Deferred.make<ReadonlyArray<NiaMessage> | undefined>();
-      let journalAtToolCall: (() => Promise<ReadonlyArray<NiaMessage> | undefined>) | undefined;
+      const started = yield* Deferred.make<void>();
       mockNiaFetch({
         stallTool: () => {
-          void journalAtToolCall?.().then((history) =>
-            Deferred.doneUnsafe(started, Effect.succeed(history)),
-          );
+          Deferred.doneUnsafe(started, Effect.void);
           return new Promise<Response>(() => {});
         },
       });
@@ -868,11 +866,11 @@ describe("Nia DeepSeek adapter", () => {
       const journal = yield* makeNiaJournal(
         Context.get(crashed.host, ProviderHost.ProviderHost).paths.stateDir,
       ).pipe(Effect.provide(crashed.host));
-      journalAtToolCall = () => Effect.runPromise(journal.read(crashed.providerThread.id));
       // Production prompts carry runtime context that the visible message does not.
       yield* crashed.start(1, "[runtime context]\nHello");
       // The tool runs only after its call is on disk.
-      const atToolCall = yield* Deferred.await(started);
+      yield* Deferred.await(started);
+      const atToolCall = yield* journal.read(crashed.providerThread.id);
       assert.deepStrictEqual(
         atToolCall?.map((message) => message.role),
         ["user", "assistant", "tool"],
@@ -913,11 +911,7 @@ describe("Nia DeepSeek adapter", () => {
       });
       yield* restarted.start(2, "After crash");
       yield* restarted.takeTurn;
-      const resumed = yield* Schema.decodeUnknownEffect(
-        Schema.Array(
-          Schema.Struct({ role: Schema.String, content: Schema.optional(Schema.Unknown) }),
-        ),
-      )(server.modelRequests[0]?.messages);
+      const resumed = yield* decodeContentHistory(server.modelRequests[0]?.messages);
       assert.deepStrictEqual(
         resumed?.map((message) => message.role),
         ["system", "user", "assistant", "tool", "user"],

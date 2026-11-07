@@ -3,9 +3,9 @@
     "details": [
       {
         "appIDs": [
-          "ARK85ZXQ4Z.ai.dimaggi.d4research",
-          "ARK85ZXQ4Z.ai.dimaggi.d4research.preview",
-          "ARK85ZXQ4Z.ai.dimaggi.d4research.dev"
+          "CR2PTQ345T.ai.dimaggi.d4research",
+          "CR2PTQ345T.ai.dimaggi.d4research.preview",
+          "CR2PTQ345T.ai.dimaggi.d4research.dev"
         ],
         "components": [{ "/": "/threads/*" }]
       }

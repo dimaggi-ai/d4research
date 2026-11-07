@@ -4,6 +4,7 @@ import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@d4research/contracts";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -36,6 +37,11 @@ const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
     Layer.succeed(
       HttpClient.HttpClient,
       HttpClient.make(() => Effect.die("Disabled Grok must not make an HTTP request")),
+    ),
+  ),
+  Layer.provideMerge(
+    ConfigProvider.layer(
+      ConfigProvider.fromUnknown({ T3CODE_ENABLE_PROVIDER_VERSION_CHECKS: "true" }),
     ),
   ),
 );

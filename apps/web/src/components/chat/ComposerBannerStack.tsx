@@ -261,6 +261,7 @@ const SUBPIXEL_ROUNDING = 0.001;
 export function NoticeText({
   children,
   className,
+  detailsLabel,
 }: {
   readonly children: ReactNode;
   readonly className: string;
@@ -337,7 +338,7 @@ export function NoticeText({
                 ref={detailsRef}
                 size="icon-xs"
                 variant="ghost-muted"
-                aria-label="Show notice details"
+                aria-label={detailsLabel}
                 className="flex-none"
               />
             }

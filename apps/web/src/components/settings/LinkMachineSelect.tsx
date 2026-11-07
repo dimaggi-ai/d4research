@@ -9,7 +9,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 export const ANOTHER_ADDRESS = "another-address";
 
 /** Whether a machine is linked already, or how this app knows it when not connected to it. */
-export function LinkMachineBadge({ machine }: { readonly machine: LinkableMachine }) {
+function LinkMachineBadge({ machine }: { readonly machine: LinkableMachine }) {
   if (machine.linked) {
     return (
       <Badge variant="success" size="sm">

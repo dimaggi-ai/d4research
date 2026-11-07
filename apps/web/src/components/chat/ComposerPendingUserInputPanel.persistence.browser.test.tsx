@@ -143,6 +143,16 @@ it("retains answers, selections and question position after leaving chat, includ
   expect(requests.activePendingUserInput).toBeNull();
   await screen.rerender(probe());
   expect(requests).toMatchObject(expected);
+
+  // A cached projection can predate the questions; only live resolution clears drafts.
+  await screen.rerender(
+    <PendingRequestsProbe
+      environmentId={environmentId}
+      projection={{ ...projection, runtimeRequests: [], turnItems: [] }}
+    />,
+  );
+  await screen.rerender(probe());
+  expect(requests).toMatchObject(expected);
 });
 
 it("tells the user when an option click moves their typed answer into the hidden composer draft", async () => {

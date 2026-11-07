@@ -15,6 +15,7 @@ import {
 import type { OpenCodeSettings } from "../settings.ts";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Fiber from "effect/Fiber";
@@ -68,7 +69,14 @@ const layer = Layer.mergeAll(
     ProviderEventLoggers.NoOpProviderEventLoggers,
   ),
   Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, openCode2Runtime),
-).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+).pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  Layer.provideMerge(
+    ConfigProvider.layer(
+      ConfigProvider.fromUnknown({ T3CODE_ENABLE_PROVIDER_AUTO_REFRESH: "true" }),
+    ),
+  ),
+);
 
 const create = (config: Partial<OpenCodeSettings>, http: HttpClient.HttpClient) =>
   OpenCodeDriver.create({

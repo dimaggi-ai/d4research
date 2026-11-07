@@ -49,6 +49,35 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 
+it.effect("persists a changed Nia model on the default provider and can disable it afterward", () =>
+  Effect.gen(function* () {
+    const settings = yield* ServerSettingsModule.ServerSettingsService;
+    const config = yield* ServerConfig.ServerConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const modelSelection = {
+      ...DEFAULT_SERVER_SETTINGS.d4Agent.modelSelection!,
+      model: "different-model",
+    };
+    yield* settings.updateSettings({
+      d4Agent: { ...DEFAULT_SERVER_SETTINGS.d4Agent, enabled: true, modelSelection },
+    });
+    const persisted = yield* decodeServerSettingsJson(
+      yield* fs.readFileString(config.settingsPath),
+    );
+    assert.deepEqual(persisted.d4Agent.modelSelection, modelSelection);
+    yield* settings.updateSettings({ d4Agent: { ...persisted.d4Agent, enabled: false } });
+    const disabled = yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath));
+    assert.equal(disabled.d4Agent.enabled, false);
+    assert.deepEqual(disabled.d4Agent.modelSelection, modelSelection);
+  }).pipe(
+    Effect.provide(
+      layerServerSettings().pipe(
+        Layer.provideMerge(Layer.merge(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
 const layerServerSettings = (policy?: ManagedPolicyDocument) =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),
@@ -1072,6 +1101,35 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         enabled: false,
         config: { binaryPath: "/opt/grok" },
       });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("does not rewrite an unchanged file that keeps legacy providers", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        yield* encodeJson({ providers: { codex: { binaryPath: "/opt/codex" } } }),
+      );
+      yield* serverSettings.getSettings;
+      const before = yield* fileSystem.stat(serverConfig.settingsPath);
+
+      yield* ServerSettingsModule.ServerSettingsService.pipe(
+        Effect.flatMap((reloaded) => reloaded.getSettings),
+        Effect.provide(
+          Layer.fresh(
+            ServerSettingsModule.layer.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(ManagedPolicy.layerTest()),
+            ),
+          ),
+        ),
+      );
+
+      const after = yield* fileSystem.stat(serverConfig.settingsPath);
+      assert.deepEqual(after.ino, before.ino);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

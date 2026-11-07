@@ -1,7 +1,7 @@
-// @vitest-environment jsdom
+import { RegistryContext } from "@effect/atom-react";
 import { act, useEffect, useReducer } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { AsyncResult } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => ({
@@ -12,22 +12,28 @@ const harness = vi.hoisted(() => ({
   },
   worktree: { selectedThreadCwd: "/repo" as string | null, selectedThreadWorktreePath: null },
   refreshStatusCalls: [] as Array<unknown>,
+  registry: undefined as AtomRegistry.AtomRegistry | undefined,
+  connectedAtom: undefined as Atom.Writable<boolean, boolean> | undefined,
   renderCount: 0,
   onRefreshSettled: () => {},
 }));
 
 vi.mock("./use-atom-command", () => ({
-  useAtomCommand: (command: unknown) =>
-    command === "refreshStatus"
-      ? async (input: unknown) => {
-          harness.refreshStatusCalls.push(input);
-          harness.onRefreshSettled();
-          return AsyncResult.success({});
-        }
-      : async () => AsyncResult.success({}),
+  useAtomCommand:
+    (command: { run?: (registry: unknown, input: unknown) => unknown }) => (input: unknown) =>
+      command.run?.(harness.registry, input) ?? Promise.resolve(AsyncResult.success({})),
 }));
 vi.mock("./vcs", () => ({
-  vcsEnvironment: { refreshStatus: "refreshStatus" },
+  vcsEnvironment: {
+    refreshStatus: {
+      label: "refresh status",
+      run: async (_registry: unknown, input: unknown) => {
+        harness.refreshStatusCalls.push(input);
+        harness.onRefreshSettled();
+        return AsyncResult.success({});
+      },
+    },
+  },
   vcsActionManager: { runStackedAction: () => "runStackedAction", track: vi.fn() },
 }));
 vi.mock("./threads", () => ({ threadEnvironment: { updateMetadata: "updateMetadata" } }));
@@ -38,7 +44,10 @@ vi.mock("./session", () => ({
   readEnvironmentScope: () => true,
   useEnvironmentScope: () => true,
 }));
-vi.mock("./use-remote-environment-registry", () => ({ setPendingConnectionError: () => {} }));
+vi.mock("./use-remote-environment-registry", () => ({
+  environmentConnectedAtom: () => harness.connectedAtom!,
+  setPendingConnectionError: () => {},
+}));
 vi.mock("./use-vcs-action-state", () => ({ showGitActionResult: () => {} }));
 vi.mock("./use-thread-selection", () => ({
   useThreadSelection: () => {
@@ -68,11 +77,22 @@ function Consumer() {
 }
 
 async function flush() {
-  for (let index = 0; index < 5; index += 1) {
-    await act(async () => {
-      await Promise.resolve();
-    });
-  }
+  await act(async () => {});
+}
+
+function renderConsumer() {
+  root = createRoot(document.createElement("div"));
+  act(() =>
+    root!.render(
+      <RegistryContext.Provider value={harness.registry!}>
+        <Consumer />
+      </RegistryContext.Provider>,
+    ),
+  );
+}
+
+function setConnected(connected: boolean) {
+  act(() => harness.registry!.set(harness.connectedAtom!, connected));
 }
 
 beforeEach(() => {
@@ -83,6 +103,8 @@ beforeEach(() => {
     selectedEnvironmentRuntime: { connectionState: "connected" },
   };
   harness.worktree = { selectedThreadCwd: "/repo", selectedThreadWorktreePath: null };
+  harness.registry = AtomRegistry.make();
+  harness.connectedAtom = Atom.make(true);
   harness.refreshStatusCalls = [];
   harness.renderCount = 0;
   harness.onRefreshSettled = () => rerender();
@@ -91,12 +113,12 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
+  harness.registry?.dispose();
 });
 
 describe("useSelectedThreadGitActions", () => {
   it("refreshes once on mount and does not loop when refreshes rerender the consumer", async () => {
-    root = createRoot(document.createElement("div"));
-    act(() => root!.render(<Consumer />));
+    renderConsumer();
     await flush();
 
     harness.selection = {
@@ -112,9 +134,8 @@ describe("useSelectedThreadGitActions", () => {
     ]);
   });
 
-  it("refreshes again when the selected thread or cwd changes", async () => {
-    root = createRoot(document.createElement("div"));
-    act(() => root!.render(<Consumer />));
+  it("shares the refresh between threads in one checkout and refreshes when cwd changes", async () => {
+    renderConsumer();
     await flush();
 
     harness.selection = {
@@ -131,14 +152,12 @@ describe("useSelectedThreadGitActions", () => {
 
     expect(harness.refreshStatusCalls).toEqual([
       { environmentId: "environment-1", input: { cwd: "/repo" } },
-      { environmentId: "environment-1", input: { cwd: "/repo" } },
       { environmentId: "environment-1", input: { cwd: "/repo/worktree" } },
     ]);
   });
 
   it("refreshes once after the environment reconnects and not while it is away", async () => {
-    root = createRoot(document.createElement("div"));
-    act(() => root!.render(<Consumer />));
+    renderConsumer();
     await flush();
 
     for (const connectionState of ["reconnecting", "connecting", "offline"]) {
@@ -146,6 +165,7 @@ describe("useSelectedThreadGitActions", () => {
         ...harness.selection,
         selectedEnvironmentRuntime: { connectionState },
       };
+      setConnected(false);
       act(() => rerender());
       await flush();
     }
@@ -155,6 +175,7 @@ describe("useSelectedThreadGitActions", () => {
       ...harness.selection,
       selectedEnvironmentRuntime: { connectionState: "connected" },
     };
+    setConnected(true);
     act(() => rerender());
     await flush();
     act(() => rerender());
@@ -171,8 +192,8 @@ describe("useSelectedThreadGitActions", () => {
       ...harness.selection,
       selectedEnvironmentRuntime: { connectionState: "connecting" },
     };
-    root = createRoot(document.createElement("div"));
-    act(() => root!.render(<Consumer />));
+    setConnected(false);
+    renderConsumer();
     await flush();
     expect(harness.refreshStatusCalls).toEqual([]);
 
@@ -180,6 +201,7 @@ describe("useSelectedThreadGitActions", () => {
       ...harness.selection,
       selectedEnvironmentRuntime: { connectionState: "connected" },
     };
+    setConnected(true);
     act(() => rerender());
     await flush();
 

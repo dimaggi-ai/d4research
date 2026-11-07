@@ -7,6 +7,7 @@ import { environmentThreadShells } from "../../state/threads";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
+  agentOpenFailureMessage,
   agentUnavailableMessage,
   actionFullText,
   actionHeading,
@@ -15,7 +16,8 @@ import {
 } from "./d4AgentPresentation";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
-import { useLinkTo } from "@react-navigation/native";
+import { useLinkTo, useNavigation } from "@react-navigation/native";
+import { openSettings } from "../settings/settings-navigation";
 import {
   ProjectId,
   type D4AgentActionSummary,
@@ -50,11 +52,15 @@ function actionScheduleLabel(
   return `${days} at ${schedule.timeOfDay} (server time)`;
 }
 
+// The route resolves Nia from server state, so a late shell only delays opening.
+const AGENT_SHELL_WAIT_MS = 3_000;
+
 function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
   return Effect.runPromise(
     waitForD4AgentThreadShell(
       appAtomRegistry,
       environmentThreadShells.threadShellAtom({ environmentId, threadId }),
+      AGENT_SHELL_WAIT_MS,
     ),
   );
 }
@@ -100,8 +106,9 @@ export function D4AgentEntry({
   const ensure = useAtomCommand(serverEnvironment.ensureD4AgentThread);
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
   const linkTo = useLinkTo();
+  const navigation = useNavigation();
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
     <View className="px-4 py-2">
       <Pressable
@@ -117,33 +124,30 @@ export function D4AgentEntry({
         onPress={async () => {
           if (!config) return;
           if (!config.settings.d4Agent.enabled) {
-            linkTo("/settings/thread-preferences");
+            openSettings(navigation, "SettingsThreads");
             return;
           }
           if (state.data?.threadId && !allowed) {
-            if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
-              setError(true);
-              return;
-            }
+            await waitForAgentThread(environmentId, state.data.threadId);
             linkTo(
               `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(state.data.threadId)}`,
             );
             return;
           }
           setOpening(true);
-          setError(false);
+          setError(null);
           await ensure({ environmentId, input: {} })
             .then(async (result) => {
-              if (
-                result._tag === "Success" &&
-                (await waitForAgentThread(environmentId, result.value.threadId))
-              )
-                linkTo(
-                  `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
-                );
-              else setError(true);
+              if (result._tag !== "Success") {
+                setError(agentOpenFailureMessage(squashAtomCommandFailure(result)));
+                return;
+              }
+              await waitForAgentThread(environmentId, result.value.threadId);
+              linkTo(
+                `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
+              );
             })
-            .catch(() => setError(true))
+            .catch((failure: unknown) => setError(agentOpenFailureMessage(failure)))
             .finally(() => setOpening(false));
         }}
       >
@@ -153,7 +157,7 @@ export function D4AgentEntry({
       </Pressable>
       {error ? (
         <Text accessibilityRole="alert" className="py-2 text-sm text-foreground-muted">
-          Could not open Nia. Check that it is enabled with an available model in Settings.
+          {error}
         </Text>
       ) : null}
     </View>

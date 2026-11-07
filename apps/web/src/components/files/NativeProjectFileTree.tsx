@@ -345,6 +345,14 @@ export function NativeProjectFileTree(props: {
     [props, visibleFiles],
   );
 
+  // macOS browsers do not turn Shift+F10 into a contextmenu event.
+  const openRowMenuFromKeyboard = (event: React.KeyboardEvent<HTMLElement>, path: string) => {
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    props.onContextMenu(path, { x: rect.left, y: rect.bottom });
+  };
+
   const renderRow = ({ node, depth }: VisibleProjectTreeRow, index: number): React.ReactNode => {
     const paddingLeft = 8 + depth * 14;
     const rowStyle = {
@@ -380,7 +388,9 @@ export function NativeProjectFileTree(props: {
               event.preventDefault();
               event.stopPropagation();
               void props.onDeleteEntry(node.path);
+              return;
             }
+            openRowMenuFromKeyboard(event, node.path);
           }}
           onContextMenu={(event) => {
             event.preventDefault();
@@ -421,6 +431,7 @@ export function NativeProjectFileTree(props: {
               )}
               style={{ ...rowStyle, paddingLeft: paddingLeft + 18 }}
               onClick={(event) => selectFile(node.path, event)}
+              onKeyDown={(event) => openRowMenuFromKeyboard(event, node.path)}
               onContextMenu={(event) => {
                 event.preventDefault();
                 props.onContextMenu(node.path, { x: event.clientX, y: event.clientY });

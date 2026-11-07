@@ -16,12 +16,13 @@ const DESCRIPTOR = {
 };
 
 describe("RemoteEnvironmentAuthorization", () => {
-  it.effect("reuses a validated bearer descriptor while issuing fresh websocket tickets", () =>
+  it.effect("revalidates the bearer descriptor while issuing fresh websocket tickets", () =>
     Effect.gen(function* () {
       const calls: string[] = [];
       const responses = [
         Response.json(DESCRIPTOR),
         Response.json({ ticket: "first-ticket", expiresAt: "2026-06-06T01:00:00.000Z" }),
+        Response.json({ ...DESCRIPTOR, label: "Updated remote environment" }),
         Response.json({ ticket: "second-ticket", expiresAt: "2026-06-06T01:00:00.000Z" }),
       ];
       const fetchFn = ((input: RequestInfo | URL) => {
@@ -47,10 +48,12 @@ describe("RemoteEnvironmentAuthorization", () => {
         return [yield* authorize(), yield* authorize()] as const;
       }).pipe(Effect.provide(layer));
 
+      expect(first.label).toBe("Remote environment");
+      expect(second.label).toBe("Updated remote environment");
       expect(first.socketUrl).toContain("wsTicket=first-ticket");
       expect(second.socketUrl).toContain("wsTicket=second-ticket");
-      expect(calls.filter((url) => url.endsWith("/.well-known/t3/environment"))).toHaveLength(1);
-      expect(calls.filter((url) => url.endsWith("/api/auth/websocket-ticket"))).toHaveLength(2);
+      expect(calls.filter((url) => url.endsWith("/.well-known/t3/environment"))).toHaveLength(2);
+      expect(calls.filter((url) => url.endsWith("/api/auth/websocket-ticket/rpc"))).toHaveLength(2);
     }),
   );
 });

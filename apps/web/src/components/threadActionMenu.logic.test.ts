@@ -97,7 +97,20 @@ describe("buildThreadActionMenuItems", () => {
           titleRegeneration: false,
         },
       }),
-    ).toEqual(["rename", "mark-unread", "color", "copy", "project-settings", "archive", "delete"]);
+    ).toEqual([
+      "rename",
+      "mark-unread",
+      "color",
+      "color:none",
+      ...ACCENT_COLOR_OPTIONS.map((option) => `color:${option.id}`),
+      "copy",
+      "copy-path",
+      "copy-thread",
+      "copy-thread-id",
+      "project-settings",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("groups project settings with utility actions before archive", () => {

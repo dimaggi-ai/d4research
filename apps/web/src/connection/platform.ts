@@ -36,6 +36,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
@@ -87,39 +88,6 @@ const layerConnectivity = Connectivity.layer({
   ),
 });
 
-interface NetworkInformationLike extends EventTarget {
-  readonly type?: string;
-}
-
-/**
- * `change` also fires for bandwidth and latency estimates on the same network,
- * so only a type change counts.
- */
-const networkPathChanges = Stream.callback<"network-changed">((queue) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const connection =
-        typeof navigator === "undefined"
-          ? undefined
-          : (navigator as Navigator & { readonly connection?: NetworkInformationLike }).connection;
-      if (connection?.type === undefined) return undefined;
-      let previous = connection.type;
-      const listener = () => {
-        const type = connection.type;
-        if (type === undefined || type === previous) return;
-        previous = type;
-        Queue.offerUnsafe(queue, "network-changed");
-      };
-      connection.addEventListener("change", listener);
-      return { connection, listener };
-    }),
-    (subscription) =>
-      Effect.sync(() =>
-        subscription?.connection.removeEventListener("change", subscription.listener),
-      ),
-  ).pipe(Effect.asVoid),
-);
-
 const layerWakeups = Wakeups.layer({
   changes: Stream.callback<"application-active">((queue) =>
     Effect.acquireRelease(
@@ -164,6 +132,41 @@ function sshPreparationError(cause: unknown) {
   });
 }
 
+const pendingSshSetups = new WeakMap<
+  DesktopBridge,
+  Map<string, { setup: ReturnType<DesktopBridge["ensureSshEnvironment"]>; owner: AbortSignal }>
+>();
+
+function sshSetupKey(target: DesktopSshEnvironmentTarget) {
+  return JSON.stringify([target.alias, target.hostname, target.username, target.port]);
+}
+
+function ensureSshPairingSetup(
+  bridge: DesktopBridge,
+  target: DesktopSshEnvironmentTarget,
+  owner: AbortSignal,
+) {
+  let pending = pendingSshSetups.get(bridge);
+  if (!pending) {
+    pending = new Map();
+    pendingSshSetups.set(bridge, pending);
+  }
+  const key = sshSetupKey(target);
+  const existing = pending.get(key);
+  // Only an interrupted caller can hand off its unused setup credential.
+  if (existing?.owner.aborted) {
+    existing.owner = owner;
+    return existing.setup;
+  }
+  const setup = bridge.ensureSshEnvironment(target, { issuePairingToken: true });
+  pending.set(key, { setup, owner });
+  const clear = () => {
+    if (pending.get(key)?.setup === setup) pending.delete(key);
+  };
+  void setup.then(clear, clear);
+  return setup;
+}
+
 export const provisionDesktopSshEnvironment = Effect.fn(
   "web.connectionPlatform.ssh.provisionDesktop",
 )(function* (
@@ -172,10 +175,7 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   expectedEnvironmentId?: EnvironmentId,
 ) {
   const bootstrap = yield* Effect.tryPromise({
-    try: () =>
-      bridge.ensureSshEnvironment(target, {
-        issuePairingToken: true,
-      }),
+    try: (signal) => ensureSshPairingSetup(bridge, target, signal),
     catch: sshPreparationError,
   });
   const pairingToken = bootstrap.pairingToken;
@@ -197,7 +197,17 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   }
   const access = yield* Effect.tryPromise({
     try: () => bridge.bootstrapSshBearerSession(bootstrap.httpBaseUrl, pairingToken),
-    catch: sshPreparationError,
+    catch: (cause) => {
+      const error = sshPreparationError(cause);
+      return Schema.is(ConnectionTransientError)(error) &&
+        error.detail.includes("[ssh_http:500]") &&
+        descriptor.serverVersion !== APP_VERSION
+        ? new ConnectionBlockedError({
+            reason: "configuration",
+            detail: `${error.detail} (${APP_VERSION} / ${descriptor.serverVersion})`,
+          })
+        : error;
+    },
   });
   return {
     environmentId: descriptor.environmentId,
@@ -305,6 +315,7 @@ const layerCapabilities = Layer.effectContext(
         if (bridge === undefined) {
           return;
         }
+        pendingSshSetups.get(bridge)?.delete(sshSetupKey(target));
         yield* Effect.tryPromise({
           try: () => bridge.disconnectSshEnvironment(target),
           catch: (cause) =>
@@ -400,14 +411,14 @@ const loadSecondaryConnectionRegistration = Effect.fn(
 const PLATFORM_POLL_INTERVAL = "3 seconds";
 const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
 
-export function secondaryBearerExpiresAtEpochMs(
+function secondaryBearerExpiresAtEpochMs(
   issuedAtEpochMs: number,
   expiresInSeconds: number,
 ): number {
   return issuedAtEpochMs + Math.max(0, expiresInSeconds * 1_000);
 }
 
-export function secondaryBearerRefreshAtEpochMs(
+function secondaryBearerRefreshAtEpochMs(
   issuedAtEpochMs: number,
   expiresInSeconds: number,
 ): number {
@@ -436,7 +447,7 @@ export type PrimaryEnvironmentTargetRead =
       readonly cause: unknown;
     };
 
-export function readPrimaryEnvironmentTargetResult(
+function readPrimaryEnvironmentTargetResult(
   readTarget: () => PrimaryEnvironmentTarget | null = readPrimaryEnvironmentTarget,
 ): PrimaryEnvironmentTargetRead {
   try {
@@ -485,13 +496,8 @@ export interface RejectedSecondaryBootstrap {
   readonly delayMs: number;
 }
 
-/**
- * A backend that rejected a bootstrap token will usually keep rejecting it, so
- * the poll backs off on that exact signature instead of re-presenting a dead
- * credential every few seconds. It still retries on a capped backoff: a backend
- * that restarts on the same port seeds a fresh grant for the same token, and
- * nothing in the topology says it restarted.
- */
+// Back off rejected bootstrap signatures, but keep bounded retries: a restarted
+// backend can issue a fresh grant for the same token without changing its address.
 export function isRejectedSecondaryBootstrap(
   rejected: RejectedSecondaryBootstrap | undefined,
   signature: string,

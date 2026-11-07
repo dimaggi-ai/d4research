@@ -305,7 +305,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     readonly migration_id: number;
     readonly name: string;
   }>`SELECT migration_id, name FROM effect_sql_migrations`;
-  const manifestNames = new Map<number, string>(migrationEntries.map(([id, name]) => [id, name]));
+  const manifestNames = new Map<number, string>([
+    ...historicalMigrationSlots,
+    ...migrationEntries.map(([id, name]) => [id, name] as const),
+  ]);
   const divergent = recorded.flatMap((row) => {
     const expected = manifestNames.get(row.migration_id);
     if (expected === undefined) {

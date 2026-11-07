@@ -6,7 +6,7 @@ import {
   createRouter,
   redirect,
 } from "@tanstack/react-router";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { resolveSettingsScope } from "./settingsScope";
 import { retainSettingsScope, validateSettingsRouteSearch } from "./settingsScopeNavigation";
@@ -16,8 +16,16 @@ import { validateScheduledTasksSearch } from "./scheduledTasksSettings.logic";
 const checkoutSearch = {
   project: "repository:t3code",
   machine: "remote-server",
-  checkout: "remote-server:/home/user/T3 Code",
+  checkout: "remote-server:/home/user/d4research",
 };
+
+beforeEach(() => {
+  vi.stubGlobal("self", globalThis);
+  vi.stubGlobal("history", {});
+  vi.stubGlobal("document", { addEventListener: vi.fn() });
+  vi.stubGlobal("addEventListener", vi.fn());
+});
+afterEach(() => vi.unstubAllGlobals());
 
 function createSettingsRouter(initialEntry = "/settings/general") {
   const root = createRootRoute();

@@ -551,6 +551,9 @@ export function applyServerSettingsPatch(
     : next.dev.scenarios;
   const replacedSkills = {
     ...next.skills,
+    ...(skillsPatch?.enabledForNia !== undefined
+      ? { enabledForNia: skillsPatch.enabledForNia }
+      : {}),
     ...(skillsPatch?.enabledByDefault !== undefined
       ? { enabledByDefault: skillsPatch.enabledByDefault }
       : {}),

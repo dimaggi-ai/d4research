@@ -37,6 +37,11 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 }));
 
 it("a new draft does not load its reserved thread before the server lists it", async () => {
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(1280, 800);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+  };
   using _environment = installFakeEnvironment([]);
   using fetchSpy = vi.spyOn(globalThis, "fetch");
   __setClientSettingsForTests({
@@ -56,8 +61,9 @@ it("a new draft does not load its reserved thread before the server lists it", a
     router: false,
   });
   await expect.element(page.getByTestId("composer-editor")).toBeVisible();
-  // The shell snapshot has arrived once the sidebar lists the project, so the connection is up.
-  await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
+  // Empty projects appear in the filter after the shell snapshot arrives.
+  await page.getByRole("combobox", { name: /^Filter threads by project/ }).click();
+  await expect.element(page.getByRole("option", { name: /render/ })).toBeVisible();
 
   const threadRequests = fetchSpy.mock.calls
     .map(([input]) => String(input instanceof Request ? input.url : input))

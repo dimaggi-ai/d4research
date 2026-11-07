@@ -510,6 +510,7 @@ function ThreadTerminal(props: {
   const observingTerminal = !canOperateTerminal && canReadTerminal && hasTerminalTarget;
   const streamingOutput = supportsNativeTerminalOutput();
   const terminal = useAttachedTerminalSession({
+    materializeBuffer: !streamingOutput,
     environmentId: selectedThread.environmentId,
     terminal: canOperateTerminal
       ? terminalAttachInput

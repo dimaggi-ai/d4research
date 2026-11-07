@@ -7,6 +7,8 @@ import type {
   ProjectId,
   D4AgentSettings,
 } from "@d4research/contracts";
+import { D4AgentError } from "@d4research/contracts";
+import * as Schema from "effect/Schema";
 
 export function systemCheckLabel(check: D4AgentSystemCheck): string {
   return {
@@ -140,4 +142,21 @@ export function postTime(iso: string): string {
         hour: "numeric",
         minute: "2-digit",
       });
+}
+
+const isD4AgentError = Schema.is(D4AgentError);
+
+export function agentOpenFailureMessage(failure: unknown): string {
+  if (isD4AgentError(failure)) {
+    switch (failure.reason) {
+      case "disabled":
+      case "model-not-selected":
+      case "provider-unavailable":
+      case "model-unavailable":
+      case "option-unavailable":
+      case "sandbox-unavailable":
+        return agentUnavailableMessage(failure.reason);
+    }
+  }
+  return "Could not open Nia. Try again.";
 }

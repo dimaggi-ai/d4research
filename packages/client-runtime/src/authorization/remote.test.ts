@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
+import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 
 import { EnvironmentAuthInvalidError } from "@d4research/contracts";
@@ -303,9 +304,7 @@ describe("remote environment authorization", () => {
         httpBaseUrl: "https://remote.example.com/",
         bearerToken: "bearer-token",
       }).pipe(provideRemoteHttp(fetch.fetchFn));
-      expect(ticket).toMatchObject({
-        ticket: "ws-ticket",
-      });
+      expect(Redacted.value(ticket.ticket)).toBe("ws-ticket");
 
       expectFetchCall(fetch.calls, 1, {
         url: "https://remote.example.com/.well-known/t3/environment",

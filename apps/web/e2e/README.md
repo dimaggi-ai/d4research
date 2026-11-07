@@ -8,6 +8,8 @@ a running development session just to run tests.
 The suite starts its own server with disposable state and a free port. It does
 not connect to the live instance or write to its database. To test an existing
 isolated build, set `T3_PWA_TEST_SERVER_BIN` to that build's `apps/server/dist/bin.mjs`.
+To test the standalone runtime packaged with desktop, set `T3_UI_TEST_SERVER_EXECUTABLE`
+to its extracted executable. Keep the matching `client/` directory beside it.
 The server serves the client bundled alongside it, not the current source files.
 
 Install the pinned browser with

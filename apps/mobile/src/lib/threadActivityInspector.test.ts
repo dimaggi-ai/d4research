@@ -92,7 +92,7 @@ describe("buildThreadActivityInspector", () => {
     const model = buildThreadActivityInspector(activityFor(item), support, sourceThreadId);
     expect(model.fields).toEqual(
       expect.arrayContaining([
-        { label: "Duration", value: "2.0s" },
+        { label: "Duration", value: "2s" },
         { label: "Run", value: "completed" },
         { label: "Working directory", value: "/workspace/project" },
         { label: "Visibility", value: "inherited" },

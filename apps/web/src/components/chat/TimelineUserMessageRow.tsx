@@ -364,7 +364,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   );
 }
 
-export function useScheduledTaskTitle(
+function useScheduledTaskTitle(
   environmentId: EnvironmentId,
   scheduledTaskId: ScheduledTaskId | undefined,
 ): string | undefined {
@@ -374,7 +374,7 @@ export function useScheduledTaskTitle(
   return tasksQuery.data?.tasks.find((task) => task.id === scheduledTaskId)?.title;
 }
 
-export function FoldedMessageHeader(props: {
+function FoldedMessageHeader(props: {
   icon: LucideIcon;
   label: string;
   summary: string;
@@ -833,7 +833,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           className="me-1 text-2xs text-muted-foreground/70"
           data-user-message-attribution="t3code"
         >
-          Sent by T3 Code
+          Sent by d4research
         </p>
       ) : null}
       {/* The row's heading already names the guest for screen readers. */}

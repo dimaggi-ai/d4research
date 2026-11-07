@@ -158,12 +158,7 @@ export const CodexDriver: ProviderDriver<
       environment,
       yield* HostProcess.Environment,
     );
-    const environmentHome = processEnv.CODEX_HOME;
-    const homeLayout = yield* resolveCodexHomeLayout(
-      !config.homePath.trim() && !config.shadowHomePath.trim() && environmentHome?.trim()
-        ? { ...config, homePath: environmentHome }
-        : config,
-    );
+    const homeLayout = yield* resolveCodexHomeLayout(config, processEnv);
     const continuationIdentity = codexContinuationIdentity(homeLayout);
     const stampIdentity = withInstanceIdentity({
       instanceId,

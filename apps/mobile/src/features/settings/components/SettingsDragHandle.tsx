@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useState } from "react";
 import { View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { SymbolView } from "../../../components/ui/AppSymbol";
 
-export function SettingsDragHandle(props: {
+type SettingsDragHandleProps = {
   readonly title: string;
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
@@ -12,31 +12,38 @@ export function SettingsDragHandle(props: {
   readonly onMove: (translation: number) => void;
   readonly onEnd: (translation: number, cancelled: boolean) => void;
   readonly onStep: (direction: "up" | "down") => void;
-}) {
-  const latest = useRef(props);
-  useEffect(() => {
-    latest.current = props;
-  });
-  const translation = useRef(0);
-  const gesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .minDistance(0)
-        .shouldCancelWhenOutside(false)
-        .runOnJS(true)
-        .onStart(() => {
-          translation.current = 0;
-          latest.current.onStart();
-        })
-        .onUpdate((event) => {
-          translation.current = event.translationY;
-          latest.current.onMove(event.translationY);
-        })
-        .onFinalize((_, success) => latest.current.onEnd(translation.current, !success)),
-    [],
-  );
+};
+
+function createDragGesture(props: SettingsDragHandleProps) {
+  let latest = props;
+  let translation = 0;
+  const gesture = Gesture.Pan()
+    .minDistance(0)
+    .shouldCancelWhenOutside(false)
+    .runOnJS(true)
+    .onStart(() => {
+      translation = 0;
+      latest.onStart();
+    })
+    .onUpdate((event) => {
+      translation = event.translationY;
+      latest.onMove(event.translationY);
+    })
+    .onFinalize((_, success) => latest.onEnd(translation, !success));
+  return {
+    gesture,
+    update(next: SettingsDragHandleProps) {
+      latest = next;
+    },
+  };
+}
+
+export function SettingsDragHandle(props: SettingsDragHandleProps) {
+  const [controller] = useState(() => createDragGesture(props));
+  // Keep the mounted native gesture handlers on the latest committed callbacks.
+  useLayoutEffect(() => controller.update(props), [controller, props]);
   return (
-    <GestureDetector gesture={gesture}>
+    <GestureDetector gesture={controller.gesture}>
       <View
         collapsable={false}
         accessible

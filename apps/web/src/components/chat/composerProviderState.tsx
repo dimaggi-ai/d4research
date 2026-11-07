@@ -21,11 +21,7 @@ import {
 
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
-import {
-  getReasoningTraitStep,
-  type PromptUltrathink,
-  type TraitsSelectionInput,
-} from "./TraitsPicker";
+import { getReasoningTraitStep, type PromptUltrathink } from "./TraitsPicker";
 
 type ComposerProviderStateInput = {
   provider: ProviderDriverKind;
@@ -45,20 +41,6 @@ type ComposerProviderState = {
   composerFrameClassName?: string;
   composerSurfaceClassName?: string;
   modelPickerIconClassName?: string;
-};
-
-type ComposerTraitsTarget = {
-  provider: ProviderDriverKind;
-  instanceId: ProviderInstanceId;
-  threadRef?: ScopedThreadRef | undefined;
-  draftId?: DraftId | undefined;
-  model: string;
-  models: ReadonlyArray<ServerProviderModel>;
-  modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
-  reportedModelSelection?: ModelSelection | null | undefined;
-  promptUltrathink: PromptUltrathink;
-  onPromptEdit: (edit: (prompt: string) => string) => void;
-  planModeEnabled: boolean;
 };
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
@@ -198,26 +180,6 @@ export function getComposerReasoningStep(input: {
     cursor: Math.max(0, cursor + step.prompt.length - prompt.length),
     modelOptions: step.modelOptions,
   };
-}
-
-/**
- * The composer's traits input with the model's implicit defaults applied, so a pick writes what
- * the composer would send. Null without a draft or thread to persist to.
- */
-export function resolveComposerTraitsInput(
-  input: ComposerTraitsTarget,
-): TraitsSelectionInput | null {
-  const { threadRef, draftId, ...rest } = input;
-  const { selections } = resolveComposerOptionSelections(
-    input.models,
-    input.model,
-    input.provider,
-    input.modelOptions,
-    input.planModeEnabled,
-  );
-  const persistence = threadRef ? { threadRef } : draftId ? { draftId } : null;
-  if (!persistence) return null;
-  return { ...rest, ...persistence, modelOptions: selections };
 }
 
 type TraitsRenderInput = {

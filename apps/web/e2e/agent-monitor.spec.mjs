@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { openProject } from "./harness.mjs";
+import { DEFAULT_D4_AGENT_SETTINGS } from "@d4research/contracts";
 
 async function savedChange(
   app,
@@ -24,13 +25,18 @@ async function savedChange(
         const settings = JSON.parse(
           await NodeFSP.readFile(NodePath.join(directory, "settings.json"), "utf8"),
         );
-        lastValue = decode(settings[section] ?? {});
+        lastValue = decode(
+          section === "d4Agent"
+            ? { ...DEFAULT_D4_AGENT_SETTINGS, ...settings[section] }
+            : (settings[section] ?? {}),
+        );
         if (matches(lastValue)) resolve(lastValue);
       } catch {}
     };
     watcher = NodeFS.watch(directory, () => {
       void check();
     });
+    // The filesystem watcher resolves on persistence; this timeout only rejects a stalled external browser/server check.
     timer = setTimeout(
       () =>
         reject(
@@ -61,6 +67,15 @@ const chooseEnvironment = (page) =>
 export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
+  const setup = page.locator('summary[aria-label="Threads and system Setup"]');
+  await setup.waitFor();
+  NodeAssert.equal(await setup.evaluate((element) => element.parentElement.open), false);
+  await setup.click();
+  NodeAssert.equal(await page.getByLabel("Session idle timeout", { exact: true }).count(), 0);
+  NodeAssert.equal(
+    await page.getByLabel("Session size budget percent", { exact: true }).count(),
+    0,
+  );
   const enabled = page.getByRole("switch", { name: "Monitor threads", exact: true });
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "false");
@@ -103,7 +118,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await NodeFSP.mkdir(workspace, { recursive: true });
   await NodeFSP.writeFile(NodePath.join(workspace, "README.md"), "# fixture\n");
   await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
-  await openProject(page, workspace);
+  await openProject(page, workspace, { create: true });
   await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
   const sidebar = page.locator('[data-slot="sidebar-inner"]');
   const agent = sidebar.getByRole("button", { name: "Nia", exact: true });
@@ -244,7 +259,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
   await agentEnabled.waitFor();
-  const probes = page.getByRole("switch", { name: "Agent system probes", exact: true });
+  const probes = page.getByRole("switch", { name: "Host access", exact: true });
   await savedChange(
     app,
     "enable system probes",
@@ -253,6 +268,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     "d4Agent",
   );
   console.log("PASS Nia enable and system probe persistence");
+  await setup.click();
   const notifications = page.getByRole("switch", {
     name: "Monitor attention notifications",
     exact: true,
@@ -264,6 +280,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     (value) => value.notificationsEnabled === true,
   );
   await page.reload({ waitUntil: "domcontentloaded" });
+  await setup.click();
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "true");
   NodeAssert.equal(await notifications.getAttribute("aria-checked"), "true");
@@ -311,6 +328,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     (value) => (value.enabled ?? false) === false,
   );
   await page.reload({ waitUntil: "domcontentloaded" });
+  await setup.click();
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await notifications.getAttribute("aria-checked"), "false");

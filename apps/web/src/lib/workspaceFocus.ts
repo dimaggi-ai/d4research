@@ -361,15 +361,9 @@ export function moveWorkspaceFocus(direction: 1 | -1, fromArea?: string): boolea
 }
 
 /** Explicit user actions request focus after React has committed the destination. */
-export function requestWorkspaceFocus(target: WorkspaceFocusTarget) {
+function requestWorkspaceFocus(target: WorkspaceFocusTarget) {
   focusRequestVersion++;
   controller?.request(target);
-}
-
-export function requestWorkspaceContentFocus() {
-  // Resolve after the layout commits: closing a maximized panel makes the
-  // composer available again, while hiding a sidebar may leave only the panel.
-  requestWorkspaceFocus({ area: "content" });
 }
 
 let pendingPaletteDirection: 1 | -1 | undefined;

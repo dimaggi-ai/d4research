@@ -312,10 +312,6 @@ function setExpandedImagePreview(next: ExpandedImagePreviewState): void {
   if (previous !== null && previous !== ownedSrc(next)) URL.revokeObjectURL(previous);
 }
 
-export function openExpandedImagePreview(threadKey: string, preview: ExpandedImagePreview): void {
-  setExpandedImagePreview({ threadKey, preview });
-}
-
 function closeExpandedImagePreview(): void {
   setExpandedImagePreview(null);
 }

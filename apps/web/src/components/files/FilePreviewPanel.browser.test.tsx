@@ -74,6 +74,7 @@ vi.mock(import("./projectFilesQueryState"), async (original) => ({
 }));
 
 import FilePreviewPanel from "./FilePreviewPanel";
+import { OpenAddProjectCommandPaletteProvider } from "../../commandPaletteContext";
 
 const environmentId = EnvironmentId.make("markdown-preview-test");
 const threadRef = { environmentId, threadId: ThreadId.make("thread") };
@@ -103,27 +104,33 @@ function markdownPreview(truncated: boolean) {
     truncated,
   };
   return (
-    <FilePreviewPanel
-      environmentId={environmentId}
-      cwd="/workspace"
-      primaryCwd="/workspace"
-      projectRoot="/workspace"
-      projectName="Project"
-      relativePath="tasks.md"
-      threadRef={threadRef}
-      composerDraftTarget={threadRef}
-      keybindings={[]}
-      availableEditors={[]}
-      openInShortcutEnabled={false}
-      revealLine={null}
-      revealRequestId={0}
-      onOpenFile={vi.fn()}
-      onNavigateFolder={vi.fn()}
-      folderTrail={undefined}
-      onPendingChange={vi.fn()}
-      selectedFilePending={false}
-      workspaceMutationId={null}
-    />
+    <OpenAddProjectCommandPaletteProvider
+      openAddProject={vi.fn()}
+      openCommandPalette={vi.fn()}
+      openDirectoryPicker={vi.fn()}
+    >
+      <FilePreviewPanel
+        environmentId={environmentId}
+        cwd="/workspace"
+        primaryCwd="/workspace"
+        projectRoot="/workspace"
+        projectName="Project"
+        relativePath="tasks.md"
+        threadRef={threadRef}
+        composerDraftTarget={threadRef}
+        keybindings={[]}
+        availableEditors={[]}
+        openInShortcutEnabled={false}
+        revealLine={null}
+        revealRequestId={0}
+        onOpenFile={vi.fn()}
+        onNavigateFolder={vi.fn()}
+        folderTrail={undefined}
+        onPendingChange={vi.fn()}
+        selectedFilePending={false}
+        workspaceMutationId={null}
+      />
+    </OpenAddProjectCommandPaletteProvider>
   );
 }
 

@@ -310,7 +310,7 @@ export function uploadedAttachmentContextRecord(
   return attachmentId === undefined ? null : attachmentContextRecord({ attachment, attachmentId });
 }
 
-export function attachmentContextRecord(
+function attachmentContextRecord(
   bound: BoundComposerAttachment,
 ): ImageContextRecord | FileContextRecord {
   const { attachment, attachmentId } = bound;

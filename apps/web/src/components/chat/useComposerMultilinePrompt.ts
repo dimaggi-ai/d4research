@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState } from "react";
 import { observeResize } from "../../lib/observeResize";
 
-export function measureComposerMultilinePrompt(body: HTMLElement): boolean | null {
+function measureComposerMultilinePrompt(body: HTMLElement): boolean | null {
   const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
   if (!editor || editor.clientWidth === 0) return null;
 
@@ -24,6 +24,7 @@ export function measureComposerMultilinePrompt(body: HTMLElement): boolean | nul
 export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
   const [isMultiline, setIsMultiline] = useState(false);
 
+  // Observe DOM layout and mutations to track the rendered editor height.
   useLayoutEffect(() => {
     if (!body) return;
     // Measuring reads layout, so one measurement per frame runs after all of the frame's DOM

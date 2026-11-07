@@ -20,6 +20,7 @@ import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
+import ProjectWorkspaceRoots from "../persistence/Migrations/041_ProjectionProjectWorkspaceRoots.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -55,6 +56,8 @@ const readSettings = Effect.gen(function* () {
 const seedV1Database = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* runMigrations({ toMigrationInclusive: 61 });
+  // The V1 fork had workspace roots before d4research assigned them migration 76.
+  yield* ProjectWorkspaceRoots;
   const events = [
     {
       type: "project.created",

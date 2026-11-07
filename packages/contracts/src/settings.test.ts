@@ -761,9 +761,27 @@ describe("ServerSettings memory connectors", () => {
 describe("ServerSettings enabled skills", () => {
   it("defaults legacy settings to no per-turn skill tax", () => {
     expect(decodeServerSettings({}).skills).toEqual({
+      enabledForNia: [],
       enabledByDefault: [],
       enabledByThread: {},
     });
+  });
+
+  it("round trips Nia skills independently and bounds their patch", () => {
+    const settings = decodeServerSettings({ skills: { enabledForNia: ["review"] } });
+    expect(decodeServerSettings(encodeServerSettings(settings)).skills.enabledForNia).toEqual([
+      "review",
+    ]);
+    expect(decodeServerSettingsPatch({ skills: { enabledForNia: ["  review  "] } }).skills).toEqual(
+      { enabledForNia: ["review"] },
+    );
+    for (const names of [
+      [" "],
+      ["x".repeat(129)],
+      Array.from({ length: 13 }, (_, i) => `skill-${i}`),
+    ]) {
+      expect(() => decodeServerSettingsPatch({ skills: { enabledForNia: names } })).toThrow();
+    }
   });
 
   it("trims names and accepts a whole-list patch", () => {

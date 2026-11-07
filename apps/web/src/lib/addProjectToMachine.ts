@@ -4,12 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
 import { scopedProjectKey } from "@d4research/client-runtime/environment";
-import type {
-  EnvironmentId,
-  ProjectCloneSnapshot,
-  ProjectId,
-  ScopedProjectRef,
-} from "@d4research/contracts";
+import type { EnvironmentId, ProjectCloneSnapshot, ProjectId } from "@d4research/contracts";
 import { create } from "zustand";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -85,15 +80,6 @@ function setFileCopy(key: string, copy: ProjectFileCopy | null) {
     const { [key]: _previous, ...rest } = copies;
     return { copies: copy === null ? rest : { ...rest, [key]: copy } };
   });
-}
-
-/** The composer holds sends until the copy lands, and shows a failed copy until dismissed. */
-export function useProjectFileCopy(ref: ScopedProjectRef | null): ProjectFileCopy | null {
-  return useFileCopies((state) => (ref ? (state.copies[scopedProjectKey(ref)] ?? null) : null));
-}
-
-export function dismissProjectFileCopy(ref: ScopedProjectRef) {
-  setFileCopy(scopedProjectKey(ref), null);
 }
 
 /**

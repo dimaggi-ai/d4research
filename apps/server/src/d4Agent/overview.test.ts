@@ -272,7 +272,7 @@ describe("overview ingestion and delivery", () => {
     );
     assert.equal(
       overviewText(global.toSorted((a, b) => a.key.localeCompare(b.key))),
-      "• Personal: Private title — Private recommendation\n• Global title — Global recommendation",
+      "• Personal: Private title: Private recommendation\n• Global title: Global recommendation",
     );
     assert.isUndefined(
       overviewMetadata(
@@ -323,7 +323,7 @@ it("groups a digest from several sources under source headings", () => {
   );
   assert.equal(
     overviewText(intel, []),
-    "Mail:\n• Bill due\nDaily intel:\n• Radar — Read: https://x/#yb",
+    "Mail:\n• Bill due\nDaily intel:\n• Radar: Read: https://x/#yb",
   );
 });
 
@@ -354,7 +354,7 @@ it("shows another context's evolution suggestion in Global under one heading, wi
   );
   assert.equal(
     overviewText(global, []),
-    "Mail:\n• Bill due\nSuggestions for Nia:\n• YB: Use case: status digests — Approve the playbook note.",
+    "Mail:\n• Bill due\nSuggestions for Nia:\n• YB: Use case: status digests: Approve the playbook note.",
   );
   assert.notInclude(JSON.stringify(global), "Evidence from a YB thread");
 });

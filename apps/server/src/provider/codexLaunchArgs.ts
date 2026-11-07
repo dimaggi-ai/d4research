@@ -11,7 +11,6 @@ const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => tokenize
 
 /** Codex config path that enables the native `web_search` tool. */
 const CODEX_WEB_SEARCH_CONFIG_KEY = "tools.web_search";
-const CODEX_T3_MCP_TOOL_TIMEOUT_CONFIG_KEY = "mcp_servers.t3-code.tool_timeout_sec";
 
 const hasCodexConfigOverride = (launchArgs: string | undefined, key: string): boolean =>
   codexLaunchArgv(launchArgs).some((arg) => {
@@ -32,18 +31,6 @@ const codexWebSearchArgs = (
   const alreadySet = hasCodexConfigOverride(launchArgs, CODEX_WEB_SEARCH_CONFIG_KEY);
   return alreadySet ? [] : ["-c", `${CODEX_WEB_SEARCH_CONFIG_KEY}=true`];
 };
-
-/**
- * Codex otherwise abandons a long `research_delegate` MCP call before the
- * server's own deadline. Explicit launch args win over the generated default.
- */
-export const codexT3McpToolTimeoutArgs = (
-  launchArgs: string | undefined,
-  timeoutSeconds: number,
-): ReadonlyArray<string> =>
-  hasCodexConfigOverride(launchArgs, CODEX_T3_MCP_TOOL_TIMEOUT_CONFIG_KEY)
-    ? []
-    : ["-c", `${CODEX_T3_MCP_TOOL_TIMEOUT_CONFIG_KEY}=${Math.ceil(timeoutSeconds)}`];
 
 export const codexAppServerArgs = (launchArgs?: string, webSearch?: boolean) => [
   "app-server",

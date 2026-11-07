@@ -88,24 +88,23 @@ describe("Enriched link presentation", () => {
     };
     expect(
       enrichedContextLinkPresentation("t3-context://v1/review-comment/review_1", [record]),
-    ).toEqual({ color: "#8a70dd", icon: "git" });
+    ).toEqual({ accent: "#8a70dd", icon: { kind: "chip", name: "git-merge" } });
     expect(
       enrichedContextLinkPresentation("t3-context://v1/review-comment/review_2", [record]),
-    ).toEqual({ color: "#8a70dd", icon: "markdown" });
+    ).toEqual({ icon: { kind: "chip", name: "circle-dashed" } });
   });
 
   it("retains recognizable presentation for unavailable and future context kinds", () => {
     expect(enrichedContextLinkPresentation("t3-context://v1/terminal/missing")).toEqual({
-      color: "#009f6e",
-      icon: "bash",
+      accent: "#009f6e",
+      icon: { kind: "chip", name: "terminal" },
     });
     expect(enrichedContextLinkPresentation("t3-context://v1/skill/missing")).toEqual({
-      color: "#b261be",
-      icon: "mcp",
+      accent: "#b261be",
+      icon: { kind: "chip", name: "skill" },
     });
     expect(enrichedContextLinkPresentation("t3-context://v1/future/missing")).toEqual({
-      color: "#0090cd",
-      icon: "default",
+      icon: { kind: "chip", name: "circle-dashed" },
     });
     expect(enrichedContextLinkPresentation("https://example.com/terminal/missing")).toBeUndefined();
   });

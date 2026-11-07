@@ -8,7 +8,7 @@ import * as HostProcess from "@d4research/shared/HostProcess";
 import { resolveSymlinkTarget } from "@d4research/shared/symlink";
 
 /** Windows open-file locks block renames; the same codes can mean permanent denial, so bound retries. */
-export const isWindowsRenameLock = (error: PlatformError.PlatformError) => {
+const isWindowsRenameLock = (error: PlatformError.PlatformError) => {
   const code = (error.reason.cause as NodeJS.ErrnoException | undefined)?.code;
   return code === "EBUSY" || code === "EPERM" || code === "EACCES";
 };

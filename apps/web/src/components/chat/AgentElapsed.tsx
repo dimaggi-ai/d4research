@@ -16,7 +16,7 @@ function formatElapsedSeconds(totalSeconds: number): string {
   return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
-export function formatCompactElapsedSeconds(totalSeconds: number): string {
+function formatCompactElapsedSeconds(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -38,6 +38,7 @@ export function AgentElapsed({
   const startedAt = agent.startedAt;
   const completedAt = agent.completedAt;
 
+  // Keep the elapsed-time DOM text synchronized with the running clock.
   useEffect(() => {
     if (!startedAt) {
       return;

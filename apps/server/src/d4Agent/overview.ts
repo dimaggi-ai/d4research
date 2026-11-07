@@ -56,7 +56,7 @@ export const sortOverview = (items: ReadonlyArray<OverviewItem>) =>
   );
 
 // Research ideas are the overview items an intel or evolution producer marks for a research run.
-export const isResearchIdea = (item: Pick<OverviewItem, "recommendation">) =>
+const isResearchIdea = (item: Pick<OverviewItem, "recommendation">) =>
   item.recommendation?.includes("Propose !research:") === true;
 export type OverviewFilter = {
   readonly includeClosed?: boolean;
@@ -69,7 +69,7 @@ export type OverviewFilter = {
   /** Exclusive upper bound on the same time. */
   readonly until?: number;
 };
-export const overviewChangedAt = (item: OverviewItem) => item.revisedAt ?? item.firstSeenAt;
+const overviewChangedAt = (item: OverviewItem) => item.revisedAt ?? item.firstSeenAt;
 export const matchesOverviewFilter = (item: OverviewItem, filter: OverviewFilter) =>
   (filter.includeClosed === true || (item.resolvedAt === null && item.status !== "acknowledged")) &&
   (filter.source === undefined || item.source === filter.source) &&
@@ -78,7 +78,7 @@ export const matchesOverviewFilter = (item: OverviewItem, filter: OverviewFilter
   (filter.researchIdeas !== true || isResearchIdea(item)) &&
   (filter.since === undefined || overviewChangedAt(item) >= filter.since) &&
   (filter.until === undefined || overviewChangedAt(item) < filter.until);
-export const OVERVIEW_PAGE_LIMIT = 20;
+const OVERVIEW_PAGE_LIMIT = 20;
 // The full list outgrows what a model harness reads in one tool result, so models get pages of
 // items without the server's delivery bookkeeping (revision hashes, delivery marks).
 export function overviewPage(
@@ -268,7 +268,7 @@ const overviewLine = (item: OverviewItem, context: D4BrainContext) => {
       ? item.title
       : `[[thread:${thread}|${item.title.replace(/[[\]|]/g, "")}]]`;
   const label = item.context === context ? "" : `${item.context}: `;
-  return `• ${label}${title}${item.recommendation ? ` — ${item.recommendation}` : ""}`;
+  return `• ${label}${title}${item.recommendation ? `: ${item.recommendation}` : ""}`;
 };
 export const overviewText = (
   items: ReadonlyArray<OverviewItem>,

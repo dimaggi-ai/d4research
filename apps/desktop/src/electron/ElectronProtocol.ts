@@ -65,7 +65,7 @@ export class ElectronProtocol extends Context.Service<
   }
 >()("@d4research/desktop/electron/ElectronProtocol") {}
 
-export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
+function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
   const scriptSources = [
     "'self'",
     "'unsafe-inline'",
@@ -73,11 +73,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "https://challenges.cloudflare.com",
   ];
 
-  // The renderer connects directly to user-configured environments in addition to
-  // the build-configured relay and OTLP endpoints. Those environment
-  // origins are not known when this response policy is created, so restrict
-  // connections by the network schemes the client supports instead of by host.
-  // GLTFLoader fetches embedded textures through blob URLs after parsing the model.
+  // Allow supported network schemes because saved environment origins are unknown here.
+  // GLTFLoader also fetches embedded textures through blob URLs.
   const connectSources = ["'self'", "blob:", "http:", "https:", "ws:", "wss:"];
 
   return [

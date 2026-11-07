@@ -7,7 +7,7 @@ import {
   hasRelayRoute,
   presentConnectionDiagnosis,
 } from "@d4research/client-runtime/connection";
-import * as Option from "effect/Option";
+
 import { AsyncResult } from "effect/reactivity";
 import { ChevronRightIcon } from "lucide-react";
 
@@ -48,15 +48,6 @@ export function useConnectionDiagnosis(environment: EnvironmentPresentation) {
         })
       : null;
   return { diagnosis, state, relayOnly };
-}
-
-/** The failure headline alone, for banners outside Settings. */
-export function ConnectionDiagnosisHeadline({
-  environment,
-}: {
-  readonly environment: EnvironmentPresentation;
-}) {
-  return useConnectionDiagnosis(environment).diagnosis?.headline ?? null;
 }
 
 const HOP_MARK = { ok: "✓", failed: "✕", unchecked: "–" } as const;

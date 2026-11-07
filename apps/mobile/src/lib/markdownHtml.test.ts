@@ -26,7 +26,7 @@ describe("HTML in native Markdown", () => {
       markdownHtmlContent(
         "<a href='https://example.com'><img src='https://example.com/banner.svg' alt='Review' /></a>",
       ),
-    ).toBe("![Review](<https://example.com/banner.svg>)");
+    ).toBe("[![Review](<https://example.com/banner.svg>)](<https://example.com>)");
   });
 
   it("decodes HTML attributes once and preserves entity-shaped query values through Markdown", () => {

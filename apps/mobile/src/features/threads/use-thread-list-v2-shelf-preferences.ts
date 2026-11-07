@@ -1,6 +1,6 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
@@ -22,9 +22,12 @@ export function useThreadListV2ShelfPreferences() {
   const snoozedShelfExpandedRef = useRef(snoozedShelfExpanded);
   const settledShelfExpandedRef = useRef(settledShelfExpanded);
   const workingShelfExpandedRef = useRef(workingShelfExpanded);
-  snoozedShelfExpandedRef.current = snoozedShelfExpanded;
-  settledShelfExpandedRef.current = settledShelfExpanded;
-  workingShelfExpandedRef.current = workingShelfExpanded;
+  // Reconcile optimistic toggle snapshots when persisted preference values change.
+  useLayoutEffect(() => {
+    snoozedShelfExpandedRef.current = snoozedShelfExpanded;
+    settledShelfExpandedRef.current = settledShelfExpanded;
+    workingShelfExpandedRef.current = workingShelfExpanded;
+  }, [snoozedShelfExpanded, settledShelfExpanded, workingShelfExpanded]);
 
   const toggleSnoozedShelf = useCallback(() => {
     if (!loaded) return;

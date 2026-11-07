@@ -42,6 +42,7 @@ interface ComposerPrimaryActionsProps {
   sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
+  unavailableStatus?: string | null;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   canResume?: boolean;
@@ -98,6 +99,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   sendDisabledReason,
   isConnecting,
   isEnvironmentUnavailable,
+  unavailableStatus = null,
   isPreparingWorktree,
   hasSendableContent,
   canResume = false,
@@ -290,7 +292,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             ? "Steer message"
             : "Submit message";
   const submitStatus = isEnvironmentUnavailable
-    ? "Environment disconnected"
+    ? (unavailableStatus ?? "Environment disconnected")
     : (sendDisabledReason ??
       (isConnecting
         ? "Connecting"

@@ -43,13 +43,6 @@ export function getTriggerDisplayModelName(
   return getDisplayModelName({ ...model, shortName }, { preferShortName: true });
 }
 
-export function getTriggerDisplayModelLabel(
-  model: ModelEsque,
-  driverKind: ProviderDriverKind | null = null,
-): string {
-  return getTriggerDisplayModelName(model, driverKind);
-}
-
 export function getProviderRowLabel(
   providerDisplayName: string,
   subProvider: string | undefined,

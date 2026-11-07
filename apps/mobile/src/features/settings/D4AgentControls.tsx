@@ -1,5 +1,6 @@
+import type { NiaServerId } from "@d4research/client-runtime/niaServers";
 import { D4AgentSessions } from "../agent-awareness/D4AgentSessions";
-import { useD4AgentState } from "../agent-awareness/useD4AgentState";
+import type { useD4AgentState } from "../agent-awareness/useD4AgentState";
 import * as Arr from "effect/Array";
 import {
   systemCheckLabel,
@@ -15,11 +16,10 @@ import {
   type ServerConfig,
 } from "@d4research/contracts";
 import { getProviderOptionDescriptors } from "@d4research/shared/model";
-import { useState, type ComponentProps } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { View, TextInput, Modal, Pressable, ScrollView } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useProjects } from "../../state/entities";
-import { SettingsSection } from "./components/SettingsSection";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 
@@ -42,6 +42,9 @@ export function D4AgentControls({
   writeAgent,
   writeMonitor,
   environmentId,
+  section,
+  state,
+  children,
 }: {
   agent: Agent;
   monitor: Monitor;
@@ -50,8 +53,10 @@ export function D4AgentControls({
   writeAgent: (patch: Partial<Agent>) => Promise<void>;
   writeMonitor: (patch: Partial<Monitor>) => Promise<void>;
   environmentId: EnvironmentId;
+  section: "nia" | NiaServerId;
+  state: ReturnType<typeof useD4AgentState>;
+  children?: ReactNode;
 }) {
-  const state = useD4AgentState(environmentId);
   const projects = useProjects().filter((project) => project.environmentId === environmentId);
   const provider = config?.providers.find(
     (item) => item.instanceId === agent.modelSelection?.instanceId,
@@ -86,55 +91,78 @@ export function D4AgentControls({
       />
     </View>
   );
-  return (
-    <SettingsSection title="Agent behavior">
-      <D4AgentSessions
-        environmentId={environmentId}
-        sessions={state.data?.openSessions ?? []}
-        refresh={state.refresh}
-      />
-      {agent.enabled && state.data && !state.data.modelAvailable ? (
-        <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
-          {agentUnavailableMessage(state.data.unavailableReason)}
-        </Text>
-      ) : null}
-      {descriptors
-        .filter((descriptor) => descriptor.type === "select")
-        .map((descriptor) => (
-          <AgentChoiceRow
-            key={descriptor.id}
-            icon="gearshape"
-            label={descriptor.label}
-            value={String(
-              agent.modelSelection?.options?.find((item) => item.id === descriptor.id)?.value ??
-                descriptor.currentValue ??
-                "",
-            )}
-            options={[{ id: "", label: "Provider default" }, ...descriptor.options]}
-            disabled={disabled}
-            onChange={(value) => {
-              if (agent.modelSelection)
-                void writeAgent({
-                  modelSelection: {
-                    ...agent.modelSelection,
-                    options: [
-                      ...(agent.modelSelection.options ?? []).filter(
-                        (item) => item.id !== descriptor.id,
-                      ),
-                      ...(value ? [{ id: descriptor.id, value }] : []),
-                    ],
-                  },
-                });
-            }}
-          />
+  if (section === "nia")
+    return (
+      <>
+        {agent.enabled && state.data && !state.data.modelAvailable ? (
+          <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
+            {agentUnavailableMessage(state.data.unavailableReason)}
+          </Text>
+        ) : null}
+        {descriptors
+          .filter((descriptor) => descriptor.type === "select")
+          .map((descriptor) => (
+            <AgentChoiceRow
+              key={descriptor.id}
+              icon="gearshape"
+              label={descriptor.label}
+              value={String(
+                agent.modelSelection?.options?.find((item) => item.id === descriptor.id)?.value ??
+                  descriptor.currentValue ??
+                  "",
+              )}
+              options={[{ id: "", label: "Provider default" }, ...descriptor.options]}
+              disabled={disabled}
+              onChange={(value) => {
+                if (agent.modelSelection)
+                  void writeAgent({
+                    modelSelection: {
+                      ...agent.modelSelection,
+                      options: [
+                        ...(agent.modelSelection.options ?? []).filter(
+                          (item) => item.id !== descriptor.id,
+                        ),
+                        ...(value ? [{ id: descriptor.id, value }] : []),
+                      ],
+                    },
+                  });
+              }}
+            />
+          ))}
+      </>
+    );
+  if (section === "host")
+    return (
+      <>
+        {numeric(
+          "Disk warning percent",
+          agent.diskWarningPercent,
+          50,
+          99,
+          (diskWarningPercent) => void writeAgent({ diskWarningPercent }),
+        )}
+        {state.data?.systemHealth.map((check) => (
+          <Text key={check.id} className="px-4 py-2 text-sm text-foreground-muted">
+            {systemCheckLabel(check)}: {systemCheckStatus(check)}
+          </Text>
         ))}
-      {(["brainVaultPath", "embeddingBaseUrl", "embeddingModel", "ctoBaseUrl"] as const).map(
-        (field) => {
+      </>
+    );
+  if (section === "memory" || section === "cto" || section === "toolGuard")
+    return (
+      <>
+        {(section === "memory"
+          ? (["brainVaultPath", "embeddingBaseUrl", "embeddingModel"] as const)
+          : section === "cto"
+            ? (["ctoBaseUrl"] as const)
+            : (["toolGuardUrl"] as const)
+        ).map((field) => {
           const label = {
             brainVaultPath: "Brain vault path",
             embeddingBaseUrl: "Embedding base URL",
             embeddingModel: "Embedding model",
             ctoBaseUrl: "CTO base URL",
+            toolGuardUrl: "Tool Guard URL",
           }[field];
           const inherits = field === "embeddingBaseUrl" || field === "embeddingModel";
           return (
@@ -152,7 +180,9 @@ export function D4AgentControls({
                 onEndEditing={(event) => {
                   const value = event.nativeEvent.text.trim();
                   if (value !== (agent[field] ?? ""))
-                    void writeAgent({ [field]: inherits && !value ? null : value });
+                    void writeAgent({
+                      [field]: (inherits || field === "toolGuardUrl") && !value ? null : value,
+                    });
                 }}
               />
               {inherits ? (
@@ -162,25 +192,58 @@ export function D4AgentControls({
               ) : null}
             </View>
           );
-        },
-      )}
-      {(["memoryEnabled", "embeddingsEnabled", "ctoEnabled"] as const).map((field) => {
-        const label = {
-          memoryEnabled: "Brain memory",
-          embeddingsEnabled: "Brain embeddings",
-          ctoEnabled: "CTO agents",
-        }[field];
-        return (
-          <SettingsSwitchRow
-            key={field}
-            icon="gearshape"
-            label={label}
-            value={agent[field]}
-            disabled={disabled}
-            onValueChange={(value) => void writeAgent({ [field]: value })}
-          />
-        );
-      })}
+        })}
+
+        {section === "memory" ? (
+          <>
+            <SettingsSwitchRow
+              icon="gearshape"
+              label="Brain embeddings"
+              value={agent.embeddingsEnabled}
+              disabled={disabled}
+              onValueChange={(embeddingsEnabled) => void writeAgent({ embeddingsEnabled })}
+            />
+            {D4_BRAIN_CONTEXTS.map((context) => {
+              const index = state.data?.brainIndexes.find((item) => item.context === context);
+              return (
+                <Text key={context} className="px-4 py-2 text-sm text-foreground-muted">
+                  Brain index · {context}:{" "}
+                  {brainIndexStatus(
+                    index ?? { context, status: "not-available", files: 0, lastRebuild: null },
+                  )}
+                </Text>
+              );
+            })}
+          </>
+        ) : null}
+        {children}
+      </>
+    );
+  if (section !== "threads") return null;
+  return (
+    <>
+      <AgentChoiceRow
+        icon="gearshape"
+        label="Permission level"
+        value={agent.permissionMode}
+        disabled={disabled}
+        options={[
+          { id: "read-only", label: "Read-only" },
+          { id: "ask", label: "Ask" },
+          { id: "act", label: "Act" },
+        ]}
+        onChange={(value) => {
+          if (value === "read-only" || value === "ask" || value === "act")
+            void writeAgent({ permissionMode: value });
+        }}
+      />
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        Read-only observes. Ask requires approval for each action. Act sets reminders, submits
+        memory proposals for review, and asks CTO questions when enabled for the selected context.
+        Sending, starting threads, interrupting, answering, commands and schedules always require
+        your approval. Provider permission approvals remain manual.
+      </Text>
+
       {projects.map((project) => (
         <AgentChoiceRow
           key={project.id}
@@ -233,66 +296,7 @@ export function D4AgentControls({
           );
         }),
       )}
-      {D4_BRAIN_CONTEXTS.map((context) => {
-        const index = state.data?.brainIndexes.find((item) => item.context === context);
-        return (
-          <Text key={context} className="px-4 py-2 text-sm text-foreground-muted">
-            Brain index · {context}:{" "}
-            {brainIndexStatus(
-              index ?? { context, status: "not-available", files: 0, lastRebuild: null },
-            )}
-          </Text>
-        );
-      })}
-      <AgentChoiceRow
-        icon="gearshape"
-        label="Permission level"
-        value={agent.permissionMode}
-        disabled={disabled}
-        options={[
-          { id: "read-only", label: "Read-only" },
-          { id: "ask", label: "Ask" },
-          { id: "act", label: "Act" },
-        ]}
-        onChange={(value) => {
-          if (value === "read-only" || value === "ask" || value === "act")
-            void writeAgent({ permissionMode: value });
-        }}
-      />
-      <Text className="px-4 pb-3 text-sm text-foreground-muted">
-        Read-only observes. Ask requires approval for each action. Act sets reminders, submits
-        memory proposals for review, and asks CTO questions when enabled for the selected context.
-        Sending, starting threads, interrupting, answering, commands and schedules always require
-        your approval. Provider permission approvals remain manual.
-      </Text>
-      <AgentChoiceRow
-        icon="clock"
-        label="Session idle timeout"
-        value={String(agent.sessionIdleMinutes ?? "never")}
-        disabled={disabled}
-        options={[
-          { id: "never", label: "Never" },
-          { id: "30", label: "30 minutes" },
-          { id: "120", label: "2 hours" },
-          { id: "480", label: "8 hours" },
-        ]}
-        onChange={(selected) => {
-          const value = Number(selected);
-          void writeAgent({
-            sessionIdleMinutes: value === 30 || value === 120 || value === 480 ? value : null,
-          });
-        }}
-      />
-      {numeric(
-        "Session size budget percent",
-        agent.sessionBudgetPercent,
-        10,
-        90,
-        (sessionBudgetPercent) => void writeAgent({ sessionBudgetPercent }),
-      )}
-      <Text className="px-4 pb-3 text-sm text-foreground-muted">
-        Rotate a session at this percentage of its model context window.
-      </Text>
+
       <AgentChoiceRow
         icon="clock"
         label="Agent thread auto-archive"
@@ -370,7 +374,7 @@ export function D4AgentControls({
             </View>
           ))}
           <Text className="px-4 pb-3 text-sm text-foreground-muted">
-            24-hour time. Uses the device UTC offset saved when enabled.
+            24-hour time. Uses the device time zone saved when enabled, with its UTC offset as a fallback.
           </Text>
         </>
       ) : null}
@@ -397,25 +401,13 @@ export function D4AgentControls({
           }
         />
       ))}
-      <SettingsSwitchRow
-        icon="gearshape"
-        label="System probes"
-        value={agent.systemProbeEnabled}
-        disabled={disabled}
-        onValueChange={(systemProbeEnabled) => void writeAgent({ systemProbeEnabled })}
+
+      <D4AgentSessions
+        environmentId={environmentId}
+        sessions={state.data?.openSessions ?? []}
+        refresh={state.refresh}
       />
-      {numeric(
-        "Disk warning percent",
-        agent.diskWarningPercent,
-        50,
-        99,
-        (diskWarningPercent) => void writeAgent({ diskWarningPercent }),
-      )}
-      {state.data?.systemHealth.map((check) => (
-        <Text key={check.id} className="px-4 py-2 text-sm text-foreground-muted">
-          {systemCheckLabel(check)}: {systemCheckStatus(check)}
-        </Text>
-      ))}
+
       <Text className="px-4 py-3 text-sm text-foreground-muted">
         Local token usage · {state.data?.usage.length ?? 0} recorded turns
       </Text>
@@ -428,12 +420,14 @@ export function D4AgentControls({
           {turn.attributes["gen_ai.usage.cache_creation.input_tokens"] ?? "unavailable"}
         </Text>
       ))}
+
+      {children}
       {state.error ? (
         <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
           {state.error}
         </Text>
       ) : null}
-    </SettingsSection>
+    </>
   );
 }
 

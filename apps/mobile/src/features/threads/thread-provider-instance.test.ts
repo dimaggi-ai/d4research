@@ -177,7 +177,20 @@ describe("thread list reorder availability", () => {
     (section) => {
       const onlineId = EnvironmentId.make("online");
       const offlineId = EnvironmentId.make("offline");
-      const config = makeConfig([{ instanceId: "codex", driver: "codex" }]);
+      const baseConfig = makeConfig([{ instanceId: "codex", driver: "codex" }]);
+      const config = {
+        ...baseConfig,
+        environment: {
+          ...baseConfig.environment,
+          capabilities: {
+            ...baseConfig.environment.capabilities,
+            threadPinning: true,
+            threadSettlement: true,
+            threadPinReorder: true,
+            threadActiveReorder: true,
+          },
+        },
+      };
       const configs = Atom.make<ReadonlyMap<EnvironmentId, ServerConfig>>(
         new Map([
           [onlineId, config],

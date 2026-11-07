@@ -7,19 +7,17 @@ import {
 import { createPeerLinkEnvironmentAtoms } from "@d4research/client-runtime/state/peerLinks";
 import { AuthAccessReadScope, type EnvironmentId } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
-import { useEffect, useEffectEvent } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { useEnvironmentIdentities, useEnvironments } from "./environments";
 import { environmentPresentations } from "./presentation";
 import { useEnvironmentQuery } from "./query";
 import { useEnvironmentsWithScope } from "./session";
-import { useAtomCommand } from "./use-atom-command";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
 
 /** Whether `environmentId` offers links, so its threads may name another machine. */
-export const offersLinkedEnvironmentsAtom = Atom.family((environmentId: EnvironmentId) =>
+const offersLinkedEnvironmentsAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get) =>
     offersLinkedEnvironments(get(environmentPresentations.serverConfigsAtom).get(environmentId)),
   ).pipe(Atom.withLabel(`peer-links:offered:${environmentId}`)),

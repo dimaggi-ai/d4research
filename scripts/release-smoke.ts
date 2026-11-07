@@ -20,6 +20,7 @@ const workspaceFiles = [
   "apps/mobile/modules/t3-source-text/package.json",
   "apps/mobile/modules/t3-review-diff/package.json",
   "apps/mobile/modules/t3-terminal/package.json",
+  "apps/mobile/modules/t3-highlights/package.json",
   "apps/marketing/package.json",
   "oxlint-plugin-t3code/package.json",
   "packages/client-runtime/package.json",

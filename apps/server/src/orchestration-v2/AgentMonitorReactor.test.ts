@@ -406,6 +406,7 @@ it.effect("does not infer a wedged provider from a long expired unrenewed effect
       yield* monitor.sweep;
       const report = (yield* read(fixture.threadId)).agentMonitor;
       assert.equal(report?.classification, "slow");
+      assert.equal(report?.reason, "progress_stale");
       assert.isFalse(report!.attentionRequired);
       assert.isFalse(report!.notificationEligible);
     }),

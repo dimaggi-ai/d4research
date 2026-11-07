@@ -26,8 +26,8 @@ const environmentFor = (
     stateDir: path.join(input.baseDir, "userdata"),
     serverRoot:
       input.platform === "win32"
-        ? "/opt/T3 Code/resources/server.asar"
-        : "/opt/T3 Code/resources/app.asar",
+        ? "/opt/d4research/resources/server.asar"
+        : "/opt/d4research/resources/app.asar",
     appImagePath: Option.none(),
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
@@ -138,7 +138,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
         onPath: true,
       });
       const launcher = yield* fs.readFileString(path.join(home, ".t3", "bin", "d4research"));
-      expect(launcher).toContain("/opt/T3 Code/resources/app.asar/apps/server/dist/bin.mjs");
+      expect(launcher).toContain("/opt/d4research/resources/app.asar/apps/server/dist/bin.mjs");
       yield* command.uninstall;
       expect(yield* fs.readFileString(upstream)).toBe("#!/bin/sh\n");
     }).pipe(Effect.scoped),
@@ -299,7 +299,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       ).replace(/[\\/]d4research\.cmd$/, "");
       expect((yield* command.install).installedPath).toBe(`${launcherDir}/d4research.cmd`);
       expect(yield* fs.readFileString(`${launcherDir}/d4research.cmd`)).toContain(
-        "/opt/T3 Code/resources/server.asar/apps/server/dist/bin.mjs",
+        "/opt/d4research/resources/server.asar/apps/server/dist/bin.mjs",
       );
       expect(registry.path).toBe(`${userPath};${launcherDir}`);
       yield* command.uninstall;

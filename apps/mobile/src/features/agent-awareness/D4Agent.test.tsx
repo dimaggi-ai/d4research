@@ -4,7 +4,6 @@ import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { makeThreadShellFixture } from "../../test-fixtures";
 import { HomeScreen } from "../home/HomeScreen";
 import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
-// @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -217,9 +216,21 @@ vi.mock("./useD4AgentState", () => ({
     error: null,
   }),
 }));
+vi.mock("@react-navigation/native-stack", () => ({ useHeaderHeight: () => 0 }));
 vi.mock("@react-navigation/native", () => ({
+  createNavigationContainerRef: () => ({ current: null }),
   useLinkTo: () => mocks.navigate,
+  useNavigation: () => ({}),
   useFocusEffect: () => undefined,
+}));
+vi.mock("../../lib/runtime", async () => {
+  const Layer = await import("effect/Layer");
+  return { layer: Layer.empty, runtime: {} };
+});
+vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(),
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: (text: string) => mocks.copy(text) }));
 vi.mock("../../lib/openExternalUrl", () => ({ tryOpenExternalUrl: mocks.openExternal }));
@@ -361,6 +372,7 @@ vi.mock("@legendapp/list/reanimated", () => ({
   ),
 }));
 vi.mock("react-native-screens", () => ({ ScrollViewMarker: () => null }));
+vi.mock("react-native-gesture-handler/ReanimatedSwipeable", () => ({ default: () => null }));
 vi.mock("react-native-gesture-handler", () => ({
   GestureDetector: ({ children }: { children: React.ReactNode }) => children,
   useNativeGesture: () => ({}),
@@ -488,6 +500,18 @@ vi.mock("@d4research/client-runtime/state/projects", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   createProjectEnvironmentAtoms: () => ({}),
 }));
+vi.mock("../threads/thread-inspector-preview", () => ({
+  ThreadInspectorPreview: () => {
+    mocks.nativeRoute();
+    throw new Error("Agent route reached ordinary preview controls");
+  },
+}));
+vi.mock("../threads/NewTaskDraftRouteScreen", () => ({
+  NewTaskDraftRouteScreen: () => {
+    mocks.nativeRoute();
+    throw new Error("Agent route reached ordinary draft controls");
+  },
+}));
 vi.mock("../../state/new-task-draft-key", () => ({ restoredNewTaskDraftKey: vi.fn() }));
 vi.mock("../../state/pending-thread-creation", () => ({
   clearPendingThreadCreationOutcome: vi.fn(),
@@ -560,7 +584,6 @@ vi.mock("../threads/thread-inspector-content-stack", () => ({
   ThreadInspectorContentStack: vi.fn(),
 }));
 vi.mock("../threads/thread-route-hydration", () => ({ threadRouteIsHydrating: vi.fn() }));
-vi.mock("../prompt-links/useThreadPromptLink", () => ({ useThreadPromptLink: vi.fn() }));
 vi.mock("../threads/ThreadHeader", () => ({ ThreadHeader: vi.fn() }));
 vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
   useAndroidWorkspaceBack: vi.fn(),

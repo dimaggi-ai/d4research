@@ -14,7 +14,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@d4research/client-runtime/environment";
 
 import { useChatCanvas } from "../chat/ChatCanvasContext";
-import type { ChatCanvasPreview } from "../chat/chatCanvasLayout";
+
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import {
   findActiveBrowserRecordingRuntimeTabId,
@@ -51,8 +51,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { useDeviceState } from "~/state/device";
 
 import { DeviceStreamView } from "../device/DeviceStreamView";
-import type { DeviceScreenSize } from "@d4research/client-runtime/device/stream";
-import { Atom } from "effect/reactivity";
+
 import { deviceScreenKey, deviceStreamScreenAtom } from "../device/deviceStreamSession";
 import type { PreviewStreamViewport } from "@d4research/client-runtime/preview/server-browser-stream";
 import { previewBridge } from "./previewBridge";
@@ -110,10 +109,6 @@ const useStreamedSourceSize = create<{
   readonly viewport: PreviewStreamViewport;
 } | null>(() => null);
 
-const NO_DEVICE_SCREEN_ATOM = Atom.make<DeviceScreenSize | null>(null).pipe(
-  Atom.withLabel("device-stream-screen:none"),
-);
-
 const streamedSourceKey = (threadRef: ScopedThreadRef, sourceKey: string) =>
   `${scopedThreadKey(threadRef)}\u0000${sourceKey}`;
 
@@ -159,36 +154,6 @@ function useBrowserMiniPlayerSource(threadRef: ScopedThreadRef | null, tabId: st
           layoutZoomFactor,
         );
   return { serverEpoch: previewState.serverEpoch, snapshot, desktopOverlay, serverTab, sourceSize };
-}
-
-/** The mini player as the chat canvas lays it out; null when no player renders. */
-export function useThreadPreviewCanvasSource(
-  threadRef: ScopedThreadRef | null,
-  miniPlayer: PreviewMiniPlayerState | null,
-): ChatCanvasPreview | null {
-  const source = miniPlayer?.source ?? null;
-  const browser = useBrowserMiniPlayerSource(
-    threadRef,
-    source?.kind === "browser" ? source.tabId : null,
-  );
-  const sourceKey = source ? previewMiniPlayerSourceKey(source) : null;
-  const screen = useAtomValue(
-    threadRef && source?.kind === "device"
-      ? deviceStreamScreenAtom(miniPlayerDeviceViewId(threadRef, source))
-      : NO_DEVICE_SCREEN_ATOM,
-  );
-  if (!miniPlayer || !source || sourceKey === null) return null;
-  if (source.kind === "browser" && !browser.snapshot) return null;
-  return {
-    key: sourceKey,
-    width: miniPlayer.width,
-    position: miniPlayer.position,
-    lastInteraction: miniPlayer.lastInteraction,
-    source:
-      source.kind === "browser"
-        ? browser.sourceSize
-        : resolveDeviceMiniPlayerSourceSize(source.platform, screen),
-  };
 }
 
 export function ThreadPreviewMiniPlayer({ threadRef, miniPlayer }: Props) {

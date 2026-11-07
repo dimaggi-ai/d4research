@@ -74,7 +74,6 @@ const codexModelSelection = {
   model: "gpt-5.4",
 };
 
-/** Slot 41 models site-local migrations sharing production ids; the V2 runner applies only ids above the recorded maximum. */
 const seedV1Database = (fixturePath: string, workspace: string) =>
   Effect.scoped(
     Effect.gen(function* () {

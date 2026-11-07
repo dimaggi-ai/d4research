@@ -4,7 +4,9 @@ import {
   SETTINGS_NAV_GROUPS,
   SETTINGS_SEARCH_ITEMS,
   SETTINGS_SECTION_LABELS,
+  settingsForThisPlatform,
 } from "./settingsSearch";
+import { isSecretsFeatureEnabled } from "../../env";
 
 const D4_SETTINGS_SCREENS = [
   "/settings/research",
@@ -26,12 +28,16 @@ describe("settings navigation QA", () => {
   });
 
   it("gives every labelled screen a sidebar entry", () => {
-    const labelled = Object.keys(SETTINGS_SECTION_LABELS).filter((to) => !DETAIL_PAGES.has(to));
+    const labelled = Object.keys(SETTINGS_SECTION_LABELS).filter(
+      (to) => !DETAIL_PAGES.has(to) && (to !== "/settings/secrets" || isSecretsFeatureEnabled),
+    );
     expect(new Set(destinations)).toEqual(new Set(labelled));
   });
 
   it("routes every settings search result to a visible settings screen", () => {
     const visible = new Set<string>([...destinations, ...DETAIL_PAGES]);
-    expect(SETTINGS_SEARCH_ITEMS.filter((item) => !visible.has(item.to))).toEqual([]);
+    expect(
+      settingsForThisPlatform(SETTINGS_SEARCH_ITEMS).filter((item) => !visible.has(item.to)),
+    ).toEqual([]);
   });
 });

@@ -1,11 +1,9 @@
-import { useNavigation } from "@react-navigation/native";
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
 import { Platform, Pressable } from "react-native";
 import { Menu } from "../../../components/ui/Menu";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { withNativeGlassHeaderItem } from "../../layout/native-glass-header-items";
-import { useAdaptiveWorkspaceLayout } from "../../layout/adaptive-workspace-context";
 import { resolveEnvironmentMachineKind } from "@d4research/contracts";
 
 import type { AppBarMenu } from "../../../components/ui/AppBar.types";
@@ -82,12 +80,8 @@ const projectMenuLabel = (group: { readonly label: string; readonly archived: bo
   group.archived ? `${group.label} · Archived` : group.label;
 
 export function SettingsEnvironmentFilterHeader(props: {
-  readonly closeSettings?: boolean;
   readonly trailingItems?: readonly NativeStackHeaderItem[];
 }) {
-  const navigation = useNavigation();
-  const { layout } = useAdaptiveWorkspaceLayout();
-  const closeSettings = props.closeSettings === true && !layout.usesSplitView;
   const {
     availableTargets,
     selectedTargets,
@@ -105,7 +99,6 @@ export function SettingsEnvironmentFilterHeader(props: {
       ? "line.3.horizontal.decrease"
       : "line.3.horizontal.decrease.circle.fill";
   const filterVersion = JSON.stringify({
-    closeSettings,
     selection: selectedIds === null ? null : [...selectedIds].sort(),
     targets: availableTargets.map((entry) => [
       entry.environmentId,
@@ -188,19 +181,6 @@ export function SettingsEnvironmentFilterHeader(props: {
             },
           }),
           ...(props.trailingItems ?? []),
-          ...(closeSettings
-            ? [
-                withNativeGlassHeaderItem({
-                  axisBehavior: "horizontalOnly",
-                  accessibilityLabel: "Close settings",
-                  icon: { name: "xmark", type: "sfSymbol" },
-                  identifier: "settings-close",
-                  label: "",
-                  onPress: () => navigation.goBack(),
-                  type: "button",
-                }),
-              ]
-            : []),
         ],
       }}
     />

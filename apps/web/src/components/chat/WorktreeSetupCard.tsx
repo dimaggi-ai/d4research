@@ -344,7 +344,7 @@ export function WorktreeSetupCard({
             <div key={stage.id}>
               <StageRow
                 stage={stage}
-                nowMs={nowMs}
+                nowMs={snapshot.endedAt ? Date.parse(snapshot.endedAt) : nowMs}
                 scriptName={snapshot.setupScript?.name ?? null}
               />
               {stage.id === "setup-script" && showTail ? (

@@ -50,9 +50,9 @@ export function WorkspaceInspectorPane(props: {
       },
     );
     const targetWidth = inspectorVisible ? (inspectorWidth ?? 0) : 0;
-    renderedInspectorWidth.value = resizing
-      ? targetWidth
-      : withTiming(targetWidth, WORKSPACE_PANE_TIMING);
+    renderedInspectorWidth.set(
+      resizing ? targetWidth : withTiming(targetWidth, WORKSPACE_PANE_TIMING),
+    );
   }, [
     inspectorProgress,
     inspectorVisible,

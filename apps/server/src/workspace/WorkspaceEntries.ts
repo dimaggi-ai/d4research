@@ -1,4 +1,3 @@
-import * as Queue from "effect/Queue";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 
@@ -9,6 +8,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
+import * as Queue from "effect/Queue";
 import * as RcMap from "effect/RcMap";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -267,12 +268,11 @@ export const make = Effect.gen(function* () {
           },
           catch: (cause) => new WorkspaceEntriesWatchError({ cwd: normalizedCwd, cause }),
         });
-        // The initial revision confirms the OS watcher is installed, so a client can
-        // mutate immediately after subscribing without losing its first change.
-        return Stream.callback<ProjectEntriesChangedEvent, WorkspaceEntriesWatchError>((queue) =>
+        return Stream.callback<ProjectEntriesChangedEvent, PlatformError.PlatformError>((queue) =>
           fileSystem
             .watch(watchedDirectory, {
               recursive: input.directoryPath === undefined,
+              // Stream construction is lazy; announce readiness only after native registration.
               onReady: () => {
                 Queue.offerUnsafe(queue, { revision: 0 });
               },
@@ -292,11 +292,10 @@ export const make = Effect.gen(function* () {
                   [{ revision }],
                 ],
               ),
-              Stream.mapError(
-                (cause) => new WorkspaceEntriesWatchError({ cwd: normalizedCwd, cause }),
-              ),
-              Stream.runForEach((event) => Queue.offer(queue, event)),
+              Stream.runIntoQueue(queue),
             ),
+        ).pipe(
+          Stream.mapError((cause) => new WorkspaceEntriesWatchError({ cwd: normalizedCwd, cause })),
         );
       }),
     );

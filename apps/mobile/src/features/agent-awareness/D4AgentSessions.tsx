@@ -21,7 +21,7 @@ export function D4AgentSessions({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState(false);
   return (
-    <View className="gap-2 py-2">
+    <View className="gap-2 px-4 py-2">
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded }}

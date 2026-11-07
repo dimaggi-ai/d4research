@@ -1302,12 +1302,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
   // A follow release without a scroll after it would leave the position
   // remembered as following.
-  const rememberReleasedPosition = () => {
+  const rememberReleasedPosition = useStableCallback(() => {
     const last = lastRememberedRef.current;
     if (last && !paintOnly && listRef.current?.getState().data === last.data) {
       rememberTimelinePosition(last.threadKey, last.position, false);
     }
-  };
+  });
+
+  // Keeps the persisted reading position in step with follow mode when a wheel is measured before the parent commits.
+  useEffect(() => {
+    if (!liveFollowEnabled) rememberReleasedPosition();
+  }, [liveFollowEnabled, rememberReleasedPosition]);
 
   const handleScroll = () => {
     if (restoringThreadPosition || listRef.current?.getState?.().data !== rows) return;

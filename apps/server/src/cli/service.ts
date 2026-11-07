@@ -1,4 +1,3 @@
-import * as Terminal from "effect/Terminal";
 import * as NodeUtil from "node:util";
 
 import * as HostProcess from "@d4research/shared/HostProcess";
@@ -345,86 +344,6 @@ const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
 );
 
 export type ServiceOnboardingOutcome = "ready" | "pending" | "skipped";
-
-export const offerServiceDuringOnboarding = Effect.gen(function* () {
-  const service = yield* BootService.BootService;
-  const status = yield* service.status;
-  const { supported, installed, current } = status;
-  if (!supported) {
-    return "skipped" as const;
-  }
-  if (installed && current) {
-    yield* Console.log("T3 Code is already set up to run in the background on this machine.");
-    return "ready" as const;
-  }
-  for (const problem of status.problems ?? []) {
-    yield* Console.warn(`[${problem}] ${BootService.formatBootServiceProblem(problem)}`);
-  }
-  if (
-    installed &&
-    status.installedVersion !== undefined &&
-    compareExactServiceVersions(status.installedVersion, packageJson.version) > 0
-  ) {
-    yield* Console.log(
-      `A newer d4research@${status.installedVersion} background service is installed. Leaving it unchanged.`,
-    );
-    return "skipped" as const;
-  }
-  const platform = yield* HostProcess.Platform;
-  const wanted = yield* Prompt.run(
-    Prompt.Confirm({
-      message: installed
-        ? "The installed T3 Code service needs an update or repair. Update it now?"
-        : platform === "darwin"
-          ? "Run T3 Code in the background whenever you log in to this Mac? " +
-            "It stays reachable through T3 Connect while you are logged in."
-          : "Run T3 Code in the background whenever this machine boots? " +
-            "It stays reachable through T3 Connect even after you log out.",
-      initial: true,
-    }),
-  );
-  if (!wanted) {
-    return "skipped" as const;
-  }
-  const result = yield* reconcileService();
-  if (result.changed) {
-    yield* Console.log(
-      result.plan.handedOff === true
-        ? formatServiceChange(result)
-        : `Background service ${result.previouslyInstalled ? "updated" : "installed"}. Logs: ${result.plan.logPath}`,
-    );
-  }
-  return result.changed && result.plan.handedOff === true
-    ? ("pending" as const)
-    : ("ready" as const);
-});
-
-const reportServiceSetupFailure = (error: BootService.BootServiceError) =>
-  Console.warn(`Background setup did not finish: ${error.message}`).pipe(
-    Effect.as("skipped" as const),
-  );
-
-export const recoverServiceOnboardingOffer = <R>(
-  offer: Effect.Effect<
-    ServiceOnboardingOutcome,
-    BootService.BootServiceError | Terminal.QuitError,
-    R
-  >,
-) =>
-  offer.pipe(
-    Effect.catchTags({
-      QuitError: () => Effect.succeed("skipped" as const),
-      BootServiceUnsupportedError: (error) =>
-        Console.log(`Skipping background setup: ${error.message}`).pipe(
-          Effect.as("skipped" as const),
-        ),
-      BootServiceCommandError: reportServiceSetupFailure,
-      BootServiceInstallError: reportServiceSetupFailure,
-      BootServicePrerequisiteError: reportServiceSetupFailure,
-      BootServiceUpdatePendingError: reportServiceSetupFailure,
-      BootServiceDowngradeRefusedError: reportServiceSetupFailure,
-    }),
-  );
 
 const formatDropIns = (dropIns: ReadonlyArray<ServiceProtection.DropIn>) =>
   dropIns.map(

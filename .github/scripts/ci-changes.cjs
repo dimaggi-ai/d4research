@@ -30,8 +30,6 @@ const EXTRA_OWNERS = [
   [/^native\/browser-secret\//, ["@d4research/desktop"]],
   [/^native\/kde-snap-shot\//, ["@d4research/desktop"]],
   [/^native\/libghostty-vt\//, ["@d4research/web"]],
-  // apps/server/src/cloud/ConnectReachability.test.ts checks the guide's headings.
-  [/^docs\/user\/t3-connect-troubleshooting\.md$/, ["t3"]],
 ];
 const RUST = /^native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot)\//;
 

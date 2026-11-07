@@ -184,17 +184,19 @@ export function D4AgentComposer({
   const saveSelection = async (modelSelection: ModelSelection) => {
     if (!settings || !canConfigure || saving) return;
     setSaving(true);
-    try {
+    await (async () => {
       const result = await updateSettings({
         environmentId,
         input: { patch: { d4Agent: { ...settings.d4Agent, modelSelection } } },
       });
       if (result._tag === "Failure") setError("Could not save Nia settings.");
-    } catch {
-      setError("Could not save Nia settings.");
-    } finally {
-      setSaving(false);
-    }
+    })()
+      .catch(() => {
+        setError("Could not save Nia settings.");
+      })
+      .finally(() => {
+        setSaving(false);
+      });
   };
 
   const addFiles = async (files: File[]) => {
@@ -210,7 +212,7 @@ export function D4AgentComposer({
     pending.current += accepted.length;
     setPreparing(pending.current > 0);
     for (const input of accepted) {
-      try {
+      await (async () => {
         const kind = classifyComposerAttachmentFile(input);
         if (kind === "unsupported-image")
           throw new Error(
@@ -260,17 +262,20 @@ export function D4AgentComposer({
         }
         if (!mounted.current) {
           if (attachment.type === "image") URL.revokeObjectURL(attachment.previewUrl);
-          continue;
+          return;
         }
         draftAttachments.current = [...draftAttachments.current, attachment];
         setAttachments(draftAttachments.current);
         startAttachmentUpload({ environmentId, image: attachment });
-      } catch (failure) {
-        if (mounted.current) setError(failure instanceof Error ? failure.message : "Upload failed");
-      } finally {
-        pending.current -= 1;
-        if (mounted.current) setPreparing(pending.current > 0);
-      }
+      })()
+        .catch((failure) => {
+          if (mounted.current)
+            setError(failure instanceof Error ? failure.message : "Upload failed");
+        })
+        .finally(() => {
+          pending.current -= 1;
+          if (mounted.current) setPreparing(pending.current > 0);
+        });
     }
   };
 
@@ -290,7 +295,7 @@ export function D4AgentComposer({
     sendingRef.current = true;
     setSending(true);
     setError(null);
-    try {
+    await (async () => {
       await awaitAttachmentUploads(submittedAttachments.map((attachment) => attachment.id));
       const uploaded = getUploadedAttachments({ environmentId, images: submittedAttachments });
       if (uploaded === null) {
@@ -335,12 +340,14 @@ export function D4AgentComposer({
           if (attachment.type === "image") URL.revokeObjectURL(attachment.previewUrl);
         refresh();
       }
-    } catch {
-      setError("Could not send this message. Your draft is preserved.");
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
-    }
+    })()
+      .catch(() => {
+        setError("Could not send this message. Your draft is preserved.");
+      })
+      .finally(() => {
+        sendingRef.current = false;
+        setSending(false);
+      });
   };
   const canSend =
     !disabled &&

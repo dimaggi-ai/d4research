@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   cachedRefs: [] as VcsListRefsResult["refs"],
 }));
 
+vi.mock("@effect/atom-react", () => ({ useAtomMount: () => {} }));
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
@@ -55,7 +56,10 @@ vi.mock("./queries", () => ({
 }));
 vi.mock("./use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("./atom-registry", () => ({ appAtomRegistry: {} }));
-vi.mock("./use-remote-environment-registry", () => ({ setPendingConnectionError: () => {} }));
+vi.mock("./use-remote-environment-registry", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { environmentConnectedAtom: () => Atom.make(true), setPendingConnectionError: () => {} };
+});
 vi.mock("./use-vcs-action-state", () => ({
   showGitActionResult: (result: { type: string; description?: string }) =>
     state.results.push(result),

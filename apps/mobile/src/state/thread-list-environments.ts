@@ -6,6 +6,7 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
+import * as Equal from "effect/Equal";
 
 export type ThreadListProvider = Pick<
   ServerProvider,
@@ -122,6 +123,9 @@ export function createThreadListEnvironmentsAtom(
       const prior = previous.get(id);
       if (prior && sameProviders(prior.providers, selected.providers)) {
         selected.providers = prior.providers;
+      }
+      if (prior && Equal.equals(prior.snoozePresets, selected.snoozePresets)) {
+        selected.snoozePresets = prior.snoozePresets;
       }
       const unchanged =
         prior &&

@@ -1,4 +1,3 @@
-import { memoryInstructions } from "../../project/ProjectMemory.ts";
 import { setToolGuardRuntimeEnabled } from "../../provider/toolGuardRuntime.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
@@ -636,6 +635,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       "d4_agent_system_health",
       "d4_agent_tasks",
       "d4_agent_action",
+      "d4_agent_skill_read",
       "d4_agent_memory_search",
       "d4_agent_memory_read",
       "d4_agent_memory_propose",
@@ -9357,7 +9357,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 type: "user",
                 message: {
                   role: "user",
-                  content: `${memoryInstructions([])}\n\n${prompt}`.trimStart(),
+                  content: prompt,
                 },
                 parent_tool_use_id: null,
               },

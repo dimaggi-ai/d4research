@@ -10,15 +10,9 @@ import * as Schema from "effect/Schema";
 
 import type { OtlpEndpointSource } from "@d4research/contracts";
 import { sweepStalePendingAttachments } from "./attachmentStore.ts";
-import {
-  DEFAULT_SIGNAL_EXPORT,
-  nodeProcessRuntimeAttributes,
-  processServiceInstanceId,
-  type SignalExport,
-} from "@d4research/shared/observability";
+import { DEFAULT_SIGNAL_EXPORT, type SignalExport } from "@d4research/shared/observability";
 import * as OtelEnvironment from "@d4research/shared/otelEnvironment";
-import { type ReleaseChannel, releaseResourceAttributes } from "@d4research/shared/releaseResource";
-import packageJson from "../package.json" with { type: "json" };
+import { type ReleaseChannel } from "@d4research/shared/releaseResource";
 
 // Official release workflows set this telemetry channel; other builds report dev.
 // Unlike __T3CODE_BUILD_CHANNEL__, this is not the sign-in page's latest/nightly channel.
@@ -115,23 +109,6 @@ export class ServerConfig extends Context.Service<
 }
 
 export const make = (config: ServerConfig["Service"]) => ServerConfig.of(config);
-
-export const otlpResource = (
-  config: Pick<ServerConfig["Service"], "mode" | "otelEnvironment">,
-  hostName: string,
-) => ({
-  serviceName: "t3code-server",
-  serviceVersion: packageJson.version,
-  attributes: {
-    "service.namespace": "t3code",
-    "service.runtime": "t3-server",
-    "t3code.server.managed_by": config.mode === "desktop" ? "desktop" : "standalone",
-    "service.instance.id": processServiceInstanceId(config.otelEnvironment.resourceAttributes),
-    ...releaseResourceAttributes(telemetryChannel, config.otelEnvironment.resourceAttributes),
-    "host.name": config.otelEnvironment.resourceAttributes["host.name"] || hostName,
-    ...nodeProcessRuntimeAttributes(),
-  },
-});
 
 export const layer = (config: ServerConfig["Service"]) => Layer.succeed(ServerConfig, make(config));
 

@@ -183,7 +183,7 @@ describe("AddProviderInstanceDialog environment routing", () => {
         },
       },
     });
-    await prepareCodexInstance();
+    await using _screen = await prepareCodexInstance();
     await type("#add-provider-codex-homePath", "/accounts/work");
     await click("Add instance");
     expect(settingsHooks.mutate).toHaveBeenCalledWith({

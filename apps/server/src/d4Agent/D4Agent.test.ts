@@ -10,6 +10,8 @@ import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import { assert, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
+import * as SkillsInventory from "../skillsInventory.ts";
 import {
   ChatAttachmentId,
   DEFAULT_D4_AGENT_SETTINGS,
@@ -1136,6 +1138,22 @@ it.effect("unavailable model never starts a conversation or falls back", () =>
   }),
 );
 
+it.effect("an existing chat opens while its model is unavailable", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const identity = yield* f.service.ensureThread();
+    yield* Ref.set(f.catalog, []);
+
+    assert.deepEqual(yield* f.service.ensureThread(), identity);
+
+    yield* Ref.set(f.agentShell, null);
+    yield* Ref.set(f.shells, []);
+    const missing = yield* Effect.result(f.service.ensureThread());
+    assert.equal(missing._tag, "Failure");
+    if (missing._tag === "Failure") assert.equal(missing.failure.reason, "provider-unavailable");
+  }),
+);
+
 it.effect("system baseline is silent and repeated episodes get new durable claims", () =>
   Effect.gen(function* () {
     const { service, checks, state } = yield* fixture();
@@ -1554,11 +1572,7 @@ it.effect("thread listing omits opaque report keys that heartbeats still track",
     yield* f.service.tick;
     const overview = (yield* f.service.overview()).find((item) => item.source === "threads");
     assert.equal(overview?.deliveredRevision, overview?.revision);
-    const heartbeat = (yield* Ref.get(f.sends)).at(-1)?.text ?? "";
-    assert.include(heartbeat, "Overview is already visible");
-    assert.include(heartbeat, "needs_user");
-    assert.notInclude(heartbeat, "dedupe:");
-    assert.notInclude(heartbeat, "reportKey");
+    assert.isEmpty(yield* Ref.get(f.sends));
   }),
 );
 
@@ -4400,7 +4414,7 @@ it.effect(
       const globalInputs = (yield* Ref.get(f.sends)).filter(
         (send) => send.threadId === globalThread,
       );
-      assert.include(JSON.stringify(globalInputs), "Private medical invoice");
+      assert.isEmpty(globalInputs);
       assert.notInclude(JSON.stringify(globalInputs), "private body marker");
       assert.notInclude(JSON.stringify(yield* f.service.overview()), "private body marker");
       const visible = JSON.stringify(yield* f.service.getState());
@@ -4641,7 +4655,7 @@ it.effect("Overview ack, snooze, and reopen keep their context and control deliv
   }),
 );
 
-it.effect("a failed Overview judgement retries after restart without reposting the Overview", () =>
+it.effect("Overview remains delivered after restart without an acknowledgment turn", () =>
   Effect.gen(function* () {
     const f = yield* overviewFixture;
     yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
@@ -4659,8 +4673,7 @@ it.effect("a failed Overview judgement retries after restart without reposting t
       (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
       1,
     );
-    assert.equal((yield* Ref.get(f.sends)).length, 1);
-    assert.include((yield* Ref.get(f.sends))[0]!.text, "Overview is already visible");
+    assert.isEmpty(yield* Ref.get(f.sends));
   }),
 );
 
@@ -4695,25 +4708,23 @@ it.effect("Global tools see every overview context; work-context tools only thei
   }),
 );
 
-it.effect(
-  "deterministic Overview remains visible while model judgement waits for its provider",
-  () =>
-    Effect.gen(function* () {
-      const f = yield* overviewFixture;
-      yield* Ref.set(f.catalog, []);
-      yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
-      yield* f.service.tick;
-      assert.lengthOf(
-        (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview"),
-        1,
-      );
-      assert.lengthOf((yield* Ref.get(f.state)).overviewJudgements ?? [], 1);
-      assert.isEmpty(yield* Ref.get(f.sends));
-      yield* Ref.set(f.catalog, [provider]);
-      yield* f.service.tick;
-      assert.lengthOf(yield* Ref.get(f.sends), 1);
-      assert.isEmpty((yield* Ref.get(f.state)).overviewJudgements ?? []);
-    }),
+it.effect("Overview delivery needs no model and does not queue a reply", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.catalog, []);
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+    yield* f.service.tick;
+    assert.lengthOf(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview"),
+      1,
+    );
+    assert.isEmpty((yield* Ref.get(f.state)).overviewJudgements ?? []);
+    assert.isEmpty(yield* Ref.get(f.sends));
+    yield* Ref.set(f.catalog, [provider]);
+    yield* f.service.tick;
+    assert.isEmpty(yield* Ref.get(f.sends));
+    assert.isEmpty((yield* Ref.get(f.state)).overviewJudgements ?? []);
+  }),
 );
 it.effect("internal overview collection waits for the next window even when no items arrive", () =>
   Effect.gen(function* () {
@@ -5499,7 +5510,7 @@ it.effect("an unavailable default worker does not block the independent manager 
     ]);
     yield* TestClock.adjust("16 minutes");
     yield* f.service.tick;
-    assert.include((yield* Ref.get(f.sends)).at(-1)?.text ?? "", "Overview is already visible");
+    assert.isEmpty(yield* Ref.get(f.sends));
 
     const proposal = yield* Effect.result(
       f.service.requestAction({
@@ -5712,7 +5723,7 @@ it.effect("a pending card nobody answered expires after 24 hours", () =>
   }),
 );
 
-it.effect("the heartbeat judges an Overview item once per day unless it got worse", () =>
+it.effect("Overview changes and severity escalation do not launch unsolicited reply turns", () =>
   Effect.gen(function* () {
     const f = yield* overviewFixture;
     const judgements = () =>
@@ -5724,7 +5735,7 @@ it.effect("the heartbeat judges an Overview item once per day unless it got wors
       );
     yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
     yield* f.service.tick;
-    assert.equal(yield* judgements(), 1);
+    assert.equal(yield* judgements(), 0);
     yield* Ref.set(f.inboxSnapshots, [healthSnapshot("Disk still needs attention")]);
     yield* TestClock.adjust("15 minutes");
     yield* f.service.tick;
@@ -5732,13 +5743,13 @@ it.effect("the heartbeat judges an Overview item once per day unless it got wors
       (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview"),
       2,
     );
-    assert.equal(yield* judgements(), 1);
+    assert.equal(yield* judgements(), 0);
     yield* Ref.set(f.inboxSnapshots, [
       { ...healthSnapshot(), items: [{ key: "disk", severity: "critical", title: "Disk full" }] },
     ]);
     yield* TestClock.adjust("15 minutes");
     yield* f.service.tick;
-    assert.equal(yield* judgements(), 2);
+    assert.equal(yield* judgements(), 0);
     yield* Ref.set(f.inboxSnapshots, [
       {
         ...healthSnapshot(),
@@ -5747,7 +5758,7 @@ it.effect("the heartbeat judges an Overview item once per day unless it got wors
     ]);
     yield* TestClock.adjust("15 minutes");
     yield* f.service.tick;
-    assert.equal(yield* judgements(), 2);
+    assert.equal(yield* judgements(), 0);
     yield* Ref.set(f.inboxSnapshots, [
       {
         ...healthSnapshot(),
@@ -5756,7 +5767,7 @@ it.effect("the heartbeat judges an Overview item once per day unless it got wors
     ]);
     yield* TestClock.adjust("24 hours");
     yield* f.service.tick;
-    assert.equal(yield* judgements(), 3);
+    assert.equal(yield* judgements(), 0);
   }),
 );
 
@@ -6373,4 +6384,76 @@ it.effect(
         "pipeline-changed",
       );
     }),
+);
+
+it.effect("reads only enabled inventory skills by name and caps the body at 64 KiB", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const fs = yield* FileSystem.FileSystem;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "nia-skills-" });
+    const path = `${directory}/SKILL.md`;
+    const body = "---\nname: review\n---\nReview the change.";
+    yield* fs.writeFileString(path, body);
+    const inventory = vi.spyOn(SkillsInventory, "readSkillsInventory").mockReturnValue(
+      Effect.succeed([
+        {
+          name: "review",
+          path,
+          kind: "skill",
+          root: "codex-user",
+          scope: "user",
+          agents: ["all"],
+          isSymlinked: false,
+        },
+        {
+          name: "command",
+          path,
+          kind: "command",
+          root: "junie-user",
+          scope: "user",
+          agents: ["junie"],
+          isSymlinked: false,
+        },
+      ]),
+    );
+    yield* Effect.gen(function* () {
+      const disabled = yield* Effect.result(f.service.skillRead("review"));
+      assert.equal(disabled._tag, "Failure");
+      assert.equal(inventory.mock.calls.length, 0);
+      yield* f.settings.updateSettings({
+        skills: { enabledForNia: ["review", "command", "missing"] },
+      });
+      assert.equal(yield* f.service.skillRead("review"), body);
+      assert.deepEqual(inventory.mock.calls[0], []);
+      for (const name of ["command", "missing", path, "../../SKILL.md"]) {
+        const denied = yield* Effect.result(f.service.skillRead(name));
+        assert.equal(denied._tag, "Failure");
+      }
+      yield* fs.writeFileString(path, "x".repeat(64 * 1024 + 1));
+      assert.equal((yield* f.service.skillRead("review")).length, 64 * 1024);
+      yield* fs.writeFileString(path, "x".repeat(64 * 1024 - 1) + "é");
+      const capped = yield* f.service.skillRead("review");
+      assert.equal(new TextEncoder().encode(capped).length, 64 * 1024 - 1);
+      assert.isFalse(capped.includes("�"));
+      yield* f.settings.updateSettings({ skills: { enabledForNia: [] } });
+      assert.equal((yield* Effect.result(f.service.skillRead("review")))._tag, "Failure");
+    }).pipe(Effect.ensuring(Effect.sync(() => inventory.mockRestore())));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("Overview delivery does not ask the model for unsolicited acknowledgments", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+    yield* f.service.tick;
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    assert.isEmpty(yield* Ref.get(f.sends));
+    assert.lengthOf(
+      (yield* Ref.get(f.systemMessages)).filter((m) => m.title === "Overview"),
+      1,
+    );
+    yield* f.send({ text: "Please acknowledge this explicitly." });
+    assert.lengthOf(yield* Ref.get(f.sends), 1);
+  }),
 );

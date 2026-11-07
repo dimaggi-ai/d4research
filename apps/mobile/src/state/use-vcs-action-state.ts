@@ -84,7 +84,7 @@ export function useGitActionProgress(target: VcsActionTarget): GitActionProgress
   const startElapsedTimer = useCallback(() => {
     if (intervalRef.current) return;
     intervalRef.current = setInterval(() => forceUpdate((n) => n + 1), 1000);
-  }, []);
+  }, [forceUpdate]);
 
   const stopElapsedTimer = useCallback(() => {
     if (intervalRef.current) {

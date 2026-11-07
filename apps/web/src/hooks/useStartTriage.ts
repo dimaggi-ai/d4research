@@ -4,7 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
-import { type EnvironmentId, TRIAGE_PROMPT_FILE_NAME } from "@d4research/contracts";
+import { type EnvironmentId } from "@d4research/contracts";
 import { useRouter } from "@tanstack/react-router";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -16,7 +16,7 @@ import { writeTextToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useScratchProject } from "./useScratchProject";
 
-export const TRIAGE_CLI_COMMAND = "npx d4research triage";
+const TRIAGE_CLI_COMMAND = "npx d4research triage";
 
 const copyTriageCliCommand = () =>
   writeTextToClipboard(TRIAGE_CLI_COMMAND, "command").catch(() =>
@@ -25,9 +25,6 @@ const copyTriageCliCommand = () =>
       title: `Could not copy. Type ${TRIAGE_CLI_COMMAND} instead.`,
     }),
   );
-
-/** A draft is a triage draft while its message still links the playbook file. */
-export const isTriagePrompt = (prompt: string) => prompt.includes(`[${TRIAGE_PROMPT_FILE_NAME}](`);
 
 /**
  * In-app `t3 triage`: the server writes the session files and starts cloning
@@ -77,7 +74,7 @@ export function useStartTriage() {
     // A null result means the user went elsewhere; only a throw is a failure.
     await handleNewThread(scopeProjectRef(project.value.environmentId, project.value.id), {
       prompt: prepared.value.prompt,
-    }).catch(() => fail("T3 Code could not open a new thread."));
+    }).catch(() => fail("d4research could not open a new thread."));
   };
 
   return async (environmentId: EnvironmentId) => {

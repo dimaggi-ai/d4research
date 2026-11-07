@@ -4,6 +4,10 @@ import { defineConfig, normalizePath } from "vite-plus";
 import "vite-plus/test/config";
 
 const reactTests = [
+  "src/state/use-selected-thread-git-actions.test.tsx",
+  "src/features/usage/UsageLimitsSection.test.ts",
+  "src/features/terminal/NativeTerminalSurface.test.tsx",
+  "src/features/agent-awareness/D4Agent.test.tsx",
   "src/features/threads/git/GitBranchesSheet.test.tsx",
   "src/features/threads/new-task-flow-provider.test.tsx",
   "src/features/layout/workspace/workspace-tabs-state.test.ts",
@@ -39,7 +43,9 @@ const reactTests = [
   "src/features/terminal/useTerminalExitNavigation.test.tsx",
   "src/features/threads/use-thread-list-now.test.tsx",
   "src/features/threads/useThreadListV2.test.tsx",
+  "src/features/threads/useThreadHeaderOptions.test.tsx",
   "src/features/home/home-list-options.test.tsx",
+  "src/features/home/home-route-visibility.test.tsx",
   "src/features/layout/workspace/useSearchScrollRestoration.test.tsx",
   "src/features/connection/ConnectionsNewRouteScreen.test.tsx",
   "src/features/devices/device-stream.browser.test.ts",

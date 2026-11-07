@@ -2,6 +2,8 @@ import { useComposerAttachmentActions } from "./use-composer-attachment-actions"
 import * as Dialog from "../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@d4research/contracts";
 import { readEnvironmentScope } from "./session";
+import { serverEnvironment } from "./server";
+import * as Option from "effect/Option";
 import { useAtomValue } from "@effect/atom-react";
 import { shouldCompactBeforeSend } from "@d4research/client-runtime/state/context-window";
 import { threadRuntimeIsActive } from "@d4research/client-runtime/state/shell";
@@ -206,6 +208,10 @@ export function useThreadComposerState(input: {
     selectedEnvironmentRuntime,
   } = useThreadSelection();
   const selectedThreadProjection = useSelectedThreadProjection();
+  const sendD4AgentMessage = useAtomCommand(serverEnvironment.sendD4AgentMessage, {
+    reportFailure: false,
+  });
+  const d4AgentSending = useRef(false);
   const selectedThreadVisibleTurnItems = useSelectedThreadVisibleTurnItems();
   const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
@@ -562,6 +568,43 @@ export function useThreadComposerState(input: {
     )
       return null;
     if (text.length === 0 && attachments.length === 0) {
+      return null;
+    }
+    const agentState = selectedEnvironmentRuntime?.serverConfig?.settings.d4Agent.enabled
+      ? Option.getOrNull(
+          AsyncResult.value(
+            appAtomRegistry.get(
+              serverEnvironment.d4AgentState({ environmentId: thread.environmentId, input: {} }),
+            ),
+          ),
+        )
+      : null;
+    if (agentState?.threadId === thread.id) {
+      if (d4AgentSending.current) return null;
+      if (attachments.length > 0 || (draft.context?.records.length ?? 0) > 0) {
+        setThreadComposerError(
+          threadKey,
+          "Send text to Nia. Ask it to read a thread when you need its content.",
+        );
+        return null;
+      }
+      d4AgentSending.current = true;
+      const result = await sendD4AgentMessage({
+        environmentId: thread.environmentId,
+        input: { text, expectedContext: agentState.brainContext, expectedThreadId: thread.id },
+      });
+      d4AgentSending.current = false;
+      if (result._tag === "Failure") {
+        const error = squashAtomCommandFailure(result);
+        setThreadComposerError(
+          threadKey,
+          error instanceof Error ? error.message : "Could not send to Nia.",
+        );
+      } else {
+        clearThreadComposerError(threadKey);
+        if (getComposerDraftSnapshot(threadKey).text === draft.text)
+          clearComposerDraftContent(threadKey);
+      }
       return null;
     }
     // A redirect's text answers its approval, so `/side` there is that text, not the command.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
+import type { AcpSessionRuntime } from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 import { applyGrokAcpModelSelection, grokAcpSpawnArgs } from "./acpSupport.ts";
 
@@ -22,11 +23,14 @@ describe("grokAcpSpawnArgs", () => {
 
 describe("applyGrokAcpModelSelection", () => {
   const makeRecordingRuntime = (failure?: EffectAcpErrors.AcpError) => {
-    const modelCalls: Array<string> = [];
-    const runtime = {
-      setSessionModel: (modelId: string) =>
+    const modelCalls: Array<{
+      modelId: string;
+      meta: Parameters<AcpSessionRuntime["Service"]["setSessionModel"]>[1];
+    }> = [];
+    const runtime: Pick<AcpSessionRuntime["Service"], "setSessionModel"> = {
+      setSessionModel: (modelId, meta) =>
         Effect.gen(function* () {
-          modelCalls.push(modelId);
+          modelCalls.push({ modelId, meta });
           if (failure) return yield* failure;
           return {};
         }),
@@ -34,7 +38,7 @@ describe("applyGrokAcpModelSelection", () => {
     return { runtime, modelCalls };
   };
 
-  it.effect("keeps the session model for empty and default product selections", () =>
+  it.effect("updates reasoning when the requested model matches the session model", () =>
     Effect.gen(function* () {
       const { runtime, modelCalls } = makeRecordingRuntime();
       const result = yield* applyGrokAcpModelSelection({
@@ -57,9 +61,10 @@ describe("applyGrokAcpModelSelection", () => {
         runtime,
         currentModelId: "grok-build",
         requestedModelId: "grok-mock-alt",
+        requestedReasoningEffort: "bad effort",
         mapError: (cause) => cause.message,
       });
-      expect(modelCalls).toEqual(["grok-mock-alt"]);
+      expect(modelCalls).toEqual([{ modelId: "grok-mock-alt", meta: undefined }]);
       expect(result).toBe("grok-mock-alt");
     }),
   );

@@ -62,11 +62,11 @@ export function useMediaActions(source: MediaActionsSource | undefined, onOpenFi
       if ("attachment" in source) {
         const preview = await loadLocalAttachmentPreview(source.attachment, request.signal);
         if (!preview) return;
-        try {
+        await (async () => {
           await preview.share(request.signal, source.sourceIdentifier);
-        } finally {
+        })().finally(() => {
           preview.dispose();
-        }
+        });
         return;
       }
       const uri = "uri" in source ? normalizeNativeMarkdownUrl(source.uri) : await refresh();

@@ -216,9 +216,9 @@ function SidebarUtilityItem({
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick}>
+            <SidebarMenuButton size="icon" aria-label={label} onClick={onClick}>
               {icon}
-              <span>{label}</span>
+              <span className="sr-only">{label}</span>
             </SidebarMenuButton>
           }
         />
@@ -273,7 +273,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   };
 
   return (
-    <SidebarMenu>
+    <SidebarMenu className="flex-row items-center">
       {isOnUtilityPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton onClick={handleBackClick}>
@@ -301,7 +301,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={handleUsageClick}
             tooltipContent={<AccountLimitsHoverCard />}
           />
-          <SidebarUtilityItem icon={<ActivityIcon />} label="System Monitor" onClick={handleSystemClick} />
+          <SidebarUtilityItem
+            icon={<ActivityIcon />}
+            label="System Monitor"
+            onClick={handleSystemClick}
+          />
           <SidebarProviderUpdatePill compact />
         </>
       )}

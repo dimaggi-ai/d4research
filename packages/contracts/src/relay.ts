@@ -649,7 +649,7 @@ const RelayAgentActivityPublishErrors = [
   RelayInternalError,
 ] as const;
 
-export class RelayClientPrincipal extends Context.Service<
+class RelayClientPrincipal extends Context.Service<
   RelayClientPrincipal,
   {
     readonly userId: string;
@@ -659,7 +659,7 @@ export class RelayClientPrincipal extends Context.Service<
   }
 >()("@d4research/contracts/relay/RelayClientPrincipal") {}
 
-export class RelayEnvironmentPrincipal extends Context.Service<
+class RelayEnvironmentPrincipal extends Context.Service<
   RelayEnvironmentPrincipal,
   {
     readonly environmentId: string;
@@ -674,7 +674,7 @@ const RelayClientBearerAuthorization = HttpApiSecurity.http({ scheme: "bearer" }
   ),
 );
 
-export class RelayClientAuth extends HttpApiMiddleware.Service<
+class RelayClientAuth extends HttpApiMiddleware.Service<
   RelayClientAuth,
   { provides: RelayClientPrincipal }
 >()("RelayClientAuth", {
@@ -689,7 +689,7 @@ const RelayEnvironmentBearerAuthorization = HttpApiSecurity.http({ scheme: "bear
   ),
 );
 
-export class RelayEnvironmentAuth extends HttpApiMiddleware.Service<
+class RelayEnvironmentAuth extends HttpApiMiddleware.Service<
   RelayEnvironmentAuth,
   { provides: RelayEnvironmentPrincipal }
 >()("RelayEnvironmentAuth", {
@@ -704,7 +704,7 @@ const RelayDpopAuthorization = HttpApiSecurity.http({ scheme: "DPoP" }).pipe(
   ),
 );
 
-export class RelayDpopClientAuth extends HttpApiMiddleware.Service<
+class RelayDpopClientAuth extends HttpApiMiddleware.Service<
   RelayDpopClientAuth,
   { provides: RelayClientPrincipal }
 >()("RelayDpopClientAuth", {
@@ -744,9 +744,9 @@ export const RelayEnvironmentConnectRequest = Schema.Struct({
 }).annotate({ description: "Requests a short-lived credential for connecting to an environment." });
 export type RelayEnvironmentConnectRequest = typeof RelayEnvironmentConnectRequest.Type;
 
-export const RelayEnvironmentConnectScope = "environment:connect" as const;
-export const RelayEnvironmentStatusScope = "environment:status" as const;
-export const RelayMobileRegistrationScope = "mobile:registration" as const;
+const RelayEnvironmentConnectScope = "environment:connect" as const;
+const RelayEnvironmentStatusScope = "environment:status" as const;
+const RelayMobileRegistrationScope = "mobile:registration" as const;
 export const RelayDpopAccessTokenScope = Schema.Literals([
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -754,14 +754,11 @@ export const RelayDpopAccessTokenScope = Schema.Literals([
 ]);
 export type RelayDpopAccessTokenScope = typeof RelayDpopAccessTokenScope.Type;
 
-export const RelayDpopTokenExchangeGrantType =
-  "urn:ietf:params:oauth:grant-type:token-exchange" as const;
-export const RelayJwtSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt" as const;
-export const RelayAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
+const RelayDpopTokenExchangeGrantType = "urn:ietf:params:oauth:grant-type:token-exchange" as const;
+const RelayJwtSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt" as const;
+const RelayAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
 export const RelayPublicClientId = Schema.Literals(["t3-mobile", "t3-web"]);
 export type RelayPublicClientId = typeof RelayPublicClientId.Type;
-export const RelayMobileClientId = "t3-mobile" as const;
-export const RelayWebClientId = "t3-web" as const;
 
 export const RelayDpopAccessTokenRequest = Schema.Struct({
   grant_type: Schema.Literal(RelayDpopTokenExchangeGrantType),
@@ -966,11 +963,6 @@ export type RelayOkResponse = typeof RelayOkResponse.Type;
 export const RelayT3ChatPlan = Schema.Literals(["free", "pro", "premier"]);
 export type RelayT3ChatPlan = typeof RelayT3ChatPlan.Type;
 
-export const DEFAULT_MANAGED_TUNNEL_LIMIT = 3;
-
-// A linked paid T3 Chat plan raises the default managed tunnel cap.
-export const T3CHAT_PLAN_TUNNEL_LIMITS = { pro: 10, premier: 100 } as const;
-
 export const RelayT3ChatLink = Schema.Struct({
   email: Schema.String,
   plan: RelayT3ChatPlan,
@@ -1023,18 +1015,14 @@ const RelayMetadataGroup = HttpApiGroup.make("metadata")
   )
   .annotate(OpenApi.Description, "OAuth and DPoP discovery metadata.");
 
-export const RelayRegisterDeviceEndpoint = HttpApiEndpoint.post(
-  "registerDevice",
-  "/v1/mobile/devices",
-  {
-    headers: RelayDpopRequestHeaders,
-    payload: RelayDeviceRegistrationRequest,
-    success: RelayOkResponse,
-    error: RelayAuthAndInternalErrors,
-  },
-).annotate(OpenApi.Summary, "Register or update a mobile device");
+const RelayRegisterDeviceEndpoint = HttpApiEndpoint.post("registerDevice", "/v1/mobile/devices", {
+  headers: RelayDpopRequestHeaders,
+  payload: RelayDeviceRegistrationRequest,
+  success: RelayOkResponse,
+  error: RelayAuthAndInternalErrors,
+}).annotate(OpenApi.Summary, "Register or update a mobile device");
 
-export const RelayRegisterLiveActivityEndpoint = HttpApiEndpoint.post(
+const RelayRegisterLiveActivityEndpoint = HttpApiEndpoint.post(
   "registerLiveActivity",
   "/v1/mobile/live-activities",
   {
@@ -1050,7 +1038,7 @@ export const RelayAgentActivitySnapshotResponse = Schema.Struct({
 });
 export type RelayAgentActivitySnapshotResponse = typeof RelayAgentActivitySnapshotResponse.Type;
 
-export const RelayAgentActivitySnapshotEndpoint = HttpApiEndpoint.get(
+const RelayAgentActivitySnapshotEndpoint = HttpApiEndpoint.get(
   "getAgentActivitySnapshot",
   "/v1/mobile/agent-activity",
   {
@@ -1060,7 +1048,7 @@ export const RelayAgentActivitySnapshotEndpoint = HttpApiEndpoint.get(
   },
 ).annotate(OpenApi.Summary, "Read the current Live Activity aggregate");
 
-export const RelayUnregisterDeviceEndpoint = HttpApiEndpoint.delete(
+const RelayUnregisterDeviceEndpoint = HttpApiEndpoint.delete(
   "unregisterDevice",
   "/v1/mobile/devices/:deviceId",
   {
@@ -1154,7 +1142,7 @@ const RelayClientGroup = HttpApiGroup.make("client")
   .annotate(OpenApi.Description, "Cloud-user environment links and registered devices.")
   .middleware(RelayClientAuth);
 
-export const RelayExchangeDpopAccessTokenEndpoint = HttpApiEndpoint.post(
+const RelayExchangeDpopAccessTokenEndpoint = HttpApiEndpoint.post(
   "exchangeDpopAccessToken",
   "/v1/client/dpop-token",
   {
@@ -1174,7 +1162,7 @@ const RelayTokenGroup = HttpApiGroup.make("token")
   .add(RelayExchangeDpopAccessTokenEndpoint)
   .annotate(OpenApi.Description, "OAuth token exchange for DPoP-bound client access.");
 
-export const RelayConnectEnvironmentEndpoint = HttpApiEndpoint.post(
+const RelayConnectEnvironmentEndpoint = HttpApiEndpoint.post(
   "connectEnvironment",
   "/v1/environments/:environmentId/connect",
   {
@@ -1188,7 +1176,7 @@ export const RelayConnectEnvironmentEndpoint = HttpApiEndpoint.post(
   },
 ).annotate(OpenApi.Summary, "Connect to an environment");
 
-export const RelayGetEnvironmentStatusEndpoint = HttpApiEndpoint.post(
+const RelayGetEnvironmentStatusEndpoint = HttpApiEndpoint.post(
   "getEnvironmentStatus",
   "/v1/environments/:environmentId/status",
   {
@@ -1308,7 +1296,7 @@ const RelayMobileTelemetryGroup = HttpApiGroup.make("mobileTelemetry")
   )
   .annotate(OpenApi.Description, "Receive mobile app telemetry from expo-observe.");
 
-export const RelayApi = HttpApi.make("RelayApi")
+const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
     RelayMetadataGroup,
@@ -1326,4 +1314,4 @@ export const RelayApi = HttpApi.make("RelayApi")
     OpenApi.Description,
     "Control-plane API for linking T3 environments, connecting authorized clients, and publishing agent activity.",
   );
-export type RelayApi = typeof RelayApi;
+type RelayApi = typeof RelayApi;

@@ -17,6 +17,34 @@ const repoRoot = NodePath.resolve(
 
 const BOOT_TIMEOUT_MS = 120_000;
 
+// Fixtures that decorate wire projections need records rather than interned IDs and omitted bodies.
+export async function useUncompressedSnapshots(context) {
+  await context.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.searchParams.has("compactIds")) {
+        for (const key of ["compactIds", "compactTurnItems", "dedupeBodies"])
+          url.searchParams.delete(key);
+        input = input instanceof Request ? new Request(url, input) : url.toString();
+      }
+      return nativeFetch(input, init);
+    };
+    const NativeWebSocket = window.WebSocket;
+    window.WebSocket = class extends NativeWebSocket {
+      send(data) {
+        const packet = JSON.parse(String(data));
+        if (packet.payload?.acceptBoundedSnapshot) {
+          packet.payload.acceptCompactIds = false;
+          packet.payload.acceptCompactTurnItems = false;
+          packet.payload.acceptDedupedBodies = false;
+        }
+        super.send(JSON.stringify(packet));
+      }
+    };
+  });
+}
+
 function findFreePort() {
   return new Promise((resolve, reject) => {
     const server = NodeNet.createServer();
@@ -59,7 +87,7 @@ function waitForLine(child, predicate, timeoutMs) {
   });
 }
 
-export async function startIsolatedApp() {
+export async function startIsolatedApp({ serverBin } = {}) {
   const baseDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-e2e."));
   const workspace = NodePath.join(baseDir, "workspace");
   const agentHome = NodePath.join(baseDir, "home");
@@ -87,10 +115,21 @@ export async function startIsolatedApp() {
   }
 
   const child = NodeChildProcess.spawn(
-    "vp",
-    ["run", "dev", "--home-dir", baseDir, "--port", String(serverPort)],
+    serverBin ? process.execPath : "vp",
+    serverBin
+      ? [
+          serverBin,
+          "--base-dir",
+          baseDir,
+          "--port",
+          String(serverPort),
+          "--host",
+          "127.0.0.1",
+          "--no-browser",
+        ]
+      : ["run", "dev", "--home-dir", baseDir, "--port", String(serverPort)],
     {
-      cwd: repoRoot,
+      cwd: serverBin ? baseDir : repoRoot,
       env: {
         ...process.env,
         HOME: agentHome,
@@ -111,14 +150,16 @@ export async function startIsolatedApp() {
 
   let webUrl;
   try {
-    webUrl = await waitForLine(
-      child,
-      (buffer) => {
-        const match = buffer.match(/Local:\s+(http:\/\/localhost:\d+)\//);
-        return match?.[1] ?? null;
-      },
-      BOOT_TIMEOUT_MS,
-    );
+    webUrl = serverBin
+      ? `http://127.0.0.1:${serverPort}`
+      : await waitForLine(
+          child,
+          (buffer) => {
+            const match = buffer.match(/Local:\s+(http:\/\/localhost:\d+)\//);
+            return match?.[1] ?? null;
+          },
+          BOOT_TIMEOUT_MS,
+        );
     await waitForLine(
       child,
       (buffer) => (buffer.includes("Listening on") ? true : null),
@@ -129,7 +170,7 @@ export async function startIsolatedApp() {
     throw cause;
   }
 
-  return { agentHome, baseDir, workspace, webUrl, serverPort, child };
+  return { agentHome, baseDir, workspace, webUrl, serverPort, child, serverBin };
 }
 
 /**
@@ -137,13 +178,34 @@ export async function startIsolatedApp() {
  * opening one twice consumes it.
  */
 export function createPairingUrl(app, label = "e2e") {
-  const output = NodeChildProcess.execSync(
-    `node apps/server/src/bin.ts auth pairing create --base-dir ${app.baseDir} --dev-url ${app.webUrl} --base-url ${app.webUrl} --ttl 15m --label ${label}`,
+  const output = NodeChildProcess.execFileSync(
+    process.execPath,
+    [
+      app.serverBin ?? NodePath.join(repoRoot, "apps/server/src/bin.ts"),
+      "auth",
+      "pairing",
+      "create",
+      "--base-dir",
+      app.baseDir,
+      "--dev-url",
+      app.webUrl,
+      "--base-url",
+      app.webUrl,
+      "--ttl",
+      "15m",
+      "--label",
+      label,
+    ],
     {
-      cwd: repoRoot,
+      cwd: app.baseDir,
       encoding: "utf8",
       timeout: 30000,
-      env: { ...process.env, T3CODE_PORT: String(app.serverPort) },
+      env: {
+        ...process.env,
+        HOME: app.agentHome ?? process.env.HOME,
+        USERPROFILE: app.agentHome ?? process.env.USERPROFILE,
+        T3CODE_PORT: String(app.serverPort),
+      },
     },
   );
   const match = output.match(/(http:\/\/\S+\/pair#token=\S+)/);
@@ -201,14 +263,9 @@ async function completeOnboarding(page) {
   await page.waitForURL((url) => url.pathname !== "/welcome", { timeout: 30_000 });
 }
 
-/**
- * Ensures a project exists and the page sits on one of its threads. Specs share
- * a browser context, so this both registers the project on first use and
- * re-opens it afterwards — thread-scoped chrome (composer, Monitor) only
- * renders inside a thread route. Callers own a stack whose only project is
- * `workspacePath`, so any mounted composer belongs to it.
- */
-export async function openProject(page, workspacePath) {
+// Thread chrome only mounts inside a draft or thread route. Reopen the caller's
+// disposable fixture project when needed, then wait for its composer.
+export async function openProject(page, workspacePath, { create = false } = {}) {
   const composer = page.locator('[data-chat-composer-form="true"]');
   const expandComposer = page.getByRole("button", { name: "Expand composer", exact: true });
   const threadReady = composer.or(expandComposer).filter({ visible: true }).first();
@@ -237,7 +294,7 @@ export async function openProject(page, workspacePath) {
       .waitFor({ state: "visible", timeout: 5_000 })
       .then(() => true)
       .catch(() => false));
-  if (empty) {
+  if (empty || create) {
     // The sidebar button only renders in this empty state and can sit under a
     // toast; the palette is the entry point that is always reachable.
     await page.keyboard.press("ControlOrMeta+k");

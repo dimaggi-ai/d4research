@@ -70,7 +70,11 @@ const SETTINGS_SEARCH_TERMS = {
     "usage limits",
     "auto-resume",
     "thread behavior",
+    "nia",
+    "agent behavior",
+    "agent monitor",
   ],
+  SettingsSecondBrain: ["brain", "memory", "notes", "capture", "retrieval"],
   SettingsFollowUp: ["follow-ups", "queue", "steer", "while the agent is running"],
   SettingsArchive: ["archive", "archived", "restore", "unarchive"],
   SettingsProviderAccounts: [

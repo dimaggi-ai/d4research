@@ -91,6 +91,38 @@ export function DiffTokenText(props: {
     );
   }
 
+  const renderedTokens = [];
+  let offset = 0;
+  for (const token of props.tokens) {
+    const start = offset;
+    offset += token.content.length;
+
+    const fontWeight =
+      token.fontStyle !== null && (token.fontStyle & 2) === 2 ? ("700" as const) : ("500" as const);
+    const fontStyle =
+      token.fontStyle !== null && (token.fontStyle & 1) === 1
+        ? ("italic" as const)
+        : ("normal" as const);
+
+    renderedTokens.push(
+      <NativeText
+        key={`${start}:${token.content.length}:${token.color ?? ""}:${token.fontStyle ?? ""}`}
+        selectable
+        style={{
+          color: token.color ?? undefined,
+          fontFamily: REVIEW_MONO_FONT_FAMILY,
+          fontWeight,
+          fontStyle,
+          backgroundColor:
+            token.diffHighlight && props.change ? diffHighlightColor(props.change) : undefined,
+          borderRadius: token.diffHighlight ? 4 : undefined,
+        }}
+      >
+        {token.content.length > 0 ? renderVisibleWhitespace(token.content) : " "}
+      </NativeText>,
+    );
+  }
+
   return (
     <NativeText
       numberOfLines={1}
@@ -102,43 +134,7 @@ export function DiffTokenText(props: {
         lineHeight,
       }}
     >
-      {(() => {
-        let offset = 0;
-
-        return props.tokens.map((token) => {
-          const start = offset;
-          offset += token.content.length;
-
-          const fontWeight =
-            token.fontStyle !== null && (token.fontStyle & 2) === 2
-              ? ("700" as const)
-              : ("500" as const);
-          const fontStyle =
-            token.fontStyle !== null && (token.fontStyle & 1) === 1
-              ? ("italic" as const)
-              : ("normal" as const);
-
-          return (
-            <NativeText
-              key={`${start}:${token.content.length}:${token.color ?? ""}:${token.fontStyle ?? ""}`}
-              selectable
-              style={{
-                color: token.color ?? undefined,
-                fontFamily: REVIEW_MONO_FONT_FAMILY,
-                fontWeight,
-                fontStyle,
-                backgroundColor:
-                  token.diffHighlight && props.change
-                    ? diffHighlightColor(props.change)
-                    : undefined,
-                borderRadius: token.diffHighlight ? 4 : undefined,
-              }}
-            >
-              {token.content.length > 0 ? renderVisibleWhitespace(token.content) : " "}
-            </NativeText>
-          );
-        });
-      })()}
+      {renderedTokens}
     </NativeText>
   );
 }

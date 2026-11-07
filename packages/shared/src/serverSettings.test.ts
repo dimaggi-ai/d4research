@@ -349,10 +349,30 @@ describe("serverSettings helpers", () => {
     });
   });
 
+  it("patches Nia skills without coupling them to full d4Agent replacements", () => {
+    const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      skills: { enabledForNia: ["review"] },
+    });
+    expect(enabled.skills.enabledForNia).toEqual(["review"]);
+    expect(enabled.skills.enabledByDefault).toEqual([]);
+    const staleClient = applyServerSettingsPatch(enabled, {
+      d4Agent: { ...DEFAULT_SERVER_SETTINGS.d4Agent, enabled: true },
+    });
+    expect(staleClient.skills.enabledForNia).toEqual(["review"]);
+    expect(
+      applyServerSettingsPatch(staleClient, { skills: { enabledForNia: [] } }).skills.enabledForNia,
+    ).toEqual([]);
+    expect(
+      applyServerSettingsPatch(enabled, { skills: { enabledByDefault: ["other"] } }).skills
+        .enabledForNia,
+    ).toEqual(["review"]);
+  });
+
   it("replaces the enabled-by-default skill list without retaining old names", () => {
     const current = {
       ...DEFAULT_SERVER_SETTINGS,
       skills: {
+        ...DEFAULT_SERVER_SETTINGS.skills,
         enabledByDefault: ["old-skill", "keep-skill"],
         enabledByThread: { [ThreadId.make("thread-old")]: ["chat-old"] },
       },
@@ -383,6 +403,7 @@ describe("serverSettings helpers", () => {
     const current = {
       ...DEFAULT_SERVER_SETTINGS,
       skills: {
+        ...DEFAULT_SERVER_SETTINGS.skills,
         enabledByDefault: ["old-global"],
         enabledByThread: { [ThreadId.make("old-thread")]: ["old-chat"] },
       },
@@ -396,6 +417,7 @@ describe("serverSettings helpers", () => {
         },
       }).skills,
     ).toEqual({
+      enabledForNia: [],
       enabledByDefault: ["new-global"],
       enabledByThread: { "new-thread": ["new-chat"] },
     });
@@ -415,6 +437,7 @@ describe("serverSettings helpers", () => {
     });
 
     expect(secondClient.skills).toEqual({
+      enabledForNia: [],
       enabledByDefault: ["global"],
       enabledByThread: { "thread-a": ["alpha"], "thread-b": ["beta"] },
     });

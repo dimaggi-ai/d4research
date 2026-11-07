@@ -119,11 +119,6 @@ export interface WorkGroupViewState {
   expandedEntries: Set<string>;
 }
 
-export const WorkGroupViewCtx = createContext<{
-  state: WorkGroupViewState;
-  onToggleEntry: (collapsed: boolean) => void;
-} | null>(null);
-
 export type TimelineWorkEntry = Extract<
   MessagesTimelineRow,
   { kind: "work" }

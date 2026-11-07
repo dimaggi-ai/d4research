@@ -38,7 +38,7 @@ function MekoHandoffControls() {
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
-    try {
+    await (async () => {
       const url = new URL("/api/handoff/meko", connection.value.httpBaseUrl).toString();
       const auth = await runtime.runPromise(
         preparedEnvironmentFetchAuthorization(connection.value, "POST", url),
@@ -70,12 +70,14 @@ function MekoHandoffControls() {
               : "No recent Meko operations on this server."),
         );
       }
-    } catch (error) {
-      if (!controller.signal.aborted)
-        setMessage(error instanceof Error ? error.message : "Meko inspection failed.");
-    } finally {
-      if (!controller.signal.aborted) setBusy(false);
-    }
+    })()
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setMessage(error instanceof Error ? error.message : "Meko inspection failed.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBusy(false);
+      });
   }
 
   return (

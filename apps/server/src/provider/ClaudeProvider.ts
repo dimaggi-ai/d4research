@@ -1,8 +1,8 @@
 import {
   type ClaudeSettings,
   type ModelCapabilities,
-  type ServerProviderModel,
   type ServerProvider,
+  type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ServerProviderUsage,
   type ServerProviderResetCredits,
@@ -20,7 +20,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createModelCapabilities } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
-import { compareSemverVersions } from "@d4research/shared/semver";
+
 import {
   query as claudeQuery,
   type ModelInfo as ClaudeModelInfo,
@@ -32,8 +32,6 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
-  buildBooleanOptionDescriptor,
-  buildSelectOptionDescriptor,
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
   DEFAULT_TIMEOUT_MS,
@@ -85,309 +83,6 @@ const CLAUDE_PRESENTATION = {
   showInteractionModeToggle: true,
   reportsContextWindow: true,
 } as const;
-const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
-const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
-const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
-const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
-
-const CURRENT_CLAUDE_MODELS = new Set(["claude-fable-5", "claude-opus-5", "claude-sonnet-5"]);
-
-export function isLegacyClaudeModel(model: string): boolean {
-  return !CURRENT_CLAUDE_MODELS.has(model);
-}
-
-const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
-  {
-    slug: "claude-fable-5",
-    name: "Claude Fable 5",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
-            { value: "max", label: "Max" },
-            { value: "ultracode", label: "Ultracode" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          options: [
-            { value: "200k", label: "200k" },
-            { value: "1m", label: "1M", isDefault: true },
-          ],
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-opus-5",
-    name: "Claude Opus 5",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
-            { value: "max", label: "Max" },
-            { value: "ultracode", label: "Ultracode" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildBooleanOptionDescriptor({
-          id: "fastMode",
-          label: "Fast Mode",
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          // Claude Code selects the 1M variant explicitly (`claude-opus-5[1m]`).
-          options: [
-            { value: "200k", label: "200k" },
-            { value: "1m", label: "1M", isDefault: true },
-          ],
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-opus-4-8",
-    name: "Claude Opus 4.8",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
-            { value: "max", label: "Max" },
-            { value: "ultracode", label: "Ultracode" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildBooleanOptionDescriptor({
-          id: "fastMode",
-          label: "Fast Mode",
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-opus-4-7",
-    name: "Claude Opus 4.7",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High" },
-            { value: "xhigh", label: "Extra High", isDefault: true },
-            { value: "max", label: "Max" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildBooleanOptionDescriptor({
-          id: "fastMode",
-          label: "Fast Mode",
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "max", label: "Max" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildBooleanOptionDescriptor({
-          id: "fastMode",
-          label: "Fast Mode",
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          options: [
-            { value: "200k", label: "200k" },
-            { value: "1m", label: "1M", isDefault: true },
-          ],
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-opus-4-5",
-    name: "Claude Opus 4.5",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "max", label: "Max" },
-          ],
-        }),
-        buildBooleanOptionDescriptor({
-          id: "fastMode",
-          label: "Fast Mode",
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-sonnet-5",
-    name: "Claude Sonnet 5",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
-            { value: "max", label: "Max" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          // Sonnet is 200k-default in Claude Code (1M is opt-in there too).
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildSelectOptionDescriptor({
-          id: "effort",
-          label: "Reasoning",
-          options: [
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High", isDefault: true },
-            { value: "max", label: "Max" },
-            { value: "ultrathink", label: "Ultrathink" },
-          ],
-          promptInjectedValues: ["ultrathink"],
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          // Sonnet is 200k-default in Claude Code (1M is opt-in there too).
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
-        }),
-      ],
-    }),
-  },
-  {
-    slug: "claude-haiku-4-5",
-    name: "Claude Haiku 4.5",
-    isCustom: false,
-    capabilities: createModelCapabilities({
-      optionDescriptors: [
-        buildBooleanOptionDescriptor({
-          id: "thinking",
-          label: "Thinking",
-        }),
-      ],
-    }),
-  },
-];
-
-const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = CLAUDE_MODEL_CATALOG.map((model) =>
-  isLegacyClaudeModel(model.slug) ? { ...model, isLegacy: true } : model,
-);
-
-function supportsClaudeOpus5(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_5_VERSION) >= 0 : false;
-}
-
-function supportsClaudeFable5(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_FABLE_5_VERSION) >= 0 : false;
-}
-
-function supportsClaudeOpus48(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_4_8_VERSION) >= 0 : false;
-}
-
-function supportsClaudeOpus47(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_4_7_VERSION) >= 0 : false;
-}
-
-function getBuiltInClaudeModelsForVersion(
-  version: string | null | undefined,
-): ReadonlyArray<ServerProviderModel> {
-  return BUILT_IN_MODELS.filter((model) => {
-    if (model.slug === "claude-opus-5") {
-      return supportsClaudeOpus5(version);
-    }
-    if (model.slug === "claude-fable-5") {
-      return supportsClaudeFable5(version);
-    }
-    if (model.slug === "claude-opus-4-8") {
-      return supportsClaudeOpus48(version);
-    }
-    if (model.slug === "claude-opus-4-7") {
-      return supportsClaudeOpus47(version);
-    }
-    return true;
-  });
-}
 
 const OLLAMA_DEFAULT_PORT = "11434";
 const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0"]);
@@ -403,7 +98,7 @@ function isLikelyOllamaEmbeddingModel(slug: string): boolean {
   return OLLAMA_EMBEDDING_MODEL_PATTERN.test(slug);
 }
 
-export function parseOllamaModelList(output: string): ReadonlyArray<string> {
+function parseOllamaModelList(output: string): ReadonlyArray<string> {
   const seen = new Set<string>();
   for (const line of output.split(/\r?\n/u).slice(1)) {
     const slug = line.trim().split(/\s+/u, 1)[0];
@@ -413,7 +108,7 @@ export function parseOllamaModelList(output: string): ReadonlyArray<string> {
 }
 
 /** Returns model slugs from an Ollama `GET /api/tags` JSON payload. */
-export function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> {
+function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> {
   if (!payload || typeof payload !== "object") return [];
   const models = (payload as { models?: unknown }).models;
   if (!Array.isArray(models)) return [];
@@ -429,14 +124,9 @@ export function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> 
   return [...seen];
 }
 
-/**
- * Recognize a locally hosted Ollama Anthropic-compatible endpoint. Matches both
- * the in-app preset and the environment `ollama launch claude` exports
- * (`ANTHROPIC_BASE_URL=http://127.0.0.1:11434`, `ANTHROPIC_AUTH_TOKEN=ollama`),
- * tolerating trailing slashes, `localhost`/loopback host spellings, and a
- * non-default port when the auth token marks the endpoint as Ollama.
- */
-export function claudeUsesLocalOllama(environment: NodeJS.ProcessEnv): boolean {
+// Recognize the Ollama preset and launch environment, including loopback aliases
+// and token-marked endpoints on non-default ports.
+function claudeUsesLocalOllama(environment: NodeJS.ProcessEnv): boolean {
   const raw = environment.ANTHROPIC_BASE_URL?.trim();
   if (!raw) return false;
   let url: URL;
@@ -459,7 +149,7 @@ const CLAUDE_DEFAULT_MODEL_ENV_KEYS = [
 ] as const;
 
 /** Exact model identities exposed by a loopback Anthropic-compatible gateway. */
-export function claudeLocalModelOverrides(environment: NodeJS.ProcessEnv): ReadonlyArray<string> {
+function claudeLocalModelOverrides(environment: NodeJS.ProcessEnv): ReadonlyArray<string> {
   const raw = environment.ANTHROPIC_BASE_URL?.trim();
   if (!raw) return [];
   try {
@@ -477,28 +167,12 @@ export function claudeLocalModelOverrides(environment: NodeJS.ProcessEnv): Reado
   ];
 }
 
-export function getBuiltInClaudeModelsForEnvironment(
-  environment: NodeJS.ProcessEnv,
-  version: string | null,
-): ReadonlyArray<ServerProviderModel> {
-  return claudeUsesLocalOllama(environment) || claudeLocalModelOverrides(environment).length > 0
-    ? []
-    : getBuiltInClaudeModelsForVersion(version);
-}
-
 const OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS = 3_000;
 
-/**
- * Fetch model tags straight from the Ollama daemon's HTTP API. Best-effort
- * fallback for hosts where the `ollama` CLI is not on PATH but the daemon is
- * reachable; failure or timeout collapses to `null` so callers can tell an
- * unreachable daemon from an empty one. `FetchHttpClient.layer` is provided
- * here so callers of `checkClaudeProviderStatus` keep their requirements
- * unchanged.
- */
-// @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-const fetchOllamaTags = (baseUrl: string) =>
-  Effect.gen(function* () {
+// Use the daemon HTTP API when the Ollama CLI is unavailable. Failure returns null.
+// Provide FetchHttpClient locally to preserve caller requirements.
+const fetchOllamaTags = Effect.fn("ClaudeProvider.fetchOllamaTags")(
+  function* (baseUrl: string) {
     const client = yield* HttpClient.HttpClient;
     const payload = yield* client
       .execute(HttpClientRequest.get(new URL("/api/tags", baseUrl)))
@@ -507,12 +181,15 @@ const fetchOllamaTags = (baseUrl: string) =>
         Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Unknown)),
       );
     return parseOllamaTagsPayload(payload) as ReadonlyArray<string> | null;
-  }).pipe(
-    Effect.timeoutOption(OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS),
-    Effect.map(Option.getOrElse((): ReadonlyArray<string> | null => null)),
-    Effect.orElseSucceed((): ReadonlyArray<string> | null => null),
-    Effect.provide(FetchHttpClient.layer),
-  );
+  },
+  (effect) =>
+    effect.pipe(
+      Effect.timeoutOption(OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS),
+      Effect.map(Option.getOrElse((): ReadonlyArray<string> | null => null)),
+      Effect.orElseSucceed((): ReadonlyArray<string> | null => null),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+);
 
 export interface LocalOllamaDiscovery {
   readonly models: ReadonlyArray<string>;
@@ -525,39 +202,39 @@ export interface LocalOllamaDiscovery {
  * (includes `:cloud` tags and locally created aliases); falls back to the
  * daemon's `GET /api/tags` HTTP API when the CLI is missing or fails.
  */
-// @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
-  Effect.gen(function* () {
-    if (!claudeUsesLocalOllama(environment)) {
-      return { models: [], reachable: true } satisfies LocalOllamaDiscovery;
-    }
-    const listed = yield* resolveSpawnCommand("ollama", ["list"], { env: environment }).pipe(
-      Effect.flatMap((resolved) =>
-        spawnAndCollect(
-          "ollama",
-          ChildProcess.make(resolved.command, resolved.args, {
-            env: environment,
-            shell: resolved.shell,
-          }),
-        ),
+const discoverLocalOllamaModels = Effect.fn("ClaudeProvider.discoverLocalOllamaModels")(function* (
+  environment: NodeJS.ProcessEnv,
+) {
+  if (!claudeUsesLocalOllama(environment)) {
+    return { models: [], reachable: true } satisfies LocalOllamaDiscovery;
+  }
+  const listed = yield* resolveSpawnCommand("ollama", ["list"], { env: environment }).pipe(
+    Effect.flatMap((resolved) =>
+      spawnAndCollect(
+        "ollama",
+        ChildProcess.make(resolved.command, resolved.args, {
+          env: environment,
+          shell: resolved.shell,
+        }),
       ),
-      Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
-      Effect.result,
-    );
-    if (
-      Result.isSuccess(listed) &&
-      Option.isSome(listed.success) &&
-      listed.success.value.code === 0
-    ) {
-      const models = parseOllamaModelList(listed.success.value.stdout);
-      if (models.length > 0) return { models, reachable: true } satisfies LocalOllamaDiscovery;
-    }
-    const baseUrl = environment.ANTHROPIC_BASE_URL?.trim();
-    const tags = baseUrl ? yield* fetchOllamaTags(baseUrl) : null;
-    return tags === null
-      ? ({ models: [], reachable: false } satisfies LocalOllamaDiscovery)
-      : ({ models: tags, reachable: true } satisfies LocalOllamaDiscovery);
-  });
+    ),
+    Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
+    Effect.result,
+  );
+  if (
+    Result.isSuccess(listed) &&
+    Option.isSome(listed.success) &&
+    listed.success.value.code === 0
+  ) {
+    const models = parseOllamaModelList(listed.success.value.stdout);
+    if (models.length > 0) return { models, reachable: true } satisfies LocalOllamaDiscovery;
+  }
+  const baseUrl = environment.ANTHROPIC_BASE_URL?.trim();
+  const tags = baseUrl ? yield* fetchOllamaTags(baseUrl) : null;
+  return tags === null
+    ? ({ models: [], reachable: false } satisfies LocalOllamaDiscovery)
+    : ({ models: tags, reachable: true } satisfies LocalOllamaDiscovery);
+});
 
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
@@ -767,7 +444,7 @@ function makeClaudeUsageStatus(
   };
 }
 
-export function mapClaudeUsage(
+function mapClaudeUsage(
   raw: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits"> & {
     readonly subscription_type?: string | null;
   },
@@ -1192,12 +869,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {
-    // The model picker only offers models from instances whose status is
-    // exactly "ready", so a soft "warning" here hides every model the endpoint
-    // can actually serve. Against a local Ollama endpoint there is no Anthropic
-    // account to verify in the first place — the sentinel `ANTHROPIC_AUTH_TOKEN`
-    // is the whole credential — so report ready and keep the models reachable
-    // rather than failing closed on an account lookup that cannot succeed.
+    // Local Ollama has no Anthropic account to verify. Report ready with its sentinel
+    // credential so the model picker retains the endpoint models.
     if (usesLocalOllama) {
       // "Ready" is only honest while the daemon answers. With the daemon down,
       // saved models would render a working-looking picker whose every turn
@@ -1347,7 +1020,7 @@ export const makePendingClaudeProvider = Effect.fn("ClaudeProvider.makePendingCl
         ? []
         : modelCatalog.models.map((entry) => entry.model),
       [...claudeSettings.customModels, ...localModelOverrides],
-      );
+    );
 
     if (!claudeSettings.enabled) {
       return buildServerProvider({

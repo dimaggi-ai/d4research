@@ -1,3 +1,4 @@
+import { AgentMonitorSettings } from "./AgentMonitorSettings";
 import { useNavigation } from "@react-navigation/native";
 import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@d4research/contracts";
@@ -47,7 +48,7 @@ import { supportsSharedSettingsSync } from "@d4research/client-runtime/state/sha
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
 
 const PAGE_TITLES: Record<SettingsPage, string> = {
-  threads: "Threads",
+  threads: "Nia and threads",
   "source-control": "Source control",
   worktrees: "Worktrees",
   maintenance: "Maintenance",
@@ -311,6 +312,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
             ) : null}
             {props.page === "threads" ? (
               <>
+                <AgentMonitorSettings />
                 <SettingsSection
                   title="Default workspace"
                   footer={managed("defaultThreadEnvMode")}

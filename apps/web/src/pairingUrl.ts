@@ -1,5 +1,1 @@
-export {
-  getPairingTokenFromUrl,
-  setPairingTokenOnUrl,
-  stripPairingTokenFromUrl,
-} from "@d4research/shared/remote";
+export { getPairingTokenFromUrl } from "@d4research/shared/remote";

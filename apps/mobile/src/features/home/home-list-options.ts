@@ -71,7 +71,7 @@ export function HomeListOptionsProvider({
   }, [environmentId, projectKey, savePreferences]);
   const value = useMemo(
     () => ({ options, setOptions, projectGroupingMode }),
-    [options, projectGroupingMode],
+    [options, projectGroupingMode, setOptions],
   );
   return createElement(HomeListOptionsContext, { value }, children);
 }
@@ -95,18 +95,24 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
     projectGroupingMode: shared?.projectGroupingMode ?? "repository",
   };
 
-  const setSelectedEnvironmentId = useCallback((value: EnvironmentId | null) => {
-    setOptions((current) => ({ ...current, selectedEnvironmentId: value }));
-  }, []);
+  const setSelectedEnvironmentId = useCallback(
+    (value: EnvironmentId | null) => {
+      setOptions((current) => ({ ...current, selectedEnvironmentId: value }));
+    },
+    [setOptions],
+  );
   const setSelectedProjectKey = useCallback(
     (value: string | null) => {
       setOptions((current) => ({ ...current, selectedProjectKey: value }));
     },
     [setOptions],
   );
-  const setProjectSortOrder = useCallback((value: HomeProjectSortOrder) => {
-    setOptions((current) => ({ ...current, projectSortOrder: value }));
-  }, []);
+  const setProjectSortOrder = useCallback(
+    (value: HomeProjectSortOrder) => {
+      setOptions((current) => ({ ...current, projectSortOrder: value }));
+    },
+    [setOptions],
+  );
   return {
     options: resolvedOptions,
     setSelectedEnvironmentId,

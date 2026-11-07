@@ -64,14 +64,14 @@ export function ComposerContextAttachment(props: {
     if (sharing) return;
     setSharing(true);
     const controller = new AbortController();
-    try {
+    await (async () => {
       if (local) {
         const preview = await loadLocalAttachmentPreview(local, controller.signal);
-        try {
+        await (async () => {
           await preview?.share(controller.signal, shareSourceIdentifier);
-        } finally {
+        })().finally(() => {
           preview?.dispose();
-        }
+        });
       } else {
         const url = await refresh();
         if (!url) throw new Error("Reconnect to the environment and try again.");
@@ -82,14 +82,16 @@ export function ComposerContextAttachment(props: {
           sourceIdentifier: shareSourceIdentifier,
         });
       }
-    } catch (cause) {
-      Dialog.alert(
-        "Could not open attachment",
-        cause instanceof Error ? cause.message : "Try again.",
-      );
-    } finally {
-      setSharing(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        Dialog.alert(
+          "Could not open attachment",
+          cause instanceof Error ? cause.message : "Try again.",
+        );
+      })
+      .finally(() => {
+        setSharing(false);
+      });
   };
   return (
     <View className="gap-3">

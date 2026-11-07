@@ -1283,6 +1283,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
+  unavailableStatus: string | null;
   hasSendableContent: boolean;
   canResume: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
@@ -1329,6 +1330,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         sendDisabledReason={props.sendDisabledReason}
         isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
+        unavailableStatus={props.unavailableStatus}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         canResume={props.canResume}
@@ -2321,6 +2323,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         runtimeModeCeilingDenial ??
         (multipleModelSelections === null ? providerSendBlockReason : null)));
   const isSendDisabled = sendDisabledReason !== null;
+  const composerUnavailableStatus =
+    environmentUnavailable !== null
+      ? "Environment disconnected"
+      : projectSelectionRequired
+        ? "Choose a project"
+        : providerCatalogPending
+          ? "Loading providers"
+          : noProviderAvailable
+            ? "Enable a provider in Settings"
+            : null;
   const selectedProviderStatus = selectedProviderEntry?.snapshot ?? null;
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
   const selectedProviderSkills = selectedProviderStatus
@@ -5383,10 +5395,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onOpenProviderSetup={onOpenProviderSetup}
       />
 
-      <span
-        className="inline-flex shrink-0 items-center gap-1"
-        data-resting-fixed-control={composerControlsVisibleInStrip ? "true" : undefined}
-      >
+      <span className="inline-flex shrink-0 items-center gap-1" data-resting-fixed-control="true">
         <ComposerSessionSkillsControl
           environmentId={environmentId}
           threadId={routeThreadRef.threadId}
@@ -6827,6 +6836,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 noProviderAvailable ||
                                 projectSelectionRequired
                               }
+                              unavailableStatus={composerUnavailableStatus}
                               isPreparingWorktree={false}
                               hasSendableContent={false}
                               preserveComposerFocusOnPointerDown
@@ -7531,6 +7541,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         noProviderAvailable ||
                         projectSelectionRequired
                       }
+                      unavailableStatus={composerUnavailableStatus}
                       isPreparingWorktree={false}
                       hasSendableContent={false}
                       preserveComposerFocusOnPointerDown
@@ -7664,6 +7675,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       noProviderAvailable ||
                       projectSelectionRequired
                     }
+                    unavailableStatus={composerUnavailableStatus}
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent || voiceInputActive}
                     canResume={showResumeAction}

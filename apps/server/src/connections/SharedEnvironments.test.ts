@@ -308,6 +308,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           expect((yield* fetchAsPhone("/api/example")).status).toBe(503);
           yield* sessions.markConnected(owner.sessionId);
           modern = false;
+          const standardClient = yield* hostAuth.issueSession({ scopes: AuthStandardClientScopes });
+          expect(
+            (yield* shared
+              .publish(standardClient, { environments: [registration] })
+              .pipe(Effect.flip)).reason,
+          ).toBe("forbidden");
           yield* shared.publish(owner, { environments: [registration] });
           expect((yield* shared.catalog(phoneSession)).environments[0]?.reason).toContain("Update");
           const before = calls;

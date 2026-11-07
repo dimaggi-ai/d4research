@@ -21,6 +21,9 @@ describe("review diff highlighting while scrolling", () => {
   it("highlights the settled viewport even below the movement threshold", () => {
     const request = vi.fn();
     const scheduler = createReviewDiffHighlightScheduler(request);
+    scheduler.update({ firstRowIndex: 0, lastRowIndex: 80 });
+    vi.advanceTimersByTime(0);
+    request.mockClear();
     scheduler.update({ firstRowIndex: 2, lastRowIndex: 82 });
     vi.advanceTimersByTime(100);
     scheduler.update({ firstRowIndex: 3, lastRowIndex: 83 });
@@ -43,6 +46,9 @@ describe("review diff highlighting while scrolling", () => {
   it("requests large jumps and reverse scrolling immediately without stale timers", () => {
     const request = vi.fn();
     const scheduler = createReviewDiffHighlightScheduler(request);
+    scheduler.update({ firstRowIndex: 0, lastRowIndex: 80 });
+    vi.advanceTimersByTime(0);
+    request.mockClear();
     scheduler.update({ firstRowIndex: 1, lastRowIndex: 81 });
     scheduler.update({ firstRowIndex: 1_000, lastRowIndex: 1_080 });
     scheduler.update({ firstRowIndex: 0, lastRowIndex: 80 });
@@ -51,6 +57,16 @@ describe("review diff highlighting while scrolling", () => {
       [{ firstRowIndex: 1_000, lastRowIndex: 1_080 }],
       [{ firstRowIndex: 0, lastRowIndex: 80 }],
     ]);
+  });
+
+  it("coalesces the initial native range with its jump destination", () => {
+    const request = vi.fn();
+    const scheduler = createReviewDiffHighlightScheduler(request);
+    scheduler.update({ firstRowIndex: 0, lastRowIndex: 80 });
+    scheduler.update({ firstRowIndex: 1_000, lastRowIndex: 1_080 });
+    expect(request).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(0);
+    expect(request).toHaveBeenCalledExactlyOnceWith({ firstRowIndex: 1_000, lastRowIndex: 1_080 });
   });
 
   it("cancels pending work on disposal and resets the range for a new diff", () => {

@@ -135,7 +135,7 @@ export const layer = Layer.effect(
         });
         yield* electronDialog.showErrorBox(
           "WSL backend couldn't start",
-          `${reason}\n\nFalling back to the Windows backend so T3 Code can open. Re-enable the WSL backend from Settings > Sharing & access once the WSL distro is fixed.`,
+          `${reason}\n\nFalling back to the Windows backend so d4research can open. Re-enable the WSL backend from Settings > Sharing & access once the WSL distro is fixed.`,
         );
         // Clear wslOnly too so enabling WSL cannot restore a failed mode.
         // Keep the in-memory fallback if persistence fails.
@@ -177,7 +177,7 @@ export const layer = Layer.effect(
         electronDialog
           .showErrorBox(
             "This T3 home is unavailable",
-            "Another T3 Code server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx d4research@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
+            "Another d4research server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `d4research update`. If the older launcher cannot update, run `d4research service uninstall` and optionally reinstall with `d4research service install` from a current CLI. Use `npx d4research@latest` if `d4research` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen d4research. You can also set a separate T3CODE_HOME and pair with the running server.",
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });

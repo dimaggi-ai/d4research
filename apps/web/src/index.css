@@ -685,7 +685,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     background-color: color-mix(in oklab, var(--primary) 45%, transparent);
   }
   :root {
-    /* Keep the original T3 Code artwork palettes as the defaults. Built-in
+    /* Keep the original d4research artwork palettes as the defaults. Built-in
        themes override them with their own pigments in the components layer. */
     --stage-art-top: oklch(0.782169 0.123386 240.226);
     --stage-art-mid: oklch(0.616111 0.195824 259.735);
@@ -3005,15 +3005,15 @@ code {
   border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
 }
 
-/* Caps a long path, URL, or chip at 24rem; text past the cap wraps. */
+/* Keep compact cells bounded; expanded cells wrap prose and long tokens. */
 .chat-markdown :is(th, td) {
   max-width: 24rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chat-markdown .chat-markdown-table-container[data-expanded="true"] td {
-  max-width: 24rem;
+.chat-markdown .chat-markdown-table-container[data-expanded="true"] :is(th, td) {
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
@@ -3063,22 +3063,6 @@ code {
   }
   to {
     transform: scaleX(0);
-  }
-}
-
-/* Fit expanded tables to wide timeline lanes; narrow lanes keep horizontal
-   scrolling so prose columns remain readable. */
-@container chat-lane (min-width: 36rem) {
-  .chat-markdown .chat-markdown-table-container[data-expanded="true"] table {
-    min-width: 0;
-  }
-
-  .chat-markdown .chat-markdown-table-container[data-expanded="true"] th {
-    white-space: normal;
-  }
-
-  .chat-markdown .chat-markdown-table-container[data-expanded="true"] td {
-    overflow-wrap: break-word;
   }
 }
 

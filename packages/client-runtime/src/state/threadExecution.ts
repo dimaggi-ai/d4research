@@ -309,9 +309,7 @@ export function deriveThreadRuntime(
 }
 
 /** The runtime summary a thread's structure determines: all of it but `updatedAt`. */
-export function deriveThreadStructureRuntime(
-  projection: ThreadStructure,
-): ThreadStructureRuntime | null {
+function deriveThreadStructureRuntime(projection: ThreadStructure): ThreadStructureRuntime | null {
   const latestRun = deriveLatestThreadRun(projection);
   const providerSession = projection.providerSessions.findLast(
     (session) => session.providerInstanceId === projection.thread.providerInstanceId,

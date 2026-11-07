@@ -554,6 +554,8 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "reviewGuideModelSelection",
   "textGenerationModelSelection",
   "fallbackModelSelection",
+  "modelSelection",
+  "taskModelSelection",
   "pullRequestMergeMethod",
   // Empty by default, these hold one whole value, which a managed policy can default.
   ...Object.entries(DEFAULT_SERVER_SETTINGS).flatMap(([key, value]) =>
@@ -732,7 +734,7 @@ const make = Effect.gen(function* () {
   });
 
   const writeSettingsAtomically = Effect.fnUntraced(
-    function* (settings: ServerSettings) {
+    function* (settings: ServerSettings, migrating = false) {
       const stripped =
         stripDefaultServerSettings(settings, {
           ...managed.defaults,
@@ -746,9 +748,13 @@ const make = Effect.gen(function* () {
             ),
       );
 
+      const contents = `${sparseSettingsJson}\n`;
+      // On load, an identical rewrite fires the file watcher, which reloads and writes again.
+      if (migrating && (yield* readConfigExists) && (yield* readRawConfig) === contents) return;
+
       return yield* writeFileStringAtomically({
         filePath: settingsPath,
-        contents: `${sparseSettingsJson}\n`,
+        contents,
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, pathService),
@@ -953,7 +959,7 @@ const make = Effect.gen(function* () {
       (settingsFileTrusted && legacyProviders !== undefined) ||
       hasLegacySourceControl
     ) {
-      yield* writeSettingsAtomically(migrated);
+      yield* writeSettingsAtomically(migrated, true);
       for (const move of sourceControlMigration.secretMoves) {
         yield* secretStore.remove(move.from).pipe(Effect.ignore);
       }

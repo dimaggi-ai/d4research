@@ -146,7 +146,30 @@ const providerInstance = {
   },
   displayName: "Codex test",
   enabled: true,
-  snapshot: { getSnapshot: Effect.succeed({}) } as unknown as ProviderInstance["snapshot"],
+  snapshot: {
+    resolveMaintenance: () => Effect.die("maintenance is not used by lifecycle tests"),
+    refresh: Effect.die("snapshot refresh is not used by lifecycle tests"),
+    streamChanges: Stream.empty,
+    applyUsageLimits: () => Effect.die("usage updates are not used by lifecycle tests"),
+    getSnapshot: Effect.succeed({
+      instanceId: modelSelection.instanceId,
+      driver,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-13T12:00:00.000Z",
+      models: ["gpt-5.4", "gpt-5.5"].map((slug) => ({
+        slug,
+        name: slug,
+        isCustom: false,
+        capabilities: null,
+      })),
+      slashCommands: [],
+      skills: [],
+    }),
+  },
   orchestrationAdapter,
   textGeneration: {} as ProviderInstance["textGeneration"],
 } satisfies ProviderInstance;
@@ -158,6 +181,12 @@ const alternateProviderInstance = {
     continuationKey: "codex:test:alternate",
   },
   displayName: "Codex alternate test",
+  snapshot: {
+    ...providerInstance.snapshot,
+    getSnapshot: providerInstance.snapshot.getSnapshot.pipe(
+      Effect.map((snapshot) => ({ ...snapshot, instanceId: alternateInstanceId })),
+    ),
+  },
   orchestrationAdapter: {
     ...orchestrationAdapter,
     instanceId: alternateInstanceId,

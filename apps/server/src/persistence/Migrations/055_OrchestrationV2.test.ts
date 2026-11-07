@@ -1,6 +1,5 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/sql/Migrator";
 import * as Schema from "effect/Schema";
@@ -20,7 +19,7 @@ layer("055_OrchestrationV2", (it) => {
       // 37, 38, 45 and 46 stay reserved for migrations d4research shipped and retired.
       assert.deepStrictEqual(
         ids,
-        Array.from({ length: 88 }, (_, index) => index + 1).filter(
+        Array.from({ length: 91 }, (_, index) => index + 1).filter(
           (id) => id !== 37 && id !== 38 && id !== 45 && id !== 46,
         ),
       );

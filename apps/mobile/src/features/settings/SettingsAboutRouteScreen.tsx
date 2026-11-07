@@ -61,15 +61,15 @@ function AppSettingsSection() {
     // same frame would both get through. The ref closes that window.
     if (updateInFlight.current) return;
     updateInFlight.current = true;
-    try {
+    await (async () => {
       await runAppUpdateCheck({
         applyMode: "immediate",
         onFailure: (message) => Dialog.alert("Update failed", message),
         onStateChange: setUpdateState,
       });
-    } finally {
+    })().finally(() => {
       updateInFlight.current = false;
-    }
+    });
   }, []);
 
   const handleVersionPress = useCallback(() => {

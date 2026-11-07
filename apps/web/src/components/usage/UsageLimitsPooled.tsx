@@ -270,6 +270,7 @@ function ActiveSegmentPopover({
     handle.close();
     actions.current?.unmount();
   }, [available, handle, actions]);
+  if (!available) return null;
   return (
     <PopoverPopup side="top" sideOffset={6}>
       <SegmentPopover
@@ -648,19 +649,21 @@ export function UsageLimitsPooled({
           </Fragment>
         ))}
       </SegmentPopoverContext>
-      <Popover handle={segmentPopover} actionsRef={segmentPopoverActions}>
-        {({ payload }) =>
-          payload ? (
-            <ActiveSegmentPopover
-              handle={segmentPopover}
-              actions={segmentPopoverActions}
-              payload={payload}
-              pools={pools}
-              now={now}
-            />
-          ) : null
-        }
-      </Popover>
+      {pools.length > 0 ? (
+        <Popover handle={segmentPopover} actionsRef={segmentPopoverActions}>
+          {({ payload }) =>
+            payload ? (
+              <ActiveSegmentPopover
+                handle={segmentPopover}
+                actions={segmentPopoverActions}
+                payload={payload}
+                pools={pools}
+                now={now}
+              />
+            ) : null
+          }
+        </Popover>
+      ) : null}
       {cursorPromptAt === pools.length ? cursorPrompt : null}
       {externalLinks.map((link) => (
         <section

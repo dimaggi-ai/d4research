@@ -123,6 +123,10 @@
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"
     },
+    "./niaServers": {
+      "types": "./src/niaServers.ts",
+      "default": "./src/niaServers.ts"
+    },
     "./providerSkills": {
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"

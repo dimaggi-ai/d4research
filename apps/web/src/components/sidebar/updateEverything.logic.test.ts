@@ -121,7 +121,7 @@ describe("collectServerUpdateTargets", () => {
         entry.label,
         entry.reason,
       ]),
-    ).toEqual([["off", "Example Corp manages T3 Code updates."]]);
+    ).toEqual([["off", "Example Corp manages d4research updates."]]);
     expect(
       collectServerUpdateTargets(
         machines.map((entry) => ({
@@ -251,7 +251,7 @@ describe("collectChannelSwitchTargets", () => {
       ["old-desktop", "needs a newer desktop app"],
       [
         "no-nightly",
-        "Example Corp manages T3 Code updates. Only stable releases can be installed.",
+        "Example Corp manages d4research updates. Only stable releases can be installed.",
       ],
     ]);
   });
@@ -413,7 +413,7 @@ describe("bundled fork server updates", () => {
 });
 
 describe("describeUpdateEverything", () => {
-  it("gives each machine one row with its T3 Code and provider updates", () => {
+  it("gives each machine one row with its d4research and provider updates", () => {
     const id = EnvironmentId.make;
     const { rows } = describeUpdateEverything({
       localVersion: "1.1.0",

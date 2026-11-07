@@ -1,8 +1,10 @@
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { useEffect, useState } from "react";
+import { useAudioPlayerStatus } from "expo-audio";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useFullscreenVideoOpen, useMediaAudioSessionHold } from "../../lib/videoAudioSession";
+import { createAudioPlaybackSession } from "../../lib/audioSession";
+import { usePlaybackAudioPlayer } from "../voice-input/usePlaybackAudioPlayer";
 
 function timestamp(seconds: number) {
   const value = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
@@ -10,23 +12,26 @@ function timestamp(seconds: number) {
 }
 
 export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
-  const player = useAudioPlayer({ uri: props.uri }, { updateInterval: 500 });
+  const player = usePlaybackAudioPlayer(props.uri);
   const status = useAudioPlayerStatus(player);
   const [seekError, setSeekError] = useState(false);
+  const [playbackRequested, setPlaybackRequested] = useState(false);
+  const session = useMemo(
+    () => createAudioPlaybackSession(player, false, setPlaybackRequested),
+    [player],
+  );
   // Video teardown deactivates the shared iOS session, which would stop this player.
-  useMediaAudioSessionHold(status.playing);
+  useMediaAudioSessionHold(playbackRequested || status.playing);
   const fullscreenVideoOpen = useFullscreenVideoOpen();
+  // Stop the native player when video takes the audio session or playback finishes.
   useEffect(() => {
-    if (fullscreenVideoOpen) player.pause();
-  }, [fullscreenVideoOpen, player]);
-  const seek = (seconds: number, play = false) => {
+    if (fullscreenVideoOpen || status.didJustFinish || status.error) session.pause();
+  }, [fullscreenVideoOpen, status.didJustFinish, status.error, session]);
+  // Release this mounted viewer's native playback request on teardown.
+  useEffect(() => () => session.pause(), [session]);
+  const seek = (seconds: number) => {
     setSeekError(false);
-    void player
-      .seekTo(seconds)
-      .then(() => {
-        if (play) player.play();
-      })
-      .catch(() => setSeekError(true));
+    void player.seekTo(seconds).catch(() => setSeekError(true));
   };
   return (
     <View className="flex-1 items-center justify-center gap-5 p-6">
@@ -45,16 +50,24 @@ export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          disabled={!status.isLoaded}
+          disabled={!status.isLoaded && !playbackRequested}
           onPress={() => {
-            if (status.playing) player.pause();
-            else if (status.didJustFinish || status.currentTime >= status.duration) seek(0, true);
-            else player.play();
+            if (status.playing || session.requested) session.pause();
+            else {
+              setSeekError(false);
+              void session
+                .play(
+                  status.didJustFinish || status.currentTime >= status.duration
+                    ? () => player.seekTo(0)
+                    : undefined,
+                )
+                .catch(() => setSeekError(true));
+            }
           }}
           className="rounded-xl bg-subtle px-6 py-4"
         >
           <Text className="text-foreground">
-            {!status.isLoaded ? "Loading…" : status.playing ? "Pause" : "Play"}
+            {playbackRequested || status.playing ? "Pause" : !status.isLoaded ? "Loading…" : "Play"}
           </Text>
         </Pressable>
         <Pressable

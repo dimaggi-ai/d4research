@@ -356,7 +356,7 @@ export function shouldSubmitComposerOnEnter(input: {
 
 /**
  * Banner copy for a staged provider handoff. A draft that opens with
- * `!provider:model` will NOT pick the handoff up — the delegation is answered
+ * `!provider:model` will NOT pick the handoff up: the delegation is answered
  * by the model it names and the thread keeps its own — so the banner has to
  * say so rather than promise a switch that this send will not perform.
  */
@@ -368,7 +368,7 @@ export function describeStagedHandoffBanner(input: {
 }): { readonly title: string; readonly description: string } {
   if (input.paused) {
     return {
-      title: `Handoff to ${input.displayName} paused — provider unavailable`,
+      title: `Handoff to ${input.displayName} paused: provider unavailable`,
       description: `Messages continue on ${input.currentDisplayName} until it returns, or cancel the switch.`,
     };
   }

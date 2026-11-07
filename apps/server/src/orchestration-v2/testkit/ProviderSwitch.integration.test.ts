@@ -107,6 +107,7 @@ function makeTestAdapter(input: {
   readonly nativeThreadGeneration?: Ref.Ref<number>;
   readonly failResume?: boolean;
   readonly failResumeOnce?: Ref.Ref<boolean>;
+  readonly supportsCompaction?: boolean;
   readonly compactedContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly initialContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
@@ -245,7 +246,12 @@ function makeTestAdapter(input: {
                     ),
                   ),
               }),
-          compactThread: (turnInput) => runtime.startTurn(turnInput),
+          ...(input.supportsCompaction
+            ? {
+                compactThread: (turnInput: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+                  runtime.startTurn(turnInput),
+              }
+            : {}),
           startTurn: (turnInput) =>
             Effect.gen(function* () {
               if (
@@ -460,6 +466,7 @@ describe("orchestration v2 provider switching", () => {
               responseByRunOrdinal: {},
               capturedTurns,
               injectedHistory,
+              supportsCompaction: true,
               tokenUsageByRunOrdinal: { 1: { usedTokens: 120_000, maxTokens: 128_000 } },
               ...(outcome === "unmeasured"
                 ? {}
@@ -646,6 +653,7 @@ describe("orchestration v2 provider switching", () => {
             responseByRunOrdinal: scenario.includes("target-estimate")
               ? { 2: "x".repeat(10_000) }
               : {},
+            supportsCompaction: scenario.startsWith("compact"),
             capturedTurns,
             ...(scenario.includes("retry") || scenario.includes("unsent") ? { failStartOnce } : {}),
             ...(replaceNative ? { failResumeOnce, nativeThreadGeneration: generation } : {}),

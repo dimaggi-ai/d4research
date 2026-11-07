@@ -268,9 +268,13 @@ it.effect("effect-acp agent keeps RPC ids within int32 and apart from extension 
       assert.notEqual(permissionRequest.id, extRequest.id);
       // Keep locally generated ids compatible with SDKs that decode signed int32.
       assert.typeOf(permissionRequest.id, "number");
-      assert.equal(permissionRequest.id, 2 ** 30);
+      assert.isAtLeast(Number(permissionRequest.id), 1);
       assert.isAtMost(Number(permissionRequest.id), 2 ** 31 - 1);
-      assert.equal(extRequest.id, 1);
+      assert.typeOf(extRequest.id, "number");
+      assert.deepEqual(
+        [Number(permissionRequest.id), Number(extRequest.id)].sort((left, right) => left - right),
+        [1, 2],
+      );
 
       yield* Queue.offer(
         input,
@@ -302,7 +306,7 @@ it.effect("effect-acp agent keeps RPC ids within int32 and apart from extension 
         .requestPermission(permissionRequest.params)
         .pipe(Effect.forkScoped);
       const nextPermissionRequest = yield* decodedPermission(yield* Queue.take(output));
-      assert.equal(nextPermissionRequest.id, 2 ** 30 + 1);
+      assert.equal(nextPermissionRequest.id, 3);
       yield* Queue.offer(
         input,
         yield* encodeJsonl(RequestPermissionResponse, {

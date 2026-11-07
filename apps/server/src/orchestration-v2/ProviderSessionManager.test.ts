@@ -577,6 +577,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
 function layerTest(input: {
   readonly state: Ref.Ref<TestProviderRuntimeState>;
   readonly idleTimeoutMs: number;
+  readonly configureMcp?: boolean;
   readonly maxIdlePinMs?: number;
   readonly failEventStream?: boolean;
   readonly capabilities?: OrchestrationV2ProviderCapabilities;
@@ -678,6 +679,7 @@ function layerTest(input: {
     McpProviderSessions.layer,
     ProviderSessionManager.layerWithOptions({
       idleTimeoutMs: input.idleTimeoutMs,
+      ...(input.configureMcp === undefined ? {} : { configureMcp: input.configureMcp }),
       ...(input.maxIdlePinMs === undefined ? {} : { maxIdlePinMs: input.maxIdlePinMs }),
     }).pipe(
       Layer.provide(
@@ -691,6 +693,7 @@ function layerTest(input: {
           layerProviderEventIngestorTest,
           layerConfiguredMcpRegistry,
           layerTestStores,
+          layerTestDatabase,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
         ),
@@ -2069,7 +2072,15 @@ it.effect(
         assert.equal(resolved?.thread.threadId, threadId);
         assert.deepEqual(
           resolved?.capabilities,
-          new Set(["preview", "orchestration", "worktree", "workspace", "memory", "pull-requests"]),
+          new Set([
+            "preview",
+            "orchestration",
+            "worktree",
+            "workspace",
+            "memory",
+            "pull-requests",
+            "research",
+          ]),
         );
 
         yield* manager.close(providerSessionId);
@@ -2179,7 +2190,14 @@ it.effect(
         const resolved = yield* registry.resolve(token!);
         assert.deepEqual(
           resolved?.capabilities,
-          new Set(["orchestration", "worktree", "workspace", "memory", "pull-requests"]),
+          new Set([
+            "orchestration",
+            "worktree",
+            "workspace",
+            "memory",
+            "pull-requests",
+            "research",
+          ]),
         );
 
         yield* manager.close(providerSessionId);
@@ -4370,92 +4388,108 @@ it.effect(
     }),
 );
 
-it.effect("injects updated repository selections and agent controls on every turn", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const prompts: string[] = [];
-    const projectId = ProjectId.make("project-guidance");
-    const threadId = ThreadId.make("thread-guidance");
-    const project = {
-      ...makeBrowserAccessProject(projectId),
-      workspaceRoot: "/frontend",
-      workspaceRoots: [
-        { path: "/frontend" },
-        { path: "/backend", label: "Backend", agentGuidance: "Run backend checks" },
-      ],
-    };
-    const projectServiceLayer = Layer.mock(ProjectService.ProjectService)({
-      getById: () => Effect.succeedSome(project),
-    });
-    yield* Effect.gen(function* () {
-      const eventSink = yield* EventSink.EventSinkV2;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const store = yield* ProjectionStore.ProjectionStoreV2;
-      const now = yield* DateTime.now;
-      yield* eventSink.write({
-        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, projectId, now })],
+it.effect.each([true, false])(
+  "injects updated repository selections and agent controls with configureMcp=%s",
+  (configureMcp) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const prompts: string[] = [];
+      const projectId = ProjectId.make("project-guidance");
+      const threadId = ThreadId.make("thread-guidance");
+      const project = {
+        ...makeBrowserAccessProject(projectId),
+        workspaceRoot: "/frontend",
+        workspaceRoots: [
+          { path: "/frontend" },
+          { path: "/backend", label: "Backend", agentGuidance: "Run backend checks" },
+        ],
+      };
+      const projectServiceLayer = Layer.mock(ProjectService.ProjectService)({
+        getById: () => Effect.succeedSome(project),
       });
-      const providerSessionId = yield* idAllocator.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId,
-      });
-      const runtime = yield* manager.open({
-        threadId,
-        providerSessionId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const providerThread = makeProviderThread({ idAllocator, threadId, providerSessionId, now });
-      const appThread = (yield* store.getThreadProjection(threadId)).thread;
-      for (const branch of ["audit", "fix"]) {
-        const runId = RunId.make(`guidance-${branch}`);
-        yield* runtime.startTurn({
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const store = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, projectId, now })],
+        });
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
           threadId,
-          appThread: {
-            ...appThread,
-            workspaceSelections: [
-              { workspaceRoot: "/backend", cwd: `/worktrees/backend-${branch}`, branch },
-            ],
-          },
-          runId,
-          runOrdinal: 1,
-          providerTurnOrdinal: 1,
-          attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
-          rootNodeId: idAllocator.derive.rootNode({ runId }),
-          providerThread,
+        });
+        const runtime = yield* manager.open({
+          threadId,
+          providerSessionId,
           modelSelection,
           runtimePolicy,
-          message: {
-            messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
-            text: "Review",
-            attachments: [],
-            createdBy: "user",
-            creationSource: "web",
-          },
         });
-      }
-      assert.include(prompts[0]!, "selected cwd /worktrees/backend-audit; branch audit");
-      assert.include(prompts[1]!, "selected cwd /worktrees/backend-fix; branch fix");
-      assert.notInclude(prompts[1]!, "/worktrees/backend-audit");
-      assert.include(prompts[1]!, "thread_workspace_select");
-      assert.include(prompts[1]!, "Run backend checks");
-      assert.isTrue(prompts[1]!.endsWith("Review"));
-      yield* manager.close(providerSessionId);
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          state,
-          idleTimeoutMs: 60000,
-          projectServiceLayer,
-          onStartTurn: (input) =>
-            Effect.sync(() => {
-              prompts.push(input.message.text);
-            }),
-        }),
-      ),
-    );
-  }).pipe(Effect.scoped),
+        const providerThread = makeProviderThread({
+          idAllocator,
+          threadId,
+          providerSessionId,
+          now,
+        });
+        const appThread = (yield* store.getThreadProjection(threadId)).thread;
+        for (const branch of ["audit", "fix"]) {
+          const runId = RunId.make(`guidance-${branch}`);
+          yield* runtime.startTurn({
+            threadId,
+            appThread: {
+              ...appThread,
+              workspaceSelections: [
+                { workspaceRoot: "/backend", cwd: `/worktrees/backend-${branch}`, branch },
+              ],
+            },
+            runId,
+            runOrdinal: 1,
+            providerTurnOrdinal: 1,
+            attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+            rootNodeId: idAllocator.derive.rootNode({ runId }),
+            providerThread,
+            modelSelection,
+            runtimePolicy,
+            message: {
+              messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
+              text: "Review",
+              attachments: [],
+              createdBy: "user",
+              creationSource: "web",
+            },
+          });
+        }
+        assert.include(prompts[0]!, "selected cwd /worktrees/backend-audit; branch audit");
+        assert.include(prompts[1]!, "selected cwd /worktrees/backend-fix; branch fix");
+        assert.notInclude(prompts[1]!, "/worktrees/backend-audit");
+        if (configureMcp) {
+          assert.include(prompts[1]!, "thread_workspace_select");
+          assert.include(prompts[1]!, "<project-memory>");
+          assert.include(prompts[1]!, "project_memory_list");
+        } else {
+          assert.notInclude(prompts[1]!, "thread_workspace_select");
+          assert.notInclude(prompts[1]!, "<project-memory>");
+          assert.notInclude(prompts[1]!, "project_memory_list");
+        }
+        assert.include(prompts[1]!, "Run backend checks");
+        assert.isTrue(prompts[1]!.endsWith("Review"));
+        yield* manager.close(providerSessionId);
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60000,
+            configureMcp,
+            projectServiceLayer,
+            onStartTurn: (input) =>
+              Effect.sync(() => {
+                prompts.push(input.message.text);
+              }),
+          }),
+        ),
+      );
+    }).pipe(Effect.scoped),
 );
 
 // Device instructions reach delegated children only because their own sessions hold `device`.

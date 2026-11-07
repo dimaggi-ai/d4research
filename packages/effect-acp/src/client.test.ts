@@ -730,9 +730,13 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
       assert.notEqual(initializeRequest.id, extRequest.id);
       // Keep locally generated ids compatible with SDKs that decode signed int32.
       assert.typeOf(initializeRequest.id, "number");
-      assert.equal(initializeRequest.id, 2 ** 30);
+      assert.isAtLeast(Number(initializeRequest.id), 1);
       assert.isAtMost(Number(initializeRequest.id), 2 ** 31 - 1);
-      assert.equal(extRequest.id, 1);
+      assert.typeOf(extRequest.id, "number");
+      assert.deepEqual(
+        [Number(initializeRequest.id), Number(extRequest.id)].sort((left, right) => left - right),
+        [1, 2],
+      );
 
       yield* Queue.offer(
         input,
@@ -767,7 +771,7 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
       const sessionRequest = yield* Schema.decodeEffect(
         Schema.fromJsonString(jsonRpcRequest("session/new", AcpSchema.NewSessionRequest)),
       )(yield* Queue.take(output));
-      assert.equal(sessionRequest.id, 2 ** 30 + 1);
+      assert.equal(sessionRequest.id, 3);
       yield* Queue.offer(
         input,
         yield* encodeJsonl(jsonRpcResponse(AcpSchema.NewSessionResponse), {

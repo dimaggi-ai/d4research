@@ -110,21 +110,31 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir({ prefix: "t3code-shallow-watch-" });
         yield* writeTextFile(cwd, "src/nested/old.ts", "old");
-        const spy = vi.spyOn(fs, "watch");
-        const ready = yield* Deferred.make<void>();
+        const watch = fs.watch.bind(fs);
+        let nativeReady = false;
+        const spy = vi.spyOn(fs, "watch").mockImplementation((path, options) =>
+          watch(path, {
+            ...options,
+            onReady: () => {
+              nativeReady = true;
+              options?.onReady?.();
+            },
+          }),
+        );
+        const ready = yield* Deferred.make<boolean>();
         const fiber = yield* workspaceEntries.watch({ cwd, directoryPath: "src" }).pipe(
           Stream.tap((event) =>
-            event.revision === 0 ? Deferred.succeed(ready, undefined) : Effect.void,
+            event.revision === 0 ? Deferred.succeed(ready, nativeReady) : Effect.void,
           ),
           Stream.take(2),
           Stream.runCollect,
           Effect.forkChild,
         );
-        yield* Deferred.await(ready);
-        expect(spy).toHaveBeenCalledWith(path.join(cwd, "src"), {
-          recursive: false,
-          onReady: expect.any(Function),
-        });
+        expect(yield* Deferred.await(ready)).toBe(true);
+        expect(spy).toHaveBeenCalledWith(
+          path.join(cwd, "src"),
+          expect.objectContaining({ recursive: false }),
+        );
         yield* writeTextFile(cwd, "src/new.ts", "new");
         const events = yield* Fiber.join(fiber).pipe(Effect.timeout(Duration.seconds(5)));
         expect(Array.from(events)).toEqual([{ revision: 0 }, { revision: 1 }]);

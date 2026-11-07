@@ -123,6 +123,11 @@ async function materializeDataUrlPreview(id: string, dataUrl: string): Promise<s
   return file.uri;
 }
 
+async function rebaseComposerAttachmentUri(fileUri: string): Promise<string | null> {
+  const { Paths } = await import("expo-file-system");
+  return resolveOwnedComposerAttachmentFileUri(fileUri, Paths.document.uri);
+}
+
 function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): string | null {
   const { id, fileUri, previewUri } = attachment;
   const [rebased, setRebased] = useState<{ fileUri: string; uri: string } | null>(null);
@@ -131,11 +136,9 @@ function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): s
   useEffect(() => {
     if (fileUri === undefined) return;
     let cancelled = false;
-    void (async () => {
-      const { Paths } = await import("expo-file-system");
-      const owned = resolveOwnedComposerAttachmentFileUri(fileUri, Paths.document.uri);
+    void rebaseComposerAttachmentUri(fileUri).then((owned) => {
       if (!cancelled && owned !== null && owned !== previewUri) setRebased({ fileUri, uri: owned });
-    })();
+    });
     return () => {
       cancelled = true;
     };

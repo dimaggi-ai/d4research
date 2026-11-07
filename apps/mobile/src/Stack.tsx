@@ -182,7 +182,7 @@ const SETTINGS_SCREENS = {
   SettingsEnvironmentNewThreads: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
     linking: "settings/new-threads",
-    options: settingsPage("Threads"),
+    options: settingsPage("Nia and threads"),
   }),
   SettingsEnvironmentSourceControl: createNativeStackScreen({
     screen: SettingsEnvironmentSourceControlRouteScreen,
@@ -192,7 +192,7 @@ const SETTINGS_SCREENS = {
   SettingsEnvironmentAgentBehavior: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
     linking: "settings/agent-behavior",
-    options: settingsPage("Threads"),
+    options: settingsPage("Nia and threads"),
   }),
   SettingsWorktrees: createNativeStackScreen({
     screen: SettingsWorktreesRouteScreen,
@@ -228,7 +228,7 @@ const SETTINGS_SCREENS = {
   SettingsThreads: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
     linking: "settings/thread-preferences",
-    options: settingsPage("Threads"),
+    options: settingsPage("Nia and threads"),
   }),
   SettingsAbout: createNativeStackScreen({
     screen: SettingsAboutRouteScreen,

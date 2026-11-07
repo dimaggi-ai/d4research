@@ -101,16 +101,18 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     setPending(label);
     setError(null);
     setNotice(null);
-    try {
+    await (async () => {
       await action();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "The action could not be completed. Try again.",
-      );
-    } finally {
-      pendingRef.current = false;
-      setPending(null);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error ? cause.message : "The action could not be completed. Try again.",
+        );
+      })
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(null);
+      });
   }
 
   function requestServerUpdate() {
@@ -285,7 +287,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                           const controller = new AbortController();
                           checkController.current = controller;
                           const timeout = setTimeout(() => controller.abort(), 20_000);
-                          try {
+                          await (async () => {
                             const targetVersion = await findEnvironmentUpdate(
                               config.environment.serverVersion,
                               controller.signal,
@@ -294,10 +296,10 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                               fromVersion: config.environment.serverVersion,
                               targetVersion,
                             });
-                          } finally {
+                          })().finally(() => {
                             clearTimeout(timeout);
                             checkController.current = null;
-                          }
+                          });
                         });
                       }}
                     />

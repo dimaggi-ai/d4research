@@ -1,6 +1,19 @@
+import { useD4AgentState } from "../agent-awareness/useD4AgentState";
+import { NIA_SERVERS } from "@d4research/client-runtime/niaServers";
+import { fetchEnvironmentSkillsInventory } from "@d4research/client-runtime/state/skills";
+import { connectionAtomRuntime } from "../../connection/runtime";
+import { Atom } from "effect/reactivity";
+import * as Option from "effect/Option";
+import { useEnvironmentQuery } from "../../state/query";
+import { environmentSession, usePreparedConnection } from "../../state/session";
 import { D4AgentControls } from "./D4AgentControls";
 import { useAtomValue } from "@effect/atom-react";
-import { supportsD4AgentDriver, type ServerSettings } from "@d4research/contracts";
+import {
+  ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+  supportsD4AgentDriver,
+  type EnvironmentId,
+  type ServerSettings,
+} from "@d4research/contracts";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -10,7 +23,7 @@ import {
 import { useLinkTo } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
-import { AppState, Modal, Pressable, View } from "react-native";
+import { AppState, Linking, Modal, Pressable, View } from "react-native";
 import * as Effect from "effect/Effect";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -24,6 +37,17 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsRow } from "./components/SettingsRow";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+
+const skillsInventoryAtom = Atom.family((environmentId: EnvironmentId) =>
+  connectionAtomRuntime
+    .atom((get) => {
+      const prepared = Option.getOrNull(
+        get(environmentSession.preparedConnectionValueAtom(environmentId)),
+      );
+      return prepared === null ? Effect.never : fetchEnvironmentSkillsInventory({ prepared });
+    })
+    .pipe(Atom.withLabel(`mobile-nia-skills:${environmentId}`)),
+);
 
 export function AgentMonitorSettings() {
   const { selectedTargets, selectedProjectKey } = useSettingsEnvironmentFilter();
@@ -48,6 +72,22 @@ function EnvironmentMonitorSettings({
   readonly target: ReturnType<typeof useSettingsEnvironmentFilter>["selectedTargets"][number];
 }) {
   const threads = useThreadShells();
+  const state = useD4AgentState(target.environmentId);
+  const prepared = usePreparedConnection(target.environmentId);
+  const connection = prepared._tag === "Some" ? prepared.value : null;
+  const [setup, setSetup] = useState<ReadonlySet<string>>(() => new Set());
+  const skillsQuery = useEnvironmentQuery(skillsInventoryAtom(target.environmentId));
+  const inventory =
+    connection && skillsQuery.data
+      ? [
+          ...new Map(
+            skillsQuery.data.skills
+              .filter((skill) => skill.kind === "skill")
+              .map((skill) => [skill.name, skill]),
+          ).values(),
+        ]
+      : null;
+  const inventoryError = skillsQuery.error ? "Could not load installed skills." : null;
   const config = useEnvironmentServerConfig(target.environmentId);
   const linkTo = useLinkTo();
   const [saving, setSaving] = useState(false);
@@ -55,6 +95,7 @@ function EnvironmentMonitorSettings({
   const [picker, setPicker] = useState<"manager" | "task" | null>(null);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState("Checking notification permission…");
+  // Keep notification permission in sync with the native app lifecycle.
   useEffect(() => {
     let active = true;
     const readPermission = () => {
@@ -137,6 +178,30 @@ function EnvironmentMonitorSettings({
       .catch(() => setSaveError("Could not save Nia settings."))
       .finally(() => setSaving(false));
   };
+  const skills = target.serverConfig.settings.skills;
+  const writeSkills = async (name: string, enabled: boolean) => {
+    if (saving || !allowed) return;
+    if (enabled && skills.enabledForNia.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT) return;
+    setSaving(true);
+    setSaveError(null);
+    await updateSettings({
+      environmentId: target.environmentId,
+      input: {
+        patch: {
+          skills: {
+            enabledForNia: enabled
+              ? [...skills.enabledForNia, name]
+              : skills.enabledForNia.filter((item) => item !== name),
+          },
+        },
+      },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
+      })
+      .catch(() => setSaveError("Could not save Nia settings."))
+      .finally(() => setSaving(false));
+  };
   const toggleNotifications = async (enabled: boolean) => {
     if (enabled) {
       const permission = await Effect.runPromise(
@@ -166,22 +231,15 @@ function EnvironmentMonitorSettings({
     <View className="gap-3">
       <SettingsSection title={`Nia · ${target.label}`}>
         <SettingsSwitchRow
-          icon="bolt.circle"
-          label="Monitor threads"
-          value={monitor.enabled}
-          disabled={!allowed || saving}
-          onValueChange={(enabled) => void write({ enabled })}
-        />
-        <SettingsSwitchRow
           icon="bubble.left"
-          label="Enable agent chat"
+          label="Enable Nia"
           value={agent.enabled}
           disabled={!allowed || saving}
           onValueChange={(enabled) => void writeAgent({ enabled })}
         />
         <SettingsRow
           icon="gearshape"
-          label="Agent model"
+          label="Nia model"
           value={
             agent.modelSelection
               ? `${agent.modelSelection.instanceId} · ${agent.modelSelection.model}`
@@ -193,11 +251,22 @@ function EnvironmentMonitorSettings({
         {agent.modelSelection ? (
           <SettingsRow
             icon="xmark"
-            label="Clear agent model"
+            label="Clear Nia model"
             disabled={!allowed || saving}
             onPress={() => void writeAgent({ modelSelection: null })}
           />
         ) : null}
+        <D4AgentControls
+          environmentId={target.environmentId}
+          agent={agent}
+          monitor={monitor}
+          config={config}
+          disabled={!allowed || saving}
+          writeAgent={writeAgent}
+          writeMonitor={write}
+          state={state}
+          section="nia"
+        />
         <SettingsRow
           icon="hammer"
           label="Task model"
@@ -217,77 +286,207 @@ function EnvironmentMonitorSettings({
             onPress={() => void writeAgent({ taskModelSelection: null })}
           />
         ) : null}
-        <SettingsSwitchRow
-          icon="bell.badge"
-          label="Attention notifications"
-          value={monitor.notificationsEnabled}
-          disabled={!allowed || saving}
-          onValueChange={(enabled) => void toggleNotifications(enabled)}
-        />
       </SettingsSection>
-      <Text className="px-2 text-sm text-foreground-muted">
-        Thread monitoring uses local rules. Agent chat uses the selected model. Unavailable models
-        keep Nia off.
-      </Text>
-      <D4AgentControls
-        environmentId={target.environmentId}
-        agent={agent}
-        monitor={monitor}
-        config={config}
-        disabled={!allowed || saving}
-        writeAgent={writeAgent}
-        writeMonitor={write}
-      />
-      <Text className="px-2 text-sm text-foreground-muted">{permissionState}</Text>
+      <SettingsSection title="MCP servers">
+        {NIA_SERVERS.map((server) => (
+          <View key={server.id}>
+            {server.accessField ? (
+              <SettingsSwitchRow
+                icon="gearshape"
+                label={server.title}
+                subtitle={server.description}
+                value={agent[server.accessField]}
+                disabled={!allowed || saving}
+                onValueChange={(enabled) => void writeAgent({ [server.accessField]: enabled })}
+              />
+            ) : (
+              <View className="gap-1 px-4 py-3">
+                <Text className="text-base text-foreground">{server.title}</Text>
+                <Text className="text-sm text-foreground-muted">{server.description}</Text>
+                <Text className="text-sm text-foreground-muted">
+                  {server.id === "threads"
+                    ? "Always on"
+                    : agent.toolGuardUrl
+                      ? "Configured"
+                      : "Not configured"}
+                </Text>
+              </View>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${server.title} setup`}
+              accessibilityState={{ expanded: setup.has(server.id) }}
+              className="px-4 py-3"
+              onPress={() =>
+                setSetup((current) => {
+                  const next = new Set(current);
+                  if (next.has(server.id)) next.delete(server.id);
+                  else next.add(server.id);
+                  return next;
+                })
+              }
+            >
+              <Text className="text-base text-accent">
+                {setup.has(server.id) ? "Setup ▴" : "Setup ▾"}
+              </Text>
+            </Pressable>
+            {setup.has(server.id) ? (
+              <D4AgentControls
+                environmentId={target.environmentId}
+                agent={agent}
+                monitor={monitor}
+                config={config}
+                disabled={!allowed || saving}
+                writeAgent={writeAgent}
+                writeMonitor={write}
+                state={state}
+                section={server.id}
+              >
+                {server.id === "threads" ? (
+                  <>
+                    <SettingsSwitchRow
+                      icon="bolt.circle"
+                      label="Monitor threads"
+                      value={monitor.enabled}
+                      disabled={!allowed || saving}
+                      onValueChange={(enabled) => void write({ enabled })}
+                    />
+
+                    <SettingsSwitchRow
+                      icon="bell.badge"
+                      label="Attention notifications"
+                      value={monitor.notificationsEnabled}
+                      disabled={!allowed || saving}
+                      onValueChange={(enabled) => void toggleNotifications(enabled)}
+                    />
+
+                    <Text className="px-4 py-3 text-sm text-foreground-muted">
+                      {permissionState}
+                    </Text>
+                    {permissionMessage ? (
+                      <Text
+                        accessibilityRole="alert"
+                        className="px-4 py-3 text-sm text-foreground-muted"
+                      >
+                        {permissionMessage}
+                      </Text>
+                    ) : null}
+                    {monitor.enabled ? (
+                      <View>
+                        <Text className="px-4 py-3 text-base text-foreground">{`Needs attention · ${listCount(attention.length)}`}</Text>
+                        {attention.length === 0 ? (
+                          <Text className="p-4 text-sm text-foreground-muted">
+                            No threads need attention.
+                          </Text>
+                        ) : (
+                          attention
+                            .slice(0, AGENT_MONITOR_LIST_LIMIT)
+                            .map((thread) => (
+                              <SettingsRow
+                                key={thread.id}
+                                icon="bubble.left"
+                                label={thread.title}
+                                value={agentMonitorLabel(thread.source.agentMonitor!)}
+                                onPress={() =>
+                                  linkTo(
+                                    `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
+                                  )
+                                }
+                              />
+                            ))
+                        )}
+                      </View>
+                    ) : null}
+                    {monitor.enabled && activity.length > 0 ? (
+                      <View>
+                        <Text className="px-4 py-3 text-base text-foreground">{`Thread activity · ${listCount(activity.length)}`}</Text>
+                        {activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
+                          <SettingsRow
+                            key={thread.id}
+                            icon="bubble.left"
+                            label={thread.title}
+                            value={agentMonitorLabel(thread.source.agentMonitor!)}
+                            onPress={() =>
+                              linkTo(
+                                `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
+                              )
+                            }
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
+                {server.id === "toolGuard" ? (
+                  <SettingsRow
+                    icon="gearshape"
+                    label="Open Tool Guard settings"
+                    disabled={!connection}
+                    onPress={() => {
+                      if (connection)
+                        void Linking.openURL(
+                          new URL("/settings/tool-guard", connection.httpBaseUrl).toString(),
+                        ).catch(() => setSaveError("Could not open Tool Guard settings."));
+                    }}
+                  />
+                ) : null}
+              </D4AgentControls>
+            ) : null}
+          </View>
+        ))}
+      </SettingsSection>
+      <SettingsSection title="Skills">
+        <Text className="px-4 py-3 text-sm text-foreground-muted">{`Enable up to ${ENABLED_BY_DEFAULT_SKILL_MAX_COUNT} installed skills for Nia. Skills do not grant tool permissions.`}</Text>
+        {inventoryError ? (
+          <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
+            {inventoryError}
+          </Text>
+        ) : inventory === null ? (
+          <Text className="px-4 py-3 text-sm text-foreground-muted">
+            {connection ? "Loading installed skills…" : "Connect to load installed skills."}
+          </Text>
+        ) : inventory.length === 0 ? (
+          <Text className="px-4 py-3 text-sm text-foreground-muted">No installed skills.</Text>
+        ) : (
+          inventory.map((skill) => (
+            <SettingsSwitchRow
+              key={skill.name}
+              icon="gearshape"
+              label={skill.name}
+              subtitle={skill.description}
+              value={skills.enabledForNia.includes(skill.name)}
+              disabled={
+                !allowed ||
+                saving ||
+                (!skills.enabledForNia.includes(skill.name) &&
+                  skills.enabledForNia.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT)
+              }
+              onValueChange={(enabled) => void writeSkills(skill.name, enabled)}
+            />
+          ))
+        )}
+        {inventory !== null
+          ? skills.enabledForNia
+              .filter((name) => !inventory.some((skill) => skill.name === name))
+              .map((name) => (
+                <SettingsSwitchRow
+                  key={name}
+                  icon="gearshape"
+                  label={name}
+                  subtitle="Not installed"
+                  value={true}
+                  disabled={!allowed || saving}
+                  onValueChange={(enabled) => {
+                    if (!enabled) void writeSkills(name, false);
+                  }}
+                />
+              ))
+          : null}
+      </SettingsSection>
       {saveError ? (
         <Text accessibilityRole="alert" className="px-2 text-sm text-foreground-muted">
           {saveError}
         </Text>
-      ) : null}
-      {permissionMessage ? (
-        <Text accessibilityRole="alert" className="px-2 text-sm text-foreground-muted">
-          {permissionMessage}
-        </Text>
-      ) : null}
-      {monitor.enabled ? (
-        <SettingsSection title={`Needs attention · ${listCount(attention.length)}`}>
-          {attention.length === 0 ? (
-            <Text className="p-4 text-sm text-foreground-muted">No threads need attention.</Text>
-          ) : (
-            attention
-              .slice(0, AGENT_MONITOR_LIST_LIMIT)
-              .map((thread) => (
-                <SettingsRow
-                  key={thread.id}
-                  icon="bubble.left"
-                  label={thread.title}
-                  value={agentMonitorLabel(thread.source.agentMonitor!)}
-                  onPress={() =>
-                    linkTo(
-                      `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
-                    )
-                  }
-                />
-              ))
-          )}
-        </SettingsSection>
-      ) : null}
-      {monitor.enabled && activity.length > 0 ? (
-        <SettingsSection title={`Thread activity · ${listCount(activity.length)}`}>
-          {activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
-            <SettingsRow
-              key={thread.id}
-              icon="bubble.left"
-              label={thread.title}
-              value={agentMonitorLabel(thread.source.agentMonitor!)}
-              onPress={() =>
-                linkTo(
-                  `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
-                )
-              }
-            />
-          ))}
-        </SettingsSection>
       ) : null}
       <Modal
         visible={picker !== null}

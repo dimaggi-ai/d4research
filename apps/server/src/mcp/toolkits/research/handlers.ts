@@ -95,23 +95,11 @@ export function isTimeoutCause(cause: Cause.Cause<unknown>): boolean {
   );
 }
 
-/**
- * Turn ceiling for one delegation. A web-search verification step runs many
- * lookups and legitimately takes many minutes, and an aggregator pressure-test
- * reasons over a 10k+ brief; both were being cut off mid-answer. This is
- * deliberately generous — a genuinely stuck delegate is still bounded, but real
- * search work is not. Override without a rebuild via the env var below.
- */
+// Bound long search and aggregation turns; the environment override avoids a rebuild.
 const DELEGATE_TURN_TIMEOUT_MILLIS = resolveResearchDelegateTimeoutMillis(); // 30 min by default
 /** Starting a session can lag on a cold cloud endpoint; give it real room. */
 const DELEGATE_START_TIMEOUT_MILLIS = 180_000;
-/**
- * A cold cloud model loads on its first inference and can blow the turn
- * ceiling on a fresh session; a throwaway warm-up turn absorbs that load so
- * the real turn runs hot. This has its own ceiling: if it does not settle we
- * fail the delegation so the pipeline can use its fallback instead of sending
- * the real prompt into a session that may still be running the warm-up.
- */
+// Bound warm-up separately. If it times out, fail delegation before sending the real prompt.
 const DELEGATE_WARMUP_TIMEOUT_MILLIS = 360_000;
 /** Cap what flows back into the orchestrator context per delegation. */
 const DELEGATE_MAX_OUTPUT_CHARS = 24_000;
@@ -169,41 +157,24 @@ export interface DelegateThreadSnapshot {
   readonly turns: ReadonlyArray<{ readonly items: ReadonlyArray<unknown> }>;
 }
 
-/**
- * Waits for a delegate turn to produce a STABLE answer, not merely a first
- * token. It keeps reading while the assistant text grows and returns once the
- * text has been non-empty and unchanged for `stableReads` polls, or when
- * `maxAttempts` is spent. This is a strict superset of "return on first text":
- * it can only ever wait longer, never less, so it cannot hang beyond the
- * caller's outer timeout and cannot regress a provider that answers in one shot.
- *
- * Known limitation: a provider that emits a preamble and then goes silent for
- * longer than `stableReads` polls before answering (e.g. a long, output-free
- * tool call) can still settle on the preamble. That case needs a provider
- * completion signal, which the Codex adapter does not currently expose on a
- * per-delegate basis.
- */
+// Wait for nonempty text stable across stableReads polls, bounded by maxAttempts.
+// Without a provider completion signal, a long pause after a preamble can look settled.
 export const settleDelegateThread = <E, R, E2 = never, R2 = never>(input: {
   readonly readThread: Effect.Effect<DelegateThreadSnapshot, E, R>;
   readonly turnsBefore: number;
   readonly maxAttempts: number;
   readonly stableReads: number;
   readonly pollDelay: Effect.Effect<void>;
-  /**
-   * True while the provider still reports the turn as running. Text stability
-   * alone cannot distinguish "finished" from "posted an intent line, now
-   * silently searching for minutes" — Codex does exactly that. While busy the
-   * loop keeps waiting no matter how stable the text is; the outer timeout is
-   * still the ceiling. Omitted (or erroring) it degrades to stability-only.
-   */
+  // Keep waiting while the provider reports busy, within the outer timeout.
+  // An absent or failing signal falls back to text stability.
   readonly isBusy?: Effect.Effect<boolean, E2, R2>;
 }): Effect.Effect<DelegateThreadSnapshot, E | E2, R | R2> => {
-  const loop = (
+  const loop: (
     attemptsLeft: number,
     lastLength: number,
     stableCount: number,
-  ): Effect.Effect<DelegateThreadSnapshot, E | E2, R | R2> =>
-    Effect.gen(function* () {
+  ) => Effect.Effect<DelegateThreadSnapshot, E | E2, R | R2> = Effect.fn("handlers.loop")(
+    function* (attemptsLeft: number, lastLength: number, stableCount: number) {
       const thread = yield* input.readThread;
       const busy = input.isBusy === undefined ? false : yield* input.isBusy;
       const hasNewTurn = thread.turns.length > input.turnsBefore;
@@ -215,7 +186,8 @@ export const settleDelegateThread = <E, R, E2 = never, R2 = never>(input: {
       }
       yield* input.pollDelay;
       return yield* loop(attemptsLeft - 1, length, stable);
-    });
+    },
+  );
   return loop(input.maxAttempts, -1, 0);
 };
 
@@ -229,12 +201,8 @@ export function isColdStartProne(model: string): boolean {
   return model.endsWith(":cloud");
 }
 
-// Thread items are opaque (Array<unknown>) and their shape differs by adapter:
-// agy stores plain strings or `{ text }`; claude / opencode store SDK messages
-// shaped as `{ role, content: [{ type, text }, ...] }` and include the echoed
-// user turn; codex app-server items carry a `type` discriminator
-// (`userMessage`, `reasoning`, `agentMessage`, ...). These pull the assistant's
-// answer only, across every shape.
+// Extract only assistant answers from adapter-specific strings, SDK content blocks,
+// and Codex items; exclude echoed user turns and reasoning.
 function blockText(block: unknown): string {
   if (typeof block === "string") return block;
   if (block !== null && typeof block === "object") {
@@ -374,13 +342,7 @@ export function resolveAuthoredPipelineFallbackTargets(input: {
   });
 }
 
-/**
- * Prompt files one named scenario may inline, and the only set a delegate of
- * that scenario can ever read. Scoping is a disclosure boundary, not a
- * convenience: a file attached to `security-audit` must stay unreadable from a
- * `blog` run, so an unknown scenario resolves to nothing rather than widening
- * to every scenario.
- */
+// Scenario prompt files form a disclosure boundary. Unknown scenarios expose no files.
 export function listPipelinePromptFiles(
   settings: ServerSettings,
   pipelineKind: "research" | "dev",
@@ -389,11 +351,8 @@ export function listPipelinePromptFiles(
   const scenarios = pipelineKind === "dev" ? settings.dev.scenarios : settings.research.scenarios;
   const scenario = scenarios.find((candidate) => candidate.name === scenarioName);
   if (scenario) return scenario.promptFiles;
-  // Pre-scenario research settings kept their files in a top-level list. With
-  // no scenarios configured there is exactly one (synthetic `default`)
-  // scenario, so there is nothing to scope against and these are its files.
-  // The settings panel folds them into a real `default` scenario on first
-  // write, after which this branch is dead for that install.
+  // Before scenarios exist, the legacy top-level files belong to synthetic default.
+  // The first settings write migrates them into a real default scenario.
   if (pipelineKind === "research" && scenarios.length === 0) return settings.research.promptFiles;
   return [];
 }
@@ -415,14 +374,8 @@ export function findPipelinePromptFile(
   };
 }
 
-/**
- * One bounded delegation, from budget charge to settled answer. Callers own
- * capability, fallback authorization, target policy, and prompt-file scoping
- * and hand this function an already-resolved target — the MCP tool does that
- * from a pipeline's arguments, the inline `!provider:model` turn does it from
- * the user's own directive. Everything below the target is identical, and so
- * is the failure taxonomy both surfaces report.
- */
+// Callers authorize capability, fallback, target policy, and prompt-file scope.
+// This shared runner charges the budget and reports a settled answer or failure.
 export interface BoundedDelegationRequest {
   /** Thread whose workspace and Memo scope the delegate inherits. */
   readonly orchestratorThreadId: ThreadId;
@@ -993,7 +946,7 @@ export const makeResearchDelegateHandler =
       });
     });
 
-export const researchArtifactReadHandler = Effect.fn("researchArtifactReadHandler")(
+const researchArtifactReadHandler = Effect.fn("researchArtifactReadHandler")(
   (input: ResearchArtifactReadInput) =>
     Effect.gen(function* () {
       const invocationScope = yield* McpInvocationContext.McpInvocationContext;

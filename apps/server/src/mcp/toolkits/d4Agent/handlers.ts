@@ -99,6 +99,9 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
   d4_agent_action: McpToolAccess.writesWithCapability(({ action, why, effect }) =>
     call((service) => service.requestAction(action, { why, effect })),
   ),
+  d4_agent_skill_read: McpToolAccess.reads(({ name }) =>
+    call((service) => service.skillRead(name)),
+  ),
   d4_agent_memory_search: McpToolAccess.reads((input) =>
     call((service) => service.memorySearch(input)),
   ),

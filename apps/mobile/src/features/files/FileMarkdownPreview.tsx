@@ -97,17 +97,16 @@ export function FileMarkdownPreview(props: {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [expandedFile, setExpandedFile] = useState<FilePreviewSource | null>(null);
   const [expandedVideo, setExpandedVideo] = useState<VideoPreviewSource | null>(null);
+  const { onRefresh } = props;
   const handlePullToRefresh = useCallback(async () => {
-    if (!props.onRefresh) {
+    if (!onRefresh) {
       return;
     }
     setIsPullRefreshing(true);
-    try {
-      await props.onRefresh();
-    } finally {
-      setIsPullRefreshing(false);
-    }
-  }, [props.onRefresh]);
+    await Promise.resolve()
+      .then(() => onRefresh())
+      .finally(() => setIsPullRefreshing(false));
+  }, [onRefresh]);
   const markdownDirectory = useMemo(
     () => getBrowseDirectoryPath(resolveWorkspaceFilePath(props.cwd, props.relativePath)),
     [props.cwd, props.relativePath],

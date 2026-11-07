@@ -66,18 +66,6 @@ interface RunState {
 }
 
 /**
- * The thread's detail hasn't caught up with the live thread shell: it isn't
- * loaded yet, or a cached copy still shows an older run or state. Reading such
- * a frame as the baseline replays what already happened, so it's skipped.
- */
-export function isDetailBehindShell(detailRun: RunState | null, shellRun: RunState | null) {
-  return (
-    shellRun !== null &&
-    (detailRun?.runId !== shellRun.runId || detailRun.status !== shellRun.status)
-  );
-}
-
-/**
  * A queued message cancelled before it started keeps its place in line, so it
  * shows up as the thread's latest run. It never ran, so the turn ended however
  * the last run that did ran.

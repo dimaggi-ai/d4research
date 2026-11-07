@@ -396,7 +396,6 @@ const makeReader = Effect.fnUntraced(function* (
           });
           if (pending.size === 1) worker.ref();
           const cached = input.cached && !hasLargeBinding(input.params);
-          // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
           worker.postMessage({
             id,
             safeIntegers,
@@ -1290,5 +1289,3 @@ const make = Effect.fn("makeWithDatabase")(function* (
 
 export const layer = (config: SqliteClientConfig): Layer.Layer<Client.SqlClient, SqlError> =>
   Layer.effect(Client.SqlClient, make(config)).pipe(Layer.provide(Reactivity.layer));
-
-export const layerMemory = () => layer({ filename: ":memory:" });

@@ -114,7 +114,8 @@ it("refuses to replace symlinks or downgrade a newer extension", async () => {
 
 it.each([
   [{ state: 1, version: 3 }, "enabled"],
-  [{ state: 1, version: 2, shell: "51.0" }, "update-required"],
+  [{ state: 1, version: 1, shell: "50.0" }, "update-required"],
+  [{ state: 1, version: 2, shell: "51.0" }, "unsupported"],
   [{ state: 2, version: 3, enabled: false }, "extensions-disabled"],
   [{ shell: "52.0" }, "unsupported"],
 ] as const)("reports GNOME setup state %j", async (options, status) => {

@@ -1,5 +1,5 @@
 import { BranchNamingMode, type ServerSettingsPatch } from "@d4research/contracts";
-import { useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { View } from "react-native";
 
 import { AppText as Text, AppTextInput } from "../../../components/ui/AppText";
@@ -26,8 +26,26 @@ export function BranchNamingSettings(props: {
   disabled: Readonly<Record<"mode" | "prefix" | "instructions", boolean>>;
   onChange: (patch: ServerSettingsPatch) => void;
 }) {
-  const prefixEdited = useRef(false);
-  const instructionsEdited = useRef(false);
+  const drafts = useRef<{
+    prefix?: { saved: string | null; text: string };
+    instructions?: { saved: string | null; text: string };
+  }>({});
+  const saveDrafts = (field?: "prefix" | "instructions") => {
+    const patch: { branchNamePrefix?: string; branchNameInstructions?: string } = {};
+    for (const key of ["prefix", "instructions"] as const) {
+      if (field !== undefined && key !== field) continue;
+      const draft = drafts.current[key];
+      delete drafts.current[key];
+      if (!draft || draft.saved !== props[key] || draft.text.trim() === props[key]) continue;
+      if (key === "prefix") patch.branchNamePrefix = draft.text.trim();
+      else patch.branchNameInstructions = draft.text.trim();
+    }
+    if (Object.keys(patch).length > 0) props.onChange(patch);
+  };
+  // Android Back can unmount the screen without emitting onEndEditing.
+  const saveOnUnmount = useEffectEvent(() => saveDrafts());
+  // Flush native input drafts when Android Back removes the screen without an editing event.
+  useEffect(() => () => saveOnUnmount(), []);
   return (
     <SettingsSection
       title="Worktree branch naming"
@@ -54,8 +72,8 @@ export function BranchNamingSettings(props: {
           <AppTextInput
             key={props.prefix}
             accessibilityLabel="Branch prefix"
-            onChangeText={() => {
-              prefixEdited.current = true;
+            onChangeText={(text) => {
+              drafts.current.prefix = { saved: props.prefix, text };
             }}
             defaultValue={props.prefix ?? ""}
             placeholder={props.prefix === null ? "Mixed" : "No prefix"}
@@ -64,14 +82,9 @@ export function BranchNamingSettings(props: {
             autoCorrect={false}
             className="min-h-10 rounded-xl px-3 py-2 text-base text-foreground"
             onEndEditing={(event) => {
-              const value = event.nativeEvent.text.trim();
-              if (
-                !props.disabled &&
-                prefixEdited.current &&
-                (props.prefix === null || value !== props.prefix)
-              )
-                props.onChange({ branchNamePrefix: value });
-              prefixEdited.current = false;
+              if (!drafts.current.prefix) return;
+              drafts.current.prefix.text = event.nativeEvent.text;
+              saveDrafts("prefix");
             }}
           />
         </View>
@@ -84,8 +97,8 @@ export function BranchNamingSettings(props: {
           <AppTextInput
             key={props.instructions}
             accessibilityLabel="Branch naming instructions"
-            onChangeText={() => {
-              instructionsEdited.current = true;
+            onChangeText={(text) => {
+              drafts.current.instructions = { saved: props.instructions, text };
             }}
             defaultValue={props.instructions ?? ""}
             placeholder={
@@ -98,14 +111,9 @@ export function BranchNamingSettings(props: {
             autoCapitalize="sentences"
             className="min-h-24 rounded-xl px-3 py-2 text-base text-foreground"
             onEndEditing={(event) => {
-              const value = event.nativeEvent.text.trim();
-              if (
-                !props.disabled &&
-                instructionsEdited.current &&
-                (props.instructions === null || value !== props.instructions)
-              )
-                props.onChange({ branchNameInstructions: value });
-              instructionsEdited.current = false;
+              if (!drafts.current.instructions) return;
+              drafts.current.instructions.text = event.nativeEvent.text;
+              saveDrafts("instructions");
             }}
           />
         </View>

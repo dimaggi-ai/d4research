@@ -79,7 +79,7 @@ export function UsageLimitRecoveryCard({
     }
     setPending(true);
     setError(null);
-    try {
+    await (async () => {
       const result = await updateMetadata({
         environmentId,
         input: {
@@ -92,11 +92,13 @@ export function UsageLimitRecoveryCard({
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
-    } finally {
-      setPending(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
+      })
+      .finally(() => {
+        setPending(false);
+      });
   }
   const action = workspaceLimit
     ? {

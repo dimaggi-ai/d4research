@@ -47,7 +47,7 @@ function summarize(
         prompt.value === null
           ? {
               title: "Open this thread",
-              description: "It opens in T3 Code if you're connected to the machine it runs on.",
+              description: "It opens in d4research if you're connected to the machine it runs on.",
               prompt: null,
               details: [],
             }
@@ -172,7 +172,7 @@ function HostedPromptLinkLanding({
           </Button>
         ) : null}
         <Button variant="ghost" render={<a href={DESKTOP_DOWNLOAD_URL} />}>
-          Get T3 Code
+          Get d4research
         </Button>
       </div>
       <label className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">

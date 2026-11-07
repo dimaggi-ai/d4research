@@ -114,11 +114,6 @@ function toThreadStructureVisibleTurnItem(
   return structure;
 }
 
-/** Whether the structure kept every field of this row: true for all but streamed items. */
-export function isCompleteTurnItemRow(row: ThreadStructureVisibleTurnItem): row is VisibleTurnItem {
-  return row.item.type !== "assistant_message" && row.item.type !== "reasoning";
-}
-
 // The open thread is marked visited several times while a reply streams. Visit
 // state is read from the shell, or from lastVisitedAtAtom while the thread is
 // not in the shell index yet, so a mark is not structure.

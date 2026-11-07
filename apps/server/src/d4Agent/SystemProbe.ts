@@ -18,6 +18,18 @@ import * as ServerConfig from "../config.ts";
 class DoctorReadError extends Schema.TaggedError<DoctorReadError>()("DoctorReadError", {
   cause: Schema.Defect(),
 }) {}
+class FileSystemCapacityReadError extends Schema.TaggedError<FileSystemCapacityReadError>()(
+  "FileSystemCapacityReadError",
+  { path: Schema.String, cause: Schema.Defect() },
+) {}
+
+export const readFilesystemStats = Effect.fn("SystemProbe.readFilesystemStats")((path: string) =>
+  Effect.tryPromise({
+    try: () => NodeFSP.statfs(path),
+    catch: (cause) => new FileSystemCapacityReadError({ path, cause }),
+  }),
+);
+
 const isDoctorReadError = Schema.is(DoctorReadError);
 const DoctorRows = Schema.Array(
   Schema.Struct({ status: Schema.Literals(["OK", "WARN", "FAIL", "INFO"]) }),
@@ -54,7 +66,7 @@ export function diskCheck(
   const status = percent >= threshold ? "attention" : "ok";
   return { notificationEligible: false, id, status, reportKey: `${id}:${status}`, value: percent };
 }
-export const probeIds = [
+const probeIds = [
   "user-units",
   "system-units",
   "root-disk",
@@ -248,10 +260,7 @@ export const layer = Layer.effect(
       ),
     );
     const disk = (id: "root-disk" | "data-disk", location: string, threshold: number) =>
-      Effect.tryPromise({
-        try: () => NodeFSP.statfs(location),
-        catch: (cause) => new DoctorReadError({ cause }),
-      }).pipe(
+      readFilesystemStats(location).pipe(
         Effect.timeout("3 seconds"),
         Effect.map((stat) => diskCheck(id, stat.blocks, stat.bavail, threshold)),
         Effect.catch(() => Effect.succeed(unavailable(id))),

@@ -156,6 +156,7 @@ export const BrainCatalogEntry = Schema.Struct({
   updated: Schema.NullOr(Schema.String),
   inboundLinks: Schema.Int,
 });
+export type BrainCatalogEntry = typeof BrainCatalogEntry.Type;
 export const BrainMap = Schema.Struct({
   catalog: Schema.Array(BrainCatalogEntry),
   stats: Schema.Struct({ notes: Schema.Int, chunks: Schema.Int, generation: Schema.Int }),

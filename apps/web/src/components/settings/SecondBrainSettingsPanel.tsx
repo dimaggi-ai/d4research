@@ -11,6 +11,7 @@ import {
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { assistantCitationNavigation } from "../../lib/assistantCitationNavigation";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { almanac } from "../../state/almanac";
 import { secondBrain } from "../../state/second-brain";
 import { useEnvironmentQuery, formatEnvironmentQueryError } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -19,20 +20,8 @@ import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { useSettingsScope } from "./SettingsScopeContext";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-
-export function SecondBrainSettingsPanel() {
-  const { target } = useSettingsScope();
-  return target ? (
-    <SecondBrainPanel key={target.environmentId} environmentId={target.environmentId} />
-  ) : (
-    <SettingsPageContainer>
-      <p>Select a connected environment.</p>
-    </SettingsPageContainer>
-  );
-}
 
 function Choice<T extends string>({
   label,
@@ -67,9 +56,16 @@ function Choice<T extends string>({
   );
 }
 
-function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
+export function SecondBrainConfiguration({
+  environmentId,
+  almanacConnected,
+}: {
+  environmentId: EnvironmentId;
+  almanacConnected: boolean;
+}) {
   const registry = useContext(RegistryContext);
-  const settings = useEnvironmentSettings(environmentId).secondBrain;
+  const environmentSettings = useEnvironmentSettings(environmentId);
+  const settings = environmentSettings.secondBrain;
   const update = useUpdateEnvironmentSettings(environmentId);
   const status = useEnvironmentQuery(secondBrain.secondBrainStatusQuery(environmentId));
   const reindex = useAtomCommand(secondBrain.secondBrainReindexCommand);
@@ -85,15 +81,13 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<readonly BrainLintIssue[] | null>(null);
   const [lintTruncated, setLintTruncated] = useState(false);
-  useEffect(() => {
-    const refresh = () => secondBrain.refresh(environmentId, registry);
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  }, [environmentId, registry]);
+  const almanacCommand = environmentSettings.almanac.command;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- A committed settings change invalidates the vault, the Almanac connection, and their derived queries.
   useEffect(() => {
     secondBrain.refresh(environmentId, registry);
+    almanac.refresh(environmentId, registry);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A committed settings change invalidates the vault and its derived queries.
-  }, [environmentId, registry, settings]);
+  }, [environmentId, registry, settings, almanacCommand]);
   const maintain = async (action: "reindex" | "lint" | "regenerate") => {
     setBusy(true);
     setError(null);
@@ -116,7 +110,24 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
     });
   };
   return (
-    <SettingsPageContainer>
+    <>
+      <SettingsSection title="Almanac">
+        <fieldset disabled={!canWrite}>
+          <SettingsRow
+            title="Connection command"
+            description="Starts Almanac's MCP server over stdio, for example through ssh. Leave empty to use this server's default."
+            status={almanacConnected ? "Connected" : "Not connected"}
+            control={
+              <Input
+                aria-label="Almanac connection command"
+                key={environmentSettings.almanac.command}
+                defaultValue={environmentSettings.almanac.command}
+                onBlur={(e) => update({ almanac: { command: e.target.value.trim() } })}
+              />
+            }
+          />
+        </fieldset>
+      </SettingsSection>
       <SettingsSection {...searchableSetting("research-second-brain")}>
         <fieldset disabled={!canWrite}>
           <SettingsRow
@@ -299,8 +310,7 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
           ))}
         {lintTruncated && <p>More issues exist than this report can show.</p>}
       </SettingsSection>
-      <ReviewInbox key={settings.path} environmentId={environmentId} />
-    </SettingsPageContainer>
+    </>
   );
 }
 
@@ -344,7 +354,7 @@ function SourceLink({
   );
 }
 
-function ReviewInbox({ environmentId }: { environmentId: EnvironmentId }) {
+export function ReviewInbox({ environmentId }: { environmentId: EnvironmentId }) {
   const [state, setState] = useState<BrainProposal["state"]>("pending");
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);

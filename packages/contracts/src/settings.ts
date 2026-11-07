@@ -2122,6 +2122,12 @@ export const CloudSpeechCredentials = Schema.Struct({
   openrouter: CloudSpeechCredential,
 });
 
+/** Empty falls back to the server's ALMANAC_MCP_COMMAND, so a host can configure it once. */
+export const AlmanacSettings = Schema.Struct({
+  command: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type AlmanacSettings = typeof AlmanacSettings.Type;
+
 export const ServerSettings = Schema.Struct({
   d4Agent: D4AgentSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_D4_AGENT_SETTINGS)),
@@ -2369,6 +2375,7 @@ export const ServerSettings = Schema.Struct({
   ),
   memory: MemoryConnectorSettings,
   secondBrain: SecondBrainSettings,
+  almanac: AlmanacSettings,
   handoff: HandoffSettings,
   decision: DecisionSettings,
   skills: SkillsSettings,
@@ -2833,6 +2840,7 @@ export const ServerSettingsPatch = Schema.Struct({
       localBaseUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
+  almanac: Schema.optionalKey(Schema.Struct({ command: Schema.optionalKey(TrimmedString) })),
   secondBrain: Schema.optionalKey(
     Schema.Struct({
       path: Schema.optionalKey(TrimmedString),

@@ -19,9 +19,11 @@ import { useCallback, useContext, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { almanac } from "../../state/almanac";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SettingsMemoryLibrary } from "./SettingsMemoryLibrary";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsActionRow } from "./components/SettingsActionRow";
 import { SettingsSection } from "./components/SettingsSection";
@@ -39,19 +41,19 @@ export function SettingsSecondBrainRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Second brain" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Memory" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScreenScrollView
           contentInsetAdjustmentBehavior="automatic"
           contentContainerClassName="gap-6 px-5 py-4"
           contentContainerStyle={{ paddingBottom: 48 }}
         >
           {selectedProjectKey !== null ? (
-            <Text>Select All projects to manage environment-wide second brain settings.</Text>
+            <Text>Select All projects to open environment-wide memory.</Text>
           ) : selectedTargets.length === 0 ? (
             <Text>Select a connected environment.</Text>
           ) : (
             selectedTargets.map((target) => (
-              <EnvironmentBrain key={target.environmentId} target={target} />
+              <EnvironmentMemory key={target.environmentId} target={target} />
             ))
           )}
         </ScreenScrollView>
@@ -60,7 +62,54 @@ export function SettingsSecondBrainRouteScreen() {
   );
 }
 
-function EnvironmentBrain({ target }: { target: SettingsTarget }) {
+function EnvironmentMemory({ target }: { target: SettingsTarget }) {
+  const environmentId = target.environmentId;
+  const [view, setView] = useState<"library" | "review" | "settings">("library");
+  const almanacStatus = useEnvironmentQuery(almanac.almanacStatusQuery(environmentId));
+  return (
+    <View className="gap-6">
+      <SettingsSection title={target.label}>
+        <SettingsChoiceRow
+          label="Library"
+          selected={view === "library"}
+          onPress={() => setView("library")}
+        />
+        <SettingsChoiceRow
+          label="Review"
+          selected={view === "review"}
+          onPress={() => setView("review")}
+        />
+        <SettingsChoiceRow
+          label="Settings"
+          selected={view === "settings"}
+          onPress={() => setView("settings")}
+        />
+      </SettingsSection>
+      {view === "library" ? (
+        <SettingsMemoryLibrary
+          environmentId={environmentId}
+          notesEnabled={Boolean(target.serverConfig.settings.secondBrain.path)}
+          almanacEnabled={almanacStatus.data?.configured ?? false}
+        />
+      ) : view === "review" ? (
+        <BrainInbox environmentId={environmentId} />
+      ) : (
+        <EnvironmentBrain
+          target={target}
+          almanacConnected={almanacStatus.data?.connected ?? false}
+        />
+      )}
+    </View>
+  );
+}
+
+function EnvironmentBrain({
+  target,
+  almanacConnected,
+}: {
+  target: SettingsTarget;
+  almanacConnected: boolean;
+}) {
   const environmentId = target.environmentId;
   const settings = target.serverConfig.settings.secondBrain;
   const canWrite = useAtomValue(secondBrainReindexCommand.permissionAtom(environmentId));
@@ -78,6 +127,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
     () => refreshSecondBrain(environmentId, registry),
     [environmentId, registry],
   );
+  const refreshAlmanac = () => almanac.refresh(environmentId, registry);
   useFocusEffect(
     useCallback(() => {
       refreshStatus();
@@ -88,7 +138,6 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
   const [error, setError] = useState<string | null>(null);
   const [lintTruncated, setLintTruncated] = useState(false);
   const [issues, setIssues] = useState<readonly BrainLintIssue[] | null>(null);
-  const [inbox, setInbox] = useState(false);
   const run = async (operation: () => Promise<void>) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -116,7 +165,26 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
   };
   return (
     <View className="gap-6">
-      <SettingsSection title={target.label}>
+      <SettingsSection title="Almanac">
+        <SettingsTextField
+          label="Connection command"
+          value={target.serverConfig.settings.almanac.command}
+          disabled={disabled}
+          placeholder="Leave empty to use this server's default"
+          onSave={(command) =>
+            void run(async () => {
+              const result = await update({
+                environmentId,
+                input: { patch: { almanac: { command: command.trim() } } },
+              });
+              if (result._tag !== "Success") setError("Could not save the Almanac command.");
+              refreshAlmanac();
+            })
+          }
+        />
+        <Text>{almanacConnected ? "Connected" : "Not connected"}</Text>
+      </SettingsSection>
+      <SettingsSection title="Notes">
         <SettingsTextField
           label="Folder on this environment"
           value={settings.path}
@@ -283,13 +351,6 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
         ) : null}
       </SettingsSection>
       {error ? <Text accessibilityRole="alert">{error}</Text> : null}
-      <SettingsSection title="Review">
-        <SettingsActionRow
-          label={inbox ? "Hide review inbox" : "Open review inbox"}
-          onPress={() => setInbox(!inbox)}
-        />
-      </SettingsSection>
-      {inbox ? <BrainInbox environmentId={environmentId} /> : null}
     </View>
   );
 }

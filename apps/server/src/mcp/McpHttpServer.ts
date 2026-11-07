@@ -72,6 +72,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { AlmanacToolkitHandlersLive } from "./toolkits/almanac/handlers.ts";
+import { AlmanacToolkit } from "./toolkits/almanac/tools.ts";
 import { BrainToolkitHandlersLive } from "./toolkits/brain/handlers.ts";
 import { BrainToolkit } from "./toolkits/brain/tools.ts";
 import { MemoryToolkitHandlersLive } from "./toolkits/memory/handlers.ts";
@@ -1112,6 +1114,7 @@ export const layerTools = Layer.mergeAll(
   layerPreviewToolkit,
   MemoryToolkitRegistrationLive,
   BrainToolkitRegistrationLive,
+  toolkitRegistration(AlmanacToolkit, AlmanacToolkitHandlersLive),
   SkillsToolkitRegistrationLive,
   ResearchToolkitRegistrationLive,
   toolkitRegistration(D4AgentToolkit, D4AgentHandlers.layer),

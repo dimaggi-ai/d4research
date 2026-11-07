@@ -34,8 +34,28 @@ import {
   BrainAcceptProposalInput,
   BrainRejectProposalInput,
   BrainLintIssue,
+  BrainCatalogEntry,
+  BrainReadInput,
+  BrainReadResult,
+  BrainSearchInput,
+  BrainSearchResponse,
   SecondBrainError,
 } from "./secondBrain.ts";
+import {
+  AlmanacBrowseInput,
+  AlmanacBrowseResult,
+  AlmanacError,
+  AlmanacForgetInput,
+  AlmanacReadInput,
+  AlmanacReadResult,
+  AlmanacRecallResult,
+  AlmanacRememberInput,
+  AlmanacSearchInput,
+  AlmanacSearchResult,
+  AlmanacStatus,
+  AlmanacUpdateInput,
+  AlmanacWriteResult,
+} from "./almanac.ts";
 import {
   ThreadWorkspaceInspectInput,
   ThreadWorkspaceInspectResult,
@@ -584,6 +604,17 @@ export const WS_METHODS = {
   threadWorkspaceSelect: "thread.workspace.select",
   threadWorkspaceCreate: "thread.workspace.create",
   sessionsListResumable: "sessions.listResumable",
+  secondBrainCatalog: "secondBrain.catalog",
+  secondBrainRead: "secondBrain.read",
+  secondBrainSearch: "secondBrain.search",
+  almanacStatus: "almanac.status",
+  almanacBrowse: "almanac.browse",
+  almanacSearch: "almanac.search",
+  almanacRecall: "almanac.recall",
+  almanacRead: "almanac.read",
+  almanacRemember: "almanac.remember",
+  almanacUpdate: "almanac.update",
+  almanacForget: "almanac.forget",
   projectMemoryList: "projectMemory.list",
   projectMemoryRead: "projectMemory.read",
   projectMemorySave: "projectMemory.save",
@@ -980,6 +1011,64 @@ const WsSecondBrainRegenerateIndexRpc = Rpc.make(WS_METHODS.secondBrainRegenerat
   payload: Schema.Struct({}),
   success: BrainStatus,
   error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+
+const WsSecondBrainCatalogRpc = Rpc.make(WS_METHODS.secondBrainCatalog, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(BrainCatalogEntry),
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainReadRpc = Rpc.make(WS_METHODS.secondBrainRead, {
+  payload: BrainReadInput,
+  success: BrainReadResult,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainSearchRpc = Rpc.make(WS_METHODS.secondBrainSearch, {
+  payload: BrainSearchInput,
+  success: BrainSearchResponse,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+
+const almanacError = Schema.Union([AlmanacError, EnvironmentAuthorizationError]);
+const WsAlmanacStatusRpc = Rpc.make(WS_METHODS.almanacStatus, {
+  payload: Schema.Struct({}),
+  success: AlmanacStatus,
+  error: almanacError,
+});
+const WsAlmanacBrowseRpc = Rpc.make(WS_METHODS.almanacBrowse, {
+  payload: AlmanacBrowseInput,
+  success: AlmanacBrowseResult,
+  error: almanacError,
+});
+const WsAlmanacSearchRpc = Rpc.make(WS_METHODS.almanacSearch, {
+  payload: AlmanacSearchInput,
+  success: AlmanacSearchResult,
+  error: almanacError,
+});
+const WsAlmanacRecallRpc = Rpc.make(WS_METHODS.almanacRecall, {
+  payload: AlmanacSearchInput,
+  success: AlmanacRecallResult,
+  error: almanacError,
+});
+const WsAlmanacReadRpc = Rpc.make(WS_METHODS.almanacRead, {
+  payload: AlmanacReadInput,
+  success: AlmanacReadResult,
+  error: almanacError,
+});
+const WsAlmanacRememberRpc = Rpc.make(WS_METHODS.almanacRemember, {
+  payload: AlmanacRememberInput,
+  success: AlmanacWriteResult,
+  error: almanacError,
+});
+const WsAlmanacUpdateRpc = Rpc.make(WS_METHODS.almanacUpdate, {
+  payload: AlmanacUpdateInput,
+  success: AlmanacWriteResult,
+  error: almanacError,
+});
+const WsAlmanacForgetRpc = Rpc.make(WS_METHODS.almanacForget, {
+  payload: AlmanacForgetInput,
+  success: AlmanacWriteResult,
+  error: almanacError,
 });
 
 const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup, {
@@ -2522,6 +2611,17 @@ export const WsRpcGroup = RpcGroup.make(
   WsSecondBrainReindexRpc,
   WsSecondBrainLintRpc,
   WsSecondBrainRegenerateIndexRpc,
+  WsSecondBrainCatalogRpc,
+  WsSecondBrainReadRpc,
+  WsSecondBrainSearchRpc,
+  WsAlmanacStatusRpc,
+  WsAlmanacBrowseRpc,
+  WsAlmanacSearchRpc,
+  WsAlmanacRecallRpc,
+  WsAlmanacReadRpc,
+  WsAlmanacRememberRpc,
+  WsAlmanacUpdateRpc,
+  WsAlmanacForgetRpc,
   WsServerRunStorageCleanupRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,

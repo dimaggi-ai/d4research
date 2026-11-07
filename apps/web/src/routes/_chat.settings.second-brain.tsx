@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SecondBrainSettingsPanel } from "../components/settings/SecondBrainSettingsPanel";
+import { MemorySettingsPanel } from "../components/settings/MemorySettingsPanel";
 
 export const Route = createFileRoute("/_chat/settings/second-brain")({
-  component: SecondBrainSettingsPanel,
+  component: MemorySettingsPanel,
 });

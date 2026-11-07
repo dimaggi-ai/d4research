@@ -539,13 +539,17 @@ it.effect("denies manual cleanup before the handler without settings permission"
   }).pipe(Effect.scoped),
 );
 
-it.effect("requires settings-write before any second brain mutation handler", () =>
+it.effect("requires settings-write before any memory mutation handler", () =>
   Effect.gen(function* () {
+    const MEMORY_ID = "7e36da31-f6d0-4ffe-b13c-47151534d90b";
     const methods = [
       WS_METHODS.secondBrainAcceptProposal,
       WS_METHODS.secondBrainRejectProposal,
       WS_METHODS.secondBrainReindex,
       WS_METHODS.secondBrainRegenerateIndex,
+      WS_METHODS.almanacRemember,
+      WS_METHODS.almanacUpdate,
+      WS_METHODS.almanacForget,
     ] as const;
     const group = WsRpcGroup.omit(
       ...[...WsRpcGroup.requests.keys()].filter(
@@ -567,6 +571,9 @@ it.effect("requires settings-write before any second brain mutation handler", ()
             [WS_METHODS.secondBrainRejectProposal]: deniedHandler,
             [WS_METHODS.secondBrainReindex]: deniedHandler,
             [WS_METHODS.secondBrainRegenerateIndex]: deniedHandler,
+            [WS_METHODS.almanacRemember]: deniedHandler,
+            [WS_METHODS.almanacUpdate]: deniedHandler,
+            [WS_METHODS.almanacForget]: deniedHandler,
           }),
           RpcAuthorization.layer([AuthOrchestrationReadScope]),
         ),
@@ -582,6 +589,11 @@ it.effect("requires settings-write before any second brain mutation handler", ()
       ),
       yield* client[WS_METHODS.secondBrainReindex]({}).pipe(Effect.flip),
       yield* client[WS_METHODS.secondBrainRegenerateIndex]({}).pipe(Effect.flip),
+      yield* client[WS_METHODS.almanacRemember]({ text: "A fact" }).pipe(Effect.flip),
+      yield* client[WS_METHODS.almanacUpdate]({ memoryId: MEMORY_ID, text: "A fact" }).pipe(
+        Effect.flip,
+      ),
+      yield* client[WS_METHODS.almanacForget]({ memoryId: MEMORY_ID }).pipe(Effect.flip),
     ];
     for (const error of errors)
       expect(error).toMatchObject({ requiredPermission: AuthSettingsWriteScope });

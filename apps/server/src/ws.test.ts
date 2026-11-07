@@ -1,5 +1,6 @@
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as D4AgentService from "./d4Agent/D4Agent.ts";
+import * as AlmanacService from "./almanac/AlmanacService.ts";
 import * as SecondBrainService from "./second-brain/SecondBrainService.ts";
 import { PortableSkillsInventory } from "./skillsInventory.ts";
 import { vi } from "vite-plus/test";
@@ -907,6 +908,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(AgentMonitor.AgentMonitorReactor)({}),
   Layer.mock(D4AgentService.D4Agent)({}),
   Layer.mock(SecondBrainService.SecondBrainService)({}),
+  Layer.mock(AlmanacService.AlmanacService)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
   Layer.succeed(PortableSkillsInventory, {
     get: Effect.succeed([]),

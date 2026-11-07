@@ -74,7 +74,7 @@ const SETTINGS_SEARCH_TERMS = {
     "agent behavior",
     "agent monitor",
   ],
-  SettingsSecondBrain: ["brain", "memory", "notes", "capture", "retrieval"],
+  SettingsSecondBrain: ["brain", "memory", "almanac", "notes", "capture", "retrieval"],
   SettingsFollowUp: ["follow-ups", "queue", "steer", "while the agent is running"],
   SettingsArchive: ["archive", "archived", "restore", "unarchive"],
   SettingsProviderAccounts: [

@@ -475,6 +475,10 @@
       "types": "./src/pullRequestQuery.ts",
       "default": "./src/pullRequestQuery.ts"
     },
+    "./state/almanac": {
+      "types": "./src/state/almanac.ts",
+      "default": "./src/state/almanac.ts"
+    },
     "./state/second-brain": {
       "types": "./src/state/secondBrain.ts",
       "default": "./src/state/secondBrain.ts"
@@ -580,15 +584,15 @@
     "@d4research/provider-deepseek": "workspace:*",
     "@d4research/provider-fx": "workspace:*",
     "@d4research/provider-grok": "workspace:*",
+    "@d4research/provider-kiro": "workspace:*",
     "@d4research/provider-muse": "workspace:*",
     "@d4research/provider-opencode": "workspace:*",
     "@d4research/provider-pi": "workspace:*",
+    "@d4research/secret-provider-definitions": "workspace:*",
     "@d4research/shared": "workspace:*",
     "@d4research/source-control-core": "workspace:*",
     "@d4research/source-control-definitions": "workspace:*",
     "@pierre/diffs": "catalog:",
-    "@d4research/provider-kiro": "workspace:*",
-    "@d4research/secret-provider-definitions": "workspace:*",
     "effect": "catalog:",
     "jszip": "3.10.1",
     "three": "0.180.0"

@@ -183,7 +183,10 @@ const HOME_VARIABLES: ReadonlyMap<
   ProviderDriverKind,
   { readonly variable: string; readonly fields: ReadonlyArray<string> }
 > = new Map([
-  [ProviderDriverKind.make("claudeAgent"), { variable: "CLAUDE_CONFIG_DIR", fields: ["homePath", "configDir"] }],
+  [
+    ProviderDriverKind.make("claudeAgent"),
+    { variable: "CLAUDE_CONFIG_DIR", fields: ["homePath", "configDir"] },
+  ],
   [
     ProviderDriverKind.make("codex"),
     { variable: "CODEX_HOME", fields: ["homePath", "shadowHomePath"] },

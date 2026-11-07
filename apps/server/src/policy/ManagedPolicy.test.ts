@@ -184,6 +184,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         "config.binaryPath",
         "config.launchArgs",
         "config.homePath",
+        "config.configDir",
         "environment",
       ]);
       assert.deepEqual(providers?.lockedInstanceFields?.[ProviderDriverKind.make("acpRegistry")], [

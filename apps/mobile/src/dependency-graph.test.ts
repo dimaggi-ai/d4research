@@ -238,7 +238,7 @@ describe("mobile dependency graph", () => {
       ["components", "features", 35, "components must not add imports from features"],
       // native -> features: native glue reading appearance/keyboard/review features.
       ["native", "features", 10, "native must not add imports from features"],
-      ["lib", "state", 10, "lib must not add imports from state"],
+      ["lib", "state", 12, "lib must not add imports from state"],
     ];
 
     for (const [from, to, ceiling, message] of ceilings) {

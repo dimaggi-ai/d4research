@@ -3,6 +3,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  supportsD4AgentDriver,
   type ServerProvider,
 } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -59,6 +60,20 @@ const model = (slug: string, isCustom = false, isDefault = false) => ({
 });
 
 describe("isProviderInstancePickerReady", () => {
+  it("keeps both Pi local models in ordinary and Nia picker catalogs", () => {
+    const slugs = ["kolibri/kolibri-1-q4_k_m", "qwen/qwen3.8-flash-next-iq3_s"];
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("pi"),
+        instanceId: "piStrata",
+        models: slugs.map((slug) => model(slug)),
+      }),
+    ]);
+    expect(entries[0]?.models.map((entry) => entry.slug)).toEqual(slugs);
+    const nia = entries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
+    expect(nia[0]?.instanceId).toBe("piStrata");
+    expect(nia[0]?.models.map((entry) => entry.slug)).toEqual(slugs);
+  });
   it("rejects a disabled instance even while its last probe status is ready", () => {
     const [entry] = deriveProviderInstanceEntries([
       provider({

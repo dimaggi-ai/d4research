@@ -10,6 +10,7 @@ export type SettingsSheetTarget =
   | "SettingsEnvironmentNewThreads"
   | "SettingsEnvironmentSourceControl"
   | "SettingsSecondBrain"
+  | "SettingsDecisions"
   | "SettingsEnvironmentAgentBehavior"
   | "SettingsEnvironmentMaintenance"
   | "SettingsProviderAccounts"

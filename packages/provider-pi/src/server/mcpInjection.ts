@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
 import type { McpProviderSessionConfig } from "@d4research/provider-core/server/mcpSession";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 import {
   PI_T3_MCP_EXTENSION_FILENAME,
   PI_T3_MCP_EXTENSION_SOURCE,
@@ -10,6 +11,7 @@ import {
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
+  T3_PI_TOOL_POLICY_ENV,
 } from "./mcpExtensionSource.ts";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
@@ -66,6 +68,7 @@ const PI_ARGUMENTS_WITHOUT_VALUES = new Set([
   "--no-context-files",
   "-nc",
   "--no-extensions",
+  "--no-mcp",
   "-ne",
   "--no-prompt-templates",
   "-np",
@@ -246,6 +249,8 @@ export function buildPiRpcLaunch(input: {
   readonly ephemeral?: boolean;
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
+  readonly d4AgentOnly?: boolean;
+  readonly selectedModel?: { readonly provider: string; readonly modelId: string } | null;
   readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 }): {
   readonly args: ReadonlyArray<string>;
@@ -257,8 +262,22 @@ export function buildPiRpcLaunch(input: {
     input.disableExtensions === true
       ? withoutExplicitExtensions(input.launchArgs)
       : input.launchArgs;
-  const launchArgs =
+  let launchArgs =
     input.disableTools === true ? withoutToolSelectionArgs(extensionSafeArgs) : extensionSafeArgs;
+  if (input.d4AgentOnly) {
+    // Only model transport options survive: arbitrary extension flags can load code or prompts.
+    const safeArgs: string[] = [];
+    for (let index = 0; index < launchArgs.length; index += 1) {
+      const arg = launchArgs[index]!;
+      if (["--provider", "--model", "--thinking", "--api-key"].includes(arg)) {
+        const value = launchArgs[++index];
+        if (value !== undefined) safeArgs.push(arg, value);
+      } else if (PI_ARGUMENTS_WITH_VALUES.has(arg)) {
+        index += 1;
+      }
+    }
+    launchArgs = safeArgs;
+  }
   const args = [
     "--mode",
     "rpc",
@@ -268,9 +287,28 @@ export function buildPiRpcLaunch(input: {
         ? ["--session", input.sessionPath]
         : []),
     ...launchArgs,
+    // Resolve the selected model before Pi validates stale configured defaults at startup.
+    ...(input.selectedModel
+      ? ["--provider", input.selectedModel.provider, "--model", input.selectedModel.modelId]
+      : []),
     // Restrictions must follow launch args so user flags cannot re-enable unattended tools/extensions.
     ...(input.disableExtensions === true ? ["--no-extensions"] : []),
     ...(input.disableTools === true ? ["--no-tools"] : []),
+    ...(input.d4AgentOnly
+      ? [
+          "--no-extensions",
+          "--no-mcp",
+          "--no-builtin-tools",
+          "--no-skills",
+          "--no-context-files",
+          "--no-prompt-templates",
+          "--no-themes",
+          "--system-prompt",
+          D4_AGENT_PREFIX,
+          "--tools",
+          D4_AGENT_TOOLS.map((name) => `mcp__t3-code__${name}`).join(","),
+        ]
+      : []),
   ];
   if (
     hasT3Extension &&
@@ -284,11 +322,14 @@ export function buildPiRpcLaunch(input: {
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
+  delete environment[T3_PI_TOOL_POLICY_ENV];
+  delete environment[T3_PI_RUNTIME_MODE_ENV];
 
   return {
     args,
     env: {
       ...environment,
+      ...(input.d4AgentOnly ? { [T3_PI_TOOL_POLICY_ENV]: "d4-agent" } : {}),
       ...(hasT3Extension && input.extensionPath !== undefined
         ? { [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath }
         : {}),

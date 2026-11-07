@@ -9,7 +9,7 @@ import {
   claudeMcpQueryOverrides,
   makeClaudeQueryOptions,
 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "./policy.ts";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 const session = {
   environmentId: EnvironmentId.make("environment"),
   threadId: ThreadId.make("agent"),

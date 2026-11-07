@@ -832,6 +832,7 @@ export function GeneralSettingsPanel() {
     <SettingsPageContainer>
       <AgentMonitorSettings />
       <HandoffSettingsSection />
+      <DecisionSettingsSection />
       <SettingsSection id="workspace" title="Workspace">
         <SettingsRow
           title="Open project with"
@@ -1537,6 +1538,44 @@ export function CompactIdleThreadsRow() {
       <ScopedCompactIdleThreadsRow />
       <IdleCompactionSettings />
     </>
+  );
+}
+
+function DecisionSettingsSection() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsSection title="Decisions" id="decisions">
+      <SettingsRow
+        id="decision-endpoint"
+        title="OpenJev endpoint"
+        description="Agents send text to this endpoint to get yes/no, choice, and score answers. To turn decisions off, leave the field blank."
+        control={
+          <DraftInput
+            value={settings.decision.baseUrl}
+            onCommit={(baseUrl) => updateSettings({ decision: { baseUrl } })}
+            placeholder="http://127.0.0.1:19098"
+            aria-label="OpenJev endpoint"
+            className="w-full max-w-xs"
+          />
+        }
+      />
+      <SettingsRow
+        id="decision-model"
+        title="Decision model"
+        description="Enter the model name that the endpoint serves."
+        control={
+          <DraftInput
+            value={settings.decision.model}
+            onCommit={(model) => {
+              if (model.trim() !== "") updateSettings({ decision: { model } });
+            }}
+            aria-label="Decision model"
+            className="w-full max-w-xs"
+          />
+        }
+      />
+    </SettingsSection>
   );
 }
 

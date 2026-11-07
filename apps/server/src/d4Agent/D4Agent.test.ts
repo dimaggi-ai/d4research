@@ -751,6 +751,31 @@ it.effect("read-only blocks every action before a side effect", () =>
   }),
 );
 
+it.effect.each(["read-only", "ask", "act"] as const)(
+  "Pi manager actions preserve server permission gates (%s)",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode);
+      yield* Ref.set(f.catalog, [{ ...provider, driver: ProviderDriverKind.make("pi") }]);
+      assert.isTrue((yield* f.service.getState()).modelAvailable);
+      const result = yield* Effect.result(
+        f.service.requestAction({ type: "interrupt", threadId: targetId }),
+      );
+      assert.deepEqual(yield* Ref.get(f.dispatches), []);
+      if (mode === "read-only") {
+        assert.equal(result._tag, "Failure");
+        if (result._tag === "Failure") assert.equal(result.failure.reason, "read-only");
+      } else {
+        assert.equal(result._tag, "Success");
+        if (result._tag === "Success") {
+          assert.equal(result.success.status, "pending");
+          yield* f.service.resolveAction({ actionId: result.success.id, decision: "approve" });
+          assert.deepEqual(yield* Ref.get(f.dispatches), ["interrupt"]);
+        }
+      }
+    }),
+);
+
 it.effect("ask persists a pending action and executes only once after user approval", () =>
   Effect.gen(function* () {
     const { service, dispatches, state } = yield* fixture("ask");

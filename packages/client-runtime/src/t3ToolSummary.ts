@@ -352,6 +352,12 @@ export function summarizeT3ToolCalls(
     case "environment-read":
       label = phrase("Checked", "check", `environment preferences ${times}`);
       break;
+    case "decision-evaluate":
+      label = phrase("Asked", "ask", `the decision model ${times}`);
+      break;
+    case "decision-rank":
+      label = phrase("Ranked", "rank", `results by relevance ${times}`);
+      break;
     case "usage-read":
       label = phrase("Checked", "check", `usage history ${times}`);
       break;

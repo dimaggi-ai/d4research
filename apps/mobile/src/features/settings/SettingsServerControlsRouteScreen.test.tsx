@@ -19,6 +19,8 @@ const { Children, mocks } = vi.hoisted(() => ({
 
 vi.mock("react-native", () => ({
   View: Children,
+  Modal: () => null,
+  AppState: { addEventListener: () => ({ remove: () => {} }) },
   Alert: { alert: mocks.alert },
   Pressable: ({
     children,
@@ -37,7 +39,8 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("@effect/atom-react", () => ({
-  useAtomValue: () => AsyncResult.success({}),
+  useAtomValue: (atom: unknown) =>
+    typeof atom === "string" ? !mocks.readOnly.has(atom) : AsyncResult.success({}),
   useAtomSet: () => () => {},
 }));
 vi.mock("../../state/preferences", () => ({
@@ -49,7 +52,25 @@ vi.mock("./components/SourceControlSignInSection", () => ({
   SourceControlSignInSection: () => null,
 }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("@react-navigation/native", () => ({ useNavigation: () => ({}) }));
+vi.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({}),
+  useLinkTo: () => vi.fn(),
+}));
+vi.mock("expo-notifications", () => ({
+  getPermissionsAsync: async () => ({ granted: false }),
+  IosAuthorizationStatus: { PROVISIONAL: 3 },
+}));
+vi.mock("../../state/entities", () => ({
+  useThreadShells: () => [],
+  useEnvironmentServerConfig: (id: string) =>
+    mocks.targets.find((target) => target.environmentId === id)?.serverConfig,
+}));
+vi.mock("../../lib/modelOptions", () => ({
+  buildModelOptions: () => [],
+  groupByProvider: () => [],
+}));
+vi.mock("../threads/ThreadSettingsRows", () => ({ ModelRow: () => null }));
+vi.mock("./D4AgentControls", () => ({ D4AgentControls: () => null }));
 vi.mock("../../state/session", () => ({
   readEnvironmentScope: () => true,
   useEnvironmentsWithScope: () =>
@@ -59,7 +80,9 @@ vi.mock("../../state/session", () => ({
         .filter((environmentId) => !mocks.readOnly.has(environmentId)),
     ),
 }));
-vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
+vi.mock("../../state/server", () => ({
+  serverEnvironment: { updateSettings: { permissionAtom: (id: string) => id } },
+}));
 vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
@@ -181,6 +204,49 @@ afterEach(() => {
 });
 
 describe("SettingsServerControlsRouteScreen", () => {
+  it("lets an environment enable Nia from the actual Threads settings route", async () => {
+    mocks.targets[0]!.serverConfig.settings.d4Agent = {
+      ...DEFAULT_SERVER_SETTINGS.d4Agent,
+      enabled: false,
+    };
+    await act(async () => root.render(<SettingsThreadsRouteScreen />));
+    const toggle = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find(
+      (button) => button.textContent === "Enable agent chat",
+    );
+    expect(toggle).toBeDefined();
+    await act(async () => toggle!.click());
+    expect(mocks.updateSettings).toHaveBeenCalledWith({
+      environmentId: "local",
+      input: { patch: { d4Agent: { ...DEFAULT_SERVER_SETTINGS.d4Agent, enabled: true } } },
+    });
+  });
+
+  it("enables Nia only in the environment whose control was pressed", async () => {
+    const remote = environment("remote", "Remote");
+    remote.serverConfig.settings.d4Agent = { ...DEFAULT_SERVER_SETTINGS.d4Agent, enabled: false };
+    mocks.targets.push(remote);
+    await act(async () => root.render(<SettingsThreadsRouteScreen />));
+    const toggles = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].filter(
+      (button) => button.textContent === "Enable agent chat",
+    );
+    await act(async () => toggles[1]!.click());
+    expect(mocks.updateSettings).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "remote",
+      input: { patch: { d4Agent: { ...DEFAULT_SERVER_SETTINGS.d4Agent, enabled: true } } },
+    });
+  });
+
+  it("keeps Nia settings read-only for an environment without settings permission", async () => {
+    mocks.readOnly.add("local");
+    await act(async () => root.render(<SettingsThreadsRouteScreen />));
+    const toggle = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find(
+      (button) => button.textContent === "Enable agent chat",
+    );
+    expect(toggle).toBeDefined();
+    await act(async () => toggle!.click());
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
   it("sends a draft saved during a pending write once that write settles", async () => {
     const pending = Promise.withResolvers<AsyncResult.Success<void>>();
     mocks.updateSettings.mockReturnValueOnce(pending.promise);

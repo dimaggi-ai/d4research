@@ -1,5 +1,6 @@
 import { AgentMonitorNotifications } from "./features/agent-awareness/AgentMonitorNotifications";
 import { SystemMonitorNotifications } from "./features/agent-awareness/SystemMonitorNotifications";
+import { SettingsDecisionsRouteScreen } from "./features/settings/SettingsDecisionsRouteScreen";
 import { SettingsSecondBrainRouteScreen } from "./features/settings/SettingsSecondBrainRouteScreen";
 import { LocalDevelopmentScreen } from "./features/local-development/LocalDevelopmentScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
@@ -284,6 +285,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsSecondBrainRouteScreen,
     linking: "second-brain",
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Second brain" },
+  }),
+  SettingsDecisions: createNativeStackScreen({
+    screen: SettingsDecisionsRouteScreen,
+    linking: "settings/decisions",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Decisions" },
   }),
   LocalDevelopment: createNativeStackScreen({
     screen: LocalDevelopmentScreen,

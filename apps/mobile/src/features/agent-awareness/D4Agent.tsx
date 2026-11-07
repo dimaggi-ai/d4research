@@ -2,6 +2,7 @@ import { d4ActionFailureMessage } from "@d4research/client-runtime/d4-agent-acti
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Clipboard from "expo-clipboard";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
 import { environmentThreadShells } from "../../state/threads";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -15,8 +16,10 @@ import {
 } from "./d4AgentPresentation";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
-import { useLinkTo } from "@react-navigation/native";
+import { useLinkTo, useNavigation } from "@react-navigation/native";
+import { openSettings } from "../settings/settings-navigation";
 import {
+  D4AgentError,
   ProjectId,
   type D4AgentActionSummary,
   type EnvironmentId,
@@ -87,6 +90,23 @@ export function D4AgentHomeHeader({
   );
 }
 
+const isD4AgentError = Schema.is(D4AgentError);
+
+function agentOpenFailureMessage(error: unknown): string {
+  if (isD4AgentError(error)) {
+    switch (error.reason) {
+      case "disabled":
+      case "model-not-selected":
+      case "provider-unavailable":
+      case "model-unavailable":
+      case "option-unavailable":
+      case "sandbox-unavailable":
+        return agentUnavailableMessage(error.reason);
+    }
+  }
+  return "Could not open Nia. Try again.";
+}
+
 export function D4AgentEntry({
   environmentId,
   label,
@@ -101,7 +121,8 @@ export function D4AgentEntry({
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
   const linkTo = useLinkTo();
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState(false);
+  const navigation = useNavigation();
+  const [error, setError] = useState<string | null>(null);
   return (
     <View className="px-4 py-2">
       <Pressable
@@ -117,12 +138,12 @@ export function D4AgentEntry({
         onPress={async () => {
           if (!config) return;
           if (!config.settings.d4Agent.enabled) {
-            linkTo("/settings/thread-preferences");
+            openSettings(navigation, "SettingsThreads");
             return;
           }
           if (state.data?.threadId && !allowed) {
             if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
-              setError(true);
+              setError(agentOpenFailureMessage(null));
               return;
             }
             linkTo(
@@ -131,7 +152,7 @@ export function D4AgentEntry({
             return;
           }
           setOpening(true);
-          setError(false);
+          setError(null);
           await ensure({ environmentId, input: {} })
             .then(async (result) => {
               if (
@@ -141,9 +162,14 @@ export function D4AgentEntry({
                 linkTo(
                   `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
                 );
-              else setError(true);
+              else
+                setError(
+                  agentOpenFailureMessage(
+                    result._tag === "Failure" ? squashAtomCommandFailure(result) : null,
+                  ),
+                );
             })
-            .catch(() => setError(true))
+            .catch((failure: unknown) => setError(agentOpenFailureMessage(failure)))
             .finally(() => setOpening(false));
         }}
       >
@@ -152,9 +178,18 @@ export function D4AgentEntry({
         </Text>
       </Pressable>
       {error ? (
-        <Text accessibilityRole="alert" className="py-2 text-sm text-foreground-muted">
-          Could not open Nia. Check that it is enabled with an available model in Settings.
-        </Text>
+        <View className="gap-2 py-2">
+          <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
+            {error}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            className="self-start py-2"
+            onPress={() => openSettings(navigation, "SettingsThreads")}
+          >
+            <Text className="text-sm text-accent">Settings</Text>
+          </Pressable>
+        </View>
       ) : null}
     </View>
   );

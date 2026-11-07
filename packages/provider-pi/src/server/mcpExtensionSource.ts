@@ -1,5 +1,6 @@
 // No T3 imports inside the string; resolve Pi and typebox from the user's Pi install.
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@d4research/provider-core/server/orchestrationInstructions";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
@@ -7,6 +8,7 @@ export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
+export const T3_PI_TOOL_POLICY_ENV = "T3_PI_TOOL_POLICY";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
@@ -21,6 +23,9 @@ const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
+const TOOL_POLICY_ENV = ${JSON.stringify(T3_PI_TOOL_POLICY_ENV)};
+const D4_AGENT_PREFIX = ${JSON.stringify(D4_AGENT_PREFIX)};
+const D4_AGENT_TOOLS = new Set(${JSON.stringify(D4_AGENT_TOOLS)});
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -241,11 +246,13 @@ function createMcpClient(endpoint: string, token: string) {
 }
 
 export default async function t3McpExtension(pi: ExtensionAPI) {
+  const d4AgentOnly = env(TOOL_POLICY_ENV) === "d4-agent";
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
   // replacement reruns this factory without project_trust, and T3 drops notices outside a turn,
   // so check each session's first turn. An explicit --no-approve is deliberate and stays quiet.
   let projectTrustChecked = false;
   pi.on("before_agent_start", (_event, ctx) => {
+    if (d4AgentOnly) return;
     if (projectTrustChecked) return;
     projectTrustChecked = true;
     if (ctx.isProjectTrusted() || process.argv.some((arg) => arg === "--no-approve" || arg === "-na")) return;
@@ -258,6 +265,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Keep skill chips in the request. Pi expands only one leading /skill:
   // command, so use its own frontmatter loader for every selected chip here.
   pi.on("input", async (event, ctx) => {
+    if (d4AgentOnly) return;
     if (!event.text.includes("$")) return;
     const commands = pi.getCommands().filter((command) => command.source === "skill");
     const nativeSkill = /^\\/skill:([^ ]+)(?: |$)/.exec(event.text)?.[1];
@@ -318,9 +326,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     pi.getAllTools().some((tool) => tool.name === "tool_search" && tool.sourceInfo?.path === "builtin:tool-search");
 
   const readOnlyMcpTools = new Set<string>();
-  const isReadOnlyMcpTool = (name: string) => {
+  const ownedMcpTools = new Set<string>();
+  const isOwnedMcpTool = (name: string) => {
     const extensionPath = env(EXTENSION_PATH_ENV);
-    if (extensionPath === undefined || !readOnlyMcpTools.has(name) || typeof pi.getAllTools !== "function") return false;
+    if (extensionPath === undefined || !ownedMcpTools.has(name) || typeof pi.getAllTools !== "function") return false;
     // A user extension may own the same name. Only our registered HTTP bridge
     // may inherit the canonical T3 server's read-only annotation.
     return pi.getAllTools().some((tool) => tool.name === name &&
@@ -329,9 +338,14 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   };
 
   pi.on("tool_call", async (event, ctx) => {
+    // Server-side Nia action cards own approvals in all three permission modes.
+    if (d4AgentOnly) {
+      if (isOwnedMcpTool(event.toolName)) return;
+      return { block: true, reason: \`\${event.toolName} was declined in T3 Code.\` };
+    }
     const mode = runtimeMode();
     if (mode === "full-access") return;
-    if ((event.toolName === "tool_search" ? hasBuiltinToolSearch() : READ_ONLY_TOOLS.has(event.toolName)) || isReadOnlyMcpTool(event.toolName)) {
+    if ((event.toolName === "tool_search" ? hasBuiltinToolSearch() : READ_ONLY_TOOLS.has(event.toolName)) || (readOnlyMcpTools.has(event.toolName) && isOwnedMcpTool(event.toolName))) {
       return;
     }
     if (mode === "auto-accept-edits" && FILE_CHANGE_TOOLS.has(event.toolName)) {
@@ -363,7 +377,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // bridge as the credential owner: mcp.json overrides native registrations.
   const supportsExposure = "registerMcpServer" in pi && typeof pi.registerMcpServer === "function";
   const directTools = new Set(["orchestrator_capabilities", "delegate_task", "task_status"]);
-  let deferOptionalTools = supportsExposure;
+  let deferOptionalTools = supportsExposure && !d4AgentOnly;
   let catalog: ReadonlyArray<McpTool> = [];
 
   const client = createMcpClient(endpoint, token);
@@ -374,9 +388,11 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     // canonical names reserve ownership against Pi's configured MCP servers.
     const prefixes = supportsExposure ? ["mcp__t3-code__", "mcp__t3_code__"] : ["mcp__t3-code__"];
     readOnlyMcpTools.clear();
+    ownedMcpTools.clear();
     for (const tool of catalog) {
       const name = tool.name;
       for (const prefix of prefixes) {
+        ownedMcpTools.add(\`\${prefix}\${name}\`);
         if (tool.annotations?.readOnlyHint === true) readOnlyMcpTools.add(\`\${prefix}\${name}\`);
         const exposure = prefix === "mcp__t3_code__" ? "hidden" :
           deferOptionalTools && !directTools.has(name) ? "deferred" : "direct";
@@ -414,7 +430,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     const attempt = (async () => {
       const signal = AbortSignal.timeout(10_000);
       await client.connect(signal);
-      catalog = await client.listTools(signal);
+      catalog = (await client.listTools(signal)).filter((tool) => !d4AgentOnly || D4_AGENT_TOOLS.has(tool.name));
       registerTools();
     })();
     started = attempt;
@@ -430,6 +446,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   await ensureStarted().catch(() => undefined);
 
   const reconcileDiscovery = (ctx: Pick<ExtensionContext, "model">) => {
+    if (d4AgentOnly) {
+      pi.setActiveTools(catalog.map((tool) => "mcp__t3-code__" + tool.name).filter(isOwnedMcpTool));
+      return;
+    }
     if (!supportsExposure) return;
     // A disabled or replaced search builtin cannot discover deferred tools.
     const hasToolSearch = hasBuiltinToolSearch();
@@ -456,6 +476,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     reconcileDiscovery(ctx);
     try {
       await ensureStarted();
+      if (d4AgentOnly) reconcileDiscovery(ctx);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(\`t3-code MCP unavailable: \${message}\`, "warning");
@@ -465,6 +486,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Keep guidance in the system prompt so leading slash commands still expand.
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
+    if (d4AgentOnly) return { systemPrompt: D4_AGENT_PREFIX };
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.

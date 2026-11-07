@@ -1,3 +1,4 @@
+import { AgentMonitorSettings } from "./AgentMonitorSettings";
 import { useNavigation } from "@react-navigation/native";
 import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@d4research/contracts";
@@ -318,6 +319,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               ) : null}
               {props.page === "threads" ? (
                 <>
+                  <AgentMonitorSettings />
                   <SettingsSection
                     title="Default workspace"
                     footer={managed("defaultThreadEnvMode")}

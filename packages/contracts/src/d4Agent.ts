@@ -18,7 +18,7 @@ export const D4_BRAIN_CONTEXTS = ["Global", "Personal", "YB", "Dimaggi"] as cons
 export const D4BrainContext = Schema.Literals(D4_BRAIN_CONTEXTS);
 export type D4BrainContext = typeof D4BrainContext.Type;
 // Only these adapters enforce the d4 Agent's MCP tool allowlist and read-only sandbox.
-export const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = ["codex", "claudeAgent"];
+export const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = ["codex", "claudeAgent", "pi"];
 // A fresh install has no local model, so Nia starts on the bundled Claude instance.
 export const DEFAULT_D4_AGENT_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make("claudeAgent"),

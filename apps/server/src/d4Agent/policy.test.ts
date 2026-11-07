@@ -1,3 +1,4 @@
+import { D4_AGENT_PREFIX } from "@d4research/provider-core/server/d4AgentPolicy";
 import { assert, describe, it } from "@effect/vitest";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
@@ -11,7 +12,6 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 import {
-  D4_AGENT_PREFIX,
   contentFreeDigest,
   compactDigest,
   heartbeatDue,

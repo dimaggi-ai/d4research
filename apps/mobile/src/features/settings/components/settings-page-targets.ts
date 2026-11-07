@@ -2,6 +2,7 @@
 export const SETTINGS_PAGE_TARGETS = [
   "LocalDevelopment",
   "SettingsSecondBrain",
+  "SettingsDecisions",
   "SettingsEnvironments",
   "SettingsThreads",
   "SettingsAbout",

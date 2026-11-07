@@ -22,6 +22,56 @@ const mcpSession = {
 };
 
 describe("pi T3 MCP injection", () => {
+  it.each([false, true])("uses the selected model before RPC startup (Nia: %s)", (d4AgentOnly) => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: ["--provider", "nemotron", "--model", "nemotron"],
+      environment: {},
+      mcpSession,
+      extensionPath: "/trusted/bridge.ts",
+      d4AgentOnly,
+      selectedModel: { provider: "kolibri", modelId: "kolibri-1-q4_k_m" },
+    });
+    assert.equal(launch.args[launch.args.lastIndexOf("--provider") + 1], "kolibri");
+    assert.equal(launch.args[launch.args.lastIndexOf("--model") + 1], "kolibri-1-q4_k_m");
+  });
+  it("isolates Nia from user tools, extensions, prompts and native MCP", () => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: [
+        "--extension",
+        "/unsafe.ts",
+        "--tools",
+        "bash",
+        "--system-prompt",
+        "unsafe",
+        "--skill",
+        "/unsafe.md",
+        "--provider",
+        "kolibri",
+        "--model",
+        "kolibri-1-q4_k_m",
+      ],
+      environment: {},
+      mcpSession,
+      extensionPath: "/trusted/bridge.ts",
+      runtimeMode: "full-access",
+      d4AgentOnly: true,
+    });
+    for (const flag of [
+      "--no-extensions",
+      "--no-mcp",
+      "--no-builtin-tools",
+      "--no-skills",
+      "--no-context-files",
+      "--no-prompt-templates",
+      "--no-themes",
+    ])
+      assert.include(launch.args, flag);
+    for (const value of ["/unsafe.ts", "bash", "unsafe", "/unsafe.md"])
+      assert.notInclude(launch.args, value);
+    assert.include(launch.args, "kolibri");
+    assert.include(launch.args, "/trusted/bridge.ts");
+    assert.equal(launch.env.T3_PI_TOOL_POLICY, "d4-agent");
+  });
   it("always adds the permission bridge and configures MCP when available", () => {
     const resolvedArgs = resolvePiLaunchArgs(
       "--extension=/home/user/.pi/agent/extensions/demo.ts --session-dir=/tmp/pi-sessions --provider=anthropic --model=claude-sonnet --tools='' --name=-review --extension-flag=kept",
@@ -66,6 +116,7 @@ describe("pi T3 MCP injection", () => {
         [T3_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
         [T3_MCP_BEARER_ENV]: "stale-token",
         [T3_PI_MCP_EXTENSION_PATH_ENV]: "/stale/extension.ts",
+        T3_PI_TOOL_POLICY: "d4-agent",
       },
       mcpSession: undefined,
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
@@ -79,6 +130,7 @@ describe("pi T3 MCP injection", () => {
     ]);
     assert.isUndefined(permissionOnly.env[T3_MCP_URL_ENV]);
     assert.isUndefined(permissionOnly.env[T3_MCP_BEARER_ENV]);
+    assert.isUndefined(permissionOnly.env.T3_PI_TOOL_POLICY);
     assert.equal(permissionOnly.env[T3_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
     assert.equal(
       permissionOnly.env[T3_PI_MCP_EXTENSION_PATH_ENV],

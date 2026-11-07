@@ -536,6 +536,107 @@ const startTurn = Effect.fnUntraced(function* (
 });
 
 describe("PiAdapterV2", () => {
+  it.effect(
+    "restores the configured default after a restarted session resumes a saved explicit model",
+    () =>
+      Effect.gen(function* () {
+        const original = yield* makeFakePi;
+        const { runtime: oldRuntime } = yield* openRuntime(original, "qwen/flash");
+        const existingProviderThread = yield* oldRuntime.ensureThread({
+          threadId: THREAD_ID,
+          modelSelection: modelSelection("qwen/flash"),
+          runtimePolicy,
+        });
+        const restarted = yield* makeFakePi;
+        restarted.queueState({
+          ...recordedIdleState(FAKE_SESSION_FILE),
+          model: { provider: "kolibri", id: "kolibri-1-q4_k_m" },
+          thinkingLevel: "low",
+        });
+        restarted.queueState({
+          ...recordedIdleState(FAKE_SESSION_FILE),
+          model: { provider: "qwen", id: "flash" },
+        });
+        const { runtime } = yield* openRuntime(restarted);
+        const thread = yield* runtime.ensureThread({
+          threadId: THREAD_ID,
+          modelSelection: modelSelection("default"),
+          runtimePolicy,
+          existingProviderThread,
+        });
+        yield* startTurn(runtime, thread);
+      yield* restarted.takeRequest("prompt");
+        assert.deepInclude(
+          restarted.allRequests().find((request) => request.type === "set_model"),
+          { provider: "kolibri", modelId: "kolibri-1-q4_k_m" },
+        );
+      }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+  it.effect(
+    "restarts when returning to the configured default instead of retaining an explicit model",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* makeAdapter(yield* makeFakePi);
+        const sessionCapabilities = yield* adapter.getCapabilities();
+        for (const [current, target, type] of [
+          ["kolibri/kolibri-1-q4_k_m", "default", "restart_session"],
+          ["default", "default", "apply_on_next_turn"],
+          ["default", "kolibri/kolibri-1-q4_k_m", "apply_on_next_turn"],
+          ["kolibri/kolibri-1-q4_k_m", "qwen/flash", "apply_on_next_turn"],
+        ]) {
+          const transition = yield* adapter.planSelectionTransition({
+            current: modelSelection(current!),
+            target: modelSelection(target!),
+            sessionCapabilities,
+          });
+          assert.equal(transition.type, type);
+        }
+      }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+  it.effect("launches Nia with isolated tools and refuses changing policy during resume", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const adapter = yield* makeAdapter(fake, "--extension /untrusted.ts --tools bash");
+      const restricted = { ...runtimePolicy, toolPolicy: "d4-agent" as const };
+      const runtime = yield* adapter.openSession({
+        threadId: THREAD_ID,
+        providerSessionId: SESSION_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy: restricted,
+      });
+      const spawn = fake.lastSpawn();
+      assert.equal(spawn.env.T3_PI_TOOL_POLICY, "d4-agent");
+      assert.include(spawn.args, "--no-mcp");
+      assert.notInclude(spawn.args, "/untrusted.ts");
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy: restricted,
+      });
+      yield* runtime.resumeThread({ providerThread, runtimePolicy: restricted });
+      const error = yield* runtime
+        .resumeThread({ providerThread, runtimePolicy })
+        .pipe(Effect.flip);
+      assert.include(String(error.cause), "Pi tool policy changed");
+      const turnError = yield* startTurn(runtime, providerThread).pipe(Effect.flip);
+      assert.include(String(turnError.cause), "Pi tool policy changed");
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("refuses moving an unrestricted Pi session into Nia without a restart", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const { runtime } = yield* openRuntime(fake);
+      const error = yield* runtime
+        .ensureThread({
+          threadId: THREAD_ID,
+          modelSelection: modelSelection("default"),
+          runtimePolicy: { ...runtimePolicy, toolPolicy: "d4-agent" },
+        })
+        .pipe(Effect.flip);
+      assert.include(String(error.cause), "Pi tool policy changed");
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
   it.effect("keeps native image bytes and the saved path in the prompt", () =>
     Effect.gen(function* () {
       const host = yield* ProviderHost.ProviderHost;

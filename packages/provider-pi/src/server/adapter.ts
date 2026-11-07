@@ -76,7 +76,7 @@ export const PI_PROVIDER = ProviderDriverKind.make("pi");
 const PI_DRIVER_KIND = PI_PROVIDER;
 const DEFAULT_PI_SETTINGS = Schema.decodeSync(PiSettings)({});
 
-// Inherit Pi's configured defaultProvider/defaultModel without calling set_model.
+// Resolve the default from Pi's startup configuration, not a saved session's selection.
 const PI_INHERIT_MODEL_SLUG = "default";
 
 const STREAM_FLUSH_MS = 50;
@@ -432,13 +432,19 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
     getCapabilities: Effect.fn("PiAdapter.getCapabilities")(function () {
       return Effect.succeed(PiProviderCapabilitiesV2);
     }),
-    planSelectionTransition: Effect.fn("PiAdapter.planSelectionTransition")(function () {
+    planSelectionTransition: Effect.fn("PiAdapter.planSelectionTransition")(function (input) {
+      if (
+        input.current.model !== PI_INHERIT_MODEL_SLUG &&
+        input.target.model === PI_INHERIT_MODEL_SLUG
+      )
+        return Effect.succeed({ type: "restart_session" as const });
       return Effect.succeed(turnScopedSelectionTransition());
     }),
     openSession: Effect.fn("PiAdapterV2.openSession")(function* (
       input: ProviderAdapter.ProviderAdapterV2OpenSessionInput,
     ) {
       const scope = yield* Effect.scope;
+      const d4AgentOnly = input.runtimePolicy.toolPolicy === "d4-agent";
       const cwd = input.runtimePolicy.cwd ?? host.paths.cwd;
       const mcpSession = yield* mcpSessions.read(input.threadId);
       const provideCacheFs = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>) =>
@@ -467,6 +473,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         mcpSession,
         extensionPath,
         runtimeMode: input.runtimePolicy.runtimeMode,
+        d4AgentOnly,
+        selectedModel: parsePiModelSlug(input.modelSelection.model),
       });
       const scopedLaunch = yield* agentScope.wrap({
         command: options.settings.binaryPath || "pi",
@@ -2179,6 +2187,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput,
         publish = true,
       ) {
+        if ((threadInput.runtimePolicy.toolPolicy === "d4-agent") !== d4AgentOnly)
+          return yield* protocolError("Pi tool policy changed; start a new provider session.");
         if (rollbackBarrier !== null)
           return yield* protocolError("Cannot register a Pi thread during rollback");
         if (threadState !== null && threadState.activeTurn !== null) {
@@ -2201,6 +2211,13 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         }
         const existing = threadInput.existingProviderThread;
         const resumeId = existing?.nativeThreadRef?.nativeId;
+        // Resume restores the saved model; retain the new process's configured default first.
+        const startupDefaults =
+          resumeId != null &&
+          !registrationAttempted &&
+          input.modelSelection.model === PI_INHERIT_MODEL_SLUG
+            ? yield* request({ type: "get_state" })
+            : undefined;
         const needsNewSession = resumeId == null && registrationAttempted;
         registrationAttempted = true;
         if (resumeId != null || needsNewSession) {
@@ -2223,6 +2240,18 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           }
         }
         const stateData = yield* request({ type: "get_state" });
+        if (startupDefaults !== undefined) {
+          const startupModel = recordField(startupDefaults, "model");
+          const provider = recordString(startupModel, "provider");
+          const modelId = recordString(startupModel, "id");
+          if (provider !== undefined && modelId !== undefined) {
+            baselineModel = { provider, modelId };
+            const resumedModel = recordField(stateData, "model");
+            appliedModel = `${recordString(resumedModel, "provider")}/${recordString(resumedModel, "id")}`;
+          }
+          baselineThinking = recordString(startupDefaults, "thinkingLevel") ?? null;
+          appliedThinking = recordString(stateData, "thinkingLevel") ?? null;
+        }
         if (!modelsDiscovered) {
           const modelsData = yield* request({ type: "get_available_models" }).pipe(
             Effect.orElseSucceed(() => undefined),
@@ -2443,6 +2472,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           }),
         startTurn: Effect.fn("PiAdapter.startTurn")(
           function* (turnInput) {
+            if ((turnInput.runtimePolicy.toolPolicy === "d4-agent") !== d4AgentOnly)
+              return yield* protocolError("Pi tool policy changed; start a new provider session.");
             if (rollbackBarrier !== null)
               return yield* protocolError("Cannot start a Pi turn during rollback");
             const state = threadState;
@@ -2999,6 +3030,11 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         ),
         forkThread: Effect.fn("PiAdapter.forkThread")(
           function* (forkInput) {
+            if (
+              ((forkInput.runtimePolicy ?? input.runtimePolicy).toolPolicy === "d4-agent") !==
+              d4AgentOnly
+            )
+              return yield* protocolError("Pi tool policy changed; start a new provider session.");
             if (threadState?.activeTurn != null) {
               return yield* protocolError("Cannot fork while a Pi turn is active");
             }
@@ -3029,6 +3065,10 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               extensionPath: undefined,
               disableExtensions: true,
               disableTools: true,
+              d4AgentOnly,
+              selectedModel: parsePiModelSlug(
+                (forkInput.modelSelection ?? input.modelSelection).model,
+              ),
             });
             const nativeId = yield* Effect.scoped(
               Effect.gen(function* () {

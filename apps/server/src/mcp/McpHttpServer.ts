@@ -49,6 +49,9 @@ import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
+import { DecisionToolkit } from "./toolkits/decision/tools.ts";
+import * as DecisionHandlers from "./toolkits/decision/handlers.ts";
+import * as DecisionService from "../decision/DecisionService.ts";
 import { UsageToolkit } from "./toolkits/usage/tools.ts";
 import * as UsageHandlers from "./toolkits/usage/handlers.ts";
 import * as UsageSnapshots from "../usage/UsageSnapshots.ts";
@@ -988,6 +991,11 @@ export const layerUsageToolkit = toolkitRegistration(UsageToolkit, UsageHandlers
   Layer.provide(UsageSnapshots.layer),
 );
 
+export const layerDecisionToolkit = toolkitRegistration(
+  DecisionToolkit,
+  DecisionHandlers.layer,
+).pipe(Layer.provide(DecisionService.layer));
+
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,
   AttachmentHandlers.layer,
@@ -1039,6 +1047,7 @@ export const layerTools = Layer.mergeAll(
   layerProjectRegistration,
   layerEnvironmentToolkit,
   layerUsageToolkit,
+  layerDecisionToolkit,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,
   layerPullRequestsToolkit,

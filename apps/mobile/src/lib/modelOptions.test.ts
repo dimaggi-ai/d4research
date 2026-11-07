@@ -5,6 +5,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  supportsD4AgentDriver,
   type ModelSelection,
   type ServerConfig,
   type ServerSettings,
@@ -22,6 +23,29 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("keeps both Pi local models in ordinary and Nia picker catalogs", () => {
+    const slugs = ["kolibri/kolibri-1-q4_k_m", "qwen/qwen3.8-flash-next-iq3_s"];
+    const config = {
+      providers: [
+        {
+          instanceId: "piStrata",
+          driver: "pi",
+          enabled: true,
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          models: slugs.map((slug) => ({ slug, name: slug, isCustom: false, capabilities: null })),
+        },
+      ],
+    } as unknown as ServerConfig;
+    const options = buildModelOptions(config, null, undefined, null);
+    expect(options.map((option) => option.selection.model)).toEqual(slugs);
+    expect(
+      options
+        .filter((option) => supportsD4AgentDriver(option.providerDriver))
+        .map((option) => option.selection.model),
+    ).toEqual(slugs);
+  });
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

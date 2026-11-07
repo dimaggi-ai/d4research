@@ -35,6 +35,7 @@ describe("fileChipMenu", () => {
       actions: [
         { id: "copy-full-path", title: "Copy full path" },
         { id: "open-file", title: "Open in file viewer" },
+        { id: "save", title: "Save or share" },
       ],
     });
     expect(fileChipMenu({ relativePath: "src/app.ts" }).actions.map(({ id }) => id)).toEqual([

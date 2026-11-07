@@ -202,16 +202,28 @@ describe("buildTraitsTriggerDisplay", () => {
       type: "boolean",
       currentValue: true,
     };
-    expect(display([EFFORT, thinking])).toMatchObject({ label: "High · Thinking On", speedLabel: null });
+    expect(display([EFFORT, thinking])).toMatchObject({
+      label: "High · Thinking On",
+      speedLabel: null,
+    });
   });
 
   it("falls back to a text label when fast mode is the only trait", () => {
-    expect(display([fastModeDescriptor(true)])).toMatchObject({ label: "Fast", speedLabel: "Fast" });
-    expect(display([fastModeDescriptor(false)])).toMatchObject({ label: "Normal", speedLabel: null });
+    expect(display([fastModeDescriptor(true)])).toMatchObject({
+      label: "Fast",
+      speedLabel: "Fast",
+    });
+    expect(display([fastModeDescriptor(false)])).toMatchObject({
+      label: "Normal",
+      speedLabel: null,
+    });
   });
 
   it("does not add Fast to a model without a speed option", () => {
-    expect(display([EFFORT, CONTEXT_WINDOW])).toMatchObject({ label: "High · 1M", speedLabel: null });
+    expect(display([EFFORT, CONTEXT_WINDOW])).toMatchObject({
+      label: "High · 1M",
+      speedLabel: null,
+    });
   });
 
   it("stays blank when descriptors resolve to no label and there is no fast mode", () => {

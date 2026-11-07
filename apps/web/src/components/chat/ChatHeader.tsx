@@ -113,7 +113,7 @@ export const ChatHeader = memo(function ChatHeader({
       ? renaming.title
       : null;
   const isRenamingTitle = renamingTitle !== null;
-  // Keep breadcrumb layout synchronized with DOM resize measurements.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep breadcrumb layout synchronized with DOM resize measurements.
   useEffect(() => {
     const list = breadcrumbContainerRef.current?.querySelector("ol");
     if (!list || !parentThreadLink) return;
@@ -208,7 +208,7 @@ export const ChatHeader = memo(function ChatHeader({
     clearTimeout(titleMenuTimerRef.current);
     titleMenuTimerRef.current = null;
   };
-  // Cancel the pending menu timer when its owning thread changes or unmounts.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the pending menu timer when its owning thread changes or unmounts.
   useEffect(
     () => () => {
       if (titleMenuTimerRef.current === null) return;

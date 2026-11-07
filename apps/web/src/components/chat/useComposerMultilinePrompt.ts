@@ -24,7 +24,7 @@ function measureComposerMultilinePrompt(body: HTMLElement): boolean | null {
 export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
   const [isMultiline, setIsMultiline] = useState(false);
 
-  // Observe DOM layout and mutations to track the rendered editor height.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observe DOM layout and mutations to track the rendered editor height.
   useLayoutEffect(() => {
     if (!body) return;
     // Measuring reads layout, so one measurement per frame runs after all of the frame's DOM

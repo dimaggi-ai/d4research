@@ -1079,14 +1079,16 @@ const make = Effect.gen(function* () {
   ) =>
     assertOrdinaryThread(threadId).pipe(
       Effect.andThen(
-        threadManagement.getThreadRecords(threadId, fields, filter).pipe(
-          Effect.mapError((error) =>
-            failure(
-              "orchestration_error",
-              `Unable to read thread ${threadId}: ${errorMessage(error)}`,
+        threadManagement
+          .getThreadRecords(threadId, fields, filter)
+          .pipe(
+            Effect.mapError((error) =>
+              failure(
+                "orchestration_error",
+                `Unable to read thread ${threadId}: ${errorMessage(error)}`,
+              ),
             ),
           ),
-        ),
       ),
     );
 

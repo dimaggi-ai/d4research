@@ -1,18 +1,8 @@
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Layer from "effect/Layer";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-/**
- * Optional integration check against a real `junie --acp=true` install.
- * Enable with: T3_JUNIE_ACP_PROBE=1 vp test run JunieAcpCliProbe
- *
- * This is the counterpart to GrokAcpCliProbe, and the test whose absence let a
- * real bug ship: Junie's discovery was written against Grok's shape
- * (`models.availableModels`), a field Junie never sends. Every fake in the
- * suite was hand-written from that same assumption, so nothing disagreed with
- * it. Only the real CLI does.
- *
- * The probe assumes Junie is already authenticated (`junie` once, interactively).
- */
+/** Opt-in authenticated CLI probe: T3_JUNIE_ACP_PROBE=1 vp test run JunieAcpCliProbe.
+ * Real configOptions catch model-discovery assumptions shared by mocks. */
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import { it } from "@effect/vitest";
@@ -22,7 +12,6 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
 import { junieModelsFromSessionSetup } from "../Layers/JunieProvider.ts";
@@ -118,6 +107,7 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Opt-in real CLI inference awaits protocol events and needs its existing bounded network deadline.
   it.effect(
     "streams assistant output from a real selected-model prompt",
     () =>

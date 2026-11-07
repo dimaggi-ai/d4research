@@ -2,7 +2,6 @@ import {
   createContext,
   use,
   useImperativeHandle,
-  useLayoutEffect,
   type ReactNode,
   type ComponentProps,
   type Ref,
@@ -19,15 +18,22 @@ const ThreadFindBarContext = createContext<Find["barProps"] | null>(null);
 export function ThreadFindCanvas({
   findOptions,
   controlsRef,
+  isOpen,
   onOpenChange,
   ...canvasProps
 }: ComponentProps<typeof ChatCanvas> & {
-  findOptions: Parameters<typeof useThreadFind>[0];
+  findOptions: Omit<Parameters<typeof useThreadFind>[0], "isOpen" | "onOpenChange">;
   controlsRef: Ref<ThreadFindControls>;
+  isOpen: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <ThreadFindProvider {...findOptions} controlsRef={controlsRef} onOpenChange={onOpenChange}>
+    <ThreadFindProvider
+      {...findOptions}
+      controlsRef={controlsRef}
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+    >
       <ChatCanvas {...canvasProps} />
     </ThreadFindProvider>
   );
@@ -36,21 +42,21 @@ export function ThreadFindCanvas({
 /** Owns search updates below the chat view so cycling does not rerender the composer and panels. */
 function ThreadFindProvider({
   controlsRef,
+  isOpen,
   onOpenChange,
   children,
   ...options
-}: Parameters<typeof useThreadFind>[0] & {
+}: Omit<Parameters<typeof useThreadFind>[0], "isOpen" | "onOpenChange"> & {
   controlsRef: Ref<ThreadFindControls>;
+  isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
-  const find = useThreadFind(options);
+  const find = useThreadFind({ ...options, isOpen, onOpenChange });
   useImperativeHandle(controlsRef, () => ({ open: find.open, close: find.close }), [
     find.open,
     find.close,
   ]);
-  // Keep the owner of imperative search controls informed of automatic closes without lifting per-keystroke search state.
-  useLayoutEffect(() => onOpenChange(find.isOpen), [find.isOpen, onOpenChange]);
   return (
     <ThreadFindBarContext value={find.barProps}>
       <ThreadFindTimelineContext value={find.timelineProps}>{children}</ThreadFindTimelineContext>

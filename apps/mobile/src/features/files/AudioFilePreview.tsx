@@ -23,11 +23,11 @@ export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
   // Video teardown deactivates the shared iOS session, which would stop this player.
   useMediaAudioSessionHold(playbackRequested || status.playing);
   const fullscreenVideoOpen = useFullscreenVideoOpen();
-  // Stop the native player when video takes the audio session or playback finishes.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Pause the native player when video takes the audio session or playback finishes.
   useEffect(() => {
     if (fullscreenVideoOpen || status.didJustFinish || status.error) session.pause();
   }, [fullscreenVideoOpen, status.didJustFinish, status.error, session]);
-  // Release this mounted viewer's native playback request on teardown.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Release this mounted viewer's native playback request on teardown.
   useEffect(() => () => session.pause(), [session]);
   const seek = (seconds: number) => {
     setSeekError(false);

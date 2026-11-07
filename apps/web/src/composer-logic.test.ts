@@ -327,7 +327,6 @@ describe("detectComposerTrigger", () => {
     expect(detectComposerTrigger(text, text.length)).toBeNull();
   });
 
-
   it.each([
     ["Run /tmp/build.sh", "Run /tmp/build.sh".length],
     ["/etc/hosts", "/etc/hosts".length],
@@ -335,7 +334,6 @@ describe("detectComposerTrigger", () => {
   ])("keeps the path in %j out of the slash menu", (text, cursor) => {
     expect(detectComposerTrigger(text, cursor)).toBeNull();
   });
-
 
   it.each(["Use ", "Use\t", "Use\n  "])("detects inline slash skills after %j", (prefix) => {
     const text = `${prefix}/skill:review later`;
@@ -1029,7 +1027,6 @@ describe("side chat slash commands", () => {
     ]);
   });
 });
-
 
 describe("isPathSuggestionCurrent", () => {
   const searchedTarget = {

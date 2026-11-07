@@ -203,10 +203,21 @@ function useSettingsIndexSections(): SettingsListSection[] {
     page(target, icon, label, { disabled: noServerTargets });
   // The same pages and groups as Settings on web, minus what mobile has no setting for.
   return [
-    ...(Platform.OS === "ios" ? [{
-      title: "On this device",
-      rows: [{ id: "LocalDevelopment", icon: "hammer" as const, label: "Local development", onPress: () => navigation.navigate("LocalDevelopment") }],
-    }] : []),
+    ...(Platform.OS === "ios"
+      ? [
+          {
+            title: "On this device",
+            rows: [
+              {
+                id: "LocalDevelopment",
+                icon: "hammer" as const,
+                label: "Local development",
+                onPress: () => navigation.navigate("LocalDevelopment"),
+              },
+            ],
+          },
+        ]
+      : []),
     {
       rows: [
         page("SettingsOrganization", "gearshape", "General"),

@@ -34,12 +34,8 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   const crypto = yield* SecureRandom.SecureRandom;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fs = yield* FileSystem.FileSystem;
-  // Title and commit-message sessions would otherwise linger in `muse`
-  // history. `--no-session-log` is not an option: the ephemeral host seals
-  // the approval ceiling and emits nothing after `turn/start` is accepted,
-  // so the turn text never arrives. Instead remove exactly the durable log
-  // Muse returned, and only when it sits under Muse's own session store.
-  // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
+  // --no-session-log prevents turn output, so delete only the returned log within Muse's
+  // session store to keep title and commit-message generation out of durable history.
   const removeSessionLog = Effect.fn("MuseTextGeneration.removeSessionLog")(
     (museHome: string, sessionId: string, sessionPath: string) =>
       Effect.gen(function* () {
@@ -85,7 +81,6 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
           spawner,
           cwd,
           clientInfo: { name: "t3_code", version: "0.0.1" },
-          // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
           onEvent: Effect.fn("MuseTextGeneration.onEvent")((method, params) =>
             Effect.gen(function* () {
               const event = yield* Effect.try({

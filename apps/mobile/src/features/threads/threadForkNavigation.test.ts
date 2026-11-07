@@ -35,12 +35,12 @@ describe("waitForThreadShell", () => {
 
   it("returns false instead of navigating when the shell never arrives", async () => {
     vi.useFakeTimers();
-    const startedAt = Date.now();
+    vi.setSystemTime(0);
     const ready = waitForThreadShell(ref);
     await vi.advanceTimersByTimeAsync(2_000);
 
     expect(await ready).toBe(false);
-    expect(Date.now() - startedAt).toBe(2_000);
+    expect(vi.getMockedSystemTime()?.getTime()).toBe(2_000);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

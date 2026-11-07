@@ -587,13 +587,7 @@ function useSidebarThreads(input: {
 }
 
 function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
-  const {
-    threads,
-    scopedProjectKeys,
-    serverConfigs,
-    optimisticDrop,
-    workingShelfEnabled,
-  } = input;
+  const { threads, scopedProjectKeys, serverConfigs, optimisticDrop, workingShelfEnabled } = input;
   const preciseNow = new Date().toISOString();
   const visible = filterSidebarV2VisibleThreads(
     threads,

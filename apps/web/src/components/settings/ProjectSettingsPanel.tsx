@@ -8,7 +8,11 @@ import { useEnvironmentsWithScope } from "../../state/session";
 import { mapAtomCommandResult, settlePromise } from "@d4research/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import { planProjectRemoval } from "@d4research/client-runtime/state/projects";
-import { type EnvironmentId, type ProjectWorkspace, type SidebarProjectGroupingMode } from "@d4research/contracts";
+import {
+  type EnvironmentId,
+  type ProjectWorkspace,
+  type SidebarProjectGroupingMode,
+} from "@d4research/contracts";
 import {
   checkProjectAccess,
   reportProjectFailure,

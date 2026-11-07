@@ -8,16 +8,7 @@ import {
   RESEARCH_STEP_VISIT_LIMIT,
 } from "@d4research/contracts";
 
-/**
- * Hard server-side guard for research delegation loops. The orchestrator is
- * *instructed* to bound its own cycles, but a pipeline with a
- * summarize → argue → regenerate loop must terminate even when the model does
- * not: every `research_delegate` call burns budget here, and a step name can
- * only be charged `RESEARCH_STEP_VISIT_LIMIT` times per delegation target.
- *
- * State is keyed by orchestrator turn, so a fresh dev/research run in the same
- * durable thread always receives a fresh budget without waiting for a timer.
- */
+/** Charge each delegation target per orchestrator turn so model loops cannot exceed the server budget. */
 export interface ResearchBudgetCharge {
   readonly ok: boolean;
   readonly remaining: number;

@@ -1201,7 +1201,11 @@ it.layer(
             Effect.provide(
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-pi-model-cache-",
-              }).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest))),
+              }).pipe(
+                Layer.provideMerge(
+                  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+                ),
+              ),
             ),
           ),
       );
@@ -1341,7 +1345,11 @@ it.layer(
           Effect.provide(
             ServerConfig.layerTest(process.cwd(), {
               prefix: "t3-codex-retired-model-cache-",
-            }).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest))),
+            }).pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+              ),
+            ),
           ),
         ),
       );
@@ -1752,7 +1760,9 @@ it.layer(
                   prefix: "t3-provider-registry-shared-workspace-scan-",
                 }),
               ),
-              Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+              Layer.provideMerge(
+                Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+              ),
             ),
           ).pipe(Scope.provide(scope));
 
@@ -1851,7 +1861,9 @@ it.layer(
                 prefix: "t3-provider-registry-unhealthy-workspace-",
               }),
             ),
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+            Layer.provideMerge(
+              Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+            ),
           ),
         ).pipe(Scope.provide(scope));
 
@@ -1972,7 +1984,9 @@ it.layer(
                 prefix: "t3-provider-registry-shared-refresh-",
               }),
             ),
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+            Layer.provideMerge(
+              Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+            ),
           ),
         ).pipe(Scope.provide(scope));
 
@@ -2343,7 +2357,9 @@ it.layer(
               }),
             ),
             Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+            Layer.provideMerge(
+              Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+            ),
           ),
         ).pipe(Scope.provide(scope));
 
@@ -2635,7 +2651,9 @@ it.layer(
                   prefix: "t3-provider-registry-opencode-authoritative-persist-",
                 }),
               ),
-              Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+              Layer.provideMerge(
+                Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+              ),
             ),
           ).pipe(Scope.provide(scope));
 
@@ -2743,7 +2761,9 @@ it.layer(
               }),
             ),
             Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+            Layer.provideMerge(
+              Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+            ),
           ),
         ).pipe(Scope.provide(scope));
 
@@ -2862,7 +2882,9 @@ it.layer(
               }),
             ),
             Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+            Layer.provideMerge(
+              Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+            ),
           ),
         ).pipe(Scope.provide(scope));
 
@@ -3075,7 +3097,9 @@ it.layer(
               return beforeSpawn.pipe(Effect.andThen(spawner.spawn(command)));
             }),
           ),
-          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+          Layer.provideMerge(
+            Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+          ),
           Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
         );
         const runtimeServices = yield* Layer.build(layerProviderRegistry).pipe(
@@ -3185,7 +3209,9 @@ it.layer(
           Layer.provideMerge(
             OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layerTest)),
           ),
-          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest)),
+          Layer.provideMerge(
+            Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, PortScanner.layerTest),
+          ),
           Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
         );
         const runtimeServices = yield* Layer.build(layerProviderRegistry).pipe(

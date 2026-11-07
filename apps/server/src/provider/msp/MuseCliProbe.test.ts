@@ -1,14 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-/**
- * Optional integration check against a real, signed-in `muse` install.
- * Enable with: T3_MUSE_MSP_PROBE=1 vp test run MuseCliProbe
- *
- * The mock host in `scripts/msp-mock-host.ts` was written from the exported
- * MSP schema, so it agrees with our own assumptions by construction. Only the
- * real CLI can disagree. This probe runs the status check, one adapter turn,
- * and one text generation through the real binary, in a scratch workspace
- * outside the repo so Muse's TMPDIR rule and session log never touch it.
- */
+/** Opt-in authenticated CLI probe: T3_MUSE_MSP_PROBE=1 vp test run MuseCliProbe.
+ * Scratch workspaces keep real CLI session logs outside the repository. */
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -60,6 +52,7 @@ const scratchWorkspace = Effect.gen(function* () {
 
 describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
   it.layer(layer)("real muse serve", (it) => {
+    // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Opt-in real CLI inference awaits protocol events and retains its bounded network deadline.
     it.effect(
       "status check reports a signed-in install with a model catalog",
       () =>
@@ -73,6 +66,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
       60_000,
     );
 
+    // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Opt-in real CLI inference awaits protocol events and retains its bounded network deadline.
     it.effect(
       "completes a real turn with streamed assistant text",
       () =>
@@ -117,6 +111,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
       120_000,
     );
 
+    // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Opt-in real CLI inference awaits protocol events and retains its bounded network deadline.
     it.effect(
       "starts a session with the t3-code MCP server configured (sessionMcp capability)",
       () =>
@@ -159,6 +154,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
       60_000,
     );
 
+    // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Opt-in real CLI inference awaits protocol events and retains its bounded network deadline.
     it.effect(
       "switches to plan posture and back without losing the session",
       () =>
@@ -198,6 +194,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
       240_000,
     );
 
+    // oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Opt-in real CLI inference awaits protocol events and retains its bounded network deadline.
     it.effect(
       "text generation returns structured JSON without leaking history",
       () =>

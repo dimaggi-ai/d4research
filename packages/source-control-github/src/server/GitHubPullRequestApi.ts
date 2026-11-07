@@ -1,4 +1,7 @@
-import { isCommitSha, normalizeHost } from "@d4research/source-control-core/server/pullRequestUtils";
+import {
+  isCommitSha,
+  normalizeHost,
+} from "@d4research/source-control-core/server/pullRequestUtils";
 import { removeAgentCredits } from "@d4research/source-control-core/server/mergeMessage";
 import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";

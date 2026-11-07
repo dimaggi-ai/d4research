@@ -1,4 +1,3 @@
-
 export type ThreadNotificationKind = "input" | "completion";
 
 export interface ThreadNotificationObservation {

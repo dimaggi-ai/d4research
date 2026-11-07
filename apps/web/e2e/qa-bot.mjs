@@ -45,7 +45,7 @@ await NodeFSP.mkdir(out, { recursive: true });
 const scratch = await NodeFSP.mkdtemp(NodePath.join(scratchRoot, "d4-qa-runtime-"));
 const browserCache =
   process.env.PLAYWRIGHT_BROWSERS_PATH ??
-  // standalone browser harness has no Effect runtime.
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- The standalone browser harness has no Effect runtime.
   (NodeOS.platform() === "darwin"
     ? NodePath.join(NodeOS.homedir(), "Library/Caches/ms-playwright")
     : NodePath.join(NodeOS.homedir(), ".cache/ms-playwright"));
@@ -1100,7 +1100,7 @@ async function scan(scope, seen = new Set(), depth = 0, reopen) {
           );
         NodeAssert.equal(original, "true", "Git availability did not expose its discovery state");
         NodeAssert.notEqual(
-          // standalone fixture uses the host platform without an Effect runtime.
+          // oxlint-disable-next-line t3code/no-global-process-runtime -- The standalone fixture has no Effect runtime.
           NodeOS.platform(),
           "win32",
           "Git availability shim requires a POSIX shell fixture",

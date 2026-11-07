@@ -859,7 +859,9 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* service.drain;
           assert.deepEqual(
             new Set((yield* Ref.get(fixture.commands)).map((command) => command.threadId)),
-            new Set(threads.filter((thread) => thread.pinnedAt === null).map((thread) => thread.id)),
+            new Set(
+              threads.filter((thread) => thread.pinnedAt === null).map((thread) => thread.id),
+            ),
           );
         }).pipe(Effect.provide(fixture.layer));
       }),

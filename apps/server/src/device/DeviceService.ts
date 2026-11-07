@@ -34,7 +34,10 @@ import {
 } from "@d4research/contracts";
 import { SshCommandError } from "@d4research/ssh/errors";
 import * as FileSystem from "effect/FileSystem";
-import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@d4research/shared/nodeRuntime";
+import {
+  resolveNodeExecutable,
+  nodeRuntimeUnavailableMessage,
+} from "@d4research/shared/nodeRuntime";
 import * as Path from "effect/Path";
 import { ensureAgentDevice, ensureDeviceHub } from "./DeviceToolchain.ts";
 import {

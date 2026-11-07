@@ -876,34 +876,36 @@ export const makeGrokAdapter = Effect.fn("LegacyAcpAdapter.makeGrokAdapter")(
         }
       }, Effect.ignore());
 
-      const logNative = (threadId: ThreadId, method: string, payload: unknown) =>
-        Effect.gen(function* () {
-          if (!nativeEventLogger) return;
-          const observedAt = yield* nowIso;
-          yield* nativeEventLogger.write(
-            {
-              observedAt,
-              event: {
-                id: yield* randomUUIDv4,
-                kind: "notification",
-                provider: PROVIDER,
-                createdAt: observedAt,
-                method,
-                threadId,
-                payload,
+      const logNative = Effect.fn("LegacyAcpAdapter.logNative")(
+        (threadId: ThreadId, method: string, payload: unknown) =>
+          Effect.gen(function* () {
+            if (!nativeEventLogger) return;
+            const observedAt = yield* nowIso;
+            yield* nativeEventLogger.write(
+              {
+                observedAt,
+                event: {
+                  id: yield* randomUUIDv4,
+                  kind: "notification",
+                  provider: PROVIDER,
+                  createdAt: observedAt,
+                  method,
+                  threadId,
+                  payload,
+                },
               },
-            },
-            threadId,
-          );
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Failed to write native Grok notification log.", {
-              cause,
               threadId,
-              method,
-            }),
+            );
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Failed to write native Grok notification log.", {
+                cause,
+                threadId,
+                method,
+              }),
+            ),
           ),
-        );
+      );
 
       const emitPlanUpdate = Effect.fn("LegacyAcpAdapter.emitPlanUpdate")(
         (
@@ -1595,12 +1597,7 @@ export const makeGrokAdapter = Effect.fn("LegacyAcpAdapter.makeGrokAdapter")(
               Effect.catch((cause) =>
                 Effect.logError("Failed to process Grok runtime notification.", { cause }),
               ),
-              // Fork into the session scope, not the calling fiber. `forkChild`
-              // makes this a child of `startSession`, and Effect interrupts a
-              // fiber's children when it completes, so the consumer died as soon
-              // as `startSession` returned and every later notification was
-              // dropped. The scope is created, stored on the context and closed
-              // on teardown already; only the fork target was wrong.
+              // The consumer must outlive startSession and stop only when the session scope closes.
               Effect.forkIn(ctx.scope),
             );
 

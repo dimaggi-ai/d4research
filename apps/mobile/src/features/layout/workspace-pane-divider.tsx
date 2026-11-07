@@ -52,7 +52,7 @@ function createResizeGesture(
 export function WorkspacePaneDivider(props: WorkspacePaneDividerProps) {
   const [dragging, setDragging] = useState(false);
   const [controller] = useState(() => createResizeGesture(props, setDragging));
-  // Keep the native resize gesture on the latest committed direction and callbacks.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the native resize gesture on the latest committed direction and callbacks.
   useLayoutEffect(() => controller.update(props), [controller, props]);
 
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {

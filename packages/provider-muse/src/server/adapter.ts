@@ -2003,8 +2003,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           hostEpoch++;
           yield* Effect.tryPromise({
             try: () => host.close(),
-            catch: (cause) =>
-              protocolError("Muse host is unavailable; reopen the session", cause),
+            catch: (cause) => protocolError("Muse host is unavailable; reopen the session", cause),
           });
           interactionMode = turnInput.runtimePolicy.interactionMode;
           yield* launchHost();

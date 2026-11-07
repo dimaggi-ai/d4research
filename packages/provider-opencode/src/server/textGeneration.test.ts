@@ -1,4 +1,8 @@
-import { ProviderInstanceId, settingsSecretLiteral, TextGenerationError } from "@d4research/contracts";
+import {
+  ProviderInstanceId,
+  settingsSecretLiteral,
+  TextGenerationError,
+} from "@d4research/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";

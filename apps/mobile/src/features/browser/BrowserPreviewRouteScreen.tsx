@@ -224,11 +224,7 @@ function BrowserAddressBar({
         disabled={!ready}
         onPress={() => onCommand({ type: "reload" })}
       />
-      <BrowserTabMenu
-        environmentId={environmentId}
-        tab={tab}
-        disabled={!streaming}
-      />
+      <BrowserTabMenu environmentId={environmentId} tab={tab} disabled={!streaming} />
     </View>
   );
 }

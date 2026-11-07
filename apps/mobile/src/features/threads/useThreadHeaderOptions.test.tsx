@@ -64,12 +64,13 @@ vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
 import { ThreadHeader } from "./ThreadHeader";
 
 const projectScripts: never[] = [];
+const decodeVcsStatusResult = Schema.decodeSync(VcsStatusResult);
 
 function status(
   files: ReadonlyArray<string>,
   overrides: Partial<VcsStatusResult> = {},
 ): VcsStatusResult {
-  return Schema.decodeSync(VcsStatusResult)({
+  return decodeVcsStatusResult({
     isRepo: true,
     hasPrimaryRemote: false,
     isDefaultRef: true,

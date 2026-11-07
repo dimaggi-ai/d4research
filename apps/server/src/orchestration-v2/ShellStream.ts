@@ -34,7 +34,6 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { bufferLiveStream } from "./LiveStreamBudget.ts";
 
-// @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
 export const prepareShellMonitorStream = Effect.fn("ShellStream.prepareShellMonitorStream")(
   function* <E, R>(input: {
     readonly changes: Stream.Stream<AgentMonitorUpdate>;

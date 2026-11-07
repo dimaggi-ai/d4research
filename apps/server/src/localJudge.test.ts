@@ -4,6 +4,8 @@ import * as Effect from "effect/Effect";
 
 import { askLocalJudge, DEFAULT_LOCAL_JUDGE_BASE_URL, LocalJudgeError } from "./localJudge.ts";
 
+const isLocalJudgeError = Schema.is(LocalJudgeError);
+
 interface Captured {
   readonly url: string;
   readonly body: Record<string, unknown>;
@@ -146,9 +148,7 @@ describe("askLocalJudge", () => {
       expect(exit._tag).toBe("Failure");
       if (exit._tag === "Failure") {
         expect(
-          exit.cause.reasons.some(
-            (reason) => "error" in reason && Schema.is(LocalJudgeError)(reason.error),
-          ),
+          exit.cause.reasons.some((reason) => "error" in reason && isLocalJudgeError(reason.error)),
         ).toBe(true);
       }
     }),

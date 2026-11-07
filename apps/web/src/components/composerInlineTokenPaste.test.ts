@@ -1,5 +1,9 @@
 import { threadChipCopyTarget } from "@d4research/client-runtime/thread-reference";
-import { type ComposerContextClipboardFragment, EnvironmentId, ThreadId } from "@d4research/contracts";
+import {
+  type ComposerContextClipboardFragment,
+  EnvironmentId,
+  ThreadId,
+} from "@d4research/contracts";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextFragment,

@@ -156,7 +156,9 @@ const DEVICE_RUN_SESSIONS_GATE = "device-run-sessions";
 const isFeatureGates = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
 
 /** Sends every operation with the resolved credential. */
-class ExpoAuth extends GraphQLMiddleware.Service<ExpoAuth>()("d4research/server/device/ExpoApi/ExpoAuth") {}
+class ExpoAuth extends GraphQLMiddleware.Service<ExpoAuth>()(
+  "d4research/server/device/ExpoApi/ExpoAuth",
+) {}
 
 const ExpoGroup = ExpoApiGraphQLGroup.middleware(ExpoAuth);
 

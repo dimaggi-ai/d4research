@@ -38,6 +38,8 @@ class MekoError extends Schema.TaggedError<MekoError>()("MekoError", {
   }
 }
 
+const isMekoError = Schema.is(MekoError);
+
 /** No cloud default, credential fallback, redirects, sampling, or executable tools. */
 export function resolveMekoConnection(config: Config, env: NodeJS.ProcessEnv = process.env) {
   let url: URL;
@@ -303,10 +305,10 @@ export class MekoHandoffClient {
           controller.signal.aborted ||
           (error instanceof McpError && error.code === ErrorCode.RequestTimeout)
             ? "ERROR_TIMEOUT"
-            : Schema.is(MekoError)(error)
+            : isMekoError(error)
               ? error.status
               : "ERROR_TOOL_FAILURE",
-        message: Schema.is(MekoError)(error)
+        message: isMekoError(error)
           ? error.message
           : "Meko did not complete the operation. The attached context is unchanged.",
         timestamp: new Date().toISOString(),

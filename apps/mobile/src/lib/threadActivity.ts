@@ -54,7 +54,12 @@ import type {
   ScheduledTaskId,
   TurnItemId,
 } from "@d4research/contracts";
-import { idleCompactionOf, isCompactionCommandMessage, RunId, ThreadId } from "@d4research/contracts";
+import {
+  idleCompactionOf,
+  isCompactionCommandMessage,
+  RunId,
+  ThreadId,
+} from "@d4research/contracts";
 import {
   classifyToolActivity,
   collectToolFilePaths,

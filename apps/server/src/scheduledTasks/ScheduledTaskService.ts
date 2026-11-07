@@ -888,7 +888,6 @@ export const layer = Layer.effect(
         ),
     );
 
-    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
     const reconcileRuns = Effect.fn("ScheduledTaskService.reconcileRuns")(function* (
       recoverMissing: boolean,
     ) {
@@ -976,7 +975,6 @@ export const layer = Layer.effect(
       yield* sql`DELETE FROM scheduled_task_runs WHERE completed_at < ${cutoff}`;
     });
 
-    // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
     const completedRuns: ScheduledTaskService["Service"]["completedRuns"] = Effect.fn(
       "ScheduledTaskService.completedRuns",
     )(() =>

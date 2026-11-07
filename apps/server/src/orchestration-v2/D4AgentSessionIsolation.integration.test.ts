@@ -197,6 +197,7 @@ const makeRecordingAdapter = (
     }),
 });
 
+// oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Full SQLite orchestration scenarios drain committed effects and retain the existing 60-second integration deadline.
 it.effect.each([
   {
     operation: "switch-context",

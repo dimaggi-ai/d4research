@@ -145,14 +145,13 @@ const readJson = Effect.fn("readToolGuardJson")(function* (filePath: string) {
   return parseJsonObject(content);
 });
 
+const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }));
+
 const writeJson = Effect.fn("writeToolGuardJson")(function* (filePath: string, value: JsonObject) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   yield* fileSystem.makeDirectory(path.dirname(filePath), { recursive: true });
-  yield* fileSystem.writeFileString(
-    filePath,
-    `${yield* Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))(value)}\n`,
-  );
+  yield* fileSystem.writeFileString(filePath, `${yield* encodeJson(value)}\n`);
 });
 
 const providerHookPaths = (home: string, path: Pick<Path.Path, "join">) => [

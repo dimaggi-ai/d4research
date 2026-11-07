@@ -22,15 +22,8 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "namespaceImportPackages": [
-          "@effect/platform-node",
-          "effect"
-        ],
-        "effectFn": [
-          "span",
-          "inferred-span",
-          "suggested-span"
-        ],
+        "namespaceImportPackages": ["@effect/platform-node", "effect"],
+        "effectFn": ["span", "inferred-span", "suggested-span"],
         "diagnosticSeverity": {
           "abortControllerInEffect": "off",
           "runEffectInsideEffect": "off",
@@ -129,10 +122,7 @@
         },
         "overrides": [
           {
-            "include": [
-              "**/*.test.ts",
-              "**/*.test.tsx"
-            ],
+            "include": ["**/*.test.ts", "**/*.test.tsx"],
             "options": {
               "diagnosticSeverity": {
                 "globalJsonInEffect": "off",

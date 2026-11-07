@@ -1057,7 +1057,6 @@ export const layer: Layer.Layer<
       }
       const session = sessionResult.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
-      // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
       const loadFromProvider = Effect.fn("ProviderTurnStartService.loadFromProvider")(function* (
         load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapter.ProviderAdapterV2Error>,
       ) {
@@ -1941,7 +1940,6 @@ export const layer: Layer.Layer<
           ],
         });
       });
-      // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
       const startWithHandoffs = Effect.fn("ProviderTurnStartService.startWithHandoffs")(
         (turnInput: Parameters<typeof session.startTurn>[0], compact = false) =>
           Effect.gen(function* () {
@@ -2020,7 +2018,6 @@ export const layer: Layer.Layer<
                           ...history,
                         }),
                     }),
-                // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
                 persist: Effect.fn("ProviderTurnStartService.persist")(function* (handoff) {
                   const updatedAt = yield* DateTime.now;
                   yield* eventSink.write({

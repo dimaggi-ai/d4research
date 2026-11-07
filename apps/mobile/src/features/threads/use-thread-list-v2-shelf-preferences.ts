@@ -1,13 +1,9 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
-/**
- * Refs advance before persistence starts so consecutive presses always toggle the latest value,
- * even if React has not rendered the optimistic patch yet.
- */
 export function useThreadListV2ShelfPreferences() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -19,33 +15,29 @@ export function useThreadListV2ShelfPreferences() {
   const workingShelfEnabled = loaded && preferencesResult.value.workingShelfEnabled === true;
   const workingShelfExpanded =
     loaded && preferencesResult.value.threadListWorkingShelfExpanded === true;
-  const snoozedShelfExpandedRef = useRef(snoozedShelfExpanded);
-  const settledShelfExpandedRef = useRef(settledShelfExpanded);
-  const workingShelfExpandedRef = useRef(workingShelfExpanded);
-  // Reconcile optimistic toggle snapshots when persisted preference values change.
-  useLayoutEffect(() => {
-    snoozedShelfExpandedRef.current = snoozedShelfExpanded;
-    settledShelfExpandedRef.current = settledShelfExpanded;
-    workingShelfExpandedRef.current = workingShelfExpanded;
-  }, [snoozedShelfExpanded, settledShelfExpanded, workingShelfExpanded]);
-
   const toggleSnoozedShelf = useCallback(() => {
     if (!loaded) return;
-    const expanded = !snoozedShelfExpandedRef.current;
-    snoozedShelfExpandedRef.current = expanded;
-    savePreferences({ threadListSnoozedShelfExpanded: expanded });
+    savePreferences({
+      transform: (current) => ({
+        threadListSnoozedShelfExpanded: current.threadListSnoozedShelfExpanded !== true,
+      }),
+    });
   }, [loaded, savePreferences]);
   const toggleSettledShelf = useCallback(() => {
     if (!loaded) return;
-    const expanded = !settledShelfExpandedRef.current;
-    settledShelfExpandedRef.current = expanded;
-    savePreferences({ threadListSettledShelfExpanded: expanded });
+    savePreferences({
+      transform: (current) => ({
+        threadListSettledShelfExpanded: current.threadListSettledShelfExpanded !== true,
+      }),
+    });
   }, [loaded, savePreferences]);
   const toggleWorkingShelf = useCallback(() => {
     if (!loaded) return;
-    const expanded = !workingShelfExpandedRef.current;
-    workingShelfExpandedRef.current = expanded;
-    savePreferences({ threadListWorkingShelfExpanded: expanded });
+    savePreferences({
+      transform: (current) => ({
+        threadListWorkingShelfExpanded: current.threadListWorkingShelfExpanded !== true,
+      }),
+    });
   }, [loaded, savePreferences]);
 
   return {

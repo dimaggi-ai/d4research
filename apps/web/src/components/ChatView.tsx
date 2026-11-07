@@ -6663,7 +6663,19 @@ function ChatViewContent(props: ChatViewProps) {
     ? resolveProviderSkillsForCwd(activeProviderStatus, gitCwd)
     : EMPTY_PROVIDER_SKILLS;
   const threadFindControlsRef = useRef<ThreadFindControls | null>(null);
-  const [isThreadFindActive, setIsThreadFindActive] = useState(false);
+  const threadFindEnabled =
+    isServerThread && serverConfig?.threadFind === true && !paintOnlyDisplayedTimeline;
+  const [threadFindOpenThreadKey, setThreadFindOpenThreadKey] = useState<string | null>(null);
+  if (
+    threadFindOpenThreadKey !== null &&
+    (!threadFindEnabled || threadFindOpenThreadKey !== activeThreadKey)
+  ) {
+    setThreadFindOpenThreadKey(null);
+  }
+  const isThreadFindActive =
+    threadFindEnabled && activeThreadKey !== null && threadFindOpenThreadKey === activeThreadKey;
+  const setIsThreadFindActive = (open: boolean) =>
+    setThreadFindOpenThreadKey(open && threadFindEnabled ? activeThreadKey : null);
   const openThreadFind = () => threadFindControlsRef.current?.open();
   const openThreadFindStable = useStableCallback(openThreadFind);
   const closeThreadFind = () => threadFindControlsRef.current?.close();
@@ -9807,11 +9819,11 @@ function ChatViewContent(props: ChatViewProps) {
               skills: timelineSkills,
               progressive: serverConfig?.threadFindProgressive === true,
               thread: activeThreadRef,
-              enabled:
-                isServerThread && serverConfig?.threadFind === true && !paintOnlyDisplayedTimeline,
+              enabled: threadFindEnabled,
               content: serverProjection ?? undefined,
             }}
             controlsRef={threadFindControlsRef}
+            isOpen={isThreadFindActive}
             onOpenChange={setIsThreadFindActive}
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}

@@ -25,7 +25,10 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@d4research/contracts/settings";
+import type {
+  SidebarProjectSortOrder,
+  SidebarThreadSortOrder,
+} from "@d4research/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import {
   effectiveSnoozed,

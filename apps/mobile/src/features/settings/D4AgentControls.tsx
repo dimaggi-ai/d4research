@@ -374,7 +374,8 @@ export function D4AgentControls({
             </View>
           ))}
           <Text className="px-4 pb-3 text-sm text-foreground-muted">
-            24-hour time. Uses the device time zone saved when enabled, with its UTC offset as a fallback.
+            24-hour time. Uses the device time zone saved when enabled, with its UTC offset as a
+            fallback.
           </Text>
         </>
       ) : null}

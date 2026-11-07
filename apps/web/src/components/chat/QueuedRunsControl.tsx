@@ -113,7 +113,8 @@ export function QueuedRunsControl({
   const activeRun = workflow?.activeRun ?? null;
   const canSendRun = (freshContext: boolean) =>
     workflow?.canSendNow === true ||
-    (workflow?.canPromoteToSteer === true && (!freshContext || workflow.promoteSkipsCompaction === true));
+    (workflow?.canPromoteToSteer === true &&
+      (!freshContext || workflow.promoteSkipsCompaction === true));
   const canReorder = workflow?.canReorder === true;
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
@@ -179,7 +180,9 @@ export function QueuedRunsControl({
   };
 
   const steer = async (queuedRunId: RunId) => {
-    const freshContext = queued.some(({ run }) => run.id === queuedRunId && run.freshContext === true);
+    const freshContext = queued.some(
+      ({ run }) => run.id === queuedRunId && run.freshContext === true,
+    );
     if (!canSendRun(freshContext) || steerInFlightRef.current) return;
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
@@ -455,7 +458,15 @@ export function QueuedRunsControl({
                             <Button
                               size="xs"
                               variant="ghost-muted"
-                              disabled={item.runId === null || busyRunId !== null || !canSendRun(queued.some(({ run }) => run.id === item.runId && run.freshContext === true))}
+                              disabled={
+                                item.runId === null ||
+                                busyRunId !== null ||
+                                !canSendRun(
+                                  queued.some(
+                                    ({ run }) => run.id === item.runId && run.freshContext === true,
+                                  ),
+                                )
+                              }
                               onClick={() => {
                                 if (item.runId !== null) {
                                   void steer(item.runId);

@@ -232,22 +232,24 @@ describe("t3 pair", () => {
         assert.equal(credentials[0]?.label, "d4research pair");
         assert.deepEqual(credentials[0]?.scopes, AuthStandardClientScopes);
       }),
-    ).pipe(
-      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
-      Effect.provideService(HostProcess.Environment, {
-        ...process.env,
-        [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify({
-          protocol: SERVICE_LAUNCHER_PROTOCOL,
-          childVersion: packageJson.version,
+    )
+      .pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        Effect.provideService(HostProcess.Environment, {
+          ...process.env,
+          [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify({
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            childVersion: packageJson.version,
+          }),
         }),
-      }),
-      Effect.provideService(ServiceLauncherClient.ServiceLauncherHostProcess, {
-        connected: false,
-        send: () => false,
-        on: () => undefined,
-        off: () => undefined,
-      }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+        Effect.provideService(ServiceLauncherClient.ServiceLauncherHostProcess, {
+          connected: false,
+          send: () => false,
+          on: () => undefined,
+          off: () => undefined,
+        }),
+      )
+      .pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("pairs through the recorded dev web URL for dev servers", () =>

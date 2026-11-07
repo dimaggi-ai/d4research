@@ -3,7 +3,10 @@ import * as NodeFSP from "node:fs/promises";
 
 import type { AntigravityAuthMethod, ProviderInstanceId } from "@d4research/contracts";
 import * as HostProcess from "@d4research/shared/HostProcess";
-import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@d4research/shared/nodeRuntime";
+import {
+  resolveNodeExecutable,
+  nodeRuntimeUnavailableMessage,
+} from "@d4research/shared/nodeRuntime";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";

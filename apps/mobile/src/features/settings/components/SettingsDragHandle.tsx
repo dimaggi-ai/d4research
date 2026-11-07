@@ -40,7 +40,7 @@ function createDragGesture(props: SettingsDragHandleProps) {
 
 export function SettingsDragHandle(props: SettingsDragHandleProps) {
   const [controller] = useState(() => createDragGesture(props));
-  // Keep the mounted native gesture handlers on the latest committed callbacks.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the mounted native gesture handlers on the latest committed callbacks.
   useLayoutEffect(() => controller.update(props), [controller, props]);
   return (
     <GestureDetector gesture={controller.gesture}>

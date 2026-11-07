@@ -38,7 +38,7 @@ export function AgentElapsed({
   const startedAt = agent.startedAt;
   const completedAt = agent.completedAt;
 
-  // Keep the elapsed-time DOM text synchronized with the running clock.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the elapsed-time DOM text synchronized with the running clock.
   useEffect(() => {
     if (!startedAt) {
       return;

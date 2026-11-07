@@ -45,9 +45,12 @@ const SIGN_IN_MESSAGE = "Sign in with Google to use Antigravity.";
 const AUTH_UNCHECKED_MESSAGE =
   "Antigravity is installed. Google account access is not checked yet.";
 // Set while a finished quota read republishes, so that health check does not read again.
-const PublishingUsage = Context.Reference<boolean>("d4research/provider/AntigravityPublishingUsage", {
-  defaultValue: () => false,
-});
+const PublishingUsage = Context.Reference<boolean>(
+  "d4research/provider/AntigravityPublishingUsage",
+  {
+    defaultValue: () => false,
+  },
+);
 
 type SessionSetupResult = Pick<
   AcpSessionRuntime.AcpSessionRuntimeStartResult["sessionSetupResult"],

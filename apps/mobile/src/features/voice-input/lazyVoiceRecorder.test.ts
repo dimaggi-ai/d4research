@@ -198,7 +198,9 @@ describe("createLazyVoiceRecorder", () => {
     await expect(recorder.stop()).rejects.toThrow("not recording");
     recorder.release();
     await vi.waitFor(() => expect(first.release).toHaveBeenCalledTimes(1));
-    expect(() => recorder.record({ forDuration: 1 })).toThrow("The voice recorder isn’t ready. Try again.");
+    expect(() => recorder.record({ forDuration: 1 })).toThrow(
+      "The voice recorder isn’t ready. Try again.",
+    );
 
     await recorder.prepareToRecordAsync();
     expect(created).toHaveLength(2);
@@ -258,7 +260,7 @@ describe("createLazyVoiceRecorder", () => {
       expect(native.stop).toHaveBeenCalledTimes(1);
       expect(deleted).toEqual(["file:///voice-0.m4a"]);
       expect(controller.currentState.phase).toBe("idle");
-  });
+    });
 
     it("abandons a pending input route when dictation is canceled", async () => {
       const routing = Promise.withResolvers<void>();

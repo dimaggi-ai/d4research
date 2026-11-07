@@ -218,10 +218,13 @@ export function usageAttributes(input: {
   };
 }
 
-export function isAllowedAgentMcpRequest(value: unknown): boolean {
+export function isAllowedAgentMcpRequest(value: unknown, userTurn = false): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const request = value as { method?: unknown; params?: { name?: unknown } };
-  if (request.method === "tools/call") return D4_AGENT_TOOLS.includes(String(request.params?.name));
+  if (request.method === "tools/call") {
+    const name = request.params?.name;
+    return typeof name === "string" && (userTurn || D4_AGENT_TOOLS.includes(name));
+  }
   return [
     "initialize",
     "notifications/initialized",

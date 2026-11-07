@@ -6,6 +6,7 @@ import {
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
+  T3_PI_ADDITIONAL_INSTRUCTIONS_ENV,
 } from "./mcpExtensionSource.ts";
 import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
 
@@ -25,14 +26,19 @@ describe("pi T3 MCP injection", () => {
   it.each([false, true])("uses the selected model before RPC startup (Nia: %s)", (d4AgentOnly) => {
     const launch = buildPiRpcLaunch({
       launchArgs: ["--provider", "nemotron", "--model", "nemotron"],
-      environment: {},
+      environment: { [T3_PI_ADDITIONAL_INSTRUCTIONS_ENV]: "inherited instructions" },
       mcpSession,
       extensionPath: "/trusted/bridge.ts",
       d4AgentOnly,
+      additionalInstructions: "current chat instructions",
       selectedModel: { provider: "kolibri", modelId: "kolibri-1-q4_k_m" },
     });
     assert.equal(launch.args[launch.args.lastIndexOf("--provider") + 1], "kolibri");
     assert.equal(launch.args[launch.args.lastIndexOf("--model") + 1], "kolibri-1-q4_k_m");
+    assert.equal(
+      launch.env[T3_PI_ADDITIONAL_INSTRUCTIONS_ENV],
+      d4AgentOnly ? undefined : "current chat instructions",
+    );
   });
   it("isolates Nia from user tools, extensions, prompts and native MCP", () => {
     const launch = buildPiRpcLaunch({

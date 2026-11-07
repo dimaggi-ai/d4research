@@ -14,6 +14,7 @@ import { vi } from "vite-plus/test";
 import * as SkillsInventory from "../skillsInventory.ts";
 import {
   ChatAttachmentId,
+  CommandId,
   DEFAULT_D4_AGENT_SETTINGS,
   MessageId,
   NodeId,
@@ -132,6 +133,7 @@ const fixture = (
   monitorEnabled = true,
   overrides: Partial<D4AgentSettings> = {},
   store?: Store.D4AgentStore["Service"],
+  homeDirectory?: string,
 ) =>
   Effect.gen(function* () {
     const attachmentConfig = Context.get(
@@ -284,6 +286,7 @@ const fixture = (
             Store.D4AgentStore,
             store ?? {
               workspace,
+              ...(homeDirectory === undefined ? {} : { homeDirectory }),
               readHostRoutines: () => Ref.get(hostSnapshot),
               get: Ref.get(state),
               update: (f) =>
@@ -472,6 +475,8 @@ const fixture = (
           projectService === undefined
             ? Layer.mock(Projects.ProjectService)({
                 create: () => Effect.succeed({} as never),
+                getById: () => Effect.succeedNone,
+                getByWorkspaceRoot: () => Effect.succeedNone,
                 listShells: () => Effect.succeed([]),
               })
             : Layer.succeed(Projects.ProjectService, projectService),
@@ -1516,12 +1521,69 @@ it.effect(
     ).pipe(Effect.provide(realProjectLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect.each([
+  { name: "migrates an existing project", stored: "existing", homeExists: false },
+  { name: "reuses home for a fresh identity", stored: "none", homeExists: true },
+  { name: "reuses home for a missing stored project", stored: "missing", homeExists: true },
+  {
+    name: "preserves an existing project when home is owned",
+    stored: "existing",
+    homeExists: true,
+  },
+] as const)("ensureThread $name", ({ stored, homeExists }) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "nia-home-project-" });
+      const oldRoot = `${directory}/private`;
+      const homeRoot = `${directory}/home`;
+      yield* fs.makeDirectory(homeRoot);
+      const projects = yield* Projects.ProjectService;
+      const storedProjectId = ProjectId.make("stored-nia-project");
+      const homeProjectId = ProjectId.make("home-project");
+      if (stored === "existing")
+        yield* projects.create({
+          commandId: CommandId.make("create-stored-project"),
+          projectId: storedProjectId,
+          title: "Nia",
+          workspaceRoot: oldRoot,
+          createWorkspaceRootIfMissing: true,
+        });
+      if (homeExists)
+        yield* projects.create({
+          commandId: CommandId.make("create-home-project"),
+          projectId: homeProjectId,
+          title: "Home",
+          workspaceRoot: homeRoot,
+        });
+      const f = yield* fixture("read-only", true, projects, oldRoot, true, {}, undefined, homeRoot);
+      if (stored !== "none")
+        yield* Ref.update(f.state, (state) => ({ ...state, projectId: storedProjectId }));
+      const identity = yield* f.service.ensureThread();
+      const expectedProjectId = stored === "existing" ? storedProjectId : homeProjectId;
+      assert.equal(identity.projectId, expectedProjectId);
+      assert.equal((yield* Ref.get(f.state)).projectId, expectedProjectId);
+      assert.equal((yield* Ref.get(f.agentShell))?.projectId, expectedProjectId);
+      const project = yield* projects.getById(expectedProjectId);
+      assert.isTrue(Option.isSome(project));
+      if (Option.isSome(project))
+        assert.equal(
+          project.value.workspaceRoot,
+          stored === "existing" && homeExists ? oldRoot : homeRoot,
+        );
+      assert.deepEqual(yield* f.service.ensureThread(), identity);
+    }),
+  ).pipe(Effect.provide(realProjectLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 it.effect("ensure renames the old default project and chat titles to Nia once", () =>
   Effect.gen(function* () {
     const projectTitle = yield* Ref.make("d4 Agent");
     const updates = yield* Ref.make<ReadonlyArray<string>>([]);
     const projectService = {
       create: () => Ref.get(projectTitle).pipe(Effect.map((title) => ({ title }) as never)),
+      getById: () => Effect.succeedNone,
+      getByWorkspaceRoot: () => Effect.succeedNone,
       update: (input: { readonly commandId: string; readonly title?: string }) =>
         Ref.update(updates, (all) => [...all, input.commandId]).pipe(
           Effect.andThen(Ref.set(projectTitle, input.title ?? "")),
@@ -1609,6 +1671,8 @@ it.effect(
       const unmapped = ProjectId.make("unmapped-project");
       const projectService = {
         create: () => Effect.succeed({} as never),
+        getById: () => Effect.succeedNone,
+        getByWorkspaceRoot: () => Effect.succeedNone,
         listShells: () =>
           Effect.succeed([
             { id: dimaggi, title: "CTO d4" },

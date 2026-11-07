@@ -226,6 +226,7 @@ export class ProviderSessionManagerV2 extends Context.Service<
 
 interface LiveSessionEntry {
   readonly toolGuardEnvironmentKey: string;
+  readonly toolPolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy["toolPolicy"];
   readonly attachedThreadIds: ReadonlySet<ThreadId>;
   readonly loadedProviderThreadKeyByThread: ReadonlyMap<ThreadId, string>;
   /** Scope revocation to recorded credential ids so superseded sessions cannot revoke replacements opened before detach. */
@@ -2235,11 +2236,13 @@ export const layerWithOptions = (
               const guardEnvironmentKey =
                 toolGuardEnvironment({}, input.runtimePolicy.runtimeMode).T3RESEARCH_RUNTIME_MODE ??
                 "disabled";
-              // Codex hooks inherit the app-server process environment, unlike its
-              // turn-scoped approval policy. Reuse cannot change that environment.
+              // Tool restrictions can configure the provider process at open; changing them
+              // requires a fresh runtime even when turn-scoped permissions can update live.
               if (
-                existing?.runtime.driver === "codex" &&
-                existing.toolGuardEnvironmentKey !== guardEnvironmentKey
+                existing !== undefined &&
+                (existing.toolPolicy !== input.runtimePolicy.toolPolicy ||
+                  (existing.runtime.driver === "codex" &&
+                    existing.toolGuardEnvironmentKey !== guardEnvironmentKey))
               ) {
                 const busy =
                   existing.busyTurns.size > 0 ||
@@ -2253,7 +2256,9 @@ export const layerWithOptions = (
                     instanceId: input.modelSelection.instanceId,
                     providerSessionId: input.providerSessionId,
                     cause:
-                      "Tool Guard permissions could not change safely. Stop active or background Codex work and try again.",
+                      existing?.toolPolicy !== input.runtimePolicy.toolPolicy
+                        ? "Provider tool permissions could not change safely. Stop active or background work and try again."
+                        : "Tool Guard permissions could not change safely. Stop active or background Codex work and try again.",
                   });
                 if (busy) return yield* reject();
                 yield* releaseEntry({
@@ -2373,6 +2378,7 @@ export const layerWithOptions = (
               const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
               const entry: LiveSessionEntry = {
                 toolGuardEnvironmentKey: guardEnvironmentKey,
+                toolPolicy: input.runtimePolicy.toolPolicy,
                 attachedThreadIds: new Set([input.threadId]),
                 loadedProviderThreadKeyByThread: new Map(),
                 mcpCredentialIdByThread:

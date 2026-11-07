@@ -30,6 +30,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 export const StoredSession = Schema.Struct({
   ...D4AgentOpenSession.fields,
@@ -328,6 +329,8 @@ export class D4AgentStore extends Context.Service<
   D4AgentStore,
   {
     readonly workspace: string;
+    /** The user's home directory; workspace remains the private Nia state root. */
+    readonly homeDirectory?: string;
     readonly readHostRoutines?: () => Effect.Effect<D4HostRoutinesState>;
     readonly get: Effect.Effect<StoredState>;
     readonly update: (
@@ -396,6 +399,7 @@ export const layer = Layer.effect(
     let persisted = yield* encodeState(initial);
     return D4AgentStore.of({
       workspace: path.join(directory, "workspace"),
+      homeDirectory: yield* HostProcess.HomeDirectory,
       get: Ref.get(state),
       readHostRoutines: Effect.fn("D4AgentStore.readHostRoutines")(() =>
         Effect.scoped(

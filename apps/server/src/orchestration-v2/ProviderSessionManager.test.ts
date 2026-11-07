@@ -963,6 +963,78 @@ function makePendingRuntimeRequestEvents(input: {
   });
 }
 
+it.effect.each([
+  { initialRestricted: false, blocker: "none" },
+  { initialRestricted: true, blocker: "none" },
+  { initialRestricted: false, blocker: "background" },
+  { initialRestricted: true, blocker: "background" },
+  { initialRestricted: false, blocker: "shared" },
+  { initialRestricted: true, blocker: "shared" },
+] as const)(
+  "tool policy transition from restricted=$initialRestricted with $blocker work",
+  ({ initialRestricted, blocker }) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const threadId = ThreadId.make("policy-transition");
+        const siblingId = ThreadId.make("policy-transition-sibling");
+        const now = yield* DateTime.now;
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId, now }),
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: siblingId, now }),
+          ],
+        });
+        const restrictedPolicy = { ...runtimePolicy, toolPolicy: "d4-agent" as const };
+        const firstPolicy = initialRestricted ? restrictedPolicy : runtimePolicy;
+        const nextPolicy = initialRestricted ? runtimePolicy : restrictedPolicy;
+        const openInput = { threadId, providerSessionId, modelSelection };
+        const first = yield* manager.open({ ...openInput, runtimePolicy: firstPolicy });
+        assert.strictEqual(
+          yield* manager.open({ ...openInput, runtimePolicy: firstPolicy }),
+          first,
+        );
+        if (blocker === "shared")
+          yield* manager.open({
+            ...openInput,
+            threadId: siblingId,
+            runtimePolicy: firstPolicy,
+          });
+        const changed = yield* manager
+          .open({ ...openInput, runtimePolicy: nextPolicy })
+          .pipe(Effect.result);
+        if (blocker === "none") {
+          assert.equal(changed._tag, "Success");
+          if (changed._tag === "Success") assert.notStrictEqual(changed.success, first);
+          assert.equal((yield* Ref.get(state)).openCount, 2);
+          assert.equal((yield* Ref.get(state)).closeCount, 1);
+        } else {
+          assert.equal(changed._tag, "Failure");
+          if (changed._tag === "Failure")
+            assert.equal(changed.failure._tag, "ProviderSessionOpenError");
+          assert.equal((yield* Ref.get(state)).openCount, 1);
+          assert.equal((yield* Ref.get(state)).closeCount, 0);
+          assert.strictEqual(Option.getOrThrow(yield* manager.get(providerSessionId)), first);
+        }
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            hasPendingBackgroundWork: Effect.succeed(blocker === "background"),
+          }),
+        ),
+      );
+    }),
+);
+
 it.effect("ProviderSessionManagerV2 opens independent sessions concurrently", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);

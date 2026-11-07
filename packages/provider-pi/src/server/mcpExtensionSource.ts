@@ -9,6 +9,7 @@ export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
 export const T3_PI_TOOL_POLICY_ENV = "T3_PI_TOOL_POLICY";
+export const T3_PI_ADDITIONAL_INSTRUCTIONS_ENV = "T3_PI_ADDITIONAL_INSTRUCTIONS";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
@@ -24,6 +25,7 @@ const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const TOOL_POLICY_ENV = ${JSON.stringify(T3_PI_TOOL_POLICY_ENV)};
+const ADDITIONAL_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_ADDITIONAL_INSTRUCTIONS_ENV)};
 const D4_AGENT_PREFIX = ${JSON.stringify(D4_AGENT_PREFIX)};
 const D4_AGENT_TOOLS = new Set(${JSON.stringify(D4_AGENT_TOOLS)});
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
@@ -487,13 +489,14 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
     if (d4AgentOnly) return { systemPrompt: D4_AGENT_PREFIX };
+    const instructions = [ORCHESTRATION_INSTRUCTIONS, env(ADDITIONAL_INSTRUCTIONS_ENV)].filter(Boolean).join("\\n\\n");
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.
-      sections.t3_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      sections.t3_code_orchestration = instructions;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS };
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + instructions };
   });
 }
 `;

@@ -829,7 +829,11 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
           model: input.modelSelection.model,
           ...(effort === undefined ? {} : { reasoning_effort: effort }),
           // Nia's turns carry none of Codex's default developer instructions.
-          ...(input.runtimePolicy.toolPolicy === "d4-agent" ? { developer_instructions: "" } : {}),
+          ...(input.runtimePolicy.toolPolicy === "d4-agent"
+            ? { developer_instructions: "" }
+            : input.runtimePolicy.additionalInstructions === undefined
+              ? {}
+              : { developer_instructions: input.runtimePolicy.additionalInstructions }),
         },
       },
     });
@@ -1423,7 +1427,9 @@ export function codexThreadRuntimeParams(input: {
   return {
     ...(input.runtimePolicy?.toolPolicy === "d4-agent"
       ? { baseInstructions: D4_AGENT_PREFIX, developerInstructions: "" }
-      : {}),
+      : input.runtimePolicy?.additionalInstructions === undefined
+        ? {}
+        : { developerInstructions: input.runtimePolicy.additionalInstructions }),
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {

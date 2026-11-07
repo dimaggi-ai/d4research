@@ -41,6 +41,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
+import { NIA_USER_INSTRUCTIONS } from "@d4research/provider-core/server/d4AgentPolicy";
 import * as SecondBrain from "../second-brain/SecondBrainService.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -300,6 +301,8 @@ function makeLocalCommandHarness(input: {
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
   readonly d4AgentPrepare?: D4AgentContext.D4AgentContext["Service"]["prepare"];
+  readonly niaUserTurn?: boolean;
+  readonly messageCreatedBy?: "user" | "system";
   readonly allowNative?: boolean;
   readonly nativeIdentity?: string;
   readonly sharedTransport?: boolean;
@@ -388,7 +391,7 @@ function makeLocalCommandHarness(input: {
     text: input.text,
     attachments: [],
     streaming: false,
-    createdBy: "user",
+    createdBy: input.messageCreatedBy ?? "user",
     creationSource: "web",
     createdAt: now,
     updatedAt: now,
@@ -1047,6 +1050,8 @@ function makeLocalCommandHarness(input: {
         : Layer.succeed(D4AgentContext.D4AgentContext, {
             prepare: input.d4AgentPrepare,
             owns: () => Effect.succeed(true),
+            isChatThread: () => Effect.succeed(input.niaUserTurn === true),
+            homeDirectory: "/home/nia",
           }),
     ),
     Layer.provide(
@@ -2029,6 +2034,45 @@ for (const text of [
     }),
   );
 }
+
+effectIt.effect("Nia user chat turns use the normal provider policy from home", () =>
+  Effect.gen(function* () {
+    const prepare = vi.fn(() => Effect.succeed("restricted prefix"));
+    const harness = makeLocalCommandHarness({
+      text: "show my active threads",
+      d4AgentPrepare: prepare,
+      niaUserTurn: true,
+      allowNative: true,
+    });
+    yield* harness.start;
+    expect(prepare).not.toHaveBeenCalled();
+    expect(harness.nativeStart).toHaveBeenCalledOnce();
+    expect(harness.nativeStart.mock.calls[0]![0].runtimePolicy).toMatchObject({
+      runtimeMode: "full-access",
+      cwd: "/home/nia",
+      additionalInstructions: NIA_USER_INSTRUCTIONS,
+    });
+  }),
+);
+
+effectIt.effect("system-created Nia turns retain the restricted provider policy", () =>
+  Effect.gen(function* () {
+    const prepare = vi.fn(() => Effect.succeed("restricted prefix"));
+    const harness = makeLocalCommandHarness({
+      text: "heartbeat result",
+      d4AgentPrepare: prepare,
+      niaUserTurn: true,
+      messageCreatedBy: "system",
+      openFailure: "restricted native boundary",
+    });
+    yield* harness.start;
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(harness.open.mock.calls[0]).toMatchObject([
+      { runtimePolicy: { toolPolicy: "d4-agent", runtimeMode: "approval-required" } },
+    ]);
+  }),
+);
+
 effectIt.effect(
   "owned agent rejects a model mismatch before inline delegation or native work",
   () =>

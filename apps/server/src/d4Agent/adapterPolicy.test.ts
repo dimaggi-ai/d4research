@@ -9,7 +9,11 @@ import {
   claudeMcpQueryOverrides,
   makeClaudeQueryOptions,
 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
+import {
+  D4_AGENT_PREFIX,
+  D4_AGENT_TOOLS,
+  NIA_USER_INSTRUCTIONS,
+} from "@d4research/provider-core/server/d4AgentPolicy";
 const session = {
   environmentId: EnvironmentId.make("environment"),
   threadId: ThreadId.make("agent"),
@@ -124,4 +128,42 @@ it("a normal Codex thread does not inherit a restricted session's deny list", ()
   });
   assert.isFalse(Object.keys(params.config.mcp_servers ?? {}).includes("ordinary-server"));
   assert.isUndefined(params.config["features.apps"]);
+});
+
+it("normal provider adapters append Nia's short home-chat instructions", () => {
+  const runtimePolicy = {
+    runtimeMode: "full-access" as const,
+    interactionMode: "default" as const,
+    cwd: "/home/nia",
+    approvalPolicy: "never",
+    sandboxPolicy: { type: "dangerFullAccess" },
+    additionalInstructions: NIA_USER_INSTRUCTIONS,
+  };
+  const codex = codexThreadRuntimeParams({
+    threadId: null,
+    mcpSession: session,
+    runtimePolicy,
+    modelSelection: { model: "selected" },
+  });
+  assert.equal(codex.developerInstructions, NIA_USER_INSTRUCTIONS);
+  const claude = makeClaudeQueryOptions({
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    },
+    nativeThreadId: "native",
+    resume: false,
+    cwd: "/home/nia",
+    additionalInstructions: NIA_USER_INSTRUCTIONS,
+  });
+  const systemPrompt = claude.systemPrompt;
+  assert.isTrue(
+    typeof systemPrompt === "object" && systemPrompt !== null && "type" in systemPrompt,
+  );
+  if (typeof systemPrompt !== "object" || systemPrompt === null || !("type" in systemPrompt)) {
+    throw new Error("Expected a structured Claude system prompt");
+  }
+  assert.equal(systemPrompt.type, "preset");
+  if (systemPrompt.type !== "preset") throw new Error("Expected the Claude preset");
+  assert.include(systemPrompt.append, NIA_USER_INSTRUCTIONS);
 });

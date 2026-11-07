@@ -12,6 +12,7 @@ import {
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_TOOL_POLICY_ENV,
+  T3_PI_ADDITIONAL_INSTRUCTIONS_ENV,
 } from "./mcpExtensionSource.ts";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
@@ -253,6 +254,7 @@ export function buildPiRpcLaunch(input: {
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
   readonly d4AgentOnly?: boolean;
+  readonly additionalInstructions?: string;
   readonly selectedModel?: { readonly provider: string; readonly modelId: string } | null;
   readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 }): {
@@ -328,12 +330,16 @@ export function buildPiRpcLaunch(input: {
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
   delete environment[T3_PI_TOOL_POLICY_ENV];
   delete environment[T3_PI_RUNTIME_MODE_ENV];
+  delete environment[T3_PI_ADDITIONAL_INSTRUCTIONS_ENV];
 
   return {
     args,
     env: {
       ...environment,
       ...(input.d4AgentOnly ? { [T3_PI_TOOL_POLICY_ENV]: "d4-agent" } : {}),
+      ...(hasT3Extension && !input.d4AgentOnly && input.additionalInstructions !== undefined
+        ? { [T3_PI_ADDITIONAL_INSTRUCTIONS_ENV]: input.additionalInstructions }
+        : {}),
       ...(hasT3Extension && input.extensionPath !== undefined
         ? { [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath }
         : {}),

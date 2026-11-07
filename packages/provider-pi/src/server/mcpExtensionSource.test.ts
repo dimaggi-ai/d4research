@@ -85,7 +85,11 @@ describe("Pi orchestration prompt section", () => {
   );
 
   it("restores only Nia tools after tree navigation and replaces inherited guidance", async () => {
-    const bridge = await loadMcpBridge({ modern: true, toolPolicy: "d4-agent" });
+    const bridge = await loadMcpBridge({
+      modern: true,
+      toolPolicy: "d4-agent",
+      additionalInstructions: "interactive instructions",
+    });
     bridge.restoreActiveTools(["bash", "mcp__external__run"]);
     await bridge.handlers.get("session_tree")!(
       { systemPrompt: "" },
@@ -100,6 +104,7 @@ describe("Pi orchestration prompt section", () => {
       { ui: { notify: assert.fail } },
     );
     assert.notInclude(result!.systemPrompt, "unsafe inherited guidance");
+    assert.notInclude(result!.systemPrompt, "interactive instructions");
     assert.include(result!.systemPrompt, "You are Nia");
   });
   it.each([
@@ -112,6 +117,10 @@ describe("Pi orchestration prompt section", () => {
       ],
     },
     {
+      name: "in Pi prompt sections",
+      events: [{ systemPrompt: "base", systemPromptOptions: { sections: {} } }],
+    },
+    {
       name: "when an earlier extension forces the system prompt",
       events: [
         {
@@ -121,13 +130,26 @@ describe("Pi orchestration prompt section", () => {
       ],
     },
   ])("appends guidance $name", async ({ events }) => {
-    const bridge = await loadMcpBridge();
+    const bridge = await loadMcpBridge({ additionalInstructions: "interactive instructions" });
     const hook = bridge.handlers.get("before_agent_start")!;
     for (const event of events) {
       const result = await hook(event, { ui: { notify: assert.fail } });
-      assert.isDefined(result);
-      assert.isTrue(result!.systemPrompt.startsWith(`${event.systemPrompt}\n\n`));
-      assert.include(result!.systemPrompt, "orchestrator_capabilities");
+      const sections: Record<string, string> | null | undefined =
+        event.systemPromptOptions?.sections;
+      if (
+        sections &&
+        event.systemPromptOptions !== undefined &&
+        !("forceSystemPrompt" in event.systemPromptOptions)
+      ) {
+        assert.isUndefined(result);
+        assert.include(sections.t3_code_orchestration, "orchestrator_capabilities");
+        assert.include(sections.t3_code_orchestration, "interactive instructions");
+      } else {
+        assert.isDefined(result);
+        assert.isTrue(result!.systemPrompt.startsWith(`${event.systemPrompt}\n\n`));
+        assert.include(result!.systemPrompt, "orchestrator_capabilities");
+        assert.include(result!.systemPrompt, "interactive instructions");
+      }
     }
   });
 });

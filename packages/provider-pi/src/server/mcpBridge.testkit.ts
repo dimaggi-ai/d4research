@@ -53,6 +53,7 @@ export async function loadMcpBridge(
     readonly allowsTool?: (name: string) => boolean;
     readonly runtimeMode?: string;
     readonly toolPolicy?: string;
+    readonly additionalInstructions?: string;
     readonly inputSchema?: Record<string, unknown>;
   } = {},
 ) {
@@ -107,6 +108,7 @@ export async function loadMcpBridge(
         T3_PI_MCP_EXTENSION_PATH: "/fixture/pi-t3-extension.ts",
         T3_PI_RUNTIME_MODE: options.runtimeMode,
         T3_PI_TOOL_POLICY: options.toolPolicy,
+        T3_PI_ADDITIONAL_INSTRUCTIONS: options.additionalInstructions,
       },
     },
     AbortSignal,

@@ -1792,6 +1792,7 @@ export function makeClaudeQueryOptions(input: {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly disallowedTools?: ReadonlyArray<string>;
   readonly d4AgentOnly?: boolean;
+  readonly additionalInstructions?: string;
   readonly permissionMode?: PermissionMode;
   readonly canUseTool?: CanUseTool;
   readonly hooks?: ClaudeQueryOptions["hooks"];
@@ -1926,6 +1927,7 @@ export function makeClaudeQueryOptions(input: {
                     ? `\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n`
                     : "")),
             ...launchAppendSystemPrompt,
+            ...(input.additionalInstructions === undefined ? [] : [input.additionalInstructions]),
           ].join("\n\n"),
         },
     ...(!input.d4AgentOnly && deviceInstructions
@@ -11014,6 +11016,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ),
             d4AgentOnly: turnInput.runtimePolicy.toolPolicy === "d4-agent",
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
+            ...(turnInput.runtimePolicy.additionalInstructions === undefined
+              ? {}
+              : { additionalInstructions: turnInput.runtimePolicy.additionalInstructions }),
             ...(mcpOverrides.allowedTools === undefined
               ? {}
               : { allowedTools: mcpOverrides.allowedTools }),

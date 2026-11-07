@@ -5,6 +5,7 @@ import {
 } from "@d4research/contracts";
 import { describeTaskScopeRefusal, makeTaskScopeEvaluator } from "../d4Agent/D4AgentTaskScope.ts";
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
+import { NIA_USER_INSTRUCTIONS } from "@d4research/provider-core/server/d4AgentPolicy";
 import { selectAppProviderHistory } from "./appProviderHistory.ts";
 import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
 import * as HandoffMemory from "../handoffMemory.ts";
@@ -468,13 +469,22 @@ export const layer: Layer.Layer<
         });
       }
       const scopedAgentTask = String(projection.thread.id).startsWith("d4-action:");
-      const d4AgentPrefix = Option.isSome(d4AgentContext)
-        ? yield* d4AgentContext.value.prepare(
-            projection.thread.id,
-            run.modelSelection,
-            providerThread.providerSessionId,
-          )
-        : null;
+      const isNiaChatThread = Option.isSome(d4AgentContext)
+        ? d4AgentContext.value.isChatThread === undefined
+          ? yield* d4AgentContext.value.owns(projection.thread.id)
+          : yield* d4AgentContext.value.isChatThread(projection.thread.id)
+        : false;
+      const isNiaUserTurn =
+        // Task threads and server-created messages must never inherit the interactive chat policy.
+        !scopedAgentTask && message.createdBy === "user" && isNiaChatThread;
+      const d4AgentPrefix =
+        !isNiaUserTurn && Option.isSome(d4AgentContext)
+          ? yield* d4AgentContext.value.prepare(
+              projection.thread.id,
+              run.modelSelection,
+              providerThread.providerSessionId,
+            )
+          : null;
       const settleRunBeforeStart = Effect.fn("orchestrationV2.providerTurnStart.settleBeforeStart")(
         function* (input: {
           readonly signal: string;
@@ -940,8 +950,23 @@ export const layer: Layer.Layer<
         });
         return;
       }
-      const resolvedRuntimePolicy =
-        d4AgentPrefix === null
+      const resolvedRuntimePolicy = isNiaUserTurn
+        ? {
+            ...resolvedPolicy.success,
+            ...(resolvedPolicy.success.maxRuntimeMode === undefined ||
+            resolvedPolicy.success.maxRuntimeMode === "full-access"
+              ? {
+                  runtimeMode: "full-access" as const,
+                  approvalPolicy: "never",
+                  sandboxPolicy: { type: "dangerFullAccess" },
+                }
+              : {}),
+            cwd:
+              (Option.isSome(d4AgentContext) ? d4AgentContext.value.homeDirectory : undefined) ??
+              resolvedPolicy.success.cwd,
+            additionalInstructions: NIA_USER_INSTRUCTIONS,
+          }
+        : d4AgentPrefix === null
           ? resolvedPolicy.success
           : {
               ...resolvedPolicy.success,
@@ -2193,7 +2218,11 @@ export const layer: Layer.Layer<
           : makeDeliverySession(recovery.session, startWithHandoffs);
       const mcpSession = yield* mcpProviderSessions.read(message.threadId);
       if (mcpSession !== undefined) {
-        yield* setActiveMcpTurn(mcpSession.providerSessionId, TurnId.make(run.id));
+        yield* setActiveMcpTurn(
+          mcpSession.providerSessionId,
+          TurnId.make(run.id),
+          isNiaUserTurn ? "user" : "restricted",
+        );
       }
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),

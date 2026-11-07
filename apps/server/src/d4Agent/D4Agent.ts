@@ -889,7 +889,18 @@ export const layer = Layer.effect(
       }
       // Persist the session identity before dispatch so retries reuse command receipts.
       const threadId = state.threadId ?? ThreadId.make(yield* randomUUID);
-      const projectId = state.projectId ?? ProjectId.make(yield* randomUUID);
+      let projectId = state.projectId ?? ProjectId.make(yield* randomUUID);
+      const homeDirectory = store.homeDirectory ?? store.workspace;
+      const homeProject =
+        store.homeDirectory === undefined
+          ? Option.none()
+          : yield* projects.getByWorkspaceRoot(homeDirectory).pipe(Effect.mapError(threadError));
+      // Projects cannot share a root: a fresh Nia install reuses the home project, while an
+      // existing Nia project migrates only when home is unowned; otherwise its identity stays put.
+      const storedProject = yield* projects.getById(projectId).pipe(Effect.mapError(threadError));
+      if (Option.isNone(storedProject) && Option.isSome(homeProject)) {
+        projectId = homeProject.value.id;
+      }
       const replaced = state.sessions?.find(
         (entry) => entry.context === state.brainContext && entry.threadId !== threadId,
       );
@@ -916,16 +927,28 @@ export const layer = Layer.effect(
             ],
       }));
       state = { ...state, threadId, projectId, contextScopeHash: contextHash };
-      const project = yield* projects
-        .create({
-          commandId: command(`project:${projectId}`),
-          projectId,
-          title: AGENT_TITLE,
-          workspaceRoot: store.workspace,
-          createWorkspaceRootIfMissing: true,
-          defaultModelSelection: selection,
-        })
-        .pipe(Effect.mapError(threadError));
+      const project = Option.isSome(storedProject)
+        ? storedProject.value.workspaceRoot === homeDirectory || Option.isSome(homeProject)
+          ? storedProject.value
+          : yield* projects
+              .update({
+                commandId: command(`project-home:${projectId}`),
+                projectId,
+                workspaceRoot: homeDirectory,
+              })
+              .pipe(Effect.mapError(threadError))
+        : Option.isSome(homeProject)
+          ? homeProject.value
+          : yield* projects
+              .create({
+                commandId: command(`project:${projectId}`),
+                projectId,
+                title: AGENT_TITLE,
+                workspaceRoot: homeDirectory,
+                createWorkspaceRootIfMissing: true,
+                defaultModelSelection: selection,
+              })
+              .pipe(Effect.mapError(threadError));
       // Installs created before the rename keep the old default title; rename it once.
       if (project.title === LEGACY_AGENT_TITLE)
         yield* projects

@@ -487,6 +487,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         extensionPath,
         runtimeMode: input.runtimePolicy.runtimeMode,
         d4AgentOnly,
+        ...(input.runtimePolicy.additionalInstructions === undefined
+          ? {}
+          : { additionalInstructions: input.runtimePolicy.additionalInstructions }),
         selectedModel: parsePiModelSlug(input.modelSelection.model),
       });
       const scopedLaunch = yield* agentScope.wrap({

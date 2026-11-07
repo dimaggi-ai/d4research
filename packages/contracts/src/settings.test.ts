@@ -1265,3 +1265,10 @@ describe("research notes folder", () => {
     });
   });
 });
+
+it("keeps decisions off until an endpoint is set", () => {
+  expect(decodeServerSettings({}).decision).toEqual({ baseUrl: "", model: "openjev-0.1" });
+  expect(
+    decodeServerSettingsPatch({ decision: { baseUrl: "http://127.0.0.1:19098" } }).decision,
+  ).toEqual({ baseUrl: "http://127.0.0.1:19098" });
+});

@@ -64,6 +64,8 @@ const piDiscoverySpawner = (
     readonly version?: string;
     readonly state?: unknown;
     readonly authCheck?: string | undefined;
+    readonly rejectProvider?: string;
+    readonly onRpcLaunch?: (args: ReadonlyArray<string>) => void;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -97,7 +99,7 @@ const piDiscoverySpawner = (
       }),
     );
     return ChildProcessSpawner.make((command) => {
-      const args = ChildProcess.isStandardCommand(command) ? command.args : [];
+      const args = ChildProcess.isStandardCommand(command) ? command.args.map(String) : [];
       if (args.includes("--version")) {
         return Effect.succeed(processHandle({ stdout: `pi ${options.version ?? "0.84.3"}\n` }));
       }
@@ -107,6 +109,12 @@ const piDiscoverySpawner = (
           ? Effect.die(`Unexpected pi ${args.join(" ")}`)
           : Effect.succeed(processHandle({ stdout: options.authCheck, exitCode: 1 }));
       }
+      options.onRpcLaunch?.(args);
+      if (
+        options.rejectProvider !== undefined &&
+        args[args.lastIndexOf("--provider") + 1] === options.rejectProvider
+      )
+        return Effect.succeed(processHandle({ stderr: "Unknown provider", exitCode: 1 }));
       return Effect.succeed(
         ChildProcessSpawner.makeHandle({
           ...processHandle({}),
@@ -127,6 +135,53 @@ const settings = {
 } as const;
 
 describe("PiProvider", () => {
+  it.effect("discovers local models despite a removed configured provider", () =>
+    Effect.gen(function* () {
+      const spawner = yield* piDiscoverySpawner(
+        {
+          models: [
+            { provider: "kolibri", id: "kolibri-1-q4_k_m" },
+            { provider: "qwen", id: "qwen3.8-flash-next-iq3_s" },
+          ],
+        },
+        {
+          version: MINIMUM_PI_VERSION,
+          rejectProvider: "nemotron",
+          state: { model: { provider: "kolibri", id: "kolibri-1-q4_k_m" } },
+        },
+      );
+      const snapshot = yield* checkPiProviderStatus({
+        ...settings,
+        launchArgs: "--provider nemotron --model nemotron",
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      assert.equal(snapshot.auth.status, "authenticated");
+      assert.includeMembers(
+        snapshot.models.map((model) => model.slug),
+        ["kolibri/kolibri-1-q4_k_m", "qwen/qwen3.8-flash-next-iq3_s"],
+      );
+      assert.include(snapshot.message ?? "", "Pi default (nemotron/nemotron)");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("preserves a runtime API key's provider binding during discovery", () =>
+    Effect.gen(function* () {
+      const spawner = yield* piDiscoverySpawner(
+        { models: [{ provider: "kolibri", id: "kolibri-1-q4_k_m" }] },
+        {
+          onRpcLaunch: (args) => {
+            assert.equal(args[args.lastIndexOf("--provider") + 1], "kolibri");
+            assert.equal(args[args.lastIndexOf("--model") + 1], "kolibri-1-q4_k_m");
+            assert.equal(args[args.lastIndexOf("--api-key") + 1], "fixture-key");
+          },
+        },
+      );
+      const snapshot = yield* checkPiProviderStatus({
+        ...settings,
+        launchArgs: "--provider kolibri --model kolibri-1-q4_k_m --api-key fixture-key",
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      assert.equal(snapshot.auth.status, "authenticated");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
   it.effect("requires the first published Pi version with entries and settlement hooks", () =>
     Effect.gen(function* () {
       const snapshot = yield* checkPiProviderStatus(settings).pipe(

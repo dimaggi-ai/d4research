@@ -156,9 +156,18 @@ export function D4AgentEntry({
         </Text>
       </Pressable>
       {error ? (
-        <Text accessibilityRole="alert" className="py-2 text-sm text-foreground-muted">
-          {error}
-        </Text>
+        <View className="gap-2 py-2">
+          <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
+            {error}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            className="self-start py-2"
+            onPress={() => openSettings(navigation, "SettingsThreads")}
+          >
+            <Text className="text-sm text-accent">Settings</Text>
+          </Pressable>
+        </View>
       ) : null}
     </View>
   );

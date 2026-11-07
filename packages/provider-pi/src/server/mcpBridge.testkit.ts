@@ -39,6 +39,11 @@ type AgentStartHook = (
   },
 ) => Promise<{ systemPrompt: string } | undefined>;
 
+type ToolCallHook = (
+  event: { toolName: string; input: unknown },
+  ctx: { ui: { confirm: (title: string) => Promise<boolean> } },
+) => Promise<{ block: true; reason: string } | undefined>;
+
 export async function loadMcpBridge(
   options: {
     readonly modern?: boolean;
@@ -47,10 +52,12 @@ export async function loadMcpBridge(
     readonly toolSearchDisabled?: boolean;
     readonly allowsTool?: (name: string) => boolean;
     readonly runtimeMode?: string;
+    readonly toolPolicy?: string;
     readonly inputSchema?: Record<string, unknown>;
   } = {},
 ) {
   const handlers = new Map<string, AgentStartHook>();
+  const toolCallHandlers = new Map<string, ToolCallHook>();
   const tools: RegisteredTool[] = [];
   const requests: Array<{ readonly method: string; readonly params?: unknown }> = [];
   let activeTools = ["read"];
@@ -74,6 +81,13 @@ export async function loadMcpBridge(
       annotations: { readOnlyHint: false },
     },
     { name: "preview_snapshot", description: "Inspect the collaborative browser." },
+    ...(options.toolPolicy === undefined
+      ? []
+      : [
+          { name: "d4_agent_environment", description: "Inspect the environment." },
+          { name: "d4_agent_action", description: "Request an action." },
+          { name: "d4_agent_unrecognized", description: "Not an approved tool." },
+        ]),
   ].map((tool) => ({
     ...tool,
     inputSchema: options.inputSchema ?? { type: "object", properties: {} },
@@ -92,6 +106,7 @@ export async function loadMcpBridge(
         T3_MCP_BEARER_TOKEN: "fixture-token",
         T3_PI_MCP_EXTENSION_PATH: "/fixture/pi-t3-extension.ts",
         T3_PI_RUNTIME_MODE: options.runtimeMode,
+        T3_PI_TOOL_POLICY: options.toolPolicy,
       },
     },
     AbortSignal,
@@ -124,7 +139,10 @@ export async function loadMcpBridge(
       });
     },
     pi: {
-      on: (name: string, handler: AgentStartHook) => handlers.set(name, handler),
+      on: (name: string, handler: unknown) => {
+        if (name === "tool_call") toolCallHandlers.set(name, handler as ToolCallHook);
+        else handlers.set(name, handler as AgentStartHook);
+      },
       registerTool: (tool: RegisteredTool) => {
         if (options.allowsTool && !options.allowsTool(tool.name)) return;
         const index = tools.findIndex((current) => current.name === tool.name);
@@ -154,6 +172,7 @@ export async function loadMcpBridge(
   });
   return {
     handlers,
+    toolCallHandlers,
     tools,
     setBridgeSourcePath: (path: string) => {
       bridgeSourcePath = path;

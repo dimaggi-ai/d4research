@@ -7,6 +7,8 @@ export interface T3McpToolPresentation {
 
 export type T3McpToolSummaryAction =
   | "usage-read"
+  | "decision-evaluate"
+  | "decision-rank"
   | "usage-limits-read"
   | "capabilities"
   | "delegate"
@@ -356,6 +358,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Update", "Updating", "Updated", "environment preferences"],
     "environment-update",
   ),
+  decision_evaluate: tool(["Ask", "Asking", "Asked", "the decision model"], "decision-evaluate"),
+  decision_rank: tool(["Rank", "Ranking", "Ranked", "results by relevance"], "decision-rank"),
   t3_usage_read: tool(["Read", "Reading", "Read", "usage history"], "usage-read"),
   t3_usage_limits_read: tool(
     ["Read", "Reading", "Read", "account usage limits"],

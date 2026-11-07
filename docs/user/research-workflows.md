@@ -244,6 +244,14 @@ provider cannot hold the switch open. Compression and Memo persistence are both 
 neither Memo write succeeds, d4research still attaches the prepared summary when one exists (or the
 structured transcript after a preparation failure) and continues the handoff.
 
+## Decisions
+
+Agents can ask a decision model for a yes/no probability, one option from a set, or a score on ordered levels. During research, an agent can use this to rank sources by relevance before reading them in full.
+
+To turn this on, open **Settings → General → Decisions** on web or desktop, or **Settings → Decisions** on mobile, and enter your OpenJev server's address, such as `http://127.0.0.1:19098`. The environment connects to this address, so `127.0.0.1` refers to the environment's machine. With an address set, agents can use decisions. They send the text to be judged to that address, so use a server you trust. To turn decisions off, clear the field.
+
+Decision answers are model judgments, not verified facts.
+
 ## Second brain
 
 The second brain keeps approved knowledge in a Markdown folder on the connected environment.

@@ -2,11 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  supportsD4AgentDriver,
   type ModelSelection,
   type ServerConfig,
+  type ServerProvider,
   type ServerSettings,
 } from "@d4research/contracts";
 
@@ -22,6 +25,64 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("keeps both Pi local models in ordinary and Nia picker catalogs", () => {
+    const slugs = ["kolibri/kolibri-1-q4_k_m", "qwen/qwen3.8-flash-next-iq3_s"];
+    const provider: ServerProvider = {
+      instanceId: ProviderInstanceId.make("piStrata"),
+      driver: ProviderDriverKind.make("pi"),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-11-07T00:00:00.000Z",
+      models: slugs.map((slug) => ({ slug, name: slug, isCustom: false, capabilities: null })),
+      slashCommands: [],
+      skills: [],
+    };
+    const config: ServerConfig = {
+      environment: {
+        environmentId: EnvironmentId.make("test-environment"),
+        label: "Test environment",
+        platform: { os: "linux", arch: "x64" },
+        serverVersion: "0.0.1",
+        capabilities: { repositoryIdentity: false },
+      },
+      auth: {
+        policy: "unsafe-no-auth",
+        bootstrapMethods: [],
+        sessionMethods: [],
+        sessionCookieName: "test-session",
+      },
+      cwd: "/workspace",
+      keybindingsConfigPath: "/workspace/keybindings.json",
+      keybindings: [],
+      issues: [],
+      providers: [provider],
+      availableEditors: [],
+      observability: {
+        logsDirectoryPath: "/tmp/d4research-test-logs",
+        localTracingEnabled: false,
+        otlpTracesEnabled: false,
+        otlpMetricsEnabled: false,
+        otlpLogsEnabled: false,
+      },
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          ...DEFAULT_SERVER_SETTINGS.providerInstances,
+          [provider.instanceId]: { driver: provider.driver, enabled: true, config: {} },
+        },
+      },
+    };
+    const options = buildModelOptions(config, null, undefined, null);
+    expect(options.map((option) => option.selection.model)).toEqual(slugs);
+    expect(
+      options
+        .filter((option) => supportsD4AgentDriver(option.providerDriver))
+        .map((option) => option.selection.model),
+    ).toEqual(slugs);
+  });
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

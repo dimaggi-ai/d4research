@@ -1597,6 +1597,17 @@ const MekoEndpoint = TrimmedString.check(
   }),
 );
 
+export const DEFAULT_DECISION_MODEL = "openjev-0.1";
+
+/** An empty baseUrl keeps decisions off, so no content leaves until a user names an endpoint. */
+export const DecisionSettings = Schema.Struct({
+  baseUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  model: TrimmedNonEmptyString.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_DECISION_MODEL)),
+  ),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type DecisionSettings = typeof DecisionSettings.Type;
+
 export const HandoffSettings = Schema.Struct({
   memoryBackend: Schema.Literals(["local", "meko", "none"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("local" as const)),
@@ -2359,6 +2370,7 @@ export const ServerSettings = Schema.Struct({
   memory: MemoryConnectorSettings,
   secondBrain: SecondBrainSettings,
   handoff: HandoffSettings,
+  decision: DecisionSettings,
   skills: SkillsSettings,
   research: ResearchSettings,
   dev: DevSettings,
@@ -2845,6 +2857,12 @@ export const ServerSettingsPatch = Schema.Struct({
       generateIndex: Schema.optionalKey(Schema.Boolean),
       staleProjectDays: Schema.optionalKey(BrainInterval),
       reconcileIntervalSeconds: Schema.optionalKey(BrainInterval),
+    }),
+  ),
+  decision: Schema.optionalKey(
+    Schema.Struct({
+      baseUrl: Schema.optionalKey(TrimmedString),
+      model: Schema.optionalKey(TrimmedNonEmptyString),
     }),
   ),
   handoff: Schema.optionalKey(

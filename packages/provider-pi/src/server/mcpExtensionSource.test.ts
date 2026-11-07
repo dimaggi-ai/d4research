@@ -50,6 +50,58 @@ async function loadHooks(
 }
 
 describe("Pi orchestration prompt section", () => {
+  it.each([false, true])(
+    "exposes only owned Nia tools and blocks native tools even in full-access (modern: %s)",
+    async (modern) => {
+      const bridge = await loadMcpBridge({
+        modern,
+        toolPolicy: "d4-agent",
+        runtimeMode: "full-access",
+      });
+      assert.deepEqual(bridge.tools.map((tool) => tool.name).sort(), [
+        "mcp__t3-code__d4_agent_action",
+        "mcp__t3-code__d4_agent_environment",
+        ...(modern ? ["mcp__t3_code__d4_agent_action", "mcp__t3_code__d4_agent_environment"] : []),
+      ]);
+      const hook = bridge.toolCallHandlers.get("tool_call")!;
+      const ctx = { ui: { confirm: () => assert.fail("Nia approvals belong to the server") } };
+      for (const toolName of [
+        "bash",
+        "write",
+        "edit",
+        "read",
+        "tool_search",
+        "mcp__external__run",
+        "mcp__t3-code__delegate_task",
+        "mcp__t3-code__d4_agent_unrecognized",
+      ])
+        assert.isTrue((await hook({ toolName, input: {} }, ctx))?.block);
+      assert.isUndefined(await hook({ toolName: "mcp__t3-code__d4_agent_action", input: {} }, ctx));
+      bridge.setBridgeSourcePath("/untrusted/extension.ts");
+      assert.isTrue(
+        (await hook({ toolName: "mcp__t3-code__d4_agent_action", input: {} }, ctx))?.block,
+      );
+    },
+  );
+
+  it("restores only Nia tools after tree navigation and replaces inherited guidance", async () => {
+    const bridge = await loadMcpBridge({ modern: true, toolPolicy: "d4-agent" });
+    bridge.restoreActiveTools(["bash", "mcp__external__run"]);
+    await bridge.handlers.get("session_tree")!(
+      { systemPrompt: "" },
+      { ui: { notify: assert.fail } },
+    );
+    assert.deepEqual(Array.from(bridge.getActiveTools()).sort(), [
+      "mcp__t3-code__d4_agent_action",
+      "mcp__t3-code__d4_agent_environment",
+    ]);
+    const result = await bridge.handlers.get("before_agent_start")!(
+      { systemPrompt: "unsafe inherited guidance" },
+      { ui: { notify: assert.fail } },
+    );
+    assert.notInclude(result!.systemPrompt, "unsafe inherited guidance");
+    assert.include(result!.systemPrompt, "You are Nia");
+  });
   it.each([
     {
       name: "on Pi builds without prompt sections",
@@ -298,10 +350,7 @@ describe("Pi tool discovery permissions", () => {
     "allows annotated T3 reads in %s while gating mutations and replacements",
     async (runtimeMode) => {
       const bridge = await loadMcpBridge({ modern: true, runtimeMode });
-      const hook = bridge.handlers.get("tool_call") as unknown as (
-        event: { toolName: string; input: unknown },
-        ctx: { ui: { confirm: (title: string) => Promise<boolean> } },
-      ) => Promise<{ block: true; reason: string } | undefined>;
+      const hook = bridge.toolCallHandlers.get("tool_call")!;
       const confirmations: string[] = [];
       const ctx = {
         ui: {

@@ -1,4 +1,4 @@
-import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "../../d4Agent/policy.ts";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import {
   compactDynamicToolOutput,

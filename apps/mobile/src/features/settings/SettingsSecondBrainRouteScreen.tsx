@@ -27,6 +27,7 @@ import { SettingsActionRow } from "./components/SettingsActionRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { SettingsTextField } from "./components/SettingsTextField";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
@@ -56,45 +57,6 @@ export function SettingsSecondBrainRouteScreen() {
         </ScreenScrollView>
       </SettingsScreen>
     </>
-  );
-}
-
-function BrainField({
-  label,
-  value,
-  disabled,
-  onSave,
-  number = false,
-}: {
-  label: string;
-  value: string;
-  disabled: boolean;
-  onSave: (value: string) => void;
-  number?: boolean;
-}) {
-  const edited = useRef(false);
-  return (
-    <View className="gap-2 px-4 py-3">
-      <Text>{label}</Text>
-      <AppTextInput
-        key={value}
-        accessibilityLabel={label}
-        defaultValue={value}
-        editable={!disabled}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType={number ? "number-pad" : "default"}
-        className="min-h-10 rounded-xl px-3 py-2 text-base text-foreground"
-        onChangeText={() => {
-          edited.current = true;
-        }}
-        onEndEditing={(event) => {
-          if (edited.current && event.nativeEvent.text.trim() !== value)
-            onSave(event.nativeEvent.text.trim());
-          edited.current = false;
-        }}
-      />
-    </View>
   );
 }
 
@@ -155,7 +117,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
   return (
     <View className="gap-6">
       <SettingsSection title={target.label}>
-        <BrainField
+        <SettingsTextField
           label="Folder on this environment"
           value={settings.path}
           disabled={disabled}
@@ -167,7 +129,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
           disabled={disabled}
           onValueChange={(enabled) => write({ injection: { ...settings.injection, enabled } })}
         />
-        <BrainField
+        <SettingsTextField
           label="Core budget (characters)"
           value={String(settings.injection.coreBudgetChars)}
           disabled={disabled}
@@ -178,7 +140,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
             )
           }
         />
-        <BrainField
+        <SettingsTextField
           label="Retrieval budget (characters)"
           value={String(settings.injection.retrievalBudgetChars)}
           disabled={disabled}
@@ -189,7 +151,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
             )
           }
         />
-        <BrainField
+        <SettingsTextField
           label="Retrieval results"
           value={String(settings.injection.retrievalResults)}
           disabled={disabled}
@@ -218,7 +180,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
           disabled={disabled}
           onPress={() => write({ capture: "proposals" })}
         />
-        <BrainField
+        <SettingsTextField
           label="Capture model (blank uses handoff model)"
           value={settings.captureModel ?? ""}
           disabled={disabled}
@@ -246,7 +208,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
           disabled={disabled}
           onValueChange={(enabled) => write({ embeddings: { ...settings.embeddings, enabled } })}
         />
-        <BrainField
+        <SettingsTextField
           label="Embedding model"
           value={settings.embeddings.model}
           disabled={disabled}

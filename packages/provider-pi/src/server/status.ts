@@ -144,8 +144,19 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
   launchArgs: ReadonlyArray<string>,
   cwd?: string,
 ) {
+  // Inventory does not need a selected model. A removed default must not hide the
+  // other providers; a CLI key, however, is bound to its explicit provider/model.
+  const discoveryArgs = launchArgs.includes("--api-key")
+    ? launchArgs
+    : launchArgs.filter(
+        (arg, index) =>
+          arg !== "--provider" &&
+          arg !== "--model" &&
+          launchArgs[index - 1] !== "--provider" &&
+          launchArgs[index - 1] !== "--model",
+      );
   const launch = buildPiRpcLaunch({
-    launchArgs,
+    launchArgs: discoveryArgs,
     environment,
     mcpSession: undefined,
     extensionPath: undefined,
@@ -183,8 +194,16 @@ const discoverPiViaRpc = Effect.fn("PiProviderStatus.discoverPiViaRpc")(function
   // Pi lists only models of providers it holds credentials for, including extension, virtual and
   // --api-key ones. Turns need only the provider's credentials, so uncatalogued model ids still run.
   const activeModel = recordField(stateData, "model");
-  const activeProvider = recordString(activeModel, "provider");
-  const activeModelId = recordString(activeModel, "id");
+  const configuredProviderIndex = launchArgs.lastIndexOf("--provider");
+  const configuredModelIndex = launchArgs.lastIndexOf("--model");
+  const activeProvider =
+    configuredProviderIndex < 0
+      ? recordString(activeModel, "provider")
+      : launchArgs[configuredProviderIndex + 1];
+  const activeModelId =
+    configuredModelIndex < 0
+      ? recordString(activeModel, "id")
+      : launchArgs[configuredModelIndex + 1];
   return {
     models: discoveredModels,
     slashCommands: withPiBuiltinSlashCommands(slashCommands),

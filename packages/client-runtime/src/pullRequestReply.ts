@@ -1,4 +1,4 @@
-import type { PullRequestState } from "@t3tools/contracts";
+import type { PullRequestState } from "@d4research/contracts";
 
 interface ObservedPullRequest {
   readonly state: PullRequestState;

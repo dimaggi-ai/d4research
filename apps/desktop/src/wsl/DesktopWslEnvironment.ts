@@ -9,9 +9,9 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { buildRemoteNodeEnvScript } from "@t3tools/ssh/tunnel";
-import { satisfiesSemverRange } from "@t3tools/shared/semver";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { buildRemoteNodeEnvScript } from "@d4research/ssh/tunnel";
+import { satisfiesSemverRange } from "@d4research/shared/semver";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
@@ -118,7 +118,7 @@ export class DesktopWslEnvironment extends Context.Service<
       options?: EnsureWslNodePtyOptions,
     ) => Effect.Effect<EnsureWslNodePtyResult>;
   }
->()("@t3tools/desktop/wsl/DesktopWslEnvironment") {}
+>()("@d4research/desktop/wsl/DesktopWslEnvironment") {}
 
 const buildDistroArgs = (distro: string | null): ReadonlyArray<string> =>
   distro ? ["-d", distro] : [];

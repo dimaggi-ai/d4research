@@ -11,9 +11,9 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
@@ -29,16 +29,16 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import * as ProviderMaintenance from "@t3tools/provider-core/server/maintenanceResolver";
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
+import * as ProviderMaintenance from "@d4research/provider-core/server/maintenanceResolver";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
 import { OPENCODE_2_RESPONSES, replayOpenCodeServer } from "./probeResponses.fixture.ts";
 import { OpenCodeDriver, openCodeUpdateFor } from "./driver.ts";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
 
 const serverStarts: Array<string> = [];
 const reachedServer = (operation: string) =>

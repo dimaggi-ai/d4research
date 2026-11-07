@@ -4,13 +4,13 @@
  *
  * @module DesktopManagedPolicy
  */
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import type { ManagedPolicyDocument } from "@d4research/contracts";
 import {
   layerWindowsRegistry,
   ManagedPolicyFileError,
   readManagedPolicy,
   WindowsRegistry,
-} from "@t3tools/shared/managedPolicyFile";
+} from "@d4research/shared/managedPolicyFile";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,7 +29,7 @@ export class DesktopManagedPolicy extends Context.Service<
     /** The policy on this machine, undefined without one; fails when it cannot be used. */
     readonly read: Effect.Effect<FoundPolicy, ManagedPolicyFileError>;
   }
->()("@t3tools/desktop/app/DesktopManagedPolicy") {}
+>()("@d4research/desktop/app/DesktopManagedPolicy") {}
 
 export const layer = Layer.effect(
   DesktopManagedPolicy,

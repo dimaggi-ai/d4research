@@ -1,4 +1,4 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -10,7 +10,7 @@ import {
   letterStopNotes,
   stepTourPosition,
   stopFilePaths,
-} from "@t3tools/client-runtime/review-guide-tour";
+} from "@d4research/client-runtime/review-guide-tour";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { GuideOutline } from "./GuideOutline";
 import { AppText as Text } from "../../../components/ui/AppText";

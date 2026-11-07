@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import {
   buildCommitUrl,
   changeRequestUrlBelow,
@@ -7,7 +7,7 @@ import {
   parseChangeRequestPath,
   parseCommitPath,
   remoteWebOrigin,
-} from "@t3tools/source-control-core/shared/definition";
+} from "@d4research/source-control-core/shared/definition";
 import { icon } from "./icon.ts";
 
 // Azure DevOps Server runs on any hostname; its `_git` route identifies it.

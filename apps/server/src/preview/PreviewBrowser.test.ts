@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Digest from "effect/crypto/Digest";
 import type * as Duration from "effect/Duration";
 import * as DateTime from "effect/DateTime";

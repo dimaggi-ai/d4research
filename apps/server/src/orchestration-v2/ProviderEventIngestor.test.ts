@@ -24,7 +24,7 @@ import {
   RunId,
   RuntimeRequestId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -37,21 +37,21 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlError from "effect/sql/SqlError";
 import * as Stream from "effect/Stream";
 
-import { toolOutputImages } from "@t3tools/shared/toolOutput";
+import { toolOutputImages } from "@d4research/shared/toolOutput";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
+import type { ProviderInstance } from "@d4research/provider-core/server/driver";
+import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 import {
   makeProviderEventRoutingState,
   type ProviderEventRouteIdentity,
@@ -159,7 +159,7 @@ const makeSharedWorktree = Effect.gen(function* () {
     "-m",
     "initial",
   ]);
-  yield* command(repo, ["worktree", "add", "-b", "t3/abcd1234", worktreePath]);
+  yield* command(repo, ["worktree", "add", "-b", "d4research/abcd1234", worktreePath]);
   return { repo, worktreePath, command };
 });
 const modelSelection = {
@@ -1814,7 +1814,7 @@ layer("ProviderEventIngestorV2", (it) => {
         if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
         const parent = {
           ...rootEvent.payload,
-          branch: "t3/abcd1234",
+          branch: "d4research/abcd1234",
           worktreePath,
         };
         yield* eventSink.write({ events: [{ ...rootEvent, payload: parent }] });
@@ -1935,7 +1935,7 @@ layer("ProviderEventIngestorV2", (it) => {
       Effect.gen(function* () {
         const { worktreePath, command } = yield* makeSharedWorktree;
         const git = yield* GitVcsDriver.GitVcsDriver;
-        const branch = scenario === "explicit" ? "child-feature" : "t3/abcd1234";
+        const branch = scenario === "explicit" ? "child-feature" : "d4research/abcd1234";
         if (scenario === "explicit") yield* command(worktreePath, ["branch", "-m", branch]);
         if (scenario === "detached") yield* command(worktreePath, ["checkout", "--detach"]);
         const now = yield* DateTime.now;

@@ -1,5 +1,5 @@
-import { DpopProof } from "@t3tools/client-runtime/relay";
-import { computeDpopJwkThumbprint, DpopPublicJwk } from "@t3tools/shared/dpop";
+import { DpopProof } from "@d4research/client-runtime/relay";
+import { computeDpopJwkThumbprint, DpopPublicJwk } from "@d4research/shared/dpop";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";

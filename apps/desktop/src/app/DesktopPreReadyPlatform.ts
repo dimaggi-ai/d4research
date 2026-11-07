@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as Electron from "electron";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
 import { trimmedString } from "./DesktopConfig.ts";
@@ -50,7 +50,7 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
     readonly linux: DesktopEarlyElectronStartup.EarlyLinuxElectronOptions | null;
     readonly linuxPasswordStoreCommandLine: string | null;
   }
->()("@t3tools/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
+>()("@d4research/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
 
 const LinuxDesktopEntryConfig = Config.all({
   xdgDataHome: trimmedString("XDG_DATA_HOME"),

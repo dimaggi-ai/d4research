@@ -19,9 +19,9 @@ import {
   type OrchestrationV2TurnItem,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
-import { chatMarkdownImageSources } from "@t3tools/shared/markdownPipeline";
-import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+} from "@d4research/contracts";
+import { chatMarkdownImageSources } from "@d4research/shared/markdownPipeline";
+import { htmlRenderFromToolItem } from "@d4research/shared/toolOutput";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -196,7 +196,7 @@ export class GuestShareService extends Context.Service<
       path: string,
     ) => Effect.Effect<{ readonly path: string; readonly mimeType: string }, GuestShareAccessError>;
   }
->()("t3/guest/GuestShareService") {}
+>()("d4research/guest/GuestShareService") {}
 
 /** A reply a guest's stream sent, with its image sources once a media request parsed them. */
 interface SentReply {

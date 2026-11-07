@@ -13,8 +13,8 @@ import {
   type ProviderInstanceId,
   type PullRequestMergeMethod,
   type SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
-import { ToolCallVisibility } from "@t3tools/contracts/settings";
+} from "@d4research/contracts";
+import { ToolCallVisibility } from "@d4research/contracts/settings";
 import type { AndroidNavigationStyle } from "../lib/androidNavigationStyle";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
@@ -170,7 +170,7 @@ export class MobilePreferencesStore extends Context.Service<
       transform: (current: Preferences) => Partial<Preferences>,
     ) => Effect.Effect<Preferences, MobilePreferencesSaveError>;
   }
->()("@t3tools/mobile/persistence/mobile-preferences/MobilePreferencesStore") {}
+>()("@d4research/mobile/persistence/mobile-preferences/MobilePreferencesStore") {}
 
 const isToolCallVisibility = Schema.is(ToolCallVisibility);
 

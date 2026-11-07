@@ -4,14 +4,14 @@ import type {
   EnvironmentId,
   EnvironmentSpeechModel,
   EnvironmentSpeechStatus,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useClientSettings, updateClientSettings } from "../../hooks/useSettings";
 import { useEnvironment } from "../../state/environments";
-import { AuthSettingsWriteScope } from "@t3tools/contracts";
+import { AuthSettingsWriteScope } from "@d4research/contracts";
 import { useEnvironmentScope } from "../../state/session";
 import { languageLabel } from "../settings/SpeechLanguageSelect";
 import { Button } from "../ui/button";

@@ -1,6 +1,6 @@
 import * as NodeUtil from "node:util";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -131,9 +131,9 @@ export function formatServiceChange(
   result: Extract<ServiceReconcileResult, { readonly changed: true }>,
 ): string {
   if (result.plan.handedOff === true) {
-    return `Service update to t3@${packageJson.version} queued. This session will disconnect.\nLog: ${result.plan.logPath}`;
+    return `Service update to d4research@${packageJson.version} queued. This session will disconnect.\nLog: ${result.plan.logPath}`;
   }
-  return `Service ${result.previouslyInstalled ? "updated" : "installed"} · t3@${packageJson.version}\nLog: ${result.plan.logPath}`;
+  return `Service ${result.previouslyInstalled ? "updated" : "installed"} · d4research@${packageJson.version}\nLog: ${result.plan.logPath}`;
 }
 
 function formatProtection(
@@ -178,7 +178,7 @@ function formatServiceStatus(
   ) {
     return [
       "T3 Code service",
-      `  Status: installed · t3@${installedVersion} (newer than this t3@${cliVersion} CLI)`,
+      `  Status: installed · d4research@${installedVersion} (newer than this d4research@${cliVersion} CLI)`,
       `  Unit: ${status.unitPath}`,
       `  Logs: ${status.logPath}`,
       ...formatProtection(protection),
@@ -188,7 +188,7 @@ function formatServiceStatus(
   }
   return [
     "T3 Code service",
-    `  Status: ${status.current ? `installed · t3@${installedVersion}` : "needs an update or repair"}`,
+    `  Status: ${status.current ? `installed · d4research@${installedVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
     ...formatProtection(protection),
@@ -225,7 +225,7 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `T3 Code service is already installed with t3@${packageJson.version} (${yield* resolveEntryPath}).`,
+            `T3 Code service is already installed with d4research@${packageJson.version} (${yield* resolveEntryPath}).`,
           );
           return;
         }
@@ -251,7 +251,7 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `T3 Code service is already using t3@${packageJson.version} (${yield* resolveEntryPath}).`,
+            `T3 Code service is already using d4research@${packageJson.version} (${yield* resolveEntryPath}).`,
           );
           return;
         }
@@ -273,7 +273,7 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
         const status = yield* service.status;
         const outcome = yield* service.restart;
         const onVersion =
-          status.installedVersion === undefined ? "" : ` on t3@${status.installedVersion}`;
+          status.installedVersion === undefined ? "" : ` on d4research@${status.installedVersion}`;
         yield* Console.log(
           outcome === "restarted"
             ? `Restarted the T3 Code service${onVersion}.`

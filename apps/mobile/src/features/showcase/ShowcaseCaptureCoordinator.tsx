@@ -6,7 +6,7 @@ import {
   type NavigationAction,
   type NavigationState,
 } from "@react-navigation/native";
-import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { runAtomCommand } from "@d4research/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { requireOptionalNativeModule } from "expo";
 

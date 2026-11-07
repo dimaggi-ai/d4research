@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
-import { MessageId, ProviderDriverKind, ProviderTurnId, ThreadId } from "@t3tools/contracts";
-import * as KeyedLock from "@t3tools/shared/KeyedLock";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { MessageId, ProviderDriverKind, ProviderTurnId, ThreadId } from "@d4research/contracts";
+import * as KeyedLock from "@d4research/shared/KeyedLock";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";

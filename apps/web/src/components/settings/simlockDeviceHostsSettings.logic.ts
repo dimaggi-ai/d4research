@@ -3,7 +3,7 @@ import {
   type EnvironmentId,
   type SettingsSecretValue,
   type SimlockDeviceHostConfig as SimlockDeviceHostConfigType,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

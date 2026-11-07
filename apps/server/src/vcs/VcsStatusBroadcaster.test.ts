@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import { assert, it, describe } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
@@ -21,13 +21,13 @@ import type {
   VcsStatusLocalResult,
   VcsStatusRemoteResult,
   VcsStatusStreamEvent,
-} from "@t3tools/contracts";
-import { GitCommandError, GitManagerError } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { GitCommandError, GitManagerError } from "@d4research/contracts";
 
 import * as VcsStatusBroadcaster from "./VcsStatusBroadcaster.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 

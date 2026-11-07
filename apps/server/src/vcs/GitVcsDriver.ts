@@ -34,9 +34,9 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
   type WorktreeSubmodules,
-} from "@t3tools/contracts";
-import { isMissingExecutable } from "@t3tools/source-control-core/server/discovery";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import { isMissingExecutable } from "@d4research/source-control-core/server/discovery";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   makeGitVcsDriverCore,
   PATCH_RENDER_PREFIX_ARGS,
@@ -302,7 +302,7 @@ export interface GitRemoteStatusOptions {
 }
 
 /** Set by background discovery so its Git commands run in their own small lane, not the user's. */
-export const BackgroundGitWork = Context.Reference<boolean>("t3/vcs/BackgroundGitWork", {
+export const BackgroundGitWork = Context.Reference<boolean>("d4research/vcs/BackgroundGitWork", {
   defaultValue: () => false,
 });
 
@@ -446,7 +446,7 @@ export class GitVcsDriver extends Context.Service<
     readonly initRepo: (input: VcsInitInput) => Effect.Effect<void, GitCommandError>;
     readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
   }
->()("t3/vcs/GitVcsDriver") {}
+>()("d4research/vcs/GitVcsDriver") {}
 
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const FLAGGED_INDEX_ENTRIES_MAX_BYTES = 1024 * 1024;

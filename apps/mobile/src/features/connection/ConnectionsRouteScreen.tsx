@@ -1,7 +1,7 @@
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
 import { useNavigation } from "@react-navigation/native";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import { useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

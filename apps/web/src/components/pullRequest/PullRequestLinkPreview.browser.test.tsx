@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, type PullRequestSummary } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type PullRequestSummary } from "@d4research/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 

@@ -25,9 +25,9 @@ import {
   RunId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@d4research/contracts";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
+import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Queue from "effect/Queue";
 import * as Arr from "effect/Array";
@@ -65,7 +65,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionReplay from "./testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";

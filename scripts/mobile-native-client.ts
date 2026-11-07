@@ -1,8 +1,8 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { isCommandAvailable, resolveSpawnCommand } from "@d4research/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
@@ -135,7 +135,7 @@ export const hashBundle = Effect.fn("hashBundle")(function* (root: string) {
 });
 type FileSystemError = import("effect/PlatformError").PlatformError;
 
-const bundleId = "com.t3tools.t3code.dev";
+const bundleId = "ai.dimaggi.d4research.dev";
 const roots = Effect.gen(function* () {
   const path = yield* Path.Path;
   const repo = yield* path.fromFileUrl(new URL("../", import.meta.url));
@@ -911,7 +911,7 @@ const reportTelemetry = Effect.fn("nativeClient.reportTelemetry")(
           arch: yield* HostProcess.Architecture,
           ci: environment.CI === "true" || environment.CI === "1",
           runId: environment.GITHUB_RUN_ID ?? "",
-          tasks: [{ package: "@t3tools/mobile", task, source, savedMs: Math.round(savedMs) }],
+          tasks: [{ package: "@d4research/mobile", task, source, savedMs: Math.round(savedMs) }],
         }),
       ),
     );

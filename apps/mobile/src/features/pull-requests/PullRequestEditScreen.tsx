@@ -2,10 +2,10 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/source-control-clients";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import type { PullRequestComment } from "@t3tools/contracts";
+import type { PullRequestComment } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";

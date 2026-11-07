@@ -10,16 +10,16 @@ import {
   type SecretRequestItem,
   type SecretRequestReply,
   type SecretRequestSource,
-} from "@t3tools/client-runtime/secret-request";
+} from "@d4research/client-runtime/secret-request";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
   SecretProviderId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { CheckIcon, LockIcon, MinusIcon, ShieldCheckIcon } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";

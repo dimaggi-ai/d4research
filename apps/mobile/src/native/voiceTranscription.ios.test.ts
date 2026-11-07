@@ -1,7 +1,7 @@
 import type { TranscriptionResult } from "@react-native-ai/apple/src/NativeAppleTranscription";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { VoiceInputController, VoiceTranscriptionError } from "@t3tools/client-runtime/voice-input";
+import { VoiceInputController, VoiceTranscriptionError } from "@d4research/client-runtime/voice-input";
 import { resetVoiceInputGlobalsForTests } from "../../../../packages/client-runtime/src/voice-input/controller";
 
 const mocks = vi.hoisted(() => ({

@@ -12,9 +12,9 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerSettings as ContractServerSettings,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

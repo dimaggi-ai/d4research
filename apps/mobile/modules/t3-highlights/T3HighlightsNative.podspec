@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
   s.description = 'Runs the @pierre/highlights lexers, compiled from WebAssembly to C with wasm2c.'
   s.homepage = 'https://t3tools.com'
   s.license = { :type => 'UNLICENSED' }
-  s.author = { 'T3 Tools' => 'hello@t3tools.com' }
+  s.author = { 'T3 Tools' => 'hello@d4research.com' }
   s.platforms = { :ios => min_ios_version_supported }
   s.source = { :path => '.' }
   s.source_files = 'cpp/**/*.{c,cpp,h,hpp,inc}', 'Vendor/**/*.{c,h,inc}'

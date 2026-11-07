@@ -1,5 +1,5 @@
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
+import type { EnvironmentId } from "@d4research/contracts";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isLoopbackHostname } from "~/environments/primary/target";

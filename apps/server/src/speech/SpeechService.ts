@@ -5,8 +5,8 @@ import {
   type SpeechAcceleration,
   type SpeechModelUnloadTimeout,
   type SpeechTranscriptionOptions,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -153,7 +153,7 @@ export class SpeechService extends Context.Service<
       timeout: SpeechModelUnloadTimeout,
     ) => Effect.Effect<EnvironmentSpeechStatus, SpeechError>;
   }
->()("t3/speech/SpeechService") {}
+>()("d4research/speech/SpeechService") {}
 
 const UNLOAD_MILLISECONDS: Record<Exclude<SpeechModelUnloadTimeout, "never">, number> = {
   immediately: 0,

@@ -19,7 +19,7 @@ import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
-import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
+import { deriveProjectGroupLabel } from "@d4research/client-runtime/state/project-grouping";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";

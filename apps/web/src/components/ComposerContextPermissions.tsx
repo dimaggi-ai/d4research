@@ -1,4 +1,4 @@
-import type { EnvironmentId, RuntimeMode } from "@t3tools/contracts";
+import type { EnvironmentId, RuntimeMode } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 
 import { shortcutLabelForCommand } from "../keybindings";

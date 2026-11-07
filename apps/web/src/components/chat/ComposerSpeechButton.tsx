@@ -1,4 +1,4 @@
-import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import type { VoiceInputState } from "@d4research/client-runtime/voice-input";
 import { CheckIcon, MicIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 

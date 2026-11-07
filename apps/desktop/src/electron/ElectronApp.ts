@@ -1,4 +1,4 @@
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -79,7 +79,7 @@ export class ElectronApp extends Context.Service<
       listener: (...args: Args) => void,
     ) => Effect.Effect<void, never, Scope.Scope>;
   }
->()("@t3tools/desktop/electron/ElectronApp") {}
+>()("@d4research/desktop/electron/ElectronApp") {}
 
 const addScopedAppListener = <Args extends ReadonlyArray<unknown>>(
   eventName: string,

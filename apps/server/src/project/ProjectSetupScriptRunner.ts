@@ -1,11 +1,11 @@
-import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@t3tools/contracts";
+import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@d4research/contracts";
 import {
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
   settleProjectScript,
   setupProjectScript,
-} from "@t3tools/shared/projectScripts";
+} from "@d4research/shared/projectScripts";
 
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -129,7 +129,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
   }
->()("t3/project/ProjectSetupScriptRunner") {}
+>()("d4research/project/ProjectSetupScriptRunner") {}
 
 /** @public */
 // Random per-run tokens prevent script output from spoofing completion.

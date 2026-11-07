@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Serves a fake GitHub Release over real HTTP to the published launcher.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -13,7 +13,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeEvents from "node:events";
 import * as NodeHttp from "node:http";
 
-import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
+import { npmReleaseDatabaseMigration } from "@d4research/shared/cliRelease";
 
 import { buildNpmLauncher } from "./build-npm-launcher.ts";
 

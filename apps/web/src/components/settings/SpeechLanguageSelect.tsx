@@ -1,5 +1,5 @@
-import type { EnvironmentSpeechStatus } from "@t3tools/contracts";
-import { effectiveSpeechLanguage } from "@t3tools/shared/speech";
+import type { EnvironmentSpeechStatus } from "@d4research/contracts";
+import { effectiveSpeechLanguage } from "@d4research/shared/speech";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 

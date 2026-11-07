@@ -7,9 +7,9 @@ import {
   RelayWebClientId,
   type RelayPublicClientId,
   type RelayEnvironmentLinkChallengeRequest,
-} from "@t3tools/contracts/relay";
-import { encodeOAuthScope, parseAllowedOAuthScope } from "@t3tools/shared/oauthScope";
-import { normalizeRelayIssuer, RelayJwtError } from "@t3tools/shared/relayJwt";
+} from "@d4research/contracts/relay";
+import { encodeOAuthScope, parseAllowedOAuthScope } from "@d4research/shared/oauthScope";
+import { normalizeRelayIssuer, RelayJwtError } from "@d4research/shared/relayJwt";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

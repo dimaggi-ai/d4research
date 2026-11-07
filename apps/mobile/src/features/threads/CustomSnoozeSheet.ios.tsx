@@ -27,7 +27,7 @@ import {
   localSnoozeTime,
   resolveCustomSnooze,
   type CustomSnoozeInput,
-} from "@t3tools/client-runtime/state/thread-settled";
+} from "@d4research/client-runtime/state/thread-settled";
 import { useState, type ReactNode } from "react";
 import { StandaloneStack } from "../layout/nested-stacks";
 import { ScrollView, useWindowDimensions, View } from "react-native";

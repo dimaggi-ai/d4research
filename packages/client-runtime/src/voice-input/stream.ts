@@ -5,7 +5,7 @@ import {
   SpeechStreamEvent,
   type SpeechStreamText,
   type SpeechTranscriptionOptions,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechStreamEvent));

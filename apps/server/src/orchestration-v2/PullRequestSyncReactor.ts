@@ -8,8 +8,8 @@ import {
   type ThreadPullRequestLink,
   type ThreadPullRequestSnapshot,
   type ThreadPullRequestStack,
-} from "@t3tools/contracts";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+} from "@d4research/contracts";
+import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
 import {
   threadPullRequestKeyOf,
   normalizeThreadPullRequestKey,
@@ -31,7 +31,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as GitManager from "../git/GitManager.ts";
-import { PullRequestProviderError } from "@t3tools/source-control-core/server/PullRequestProvider";
+import { PullRequestProviderError } from "@d4research/source-control-core/server/PullRequestProvider";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -328,7 +328,7 @@ export class PullRequestSyncReactor extends Context.Service<
     /** Forces reread on the next sweep, including terminal snapshots; rate-limited hosts wait until the pause ends. */
     readonly requestSync: (key: ThreadPullRequestKey) => Effect.Effect<void>;
   }
->()("t3/orchestration-v2/PullRequestSyncReactor") {}
+>()("d4research/orchestration-v2/PullRequestSyncReactor") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

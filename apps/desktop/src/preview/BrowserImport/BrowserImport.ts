@@ -3,12 +3,12 @@ import type {
   BrowserImportResult,
   BrowserImportSource,
   BrowserImportUnavailableReason,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   BrowserImportFailureReason,
   type ManagedPolicyDocument,
   managedPolicyDeniedMessage,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import type { Session } from "electron";
 import * as Effect from "effect/Effect";
@@ -19,8 +19,8 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import { ChildProcessSpawner } from "effect/process";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import type { ManagedPolicyFileError } from "@t3tools/shared/managedPolicyFile";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import type { ManagedPolicyFileError } from "@d4research/shared/managedPolicyFile";
 
 import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
 import * as BrowserSession from "../BrowserSession.ts";
@@ -125,7 +125,7 @@ export class BrowserImport extends Context.Service<
       readonly namespace?: BrowserSession.BrowserSessionPartitionNamespace;
     }) => Effect.Effect<BrowserImportResult, BrowserImportFailedError | BrowserImportPolicyError>;
   }
->()("@t3tools/desktop/preview/BrowserImport/BrowserImport") {}
+>()("@d4research/desktop/preview/BrowserImport/BrowserImport") {}
 
 const unavailableReason = Effect.fn("BrowserImport.unavailableReason")(function* (
   definition: BrowserImportSourceDefinition,

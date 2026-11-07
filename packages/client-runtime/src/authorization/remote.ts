@@ -7,9 +7,9 @@ import {
   type AuthEnvironmentScope,
   type AuthWebSocketTicketResult,
   type AuthWebSocketTicketUse,
-} from "@t3tools/contracts";
-import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
-import { hashTelemetryId } from "@t3tools/shared/telemetryId";
+} from "@d4research/contracts";
+import { encodeOAuthScope } from "@d4research/shared/oauthScope";
+import { hashTelemetryId } from "@d4research/shared/telemetryId";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";

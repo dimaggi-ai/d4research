@@ -20,8 +20,8 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpTraceContext from "effect/http/HttpTraceContext";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as HttpApiError from "effect/http-api/HttpApiError";
-import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
-import * as HttpObservability from "@t3tools/shared/httpObservability";
+import { encodeOAuthScope } from "@d4research/shared/oauthScope";
+import * as HttpObservability from "@d4research/shared/httpObservability";
 
 import {
   RelayApi,
@@ -52,12 +52,12 @@ import {
   RelayManagedEndpointRecoveryProofPayload,
   type RelayDpopAccessTokenScope,
   RelayInternalError,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import {
   normalizeRelayIssuer,
   RELAY_MANAGED_TUNNEL_RECOVERY_TYP,
   verifyRelayJwt,
-} from "@t3tools/shared/relayJwt";
+} from "@d4research/shared/relayJwt";
 
 import * as DeliveryAttempts from "../agentActivity/DeliveryAttempts.ts";
 import * as AgentActivityRows from "../agentActivity/AgentActivityRows.ts";

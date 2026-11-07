@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -35,7 +35,7 @@ export class ProjectionReplay extends Context.Service<
     readonly verify: Effect.Effect<ProjectionReplayVerification, ProjectionReplayError>;
     readonly rebuild: Effect.Effect<ProjectionReplayVerification, ProjectionReplayError>;
   }
->()("t3/orchestration-v2/testkit/ProjectionReplay") {}
+>()("d4research/orchestration-v2/testkit/ProjectionReplay") {}
 
 type ProjectionMetadataRow = {
   readonly schema_version: number;

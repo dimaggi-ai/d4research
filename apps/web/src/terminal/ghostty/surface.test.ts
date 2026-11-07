@@ -3,7 +3,7 @@ import {
   applyTerminalAttachStreamEvent,
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   nextTerminalAttachSeedState,
-} from "@t3tools/client-runtime/state/terminal";
+} from "@d4research/client-runtime/state/terminal";
 import { synchronizeTerminalSession } from "../../components/ThreadTerminalDrawer";
 
 import { GhosttyTerminalCore, type GhosttyCell, type GhosttyRow } from "./core";

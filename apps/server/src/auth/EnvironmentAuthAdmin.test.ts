@@ -1,4 +1,4 @@
-import { AuthStandardClientScopes, type ManagedPolicyDocument } from "@t3tools/contracts";
+import { AuthStandardClientScopes, type ManagedPolicyDocument } from "@d4research/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";

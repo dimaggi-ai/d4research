@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/secret-provider-definitions",
+  "name": "@d4research/secret-provider-definitions",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,7 +12,7 @@
     "typecheck": "effect-tsgo tsrs --noEmit"
   },
   "dependencies": {
-    "@t3tools/secret-provider-core": "workspace:*",
-    "@t3tools/secret-provider-onepassword": "workspace:*"
+    "@d4research/secret-provider-core": "workspace:*",
+    "@d4research/secret-provider-onepassword": "workspace:*"
   }
 }

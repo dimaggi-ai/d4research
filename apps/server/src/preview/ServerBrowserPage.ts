@@ -17,7 +17,7 @@ import {
   type PreviewAutomationTypeInput,
   type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { constVoid } from "effect/Function";
 import * as Schema from "effect/Schema";
 import type { CDPSession, ConsoleMessage, Frame, Locator, Page } from "playwright-core";

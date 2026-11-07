@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { assert, it } from "@effect/vitest";
-import { ProviderInstanceId, ProviderSetupError, type ProviderAuthState } from "@t3tools/contracts";
+import { ProviderInstanceId, ProviderSetupError, type ProviderAuthState } from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -19,7 +19,7 @@ import {
   type AntigravityAuth,
   type AntigravityAuthRuntime,
 } from "./AntigravityAuth.ts";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import type * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 const instanceId = ProviderInstanceId.make("antigravity-auth-test");
 const owner = "t3-auth-session-owner";

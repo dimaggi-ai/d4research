@@ -5,15 +5,15 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   invalidateLatestProviderVersion,
-} from "@t3tools/provider-core/server/maintenanceResolver";
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+} from "@d4research/provider-core/server/maintenanceResolver";
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
+import { makeManagedServerProvider } from "@d4research/provider-core/server/managedProvider";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";

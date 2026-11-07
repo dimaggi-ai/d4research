@@ -1,18 +1,18 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
-} from "@t3tools/client-runtime/state/provider-instance-display";
-import { summarizeSubagentStatuses } from "@t3tools/client-runtime/state/subagent-display";
-import { isActiveSubagentStatus } from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/client-runtime/state/provider-instance-display";
+import { summarizeSubagentStatuses } from "@d4research/client-runtime/state/subagent-display";
+import { isActiveSubagentStatus } from "@d4research/client-runtime/state/subagentRuntime";
 import type {
   EnvironmentId,
   OrchestrationV2Subagent,
   OrchestrationV2TurnItem,
   ServerConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Pressable, View, type ColorValue } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";

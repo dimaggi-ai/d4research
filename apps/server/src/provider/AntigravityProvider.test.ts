@@ -8,7 +8,7 @@ import {
   ProviderInstanceId,
   ProviderSetupError,
   type ServerProviderUsageLimits,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -24,8 +24,8 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import type { ServerProvider } from "@t3tools/contracts";
+import type * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
+import type { ServerProvider } from "@d4research/contracts";
 import {
   buildAntigravityModelsFromSession,
   makeAntigravityProvider,

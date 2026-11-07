@@ -4,18 +4,18 @@ import {
   ExecutionEnvironmentDescriptor,
   ORCHESTRATION_PROTOCOL_VERSION,
   PortSchema,
-} from "@t3tools/contracts";
-import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
-import { buildPairingAppLink } from "@t3tools/shared/remote";
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+} from "@d4research/contracts";
+import { resolveWorktreeT3Home } from "@d4research/shared/devHome";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { DEFAULT_SIGNAL_EXPORT } from "@d4research/shared/observability";
+import { buildPairingAppLink } from "@d4research/shared/remote";
+import * as OtelEnvironment from "@d4research/shared/otelEnvironment";
 import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
   ensureTailscaleServe,
   readTailscaleStatus,
-} from "@t3tools/tailscale";
+} from "@d4research/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -89,7 +89,7 @@ export class IncompatibleServerProtocolError extends Schema.TaggedError<Incompat
   override get message(): string {
     return [
       `The running T3 Code server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
-      `Pair with the matching CLI instead: \`npx t3@${this.serverVersion} pair\`.`,
+      `Pair with the matching CLI instead: \`npx d4research@${this.serverVersion} pair\`.`,
     ].join("\n");
   }
 }

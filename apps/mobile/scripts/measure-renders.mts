@@ -16,7 +16,7 @@ import {
   ThreadId,
   WsRpcGroup,
   type OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Console from "effect/Console";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -85,7 +85,7 @@ const connectInspector = Effect.fn("measure.connectInspector")(function* (metro:
   const targets = yield* http
     .get(`${metro}/json/list`)
     .pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(InspectorTargets)));
-  const target = targets.find((entry) => entry.appId.startsWith("com.t3tools.t3code"));
+  const target = targets.find((entry) => entry.appId.startsWith("ai.dimaggi.d4research"));
   if (!target)
     return yield* new MeasureError({ message: `No T3 Code app is attached to Metro at ${metro}.` });
   // Expo closes inspector sockets unless Origin matches Metro's advertised URL; pass that URL as --metro.

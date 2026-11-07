@@ -5,8 +5,8 @@ import {
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -24,7 +24,7 @@ import {
   CLI_RELEASE_BASE_URL_ENV,
   cliReleaseChannelOf,
   crossesReleaseTrack,
-} from "@t3tools/shared/cliRelease";
+} from "@d4research/shared/cliRelease";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
@@ -72,7 +72,7 @@ export class ServerSelfUpdate extends Context.Service<
       onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("t3/cloud/selfUpdate/ServerSelfUpdate") {}
+>()("d4research/cloud/selfUpdate/ServerSelfUpdate") {}
 
 /**
  * A server starting from the runtime its launcher settled on means runtimes left by earlier
@@ -115,10 +115,10 @@ export function trackSwitchBlockReason(input: {
   if (!crossesReleaseTrack(input.serverVersion, input.targetVersion)) return null;
   const databaseMigration = input.databaseMigration();
   if (input.targetDatabaseMigration === undefined || databaseMigration === undefined) {
-    return `Cannot confirm this database works with t3@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
+    return `Cannot confirm this database works with d4research@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
   }
   return input.targetDatabaseMigration < databaseMigration
-    ? `This database has changes t3@${input.targetVersion} does not support yet; it stays on this release.`
+    ? `This database has changes d4research@${input.targetVersion} does not support yet; it stays on this release.`
     : null;
 }
 
@@ -287,10 +287,10 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
             ? failWith(error.reason, error)
             : mirror !== undefined && isUnpublishedRelease(error)
               ? failWith(
-                  `${mirror.organization}'s update mirror has no t3@${targetVersion} for this machine.`,
+                  `${mirror.organization}'s update mirror has no d4research@${targetVersion} for this machine.`,
                   error,
                 )
-              : failWith(`Could not prepare t3@${targetVersion}.`, error),
+              : failWith(`Could not prepare d4research@${targetVersion}.`, error),
         ),
       );
 

@@ -2,12 +2,12 @@ import type {
   AuthClientMetadata,
   AuthClientMetadataDeviceType,
   AuthClientPresentationMetadata,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Digest is effectful; the cookie name stays a plain function.
 import * as NodeCrypto from "node:crypto";
 import * as NodeNet from "node:net";
-import { normalizeHostname } from "@t3tools/shared/hostClassification";
+import { normalizeHostname } from "@d4research/shared/hostClassification";
 import * as Mac from "effect/crypto/Mac";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Result from "effect/Result";

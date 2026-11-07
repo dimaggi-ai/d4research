@@ -8,11 +8,11 @@ import { useNavigation } from "@react-navigation/native";
 import { useMemo, useState } from "react";
 import { Platform } from "react-native";
 
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import {
   pickableProjectGroups,
   resolveScratchProjectScopeKey,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 
 import { useProjects } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";

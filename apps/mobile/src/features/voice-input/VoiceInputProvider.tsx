@@ -20,7 +20,7 @@ import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   voiceInputBlocksSubmission,
   type VoiceTranscriber,
-} from "@t3tools/client-runtime/voice-input";
+} from "@d4research/client-runtime/voice-input";
 import { createLazyVoiceRecorder } from "./lazyVoiceRecorder";
 import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 import { VoiceInputSession } from "./voiceInputSession";

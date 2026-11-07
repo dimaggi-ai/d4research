@@ -16,8 +16,8 @@ import {
   replaceCatalogValue,
   Persistence,
   makeStoredShellSnapshotEncoder,
-} from "@t3tools/client-runtime/platform";
-import { TokenStore } from "@t3tools/client-runtime/authorization";
+} from "@d4research/client-runtime/platform";
+import { TokenStore } from "@d4research/client-runtime/authorization";
 import {
   ConnectionTransientError,
   ConnectionBlockedError,
@@ -27,9 +27,9 @@ import {
   StoredPullRequestRoutingPermission,
   pullRequestRoutingConnectionKey,
   pullRequestRoutingPermissionFor,
-} from "@t3tools/client-runtime/connection";
-import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
-import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
+} from "@d4research/client-runtime/connection";
+import { EnvironmentQueryStore } from "@d4research/client-runtime/state/query-persistence";
+import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

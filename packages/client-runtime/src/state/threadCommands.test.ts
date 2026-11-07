@@ -11,7 +11,7 @@ import {
   ThreadId,
   type OrchestrationV2Command,
   type OrchestrationV2ShellSnapshot,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";

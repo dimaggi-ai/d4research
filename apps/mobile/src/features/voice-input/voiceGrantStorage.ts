@@ -1,4 +1,4 @@
-import { VoiceTranscriptionDestination } from "@t3tools/contracts";
+import { VoiceTranscriptionDestination } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { File, Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";

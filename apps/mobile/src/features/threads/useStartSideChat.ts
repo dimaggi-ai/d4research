@@ -1,11 +1,11 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { deriveThreadTitleSeed } from "@d4research/client-runtime/operations";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import { MessageId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import { MessageId, ThreadId, type ScopedThreadRef } from "@d4research/contracts";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { uuidv4 } from "../../lib/uuid";

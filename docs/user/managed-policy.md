@@ -48,7 +48,7 @@ Use one of these per machine:
 
 | OS      | Native policy                                                                                        | Policy file                                       |
 | ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| macOS   | Configuration profile for `com.t3tools.t3code`                                                       | `/Library/Application Support/T3Code/policy.json` |
+| macOS   | Configuration profile for `ai.dimaggi.d4research`                                                       | `/Library/Application Support/T3Code/policy.json` |
 | Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\T3Tools\T3Code`) | `C:\Program Files\T3Code\policy.json`             |
 | Linux   |                                                                                                      | `/etc/t3code/policy.json`                         |
 
@@ -59,10 +59,10 @@ refuses to start until you remove one.
 administrators.
 
 **macOS configuration profile.** Add a custom settings payload for the preference domain
-`com.t3tools.t3code`. The payload's keys are the policy's top-level keys (`schemaVersion`,
+`ai.dimaggi.d4research`. The payload's keys are the policy's top-level keys (`schemaVersion`,
 `organization`, `supportUrl`, `settings`, `limits`); JSON objects become dictionaries and lists
 become arrays. To make the payload from a policy file you checked, run
-`plutil -convert xml1 -o com.t3tools.t3code.plist policy.json` and upload the result, or run
+`plutil -convert xml1 -o ai.dimaggi.d4research.plist policy.json` and upload the result, or run
 `t3 policy templates <directory> --policy policy.json` to write a complete
 `macos/t3code.mobileconfig`. Install it as
 a device profile, since T3 Code ignores user profiles, and deploy only one profile for this domain.
@@ -217,7 +217,7 @@ The limit decides which modes T3 Code asks the provider for. It is not a sandbox
 `clients` lists how the server may run:
 
 - `desktop`: as the desktop app's own server.
-- `local-browser`: as a server only browsers on this machine reach, such as `npx t3`.
+- `local-browser`: as a server only browsers on this machine reach, such as `npx d4research`.
 - `remote`: reachable from phones, other computers, and app.t3.codes over the network.
 
 `remote` is the line that matters. A server reachable from the network also accepts browsers on

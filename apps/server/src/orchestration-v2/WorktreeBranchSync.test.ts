@@ -3,7 +3,7 @@ import {
   ThreadId,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ServerCommand,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Stream from "effect/Stream";
 import * as Effect from "effect/Effect";
@@ -28,13 +28,13 @@ it.effect.each([false, true])(
       schemaVersion: 2,
       snapshotSequence: 0,
       threads: [
-        thread("generated", "t3/unify-converter-branches", "/worktree"),
-        thread("shared", "t3/bfc349ae", "/link/worktree"),
+        thread("generated", "d4research/unify-converter-branches", "/worktree"),
+        thread("shared", "d4research/bfc349ae", "/link/worktree"),
         thread("current", "union", "/worktree"),
         thread("root", "main", null),
         thread("other", "feature", "/other"),
       ],
-      archivedThreads: [thread("archived", "t3/bfc349ae", "/worktree")],
+      archivedThreads: [thread("archived", "d4research/bfc349ae", "/worktree")],
     };
     return Effect.gen(function* () {
       yield* Layer.build(WorktreeBranchSync.layer);
@@ -51,9 +51,9 @@ it.effect.each([false, true])(
           ];
         }),
         [
-          ["generated", "union", "t3/unify-converter-branches", "/worktree"],
-          ["shared", "union", "t3/bfc349ae", "/link/worktree"],
-          ["archived", "union", "t3/bfc349ae", "/worktree"],
+          ["generated", "union", "d4research/unify-converter-branches", "/worktree"],
+          ["shared", "union", "d4research/bfc349ae", "/link/worktree"],
+          ["archived", "union", "d4research/bfc349ae", "/worktree"],
         ],
       );
     }).pipe(
@@ -73,7 +73,7 @@ it.effect.each([false, true])(
               ),
           }),
           Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
-            streamBranchChanges: Stream.fromIterable([null, "t3/bfc349ae", "union"]).pipe(
+            streamBranchChanges: Stream.fromIterable([null, "d4research/bfc349ae", "union"]).pipe(
               Stream.map((refName) => ({
                 cwd: "/worktree",
                 refName,

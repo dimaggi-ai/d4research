@@ -9,7 +9,7 @@ import { AdaptiveWorkspaceContext, useAdaptiveWorkspaceLayout } from "./adaptive
 import { threadSelectionDeferral } from "./deferred-navigation";
 import { uuidv4 } from "../../lib/uuid";
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
-import { EnvironmentId, ThreadId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type SidebarProjectGroupingMode } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { NavigationContext, NavigationRouteContext, useNavigation } from "@react-navigation/native";
 import {

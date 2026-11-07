@@ -1,4 +1,4 @@
-import type { T3Highlights } from "@t3tools/mobile-highlights-native";
+import type { T3Highlights } from "@d4research/mobile-highlights-native";
 import { NitroModules } from "react-native-nitro-modules";
 
 import { highlightLanguageId } from "./highlightLanguage";

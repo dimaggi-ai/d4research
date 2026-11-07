@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { ProviderInstanceId } from "@t3tools/contracts";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type { ProviderInstanceId } from "@d4research/contracts";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";

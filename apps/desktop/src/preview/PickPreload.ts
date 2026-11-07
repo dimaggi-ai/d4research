@@ -1,7 +1,7 @@
 // @effect-diagnostics globalDate:off globalTimers:off - This isolated Electron preload does not run inside an Effect runtime.
 import { ipcRenderer } from "electron";
 import { getElementContext } from "react-grab/primitives";
-import { matchesKeybindingShortcut } from "@t3tools/shared/keybindingMatching";
+import { matchesKeybindingShortcut } from "@d4research/shared/keybindingMatching";
 import type {
   DesktopPreviewAnnotationTheme,
   DesktopPreviewAnnotationVoiceConfig,
@@ -16,7 +16,7 @@ import type {
   PreviewAnnotationStrokeTarget,
   PreviewAnnotationStyleChange,
   PreviewAnnotationSubmission,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { createAnnotationIdSource } from "./AnnotationIds.ts";
 import { resolveAnnotationSubmission } from "./AnnotationKeyboard.ts";

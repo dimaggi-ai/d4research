@@ -8,7 +8,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { assert, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -19,8 +19,8 @@ import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
-import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import { AgentScope } from "@t3tools/shared/AgentScope";
+import * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
+import { AgentScope } from "@d4research/shared/AgentScope";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));

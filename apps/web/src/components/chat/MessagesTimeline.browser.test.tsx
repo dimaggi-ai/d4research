@@ -15,7 +15,7 @@ import {
   ScheduledTaskId,
   ThreadId,
   type OrchestrationV2Subagent,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import {
   createRef,
@@ -41,7 +41,7 @@ import {
   deriveTimelineEntriesFromVisibleTurnItems,
 } from "../../session-logic";
 import { remarkThoughtPreview } from "./TimelineWorkEntryRow.logic";
-import { parseMarkdownWithMath } from "@t3tools/shared/markdownMath";
+import { parseMarkdownWithMath } from "@d4research/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
 import { toastManager } from "../ui/toast";
 import type { CitedHistory } from "./citationProcedure";
@@ -50,8 +50,8 @@ import { rememberTimelinePosition } from "./timelineScrollAnchoring";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   decodeComposerContextFragment,
-} from "@t3tools/shared/composerContextClipboard";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+} from "@d4research/shared/composerContextClipboard";
+import { collectComposerContextReferences } from "@d4research/shared/composerContextReferences";
 
 const environmentQuery = vi.hoisted(() => ({
   error: "Pull request not found",

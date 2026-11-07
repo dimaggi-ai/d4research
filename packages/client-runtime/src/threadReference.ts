@@ -2,9 +2,9 @@ import type {
   ComposerContextClipboardFragment,
   ScopedThreadRef,
   ThreadPullRequestLink,
-} from "@t3tools/contracts";
-import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
-import { hostedThreadLink } from "@t3tools/shared/threadLinks";
+} from "@d4research/contracts";
+import { threadContextRecord } from "@d4research/shared/composerContextReferences";
+import { hostedThreadLink } from "@d4research/shared/threadLinks";
 
 import { resolveThreadCurrentPullRequestLink } from "./threadPullRequests.ts";
 

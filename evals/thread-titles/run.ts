@@ -5,7 +5,7 @@ import * as NodeCrypto from "node:crypto";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
+import { CodexSettings, ProviderInstanceId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Duration from "effect/Duration";
@@ -17,7 +17,7 @@ import { threadTitleEvaluationCases } from "./cases.ts";
 import {
   formatThreadTitleContext,
   type ThreadTitleMessage,
-} from "@t3tools/provider-core/server/threadTitleContext";
+} from "@d4research/provider-core/server/threadTitleContext";
 import * as ThreadTitleLinks from "../../apps/server/src/textGeneration/ThreadTitleLinks.ts";
 import * as SourceControlProviderRegistry from "../../apps/server/src/sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlBuiltInDrivers from "../../apps/server/src/sourceControl/builtInDrivers.ts";

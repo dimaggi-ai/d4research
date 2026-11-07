@@ -4,7 +4,7 @@ import type {
   SourceControlSignInError,
   SourceControlSignInPrompt,
   SourceControlSignInResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";

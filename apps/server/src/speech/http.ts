@@ -1,4 +1,4 @@
-import { decodeSpeechPcmRequest } from "@t3tools/shared/speech";
+import { decodeSpeechPcmRequest } from "@d4research/shared/speech";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -6,7 +6,7 @@ import {
   EnvironmentHttpApi,
   EnvironmentVoiceBodyLimit,
   SPEECH_MAX_OPTIONS_BYTES,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

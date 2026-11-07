@@ -1,20 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
-import { visibleLinkedThreads } from "@t3tools/client-runtime/state/threads";
+import { visibleLinkedThreads } from "@d4research/client-runtime/state/threads";
 import { AsyncResult } from "effect/reactivity";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Dialog from "../../components/ui/Dialog";
 import { useNavigationState, useRoute } from "@react-navigation/native";
-import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   ThreadId,
   type PullRequestDetail,
   type PullRequestLinkedThreadsResult,
-} from "@t3tools/contracts";
-import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
+} from "@d4research/contracts";
+import { formatComposerContextReference } from "@d4research/shared/composerContextReferences";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { normalizeThreadPullRequestKey } from "@d4research/client-runtime/thread-pull-requests";
 import { useRef, useState } from "react";
 import { useOpenWorkspaceDetail } from "../layout/useOpenWorkspaceDetail";
 import { pullRequestComposerContext } from "../../lib/composerContext";

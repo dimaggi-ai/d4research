@@ -2,7 +2,7 @@ import {
   ManagedPolicyClient,
   ManagedPolicyDocument,
   SERVER_EXIT_CODE_MANAGED_POLICY,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -96,7 +96,7 @@ export const readManagedPolicyFile = Effect.fn("readManagedPolicyFile")(function
 
 /** Where a configuration profile's managed preferences land on macOS. */
 export const MACOS_MANAGED_PREFERENCES_PATH =
-  "/Library/Managed Preferences/com.t3tools.t3code.plist";
+  "/Library/Managed Preferences/ai.dimaggi.d4research.plist";
 const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\T3Tools\\T3Code";
 /**
  * The registry key Group Policy and Intune write to on Windows. It holds either the Group Policy
@@ -172,7 +172,7 @@ export class WindowsRegistry extends Context.Service<
       subkey: string,
     ) => Effect.Effect<RegistryKey | undefined, WindowsRegistryError>;
   }
->()("@t3tools/shared/managedPolicyFile/WindowsRegistry") {}
+>()("@d4research/shared/managedPolicyFile/WindowsRegistry") {}
 
 // (HKEY)(LONG)0x80000002, sign-extended to 64 bits.
 const HKEY_LOCAL_MACHINE = -0x7ffffffen;

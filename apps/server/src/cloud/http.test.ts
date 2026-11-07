@@ -7,11 +7,11 @@ import {
   AuthTokenExchangeGrantType,
   EnvironmentHttpApi,
   EnvironmentId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   RelayEnvironmentLinkProofPayload,
   type RelayLinkProofRequest,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
@@ -23,7 +23,7 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as NetAddress from "effect/net/NetAddress";
-import { decodeRelayJwt, RELAY_LINK_PROOF_TYP, verifyRelayJwt } from "@t3tools/shared/relayJwt";
+import { decodeRelayJwt, RELAY_LINK_PROOF_TYP, verifyRelayJwt } from "@d4research/shared/relayJwt";
 
 import * as EnvironmentKeys from "./environmentKeys.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";

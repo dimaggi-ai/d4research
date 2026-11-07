@@ -1,7 +1,7 @@
-import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
-import { RotatingFileSink, RotatingFileSinkError } from "@t3tools/shared/logging";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as RelayClient from "@t3tools/shared/relayClient";
+import type { RelayManagedEndpointRuntimeConfig } from "@d4research/contracts/relay";
+import { RotatingFileSink, RotatingFileSinkError } from "@d4research/shared/logging";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as RelayClient from "@d4research/shared/relayClient";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -85,7 +85,7 @@ export class CloudManagedEndpointRuntime extends Context.Service<
     readonly tunnelConnected: Stream.Stream<void>;
     readonly withLinkStateLock: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   }
->()("t3/cloud/ManagedEndpointRuntime/CloudManagedEndpointRuntime") {}
+>()("d4research/cloud/ManagedEndpointRuntime/CloudManagedEndpointRuntime") {}
 
 interface ActiveConnector {
   readonly child: ChildProcessSpawner.ChildProcessHandle;

@@ -7,7 +7,7 @@ import * as NodePath from "node:path";
 import * as NodeZlib from "node:zlib";
 
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest";
-import { totalTokens, type TranscriptUsageFormat } from "@t3tools/provider-core/server/usage";
+import { totalTokens, type TranscriptUsageFormat } from "@d4research/provider-core/server/usage";
 import * as Schema from "effect/Schema";
 
 import { TEST_FORMATS } from "./usageTestFormats.ts";

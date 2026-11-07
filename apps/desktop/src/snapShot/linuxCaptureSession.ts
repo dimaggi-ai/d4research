@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Reads portal-owned screenshot files at the native boundary.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeURL from "node:url";
-import type { SnapShotKeyChord } from "@t3tools/contracts";
+import type { SnapShotKeyChord } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { nativeImage } from "electron";
 

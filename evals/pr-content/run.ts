@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import * as NodeUtil from "node:util";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
+import { CodexSettings, ProviderInstanceId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";

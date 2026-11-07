@@ -3,10 +3,10 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   makeQueuedRunsAtom,
   queuedRunEditBlockedReason,
-} from "@t3tools/client-runtime/queued-run-edit";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
-import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/queued-run-edit";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { resolveUserMessagePresentation } from "@d4research/client-runtime/user-message";
+import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";

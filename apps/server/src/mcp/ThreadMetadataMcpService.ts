@@ -7,7 +7,7 @@ import {
   type ThreadMetadataMcpUpdateInput,
   type ThreadMetadataMcpUpdateResult,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -26,7 +26,7 @@ export class ThreadMetadataMcpService extends Context.Service<
       input: ThreadMetadataMcpUpdateInput,
     ) => Effect.Effect<ThreadMetadataMcpUpdateResult, OrchestratorMcpFailure>;
   }
->()("t3/mcp/ThreadMetadataMcpService") {}
+>()("d4research/mcp/ThreadMetadataMcpService") {}
 
 function failure(code: OrchestratorMcpFailure["code"], message: string): OrchestratorMcpFailure {
   return new OrchestratorMcpFailure({ code, message });

@@ -10,17 +10,17 @@ import {
   type DeviceSummary,
   type ServerSettings as Settings,
   type SshDeviceHostConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NetService from "@t3tools/shared/Net";
-import { SshCommandError } from "@t3tools/ssh/errors";
+import * as NetService from "@d4research/shared/Net";
+import { SshCommandError } from "@d4research/ssh/errors";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import * as SecretResolver from "@d4research/secret-provider-core/server/SecretResolver";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -37,7 +37,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
-import { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
+import { NodeRuntimeUnavailableError } from "@d4research/shared/nodeRuntime";
 
 import * as DeviceService from "./DeviceService.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";

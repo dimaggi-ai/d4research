@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { assert, it } from "@effect/vitest";
-import { ProviderInstanceId, type ProviderAuthState } from "@t3tools/contracts";
+import { ProviderInstanceId, type ProviderAuthState } from "@d4research/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
 import * as Deferred from "effect/Deferred";
 import * as Cause from "effect/Cause";
@@ -13,10 +13,10 @@ import * as Stream from "effect/Stream";
 import type * as AcpSchema from "effect-acp/compat";
 import { AcpRequestError } from "effect-acp/errors";
 
-import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
+import * as PtyAdapter from "@d4research/shared/PtyAdapter";
 import { formatFailureDetail, makeAcpRegistryAuth } from "./auth.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import type * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
 const instanceId = ProviderInstanceId.make("acp-auth-test");

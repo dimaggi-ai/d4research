@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import {
   RelayDeliveryKind as RelayDeliveryKindSchema,
   type RelayDeliveryResult,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 
 import {
   sanitizeAgentActivityAggregateState,

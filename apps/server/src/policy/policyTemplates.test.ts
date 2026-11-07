@@ -3,7 +3,7 @@ import {
   WINDOWS_POLICY_GROUPS,
   WINDOWS_POLICY_LISTS,
   WINDOWS_POLICY_VALUES,
-} from "@t3tools/shared/managedPolicyFile";
+} from "@d4research/shared/managedPolicyFile";
 
 import { macosProfile, windowsAdmx } from "./policyTemplates.ts";
 

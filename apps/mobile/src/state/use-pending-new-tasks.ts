@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { threadKey } from "@t3tools/client-runtime/state/entities";
+import { threadKey } from "@d4research/client-runtime/state/entities";
 import { buildPendingNewTasks, type PendingNewTask } from "./pending-new-tasks-model";
 import { flattenQueuedThreadMessages } from "./thread-outbox-model";
 import { environmentThreadShells } from "./threads";

@@ -3,7 +3,7 @@ import {
   VOICE_RECORDING_LIMIT_SECONDS,
   throwIfVoiceTranscriptionAborted,
   type VoiceTranscriber,
-} from "@t3tools/client-runtime/voice-input";
+} from "@d4research/client-runtime/voice-input";
 
 const pcmBytesPerSecond = 16_000 * 2;
 const maxPcmBytes = pcmBytesPerSecond * VOICE_RECORDING_LIMIT_SECONDS;

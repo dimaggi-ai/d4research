@@ -12,13 +12,13 @@ import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
-import { EnvironmentId } from "@t3tools/contracts";
-import { RelayApi, type RelayHookDeliveryProofPayload } from "@t3tools/contracts/relay";
+import { EnvironmentId } from "@d4research/contracts";
+import { RelayApi, type RelayHookDeliveryProofPayload } from "@d4research/contracts/relay";
 import {
   normalizeRelayIssuer,
   RELAY_HOOK_DELIVERY_HEADER,
   RELAY_HOOK_DELIVERY_TYP,
-} from "@t3tools/shared/relayJwt";
+} from "@d4research/shared/relayJwt";
 
 import * as RelayConfiguration from "../Config.ts";
 import * as CloudMintSigner from "../auth/CloudMintSigner.ts";

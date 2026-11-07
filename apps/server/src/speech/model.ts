@@ -1,4 +1,4 @@
-import type { EnvironmentSpeechModel } from "@t3tools/contracts";
+import type { EnvironmentSpeechModel } from "@d4research/contracts";
 import catalog from "./catalog.json" with { type: "json" };
 
 export type SpeechModel = {
@@ -30,4 +30,4 @@ export const DEFAULT_SPEECH_MODEL_ID = "handy-computer/parakeet-unified-en-0.6b-
 export const getSpeechModel = (modelId: string): SpeechModel | undefined =>
   SPEECH_MODELS.find((model) => model.id === modelId);
 
-export { effectiveSpeechLanguage } from "@t3tools/shared/speech";
+export { effectiveSpeechLanguage } from "@d4research/shared/speech";

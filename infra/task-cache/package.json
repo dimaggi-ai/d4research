@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/task-cache",
+  "name": "@d4research/task-cache",
   "private": true,
   "type": "module",
   "scripts": {

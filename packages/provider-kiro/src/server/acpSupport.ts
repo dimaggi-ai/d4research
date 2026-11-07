@@ -1,5 +1,5 @@
 import type * as EffectAcpSchema from "effect-acp/compat";
-import type { ProviderApprovalOption, RuntimeMode } from "@t3tools/contracts";
+import type { ProviderApprovalOption, RuntimeMode } from "@d4research/contracts";
 import type { KiroSettings } from "../settings.ts";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -12,8 +12,8 @@ import {
   acpPermissionDisposition,
   type AcpPermissionDisposition,
   type AcpRuntimePolicy,
-} from "@t3tools/provider-acp/server/clientPolicy";
-import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+} from "@d4research/provider-acp/server/clientPolicy";
+import * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 /**
  * Kiro's default engine is a v2 server this driver does not speak, so V3 is

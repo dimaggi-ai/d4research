@@ -11,14 +11,14 @@ import {
   type ModelSelection,
   type OrchestrationV2ThreadProjection,
   type ServerConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   v2Now,
   v2Projection,
 } from "../../../../packages/client-runtime/src/state/orchestrationV2TestFixtures";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
-import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
-import { sendApprovalFeedback } from "@t3tools/client-runtime/state/thread-requests";
+import type { PendingThreadRequests } from "@d4research/client-runtime/state/thread-requests";
+import { sendApprovalFeedback } from "@d4research/client-runtime/state/thread-requests";
 import { DateTime } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -75,8 +75,8 @@ vi.mock("react", () => ({
   ],
 }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
-vi.mock("@t3tools/client-runtime/state/context-window", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/context-window")>()),
+vi.mock("@d4research/client-runtime/state/context-window", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@d4research/client-runtime/state/context-window")>()),
   shouldCompactBeforeSend: () => state.compactDue,
 }));
 vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: vi.fn() }));

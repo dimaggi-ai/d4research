@@ -1,5 +1,5 @@
 /** Instances sharing a login directory share credits; serialize redemptions on that directory. */
-import type { ProviderConsumeResetCreditOutcome } from "@t3tools/contracts";
+import type { ProviderConsumeResetCreditOutcome } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -23,7 +23,7 @@ export class ResetCreditCoordinator extends Context.Service<
       isSettled?: (error: E) => boolean,
     ) => Effect.Effect<ProviderConsumeResetCreditOutcome, E | PlatformError.PlatformError, R>;
   }
->()("t3/provider/resetCreditCoordinator") {}
+>()("d4research/provider/resetCreditCoordinator") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

@@ -1,4 +1,4 @@
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -36,7 +36,7 @@ export interface ProjectionMaintenanceV2Shape {
 export class ProjectionMaintenanceV2 extends Context.Service<
   ProjectionMaintenanceV2,
   ProjectionMaintenanceV2Shape
->()("t3/orchestration-v2/ProjectionMaintenance/ProjectionMaintenanceV2") {}
+>()("d4research/orchestration-v2/ProjectionMaintenance/ProjectionMaintenanceV2") {}
 
 // Reconnect replay and command-id retries read this tail; older cursors resync from a snapshot.
 const RETAINED_EVENT_HISTORY = Duration.days(1);

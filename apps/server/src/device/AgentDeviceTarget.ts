@@ -1,4 +1,4 @@
-import { DeviceOperationError } from "@t3tools/contracts";
+import { DeviceOperationError } from "@d4research/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

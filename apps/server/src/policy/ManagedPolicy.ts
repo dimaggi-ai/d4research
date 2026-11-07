@@ -6,7 +6,7 @@
  */
 import * as NodeModule from "node:module";
 
-import { ManagedPolicyDocument, type ManagedPolicySummary } from "@t3tools/contracts";
+import { ManagedPolicyDocument, type ManagedPolicySummary } from "@d4research/contracts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -16,14 +16,14 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   ManagedPolicyFileError,
   managedPolicyPath,
   layerWindowsRegistry,
   readManagedPolicy,
   readManagedPolicyFile,
-} from "@t3tools/shared/managedPolicyFile";
+} from "@d4research/shared/managedPolicyFile";
 
 import { telemetryChannel } from "../config.ts";
 import * as ManagedLimits from "./managedLimits.ts";
@@ -41,7 +41,7 @@ export class ManagedPolicy extends Context.Service<
     /** What clients are told; absent when no policy applies. */
     readonly summary: ManagedPolicySummary | undefined;
   }
->()("t3/policy/ManagedPolicy") {}
+>()("d4research/policy/ManagedPolicy") {}
 
 type LimitsSummary = NonNullable<ManagedPolicySummary["limits"]>;
 

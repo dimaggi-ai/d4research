@@ -1,4 +1,4 @@
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Console from "effect/Console";
@@ -141,7 +141,7 @@ const formatSetup = (setup: Setup) => {
       !service.supported
         ? "unavailable"
         : service.installed
-          ? `installed · t3@${service.installedVersion ?? packageJson.version}`
+          ? `installed · d4research@${service.installedVersion ?? packageJson.version}`
           : "not installed",
     ],
     ...(setup.connect === null
@@ -367,7 +367,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     yield* printServeCommand("Background service unavailable.");
   } else {
     if (newer) {
-      yield* Console.log(`Keeping installed service version t3@${installedVersion}.`);
+      yield* Console.log(`Keeping installed service version d4research@${installedVersion}.`);
     }
     if (update && !interactive) {
       yield* Console.log("Updating T3 Code. Running agent turns will stop.");

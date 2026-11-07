@@ -1,4 +1,4 @@
-import { isListedThreadLineage } from "@t3tools/contracts";
+import { isListedThreadLineage } from "@d4research/contracts";
 
 import type { EnvironmentProject, EnvironmentThreadShell } from "./models.ts";
 

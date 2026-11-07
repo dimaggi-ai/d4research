@@ -1,14 +1,14 @@
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { limitRecoveryOwnsSnooze } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import { limitRecoveryOwnsSnooze } from "@d4research/client-runtime/state/thread-execution";
+import type { EnvironmentId } from "@d4research/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_USAGE_URL,
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";

@@ -10,17 +10,17 @@ import {
   type LinkRequestItem,
   linkRequestTargetName,
   rankMachinesByHint,
-} from "@t3tools/client-runtime/link-request";
+} from "@d4research/client-runtime/link-request";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   AuthAccessWriteScope,
   type AuthMcpClientAccess,
   type EnvironmentId,
   type OrchestrationV2ProjectedTurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { useMemo, useRef, useState } from "react";

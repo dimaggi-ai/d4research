@@ -3,8 +3,8 @@ import {
   EnvironmentId,
   makeProviderSettingsSchema,
   SourceControlProviderKind,
-} from "@t3tools/contracts";
-import { UNKNOWN_SOURCE_CONTROL_CLIENT } from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/contracts";
+import { UNKNOWN_SOURCE_CONTROL_CLIENT } from "@d4research/client-runtime/source-control-clients";
 import * as Schema from "effect/Schema";
 
 import {

@@ -1,10 +1,10 @@
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
+import type { ChangeRequestTerminology } from "@d4research/client-runtime/source-control-clients";
 import {
   EnvironmentId,
   ProjectId,
   type PullRequestListEntry,
   type PullRequestSummary,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomRefresh } from "@effect/atom-react";
 import { useLayoutEffect, useMemo, useState } from "react";
 

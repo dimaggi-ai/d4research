@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the tool-call normalizer is synchronous
 import * as NodeFS from "node:fs";
 
-import { PositiveInt } from "@t3tools/contracts";
+import { PositiveInt } from "@d4research/contracts";
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch, type StructuredPatchHunk } from "diff";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";

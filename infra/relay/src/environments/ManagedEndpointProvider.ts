@@ -18,7 +18,7 @@ import type {
   RelayManagedEndpoint,
   RelayManagedEndpointOrigin,
   RelayManagedEndpointRuntimeConfig,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 
 import * as RelayConfiguration from "../Config.ts";
 import {

@@ -1,28 +1,28 @@
-import { ProviderDriverKind, TextGenerationError } from "@t3tools/contracts";
+import { ProviderDriverKind, TextGenerationError } from "@d4research/contracts";
 import { KiroSettings } from "../settings.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import type * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
   type ProviderInstance,
-} from "@t3tools/provider-core/server/driver";
-import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { withInstanceIdentity } from "@t3tools/provider-core/server/instanceIdentity";
-import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
-import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+} from "@d4research/provider-core/server/driver";
+import { ProviderDriverError } from "@d4research/provider-core/server/errors";
+import { mergeProviderInstanceEnvironment } from "@d4research/provider-core/server/instanceEnvironment";
+import { withInstanceIdentity } from "@d4research/provider-core/server/instanceIdentity";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "@d4research/provider-core/server/maintenanceResolver";
+import { makeManagedServerProvider } from "@d4research/provider-core/server/managedProvider";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
-} from "@t3tools/provider-core/server/snapshotSettings";
-import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
+} from "@d4research/provider-core/server/snapshotSettings";
+import type { ProviderTextGeneration } from "@d4research/provider-core/server/textGeneration";
 import { type KiroAdapterV2DriverEnv, makeKiroAdapterV2Driver } from "./adapter.ts";
 import {
   buildInitialKiroProviderSnapshot,

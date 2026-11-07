@@ -25,7 +25,7 @@ import {
   ScheduledTaskId,
   type ServerProvider,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
@@ -57,7 +57,7 @@ import { ClaudeProviderCapabilitiesV2 } from "./Adapters/ClaudeAdapterV2.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -65,7 +65,7 @@ import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 
 const projectId = ProjectId.make("project:launch-test");
 const otherProjectId = ProjectId.make("project:launch-other");
@@ -2397,10 +2397,10 @@ it.effect.each([0, 1])("releases an async setup before its completion with exit 
 );
 
 it.effect.each([
-  { name: "is missing", baseRef: "t3/renamed", startFromOrigin: false, origin: true },
+  { name: "is missing", baseRef: "d4research/renamed", startFromOrigin: false, origin: true },
   {
     name: "has no origin to come from",
-    baseRef: "t3/renamed",
+    baseRef: "d4research/renamed",
     startFromOrigin: true,
     origin: false,
   },

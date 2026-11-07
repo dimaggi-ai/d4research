@@ -1,4 +1,4 @@
-import type { EnvironmentId, SecretReference, UnifiedSettings } from "@t3tools/contracts";
+import type { EnvironmentId, SecretReference, UnifiedSettings } from "@d4research/contracts";
 import { useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";

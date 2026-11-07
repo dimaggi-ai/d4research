@@ -1,10 +1,10 @@
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import type { ManagedPolicyDocument } from "@d4research/contracts";
 import {
   WINDOWS_POLICY_KEY,
   WINDOWS_POLICY_GROUPS,
   WINDOWS_POLICY_LISTS,
   WINDOWS_POLICY_VALUES,
-} from "@t3tools/shared/managedPolicyFile";
+} from "@d4research/shared/managedPolicyFile";
 
 import { knownDriverLabels } from "./managedProviders.ts";
 
@@ -337,7 +337,7 @@ const nullPath = (
   return undefined;
 };
 
-/** A device configuration profile that installs `document` for `com.t3tools.t3code`. */
+/** A device configuration profile that installs `document` for `ai.dimaggi.d4research`. */
 export function macosProfile(
   document: ManagedPolicyDocument,
   uuids: { readonly profile: string; readonly payload: string },
@@ -358,8 +358,8 @@ export function macosProfile(
     PayloadContent: [
       {
         PayloadDisplayName: "T3 Code policy",
-        PayloadIdentifier: `com.t3tools.t3code.policy.${uuids.payload}`,
-        PayloadType: "com.t3tools.t3code",
+        PayloadIdentifier: `ai.dimaggi.d4research.policy.${uuids.payload}`,
+        PayloadType: "ai.dimaggi.d4research",
         PayloadUUID: uuids.payload,
         PayloadVersion: 1,
         ...document,
@@ -367,7 +367,7 @@ export function macosProfile(
     ],
     PayloadDescription: "Configures T3 Code for every user on this Mac.",
     PayloadDisplayName: `T3 Code policy for ${document.organization}`,
-    PayloadIdentifier: `com.t3tools.t3code.policy`,
+    PayloadIdentifier: `ai.dimaggi.d4research.policy`,
     PayloadOrganization: document.organization,
     PayloadScope: "System",
     PayloadType: "Configuration",

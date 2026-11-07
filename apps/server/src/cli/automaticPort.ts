@@ -1,4 +1,4 @@
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@d4research/shared/Net";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

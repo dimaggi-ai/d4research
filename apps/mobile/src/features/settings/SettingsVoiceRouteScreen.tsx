@@ -31,7 +31,7 @@ import {
 } from "../voice-input/voiceDestination";
 import { VoiceModelSection } from "./VoiceModelSection";
 import { CloudVoiceSection } from "./CloudVoiceSection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsDragHandle } from "./components/SettingsDragHandle";

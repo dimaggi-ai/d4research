@@ -1,12 +1,12 @@
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import {
   normalizeProviderAccentColor,
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
-} from "@t3tools/client-runtime/state/provider-instance-display";
-import { resolveSubagentMetadata } from "@t3tools/client-runtime/state/subagent-display";
-import { formatSubagentEffort } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentId, OrchestrationV2Subagent } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/provider-instance-display";
+import { resolveSubagentMetadata } from "@d4research/client-runtime/state/subagent-display";
+import { formatSubagentEffort } from "@d4research/client-runtime/state/thread-execution";
+import type { EnvironmentId, OrchestrationV2Subagent } from "@d4research/contracts";
 import type { ReactNode } from "react";
 import { View } from "react-native";
 

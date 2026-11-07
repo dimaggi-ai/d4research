@@ -1,4 +1,4 @@
-import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
+import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@d4research/contracts";
 import { use, useEffect, useRef, useState, type RefObject } from "react";
 
 import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";

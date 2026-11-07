@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import type * as Scope from "effect/Scope";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
 
 import {
   discoverCursorSkills,

@@ -4,8 +4,8 @@ import {
   connectReachabilityHelpUrl,
   type EnvironmentConnectReachability,
   formatConnectReachable,
-} from "@t3tools/contracts";
-import { readTailscaleExitNode, type TailscaleExitNode } from "@t3tools/tailscale";
+} from "@d4research/contracts";
+import { readTailscaleExitNode, type TailscaleExitNode } from "@d4research/tailscale";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -208,7 +208,7 @@ export class ConnectReachability extends Context.Service<
     readonly check: Effect.Effect<EnvironmentConnectReachability>;
     readonly latest: Effect.Effect<Option.Option<EnvironmentConnectReachability>>;
   }
->()("t3/cloud/ConnectReachability") {}
+>()("d4research/cloud/ConnectReachability") {}
 
 const make = Effect.gen(function* () {
   const runtime = yield* ManagedEndpointRuntime.CloudManagedEndpointRuntime;

@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
-import { DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, SecretProviderId } from "@t3tools/contracts";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import { DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, SecretProviderId } from "@d4research/contracts";
+import * as SecretResolver from "@d4research/secret-provider-core/server/SecretResolver";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";

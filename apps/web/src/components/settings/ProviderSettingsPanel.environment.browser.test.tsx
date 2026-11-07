@@ -7,7 +7,7 @@ import {
   type ProviderAuthState,
   type ServerProvider,
   type UnifiedSettings,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Duration from "effect/Duration";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import type { ReactNode } from "react";

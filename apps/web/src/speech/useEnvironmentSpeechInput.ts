@@ -10,9 +10,9 @@ import {
   type VoiceDraftSnapshot,
   type VoiceInputControllerDependencies,
   type VoiceInputState,
-} from "@t3tools/client-runtime/voice-input";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { AuthOrchestrationOperateScope, CLOUD_SPEECH_LABELS } from "@t3tools/contracts";
+} from "@d4research/client-runtime/voice-input";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
+import { AuthOrchestrationOperateScope, CLOUD_SPEECH_LABELS } from "@d4research/contracts";
 import type {
   EnvironmentId,
   EnvironmentSpeechModel,
@@ -21,9 +21,9 @@ import type {
   SpeechPostProcessingOptions,
   SpeechStreamText,
   SpeechTranscriptionOptions,
-} from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { chooseSetupSpeechModel, resolveSpeechVocabulary } from "@t3tools/shared/speech";
+} from "@d4research/contracts";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
+import { chooseSetupSpeechModel, resolveSpeechVocabulary } from "@d4research/shared/speech";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { useEffect, useRef, useState } from "react";

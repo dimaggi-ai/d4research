@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { assert, it, describe } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -33,8 +33,8 @@ import {
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewResult,
   type WorktreeSubmodules,
-} from "@t3tools/contracts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+} from "@d4research/contracts";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
 import * as ServerConfig from "../config.ts";
 import {
   makeGitVcsDriverCore,
@@ -1640,7 +1640,7 @@ it.effect("lets a worktree checkout that is still working run past five minutes"
     const worktreePath = path.join(cwd, "worktree");
 
     const creation = yield* driver
-      .createWorktree({ cwd, refName: "main", newRefName: "t3/slow-checkout", path: worktreePath })
+      .createWorktree({ cwd, refName: "main", newRefName: "d4research/slow-checkout", path: worktreePath })
       .pipe(Effect.forkChild);
     yield* Deferred.await(checkoutStarted);
     yield* TestClock.adjust("6 minutes");
@@ -1648,7 +1648,7 @@ it.effect("lets a worktree checkout that is still working run past five minutes"
 
     const result = yield* Fiber.join(creation);
     assert.equal(result.worktree.path, worktreePath);
-    assert.equal(result.worktree.refName, "t3/slow-checkout");
+    assert.equal(result.worktree.refName, "d4research/slow-checkout");
   }).pipe(
     Effect.provide(
       layerServerConfig.pipe(
@@ -1966,7 +1966,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
                   .createWorktree({
                     cwd,
                     refName,
-                    ...(action === "worktree add -b" ? { newRefName: "t3/new-thread" } : {}),
+                    ...(action === "worktree add -b" ? { newRefName: "d4research/new-thread" } : {}),
                     path: path.join(cwd, "worktree"),
                   })
                   .pipe(Effect.flip);
@@ -3376,7 +3376,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["push", "upstream", "main"]);
         yield* git(cwd, ["fetch", "origin"]);
         yield* git(cwd, ["fetch", "upstream"]);
-        yield* git(cwd, ["checkout", "-b", "t3/temporary"]);
+        yield* git(cwd, ["checkout", "-b", "d4research/temporary"]);
         yield* git(cwd, ["config", "branch.t3/temporary.t3-merge-base", "main"]);
         yield* git(cwd, [
           "config",
@@ -3395,7 +3395,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           Effect.gen(function* () {
             if (ChildProcess.isStandardCommand(command) && command.args[0] === "config") {
               if (!(yield* Ref.getAndSet(renameClaimed, true))) {
-                yield* git(cwd, ["branch", "-m", "t3/temporary", "feature/named"]).pipe(
+                yield* git(cwd, ["branch", "-m", "d4research/temporary", "feature/named"]).pipe(
                   Effect.provideService(GitVcsDriver.GitVcsDriver, outer),
                   Effect.orDie,
                 );
@@ -3413,7 +3413,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
 
-        assert.strictEqual(status.branch, "t3/temporary");
+        assert.strictEqual(status.branch, "d4research/temporary");
         assert.deepStrictEqual(status.branchChanges, {
           baseRef: null,
           insertions: 1,
@@ -4332,7 +4332,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const renamed = yield* driver.renameBranch({
           cwd,
           oldBranch: "t3-abcd1234",
-          newBranch: "t3/fix-login",
+          newBranch: "d4research/fix-login",
         });
 
         assert.equal(renamed.branch, "t3-fix-login-1");
@@ -4352,7 +4352,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const renamed = yield* driver.renameBranch({
           cwd,
           oldBranch: "t3-abcd1234",
-          newBranch: "t3/fix-login",
+          newBranch: "d4research/fix-login",
         });
 
         assert.equal(renamed.branch, "t3-fix-login-1");
@@ -4603,20 +4603,20 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             cwd,
             path: occupiedPath,
             refName: initialBranch,
-            newRefName: "t3/collide",
+            newRefName: "d4research/collide",
           })
           .pipe(Effect.result);
 
         assert.isTrue(Result.isFailure(failed));
-        assert.equal(yield* git(cwd, ["branch", "--list", "t3/collide"]), "");
+        assert.equal(yield* git(cwd, ["branch", "--list", "d4research/collide"]), "");
         const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "retry");
         yield* driver.createWorktree({
           cwd,
           path: worktreePath,
           refName: initialBranch,
-          newRefName: "t3/collide",
+          newRefName: "d4research/collide",
         });
-        assert.equal(yield* git(worktreePath, ["branch", "--show-current"]), "t3/collide");
+        assert.equal(yield* git(worktreePath, ["branch", "--show-current"]), "d4research/collide");
       }),
     );
 

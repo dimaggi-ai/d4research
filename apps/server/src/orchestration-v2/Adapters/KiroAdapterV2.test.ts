@@ -15,9 +15,9 @@ import {
   type RuntimeMode,
   type RuntimeRequestId,
   ThreadId,
-} from "@t3tools/contracts";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
-import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+} from "@d4research/contracts";
+import { resolveSelfInvocation } from "@d4research/shared/nodeRuntime";
+import { htmlRenderFromToolItem } from "@d4research/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -33,15 +33,15 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
+import type * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import {
   type ProviderAdapterV2Error,
   type ProviderAdapterV2Event,
   ProviderAdapterV2RuntimePolicy,
-} from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@d4research/provider-core/server/ProviderAdapter";
 import {
   decodeAcpReplayTranscript,
   makeAcpReplayCompletenessAssertion,
@@ -50,16 +50,16 @@ import {
 import {
   makeProviderReplayGate,
   type ProviderReplayGate,
-} from "@t3tools/provider-testing/replayGate";
-import { readProviderReplayTranscript } from "@t3tools/provider-testing/replayTranscript";
-import { KiroSettings } from "@t3tools/provider-kiro/settings";
+} from "@d4research/provider-testing/replayGate";
+import { readProviderReplayTranscript } from "@d4research/provider-testing/replayTranscript";
+import { KiroSettings } from "@d4research/provider-kiro/settings";
 import {
   KIRO_PROVIDER,
   kiroApprovalOptions,
   kiroAutopilotValue,
   kiroPermissionDisposition,
   makeKiroAdapterV2,
-} from "@t3tools/provider-kiro/testing";
+} from "@d4research/provider-kiro/testing";
 
 const testLayer = Layer.mergeAll(
   NodeServices.layer,

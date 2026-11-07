@@ -1,6 +1,6 @@
 import { highlightCode } from "../../lib/highlights";
 
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { AsyncResult } from "effect/reactivity";
 
@@ -8,7 +8,7 @@ import { highlightNativeReviewDiffVisibleRows } from "../diffs/nativeReviewDiffH
 import type { NativeReviewDiffFile } from "../diffs/nativeReviewDiffTypes";
 import type { ReviewParsedDiff, ReviewRenderableFile } from "../review/reviewModel";
 import { combinePullRequestDiffPages } from "./pullRequestDiffPages";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import {
   createPullRequestDiffHighlightCache,
   createPullRequestDiffHighlightFiles,

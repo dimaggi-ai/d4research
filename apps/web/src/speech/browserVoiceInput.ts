@@ -1,4 +1,4 @@
-import { cloudSpeechLanguages, effectiveSpeechLanguage } from "@t3tools/shared/speech";
+import { cloudSpeechLanguages, effectiveSpeechLanguage } from "@d4research/shared/speech";
 import {
   requireCloudSpeechKey,
   transcribeCloudPcm,
@@ -9,10 +9,10 @@ import {
   transcribeEnvironmentPcm,
   VoiceTranscriptionError,
   type VoiceTranscriptionOptions,
-} from "@t3tools/client-runtime/voice-input";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import type { SpeechTranscriptionOptions, SpeechStreamText } from "@t3tools/contracts";
-import type { CloudSpeechModelId, CloudSpeechProvider } from "@t3tools/contracts";
+} from "@d4research/client-runtime/voice-input";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
+import type { SpeechTranscriptionOptions, SpeechStreamText } from "@d4research/contracts";
+import type { CloudSpeechModelId, CloudSpeechProvider } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 import { createBrowserPcmCapture } from "./browserPcmCapture";

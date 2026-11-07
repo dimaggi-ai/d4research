@@ -14,7 +14,7 @@ import type {
   RunId,
   RuntimeMode,
   TurnTokenUsage,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -23,7 +23,7 @@ import * as Layer from "effect/Layer";
 import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
-} from "@t3tools/shared/model";
+} from "@d4research/shared/model";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import { catalogModelLabel } from "./ProviderDimensions.ts";
@@ -385,7 +385,7 @@ export class ProviderTurnAnalytics extends Context.Reference<{
   }) => Effect.Effect<void>;
   readonly turnCompleted: (report: ProviderTurnReport) => Effect.Effect<void>;
   readonly runSettled: (report: RunSettledReport) => Effect.Effect<void>;
-}>("t3/telemetry/ProviderTurnAnalytics", {
+}>("d4research/telemetry/ProviderTurnAnalytics", {
   defaultValue: () => ({
     runStarted: () => Effect.void,
     turnCompleted: () => Effect.void,

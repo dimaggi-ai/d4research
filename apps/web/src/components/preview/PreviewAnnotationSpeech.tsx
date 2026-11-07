@@ -1,9 +1,9 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import type {
   DesktopPreviewAnnotationVoiceConfig,
   DesktopPreviewAnnotationVoiceEvent,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 

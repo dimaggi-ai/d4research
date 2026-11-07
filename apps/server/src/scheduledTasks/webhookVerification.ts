@@ -1,4 +1,4 @@
-import type { ScheduledTaskWebhookSignature } from "@t3tools/contracts";
+import type { ScheduledTaskWebhookSignature } from "@d4research/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as Mac from "effect/crypto/Mac";
 import * as Effect from "effect/Effect";

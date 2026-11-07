@@ -7,7 +7,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ServerCommand,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -31,7 +31,7 @@ import * as ServerActivation from "../serverActivation.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { EventId } from "@t3tools/contracts";
+import { EventId } from "@d4research/contracts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ThreadPullRequestService from "./ThreadPullRequestService.ts";
 
@@ -314,7 +314,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
         };
         const child: OrchestrationV2ThreadShell = {
           ...threadShell("child-thread"),
-          branch: "t3/reply-ok",
+          branch: "d4research/reply-ok",
           worktreePath: "/workspace/child",
           lineage: {
             rootThreadId: parent.id,

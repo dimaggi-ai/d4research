@@ -1,5 +1,5 @@
-import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
-import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import type { VoiceInputState } from "@d4research/client-runtime/voice-input";
+import type { ResolvedKeybindingsConfig } from "@d4research/contracts";
 import { useEffect, useRef, type RefObject } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";

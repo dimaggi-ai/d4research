@@ -4,9 +4,9 @@ import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
+import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@d4research/contracts";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -39,7 +39,7 @@ import {
   useDiffPanelStore,
 } from "../diffPanelStore";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
+import { isTestChangedFile } from "@d4research/shared/changedFileKind";
 import { useHideTestFiles } from "./diffs/useHideTestFiles";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -107,7 +107,7 @@ import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
 import { DiffFileStatus } from "./diffs/DiffFileStatus";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
-import { projectCommitUrl } from "@t3tools/client-runtime/change-request-links";
+import { projectCommitUrl } from "@d4research/client-runtime/change-request-links";
 import { useOpenLink } from "../browser/useOpenLink";
 
 type DiffThemeType = "light" | "dark";

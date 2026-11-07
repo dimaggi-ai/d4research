@@ -3,7 +3,7 @@ import {
   ServerPrepareTriageError,
   type ServerPrepareTriageInput,
   type ServerPrepareTriageResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -35,7 +35,7 @@ export class TriageService extends Context.Service<
       input: ServerPrepareTriageInput,
     ) => Effect.Effect<ServerPrepareTriageResult, ServerPrepareTriageError>;
   }
->()("t3/triage/TriageService") {}
+>()("d4research/triage/TriageService") {}
 
 const describeClient = (client: AuthClientPresentationMetadata) =>
   [

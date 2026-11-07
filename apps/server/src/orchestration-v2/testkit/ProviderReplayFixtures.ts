@@ -1,13 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import type { OrchestrationV2DomainEvent, ProviderReplayTranscript } from "@t3tools/contracts";
+import type { OrchestrationV2DomainEvent, ProviderReplayTranscript } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
-import { readProviderReplayTranscript } from "@t3tools/provider-testing/replayTranscript";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import { checkpointWorkspace } from "@d4research/provider-testing/replayWorkspace";
+import { readProviderReplayTranscript } from "@d4research/provider-testing/replayTranscript";
 import { provideDeterministicTestRuntime } from "./DeterministicRuntime.ts";
 import { ORCHESTRATOR_REPLAY_FIXTURES } from "./fixtures/index.ts";
 import {

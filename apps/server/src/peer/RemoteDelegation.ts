@@ -13,7 +13,7 @@ import {
   ProviderDriverKind,
   type RunId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
@@ -47,7 +47,7 @@ const FOLLOW_WAIT_MS = 10 * 60 * 1_000;
 const FOLLOW_MAX_BACKOFF = Duration.minutes(5);
 /** How a follower retries; tests step it by hand. */
 export const FollowRetrySchedule = Context.Reference<Schedule.Schedule<unknown>>(
-  "t3/peer/RemoteDelegation/FollowRetrySchedule",
+  "d4research/peer/RemoteDelegation/FollowRetrySchedule",
   {
     defaultValue: () =>
       Schedule.exponential(Duration.seconds(2)).pipe(
@@ -96,7 +96,7 @@ export class RemoteDelegation extends Context.Service<
      */
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
   }
->()("t3/peer/RemoteDelegation") {}
+>()("d4research/peer/RemoteDelegation") {}
 
 /** The other side refused because the thread there runs above this caller's modes. */
 const isModeRefusal = (error: OrchestratorMcpFailure) =>

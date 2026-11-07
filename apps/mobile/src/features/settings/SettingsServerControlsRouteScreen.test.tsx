@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_SETTINGS, type ServerSettingsPatch } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, type ServerSettingsPatch } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { act } from "react";

@@ -1,8 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderInstanceId } from "@t3tools/contracts";
-import { KiroSettings } from "@t3tools/provider-kiro/settings";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+import { ProviderInstanceId } from "@d4research/contracts";
+import { KiroSettings } from "@d4research/provider-kiro/settings";
+import { resolveSelfInvocation } from "@d4research/shared/nodeRuntime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -10,10 +10,10 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
-import type { ProviderReplayGate } from "@t3tools/provider-testing/replayGate";
+import type { ProviderReplayGate } from "@d4research/provider-testing/replayGate";
 import type { OrchestratorV2ProviderReplayHarness } from "../testkit/ProviderReplayHarness.ts";
 import {
   type AcpReplayTranscript,
@@ -22,7 +22,7 @@ import {
   makeAcpReplayCompletenessAssertion,
   makeAcpReplayRuntime,
 } from "./AcpAdapterV2.testkit.ts";
-import { KIRO_PROVIDER, makeKiroAdapterV2 } from "@t3tools/provider-kiro/testing";
+import { KIRO_PROVIDER, makeKiroAdapterV2 } from "@d4research/provider-kiro/testing";
 
 const KIRO_REPLAY_SETTINGS = Schema.decodeSync(KiroSettings)({ enabled: true });
 

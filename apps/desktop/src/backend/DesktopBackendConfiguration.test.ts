@@ -1,8 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { currentDesktopBootstrapToken } from "@d4research/shared/desktopBootstrapToken";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

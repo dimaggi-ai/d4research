@@ -12,7 +12,7 @@ import {
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import * as Cause from "effect/Cause";

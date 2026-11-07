@@ -5,9 +5,9 @@ import {
   type SourceControlProviderDiscoveryItem,
   type SourceControlProviderInfo,
   type SourceControlProviderKind,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { SpawnExecutableResolution } from "@d4research/shared/shell";
 import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

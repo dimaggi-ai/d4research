@@ -9,7 +9,7 @@ import {
   type PreparedVoiceTranscription,
   type VoiceTranscriber,
   type VoiceTranscriptionOptions,
-} from "@t3tools/client-runtime/voice-input";
+} from "@d4research/client-runtime/voice-input";
 
 const isVoiceTranscriptionError = Schema.is(VoiceTranscriptionError);
 

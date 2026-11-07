@@ -3,10 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
-import type { PullRequestReaction } from "@t3tools/contracts";
+import type { PullRequestReaction } from "@d4research/contracts";
 
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
 import * as GitHubPullRequestApi from "./GitHubPullRequestApi.ts";
 import type {
   GitHubPullRequestCore,

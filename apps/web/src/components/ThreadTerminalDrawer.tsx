@@ -4,14 +4,14 @@ import {
   isAtomCommandInterrupted,
   executeAtomQuery,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   readTerminalOutputUpdate,
   type TerminalOutputCursor,
   type TerminalOutputUpdate,
   type TerminalSessionState,
-} from "@t3tools/client-runtime/state/terminal";
+} from "@d4research/client-runtime/state/terminal";
 import {
   Plus,
   Square,
@@ -30,8 +30,8 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
-} from "@t3tools/contracts";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+} from "@d4research/contracts";
+import { getTerminalLabel } from "@d4research/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import {
@@ -62,7 +62,7 @@ import {
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
 import { useOpenInPreferredEditor } from "../editorPreferences";
-import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { resolvePathLinkTarget } from "@d4research/shared/fileLinks";
 import { isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,

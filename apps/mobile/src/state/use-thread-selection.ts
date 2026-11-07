@@ -8,15 +8,15 @@ import {
   type OrchestrationV2ThreadShell,
   type ScopedProjectRef,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   presentThreadShell,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@d4research/client-runtime/state/shell";
 import {
   deriveLatestThreadRun,
   deriveThreadRuntime,
-} from "@t3tools/client-runtime/state/thread-execution";
+} from "@d4research/client-runtime/state/thread-execution";
 import * as Option from "effect/Option";
 
 import { scopedThreadKey } from "../lib/scopedEntities";

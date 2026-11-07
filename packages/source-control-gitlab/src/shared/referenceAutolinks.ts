@@ -1,4 +1,4 @@
-import type { ReferenceAutolink } from "@t3tools/source-control-core/shared/definition";
+import type { ReferenceAutolink } from "@d4research/source-control-core/shared/definition";
 
 // GitLab's autolinked references: `#12` issues and `!12` merge requests, qualified by
 // `project` (same namespace) or a full `group/sub/project` path; `GL-12` and `[issue:12]`

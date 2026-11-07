@@ -1,5 +1,5 @@
 import { makeAssistantStreamingFilter } from "./assistantStreaming.ts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import {
   isOrchestrationV2WorkActive,
   CommandId,
@@ -23,7 +23,7 @@ import {
   type RunAttemptId,
   type ThreadId,
   type TurnItemId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -42,8 +42,8 @@ import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import type { ProjectionStoreV2Error } from "./ProjectionStore.ts";
@@ -51,7 +51,7 @@ import {
   knownProviderFailureMessage,
   makeProviderFailure,
   makeProviderFailureTurnItem,
-} from "@t3tools/provider-core/server/failure";
+} from "@d4research/provider-core/server/failure";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
@@ -589,7 +589,7 @@ export interface RunExecutionServiceV2Shape {
 export class RunExecutionServiceV2 extends Context.Service<
   RunExecutionServiceV2,
   RunExecutionServiceV2Shape
->()("t3/orchestration-v2/RunExecutionService/RunExecutionServiceV2") {}
+>()("d4research/orchestration-v2/RunExecutionService/RunExecutionServiceV2") {}
 
 export const layer: Layer.Layer<
   RunExecutionServiceV2,

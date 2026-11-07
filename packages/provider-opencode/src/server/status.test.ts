@@ -15,7 +15,7 @@ import * as Tracer from "effect/Tracer";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { beforeEach } from "vite-plus/test";
-import { settingsSecretLiteral } from "@t3tools/contracts";
+import { settingsSecretLiteral } from "@d4research/contracts";
 
 import { OpenCodeSettings } from "../settings.ts";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";

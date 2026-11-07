@@ -10,13 +10,13 @@ import {
   TurnItemId,
   type OrchestrationV2AppThread,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ContextHandoffService from "./ContextHandoffService.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
 
 const layerTest = ContextHandoffService.layer.pipe(Layer.provide(IdAllocator.layer));

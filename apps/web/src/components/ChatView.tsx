@@ -1,8 +1,8 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
-import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { resolveNewThreadModelSelection } from "@d4research/shared/usageLimits";
+import { queuedRunEditBlockedReason } from "@d4research/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
 import { configuredHostedAppUrl } from "../hostedPairing";
@@ -41,9 +41,9 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import { isScratchProject } from "@d4research/client-runtime/state/projects";
+import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
+import type { UsageLimitSourceSnapshots } from "@d4research/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
@@ -72,7 +72,7 @@ import {
   ProviderInteractionMode,
   resolveIdleCompaction,
   RuntimeMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   deriveProviderSubagentStatus,
   deriveProviderExtensionStatuses,
@@ -84,16 +84,16 @@ import {
   deriveLatestThreadRun,
   deriveThreadStructureRuntime,
   limitRecoveryOwnsSnooze,
-} from "@t3tools/client-runtime/state/thread-execution";
+} from "@d4research/client-runtime/state/thread-execution";
 import {
   resolveWorkflowOpening,
   workflowOpeningParentThreadId,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/client-runtime/state/subagentRuntime";
 import {
   getUserQueuedThreadRuns,
   threadSupportsProviderHandoff,
-} from "@t3tools/client-runtime/state/thread-workflows";
-import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
+} from "@d4research/client-runtime/state/thread-workflows";
+import { resolvePendingHandoff } from "@d4research/client-runtime/handoff";
 import { HandoffRow } from "./chat/V2LifecycleRow";
 import {
   codexFeedbackMessage,
@@ -101,18 +101,18 @@ import {
   isCompleteTurnItemRow,
   shouldShowLoadEarlierControl,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/threads";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
-import { projectScriptCwd, resolveProjectScripts } from "@t3tools/shared/projectScripts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
-import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+} from "@d4research/client-runtime/environment";
+import { formatModelSlugName, resolveSelectableModel } from "@d4research/shared/model";
+import { projectScriptCwd, resolveProjectScripts } from "@d4research/shared/projectScripts";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
+import { resolveThreadReferenceCopyTarget } from "@d4research/client-runtime/thread-reference";
+import { resolveTerminalSessionLabel } from "@d4research/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
@@ -128,7 +128,7 @@ import {
   mapAtomCommandResult,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { isElectron } from "../env";
 import { useDiffPanelStore } from "../diffPanelStore";
@@ -184,7 +184,7 @@ import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { ComposerContextPermissions } from "./ComposerContextPermissions";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@d4research/shared/keybindings";
 import { shortcutLabelForCommand } from "../keybindings";
 import { cn } from "~/lib/utils";
 import { isModelPickerOpen } from "../modelPickerVisibility";
@@ -213,7 +213,7 @@ import { focusTerminalOnThreadEnter, getTerminalFocusOwner } from "../lib/termin
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 import {
   isSameSidebarThreadRef,
   useSidebarPendingFileDropStore,
@@ -238,7 +238,7 @@ import {
   serverEnvironment,
 } from "../state/server";
 import { threadEnvironment } from "../state/threads";
-import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
+import { resolveProviderSkillsForCwd } from "@d4research/client-runtime/providerSkills";
 import { vcsEnvironment } from "../state/vcs";
 import {
   type EnvironmentPresentation,
@@ -324,7 +324,7 @@ import {
   hasDismissedResumeCompaction,
   latestProviderTurnTokenUsage,
   shouldOfferResumeCompaction,
-} from "@t3tools/client-runtime/state/context-window";
+} from "@d4research/client-runtime/state/context-window";
 import {
   MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
@@ -347,7 +347,7 @@ import {
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
+import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { assetEnvironment } from "../state/assets";
 import { readEnvironmentScope, readPreparedConnection } from "../state/session";
@@ -361,7 +361,7 @@ import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
-import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import type { ThreadStructure } from "@d4research/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
 import {
@@ -380,7 +380,7 @@ import {
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
-import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
+import type { CodexArtifactTemplate } from "@d4research/shared/codexArtifactTemplates";
 
 const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];

@@ -1,4 +1,4 @@
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@d4research/shared/keybindings";
 import { expect, it, vi } from "vite-plus/test";
 import { render } from "../../test/render";
 import { useDictationShortcut } from "./useDictationShortcut";

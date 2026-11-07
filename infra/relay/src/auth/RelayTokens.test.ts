@@ -2,7 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import { describe, expect, it } from "@effect/vitest";
-import { signRelayJwt } from "@t3tools/shared/relayJwt";
+import { signRelayJwt } from "@d4research/shared/relayJwt";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
@@ -26,7 +26,7 @@ const config = RelayConfiguration.RelayConfiguration.of({
     teamId: "team-id",
     keyId: "key-id",
     privateKey: Redacted.make("private-key"),
-    bundleId: "com.t3tools.t3code.dev",
+    bundleId: "ai.dimaggi.d4research.dev",
   },
   apnsDeliveryJobSigningSecret: Redacted.make("job-secret"),
   clerkSecretKey: Redacted.make("clerk-secret"),

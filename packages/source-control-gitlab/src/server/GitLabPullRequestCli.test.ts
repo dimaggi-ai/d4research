@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, expect, it, vi } from "@effect/vitest";
-import { VcsProcessExitError } from "@t3tools/contracts";
+import { VcsProcessExitError } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";

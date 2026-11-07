@@ -1,4 +1,4 @@
-import type { SpeechCustomWords } from "@t3tools/contracts";
+import type { SpeechCustomWords } from "@d4research/contracts";
 
 /** Fuzzy-matches preferred terms and rewrites aliases to their preferred spelling. */
 export function makeSpeechTextCorrector(

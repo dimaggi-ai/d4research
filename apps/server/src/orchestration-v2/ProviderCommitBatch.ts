@@ -1,4 +1,4 @@
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -78,7 +78,7 @@ function collect(queue: Queue.Queue<Job>) {
 }
 
 const CurrentWorker = Context.Reference<number | undefined>(
-  "t3/ProviderCommitBatch/CurrentWorker",
+  "d4research/ProviderCommitBatch/CurrentWorker",
   {
     defaultValue: () => undefined,
   },

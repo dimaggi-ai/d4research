@@ -354,7 +354,7 @@ function launcherFixture() {
       'vitePlusCommand(args, "win32")',
     ),
   );
-  for (const name of ["effect", "@effect/platform-node", "@t3tools/shared"]) {
+  for (const name of ["effect", "@effect/platform-node", "@d4research/shared"]) {
     const dest = NodePath.join(root, "node_modules", name);
     NodeFS.mkdirSync(NodePath.dirname(dest), { recursive: true });
     NodeFS.symlinkSync(

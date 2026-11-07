@@ -19,9 +19,9 @@ import {
   cliReleaseAssetUrl,
   type CliArchivePlatformKey,
   parseChecksums,
-} from "@t3tools/shared/cliRelease";
+} from "@d4research/shared/cliRelease";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./serviceProtocol.ts";

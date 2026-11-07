@@ -4,7 +4,7 @@ import {
   RelayJwtError,
   signRelayJwt,
   verifyRelayJwt,
-} from "@t3tools/shared/relayJwt";
+} from "@d4research/shared/relayJwt";
 import * as Context from "effect/Context";
 import * as Signature from "effect/crypto/Signature";
 import type * as Duration from "effect/Duration";

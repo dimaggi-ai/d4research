@@ -11,8 +11,8 @@ import {
   NodeId,
   type ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@d4research/contracts";
+import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as ProviderCommitBatch from "./ProviderCommitBatch.ts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -74,7 +74,7 @@ interface ProviderBatchPublication {
   eventCount: number;
 }
 const CurrentProviderBatch = Context.Reference<ProviderBatchPublication | undefined>(
-  "t3/orchestration-v2/EventSink/CurrentProviderBatch",
+  "d4research/orchestration-v2/EventSink/CurrentProviderBatch",
   { defaultValue: () => undefined },
 );
 
@@ -225,7 +225,7 @@ export interface EventSinkV2Shape {
 }
 
 export class EventSinkV2 extends Context.Service<EventSinkV2, EventSinkV2Shape>()(
-  "t3/orchestration-v2/EventSink/EventSinkV2",
+  "d4research/orchestration-v2/EventSink/EventSinkV2",
 ) {}
 
 const layerBase: Layer.Layer<

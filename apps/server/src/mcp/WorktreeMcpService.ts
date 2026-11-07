@@ -11,8 +11,8 @@ import {
   type WorktreeMcpStatusResult,
   type VcsListRefsInput,
   type VcsListRefsResult,
-} from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+} from "@d4research/contracts";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -47,7 +47,7 @@ export class WorktreeMcpService extends Context.Service<
       },
     ) => Effect.Effect<VcsListRefsResult, GitCommandError | PlatformError.PlatformError>;
   }
->()("t3/mcp/WorktreeMcpService") {}
+>()("d4research/mcp/WorktreeMcpService") {}
 
 function failure(code: WorktreeMcpFailure["code"], message: string): WorktreeMcpFailure {
   return new WorktreeMcpFailure({ code, message });

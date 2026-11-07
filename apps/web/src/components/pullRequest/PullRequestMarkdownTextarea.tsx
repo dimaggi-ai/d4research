@@ -4,7 +4,7 @@ import type {
   PullRequestDetailView,
   PullRequestRef,
   PullRequestReferenceCandidate,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   debouncedPullRequestCompletionSearch,
   detectPullRequestComposerTrigger,
@@ -14,7 +14,7 @@ import {
   type PullRequestCompletion,
   type PullRequestCompletionSupport,
   type PullRequestComposerTrigger,
-} from "@t3tools/shared/pullRequestComposerTrigger";
+} from "@d4research/shared/pullRequestComposerTrigger";
 import { CircleCheckIcon, CircleDotIcon } from "lucide-react";
 import { useId, useState, type Ref } from "react";
 import { flushSync } from "react-dom";

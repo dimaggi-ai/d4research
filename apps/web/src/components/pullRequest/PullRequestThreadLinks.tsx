@@ -1,16 +1,16 @@
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { visibleLinkedThreads } from "@t3tools/client-runtime/state/threads";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { visibleLinkedThreads } from "@d4research/client-runtime/state/threads";
+import { settlePromise, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@d4research/contracts";
 import { CheckIcon, MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
-import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { normalizeThreadPullRequestKey } from "@d4research/client-runtime/thread-pull-requests";
 import {
   useAnyEnvironmentHiding,
   useEnvironmentThreadRefs,

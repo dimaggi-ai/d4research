@@ -3,7 +3,7 @@ import {
   OrchestrationV2GetNativeChildWorkError,
   type OrchestrationV2GetNativeChildWorkInput,
   type OrchestrationV2GetNativeChildWorkResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -26,7 +26,7 @@ export class NativeChildWorkQuery extends Context.Service<
       OrchestrationV2GetNativeChildWorkError
     >;
   }
->()("t3/orchestration-v2/NativeChildWorkQuery") {}
+>()("d4research/orchestration-v2/NativeChildWorkQuery") {}
 
 const NO_CHILDREN: OrchestrationV2GetNativeChildWorkResult = { children: [] };
 

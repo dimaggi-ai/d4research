@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { SecretProviderId, type SimlockDeviceHostConfig } from "@t3tools/contracts";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { SecretProviderId, type SimlockDeviceHostConfig } from "@d4research/contracts";
+import * as SecretResolver from "@d4research/secret-provider-core/server/SecretResolver";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";

@@ -1,6 +1,6 @@
 // T3 ingest retains events and forwards to PostHog; UUIDs deduplicate retries there.
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import type { ClientOs } from "@t3tools/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import type { ClientOs } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -99,7 +99,7 @@ export class AnalyticsService extends Context.Service<
       observedBy: "server" | "client",
     ) => Effect.Effect<void>;
   }
->()("t3/telemetry/AnalyticsService") {}
+>()("d4research/telemetry/AnalyticsService") {}
 
 function serverOsFromNodePlatform(platform: string): ClientOs {
   switch (platform) {

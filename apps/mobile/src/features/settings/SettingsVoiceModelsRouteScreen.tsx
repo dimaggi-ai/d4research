@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { StaticScreenProps } from "@react-navigation/native";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { FlatList, Platform, View } from "react-native";

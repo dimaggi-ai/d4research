@@ -1,8 +1,8 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- FileSystem.access has no execute check.
 import * as NodeFSP from "node:fs/promises";
 
-import type { DesktopCliCommandState } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import type { DesktopCliCommandState } from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -60,7 +60,7 @@ export class DesktopCliCommand extends Context.Service<
     readonly install: Effect.Effect<DesktopCliCommandState, DesktopCliCommandError>;
     readonly uninstall: Effect.Effect<DesktopCliCommandState, DesktopCliCommandError>;
   }
->()("@t3tools/desktop/app/DesktopCliCommand") {}
+>()("@d4research/desktop/app/DesktopCliCommand") {}
 
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;

@@ -1,4 +1,4 @@
-import { importRelayPrivateKey, RelayJwtError, signRelayJwt } from "@t3tools/shared/relayJwt";
+import { importRelayPrivateKey, RelayJwtError, signRelayJwt } from "@d4research/shared/relayJwt";
 import * as Context from "effect/Context";
 import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
@@ -125,7 +125,7 @@ export class EnvironmentSigningKey extends Context.Service<
       readonly payload: Readonly<Record<string, unknown>>;
     }) => Effect.Effect<string, RelayJwtError>;
   }
->()("t3/cloud/environmentKeys/EnvironmentSigningKey") {}
+>()("d4research/cloud/environmentKeys/EnvironmentSigningKey") {}
 
 export const layer = Layer.effect(
   EnvironmentSigningKey,

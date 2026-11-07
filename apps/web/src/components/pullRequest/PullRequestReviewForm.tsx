@@ -1,12 +1,12 @@
 import { useAtomCommand } from "~/state/use-atom-command";
-import { capitalizeTerm } from "@t3tools/client-runtime/source-control-clients";
-import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@t3tools/contracts";
+import { capitalizeTerm } from "@d4research/client-runtime/source-control-clients";
+import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@d4research/contracts";
 import { CheckIcon, MessageSquareIcon, XCircleIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";
 import { pullRequestEnvironment } from "~/state/pullRequests";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";

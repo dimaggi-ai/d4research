@@ -4,7 +4,7 @@ import {
   SPEECH_MAX_OPTIONS_BYTES,
   type SpeechCustomWords,
   SpeechTranscriptionOptions,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 const decodeOptions = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechTranscriptionOptions));

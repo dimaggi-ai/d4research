@@ -1,6 +1,6 @@
-import type { ChatAttachment } from "@t3tools/contracts";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { isAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
+import type { ChatAttachment } from "@d4research/contracts";
+import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
+import { isAttachmentOnlyBootstrapPrompt } from "@d4research/shared/composerContextReferences";
 
 export type ThreadTitleMessage = {
   readonly role: "user" | "assistant" | "system" | "reasoning";

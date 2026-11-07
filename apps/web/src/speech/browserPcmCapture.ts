@@ -3,7 +3,7 @@ import type {
   VoiceRecorder,
   VoiceStreamingSession,
   VoiceTranscriptionOptions,
-} from "@t3tools/client-runtime/voice-input";
+} from "@d4research/client-runtime/voice-input";
 import workletUrl from "./pcmWorklet.ts?worker&url";
 
 type PreparedBrowserTranscription = PreparedVoiceTranscription & {

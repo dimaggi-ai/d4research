@@ -8,7 +8,7 @@ import {
   type KnownComposerContextRecord,
   type ScopedThreadRef,
   type ThreadContextRecord,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { replaceThreadLinks, threadLinkCandidates } from "./threadLinks.ts";
 
@@ -428,10 +428,10 @@ export function threadContextsOutsideEnvironment(input: {
 }
 
 export function remapComposerContextAttachments(
-  context: import("@t3tools/contracts").OrchestrationMessageContext | undefined,
+  context: import("@d4research/contracts").OrchestrationMessageContext | undefined,
   before: ReadonlyArray<{ readonly id?: string | undefined }>,
   after: ReadonlyArray<{ readonly id: string }>,
-): import("@t3tools/contracts").OrchestrationMessageContext | undefined {
+): import("@d4research/contracts").OrchestrationMessageContext | undefined {
   if (context === undefined) return undefined;
   const ids = new Map(
     before.flatMap((attachment, index) => {

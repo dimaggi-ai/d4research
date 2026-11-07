@@ -8,6 +8,6 @@ import type * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 export class AssetSigner extends Context.Service<
   AssetSigner,
   PayloadSigner.PayloadSigner<ServerSecretStore.SecretStoreError>
->()("t3/assets/AssetSigner") {}
+>()("d4research/assets/AssetSigner") {}
 
 export const layer = Layer.effect(AssetSigner, PayloadSigner.make("asset-access-signing-key"));

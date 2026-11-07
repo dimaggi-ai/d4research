@@ -4,7 +4,7 @@ import {
   type PeerLinkError,
   type ProviderInteractionMode,
   type RuntimeMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -44,7 +44,7 @@ export class PeerMcpClient extends Context.Service<
       readonly success: S;
     }) => Effect.Effect<S["Type"], OrchestratorMcpFailure>;
   }
->()("t3/peer/PeerMcpClient") {}
+>()("d4research/peer/PeerMcpClient") {}
 
 const ToolCallResponse = Schema.Struct({
   result: Schema.optional(

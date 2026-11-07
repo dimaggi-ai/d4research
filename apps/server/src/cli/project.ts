@@ -6,7 +6,7 @@ import {
   type ProjectMutation,
   type ProjectSnapshot,
   ProjectId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Console from "effect/Console";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";

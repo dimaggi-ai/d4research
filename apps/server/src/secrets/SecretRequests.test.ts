@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   OrchestratorMcpRequestSecretInput,
   ProjectId,
@@ -11,10 +11,10 @@ import {
   SecretRef,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
-import { defineSecretProviderDriver } from "@t3tools/secret-provider-core/server/driver";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
-import { defineSecretProvider } from "@t3tools/secret-provider-core/shared/definition";
+} from "@d4research/contracts";
+import { defineSecretProviderDriver } from "@d4research/secret-provider-core/server/driver";
+import * as SecretResolver from "@d4research/secret-provider-core/server/SecretResolver";
+import { defineSecretProvider } from "@d4research/secret-provider-core/shared/definition";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";

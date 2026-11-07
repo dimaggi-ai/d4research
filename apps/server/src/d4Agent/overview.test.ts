@@ -327,6 +327,28 @@ it("groups a digest from several sources under source headings", () => {
   );
 });
 
+it("adds an authenticated local-file token for an overview report", () => {
+  const intel = ingestOverview(
+    [],
+    snapshot(
+      [
+        input("i", {
+          title: "Daily intel: 2026-11-07",
+          recommendation: "Security updates selected for review.",
+          ref: "file:///var/www/intel/2026-11-07.md",
+        }),
+      ],
+      { source: "intel" },
+    ),
+    now,
+    true,
+  );
+  assert.equal(
+    overviewText(intel, []),
+    "• Daily intel: 2026-11-07: Security updates selected for review. [[file:file:///var/www/intel/2026-11-07.md|Read report]]",
+  );
+});
+
 it("shows another context's evolution suggestion in Global under one heading, without its body", () => {
   const mail = ingestOverview(
     [],

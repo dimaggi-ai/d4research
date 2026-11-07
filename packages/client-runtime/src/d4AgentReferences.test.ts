@@ -90,22 +90,27 @@ it("flags a draft only when Nia moved to another context or replaced its session
   });
 });
 
-it("links URLs and server-validated thread tokens in Nia system text, nothing else", () => {
+it("links URLs, local files and server-validated thread tokens in Nia system text", () => {
   const known = ThreadId.make("known");
   expect(
     niaSystemTextSegments(
-      "• Dimaggi: [[thread:known|Completed: Fix]]\n• [[thread:forged|Forged]] — Read: https://host/intel/#cto. <b>x</b>",
+      "• Dimaggi: [[thread:known|Completed: Fix]]\n• [[thread:forged|Forged]] — [[file:file:///var/www/intel/2026-11-07.md|Read report]] — https://host/intel/#cto. <b>x</b>",
       [{ threadId: known }, { threadId: null }],
     ),
   ).toEqual([
     { kind: "text", text: "• Dimaggi: " },
     { kind: "thread", text: "Completed: Fix", threadId: known },
-    { kind: "text", text: "\n• Forged — Read: " },
+    { kind: "text", text: "\n• Forged — " },
+    { kind: "file", text: "Read report", path: "/var/www/intel/2026-11-07.md" },
+    { kind: "text", text: " — " },
     { kind: "url", text: "https://host/intel/#cto", href: "https://host/intel/#cto" },
     { kind: "text", text: ". <b>x</b>" },
   ]);
   expect(niaSystemTextSegments("javascript:alert(1)", [])).toEqual([
     { kind: "text", text: "javascript:alert(1)" },
+  ]);
+  expect(niaSystemTextSegments("[[file:file://remote/etc/passwd|Nope]]", [])).toEqual([
+    { kind: "text", text: "[[file:file://remote/etc/passwd|Nope]]" },
   ]);
 });
 

@@ -189,6 +189,7 @@ const BROWSER_MIME_TYPE_BY_EXTENSION = new Map([
   [".htm", "text/html"],
   [".html", "text/html"],
   [".pdf", "application/pdf"],
+  [".md", "text/markdown"],
 ]);
 
 const FONT_MIME_TYPE_BY_EXTENSION = new Map([

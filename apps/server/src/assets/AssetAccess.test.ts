@@ -431,6 +431,27 @@ describe("AssetAccess", () => {
       }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("serves an absolute Markdown report through an exact signed asset", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "nia-report-" });
+      const filePath = path.join(root, "2026-11-07.md");
+      yield* fs.writeFileString(filePath, "# Daily intel: 2026-11-07\n");
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "draft-workspace-file", cwd: "/", path: filePath },
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separator = suffix.indexOf("/");
+      const asset = yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1));
+      expect(asset).toMatchObject({
+        kind: "file",
+        path: yield* fs.realPath(filePath),
+        mimeType: "text/markdown",
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect.skipIf(!symlinksSupported)(
     "rejects draft media symlinks escaping the workspace or targeting disallowed types",
     () =>
@@ -618,7 +639,7 @@ describe("AssetAccess", () => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-media-validation-" });
-        for (const name of ["report.md", "secret.txt", "secret.%70ng", "secret.png#private.txt"]) {
+        for (const name of ["secret.txt", "secret.%70ng", "secret.png#private.txt"]) {
           const filePath = path.join(root, name);
           yield* fs.writeFileString(filePath, "not media");
           const error = yield* issueAssetUrl({

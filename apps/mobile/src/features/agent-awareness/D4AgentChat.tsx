@@ -53,8 +53,32 @@ import {
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
 import { ComposerSurface } from "../threads/ThreadComposer";
+import { useAssetUrl } from "../../state/assets";
 
 const isD4AgentError = Schema.is(D4AgentError);
+
+function NiaFileLink({
+  environmentId,
+  path,
+  children,
+}: {
+  environmentId: EnvironmentId;
+  path: string;
+  children: string;
+}) {
+  const url = useAssetUrl(environmentId, { _tag: "draft-workspace-file", cwd: "/", path });
+  return (
+    <Text
+      accessibilityRole="link"
+      className="text-accent"
+      onPress={() => {
+        if (url) void tryOpenExternalUrl(url, "markdown-link");
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
 
 function taskFailureMessage(
   failure: unknown,
@@ -317,6 +341,14 @@ export function D4AgentChat({
                   {segments?.map((segment, index) =>
                     segment.kind === "text" ? (
                       segment.text
+                    ) : segment.kind === "file" ? (
+                      <NiaFileLink
+                        key={`${segment.path}:${segment.text}`}
+                        environmentId={environmentId}
+                        path={segment.path}
+                      >
+                        {segment.text}
+                      </NiaFileLink>
                     ) : (
                       <Text
                         // oxlint-disable-next-line react/no-array-index-key -- segments of one immutable message

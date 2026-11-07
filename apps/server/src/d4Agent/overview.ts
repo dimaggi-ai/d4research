@@ -267,7 +267,8 @@ const overviewLine = (item: OverviewItem, context: D4BrainContext) => {
       ? item.title
       : `[[thread:${thread}|${item.title.replace(/[[\]|]/g, "")}]]`;
   const label = item.context === context ? "" : `${item.context}: `;
-  return `• ${label}${title}${item.recommendation ? `: ${item.recommendation}` : ""}`;
+  const file = item.ref?.startsWith("file:///") && !/[|\]]/.test(item.ref) ? item.ref : null;
+  return `• ${label}${title}${item.recommendation ? `: ${item.recommendation}` : ""}${file ? ` [[file:${file}|Read report]]` : ""}`;
 };
 export const overviewText = (
   items: ReadonlyArray<OverviewItem>,

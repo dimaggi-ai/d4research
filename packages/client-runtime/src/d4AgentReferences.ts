@@ -135,9 +135,11 @@ export function agentDraftMovedNotice(
 export type NiaTextSegment =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "url"; readonly text: string; readonly href: string }
+  | { readonly kind: "file"; readonly text: string; readonly path: string }
   | { readonly kind: "thread"; readonly text: string; readonly threadId: ThreadId };
 
-const niaLinkPattern = /\[\[thread:([^|\]]+)\|([^\]]+)\]\]|https?:\/\/[^\s<>"'`]+/g;
+const niaLinkPattern =
+  /\[\[thread:([^|\]]+)\|([^\]]+)\]\]|\[\[file:(file:\/\/\/[^|\]]+)\|([^\]]+)\]\]|https?:\/\/[^\s<>"'`]+/g;
 
 // Splits server-authored Nia system text into plain text, web links and thread links. A thread
 // token links only when the server validated it into `links`; anything else stays text.
@@ -157,11 +159,23 @@ export function niaSystemTextSegments(
   for (const match of text.matchAll(niaLinkPattern)) {
     pushText(text.slice(cursor, match.index));
     cursor = match.index + match[0].length;
-    const [token, threadId, label] = match;
+    const [token, threadId, label, fileUrl, fileLabel] = match;
     if (threadId !== undefined && label !== undefined) {
       const known = links.find((link) => link.threadId === threadId)?.threadId;
       if (known == null) pushText(label);
       else segments.push({ kind: "thread", text: label, threadId: known });
+      continue;
+    }
+    if (fileUrl !== undefined && fileLabel !== undefined) {
+      try {
+        const url = new URL(fileUrl);
+        const path = decodeURIComponent(url.pathname);
+        if (url.protocol === "file:" && url.hostname === "" && path.startsWith("/")) {
+          segments.push({ kind: "file", text: fileLabel, path });
+          continue;
+        }
+      } catch {}
+      pushText(fileLabel);
       continue;
     }
     // Sentence punctuation after a URL is not part of it.

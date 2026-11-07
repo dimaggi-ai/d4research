@@ -50,6 +50,7 @@ import { ChatScrollToEndButton } from "../chat/ChatScrollToEndButton";
 import { ChatWorkspaceHeader } from "../chat/ChatWorkspaceHeader";
 import { NiaRoutines } from "./NiaRoutines";
 import { D4AgentComposer } from "./D4AgentComposer";
+import { useRightPanelStore } from "../../rightPanelStore";
 
 export function D4AgentRoute({
   environmentId,
@@ -303,7 +304,11 @@ export function D4AgentChat({
                           {segments === null ? (
                             entry.text
                           ) : (
-                            <SystemText environmentId={environmentId} segments={segments} />
+                            <SystemText
+                              environmentId={environmentId}
+                              threadId={state.threadId}
+                              segments={segments}
+                            />
                           )}
                         </p>
                         {extras}
@@ -415,9 +420,11 @@ function NiaAttachment({
 // references become links, so no HTML is ever rendered.
 function SystemText({
   environmentId,
+  threadId,
   segments,
 }: {
   environmentId: EnvironmentId;
+  threadId: ThreadId | null;
   segments: ReadonlyArray<NiaTextSegment>;
 }) {
   return segments.map((segment, index) =>
@@ -431,6 +438,17 @@ function SystemText({
       >
         {segment.text}
       </a>
+    ) : segment.kind === "file" && threadId !== null ? (
+      <button
+        key={index}
+        type="button"
+        className="text-primary underline underline-offset-2"
+        onClick={() =>
+          useRightPanelStore.getState().openFile({ environmentId, threadId }, segment.path)
+        }
+      >
+        {segment.text}
+      </button>
     ) : segment.kind === "thread" ? (
       <Link
         key={index}

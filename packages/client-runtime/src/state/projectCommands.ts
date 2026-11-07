@@ -149,19 +149,19 @@ export function createProjectEnvironmentAtoms<R, E>(
     locateFile: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:projects:locate-file",
       staleTimeMs: 10_000,
-      // @effect-diagnostics-next-line effectFnOpportunity:off -- one-shot command body, not a reusable function
-      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.projectsLocateFile>) =>
-        Effect.gen(function* () {
-          const registry = yield* AtomRegistry.AtomRegistry;
-          const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-          const result = yield* Effect.promise(() =>
-            locateFileCommand.run(registry, {
-              environmentId: supervisor.target.environmentId,
-              input,
-            }),
-          );
-          return result._tag === "Success" ? result.value : yield* Effect.failCause(result.cause);
-        }),
+      execute: Effect.fn("clientRuntime.projects.locateFile")(function* (
+        input: EnvironmentRpcInput<typeof WS_METHODS.projectsLocateFile>,
+      ) {
+        const registry = yield* AtomRegistry.AtomRegistry;
+        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+        const result = yield* Effect.promise(() =>
+          locateFileCommand.run(registry, {
+            environmentId: supervisor.target.environmentId,
+            input,
+          }),
+        );
+        return result._tag === "Success" ? result.value : yield* Effect.failCause(result.cause);
+      }),
     }),
     watchEntries: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:projects:watch-entries",

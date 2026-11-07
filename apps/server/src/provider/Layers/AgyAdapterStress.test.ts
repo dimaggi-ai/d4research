@@ -1,16 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off, preferSchemaOverJson:off, anyUnknownInErrorContext:off
-/**
- * Stress and edge coverage for the agy adapter.
- *
- * Agy is the only provider driven as a spawned one-shot CLI, so its stream
- * decoding, process lifecycle, and event bookkeeping are hand-rolled. This
- * suite hammers those seams: high-volume streaming, chunk-boundary framing,
- * multibyte splitting, truncated/crashing processes, sequential resume,
- * concurrent sessions, and mid-stream interruption.
- *
- * Mocks stand in for the real binary. Where behaviour depends on real elapsed
- * time or process teardown, the case runs on the live clock (`it.live`).
- */
+// Scripted subprocesses stress Agy's stream decoding and process lifecycle.
+// Subprocess teardown cases use the live clock.
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -19,6 +9,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
@@ -136,30 +127,31 @@ type AnyEvent = { type: string; threadId?: unknown; payload?: unknown };
 const collectEvents = Effect.fn("collectEvents")(function* (adapter: {
   streamEvents: Stream.Stream<{ type: string }, never, never>;
 }) {
+  const firstDelta = yield* Deferred.make<void>();
+  const completed = yield* Deferred.make<void>();
   const ref = yield* Ref.make<Array<AnyEvent>>([]);
   const fiber = yield* adapter.streamEvents.pipe(
     Stream.runForEach((event) =>
-      Ref.update(ref, (events) => [
-        ...events,
-        {
-          type: event.type,
-          threadId: "threadId" in event ? (event as { threadId: unknown }).threadId : undefined,
-          payload: "payload" in event ? (event as { payload: unknown }).payload : undefined,
-        },
-      ]),
+      Effect.gen(function* () {
+        yield* Ref.update(ref, (events) => [
+          ...events,
+          {
+            type: event.type,
+            threadId: "threadId" in event ? (event as { threadId: unknown }).threadId : undefined,
+            payload: "payload" in event ? (event as { payload: unknown }).payload : undefined,
+          },
+        ]);
+        if (event.type === "content.delta") yield* Deferred.succeed(firstDelta, undefined);
+        if (event.type === "turn.completed") yield* Deferred.succeed(completed, undefined);
+      }),
     ),
-    Effect.forkChild,
+    Effect.forkScoped({ startImmediately: true }),
   );
-  return { ref, fiber };
+  return { ref, fiber, firstDelta, completed };
 });
 
 const settle = Effect.gen(function* () {
   for (let attempt = 0; attempt < 40; attempt += 1) yield* Effect.yieldNow;
-});
-
-const settleLive = Effect.gen(function* () {
-  yield* Effect.sleep("150 millis");
-  yield* settle;
 });
 
 const deltasOf = (events: ReadonlyArray<AnyEvent>) =>
@@ -658,11 +650,11 @@ describe("AgyAdapter stress lifecycle", () => {
       const turnFiber = yield* Effect.forkChild(
         Effect.exit(adapter.sendTurn({ threadId, input: "stream forever", attachments: [] })),
       );
-      // Let several deltas flow, then interrupt mid-stream.
-      yield* settleLive;
+      // Wait for subprocess output before interrupting mid-stream.
+      yield* Deferred.await(events.firstDelta);
       yield* adapter.interruptTurn(threadId, undefined as never);
       yield* Fiber.join(turnFiber);
-      yield* settleLive;
+      yield* Deferred.await(events.completed);
       yield* Fiber.interrupt(events.fiber);
 
       const seen = yield* Ref.get(events.ref);

@@ -23,7 +23,7 @@ export type SkillsSearchInput = typeof SkillsSearchInput.Type;
 export const SkillsSearchResult = Schema.Struct({
   name: Schema.String,
   description: Schema.optional(Schema.String),
-  /** Absolute SKILL.md path — read it to get the instructions. */
+  /** Absolute SKILL.md path: read it to get the instructions. */
   path: Schema.String,
   root: Schema.String,
   kind: Schema.String,
@@ -40,7 +40,7 @@ export type SkillsSearchOutput = typeof SkillsSearchOutput.Type;
 
 const SkillsSearchTool = Tool.make("skills_search", {
   description:
-    "Search the local agent skills installed on this machine. Answers from a live scan, so results are never stale. Returns each skill's absolute SKILL.md path — read that file to get its instructions. This tool never runs a skill.",
+    "Search the local agent skills installed on this machine. Answers from a live scan, so results are never stale. Returns each skill's absolute SKILL.md path: read that file to get its instructions. This tool never runs a skill.",
   parameters: SkillsSearchInput,
   success: SkillsSearchOutput,
   dependencies,

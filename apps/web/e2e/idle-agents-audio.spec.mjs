@@ -20,7 +20,7 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
   ).trim();
   await context.addInitScript(
     ({ threadId }) => {
-      const now = new Date().toISOString();
+      const now = "2026-10-24T12:00:00.000Z";
       const runId = "artifact-run";
       const providerThreadId = "artifact-provider-thread";
       const taskRoster = (live) =>

@@ -13,7 +13,7 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
     window.__queueFixtureQueueDispatches = 0;
     window.__queueFixtureQueueCancellations = 0;
     const fixtureThreadId = () => runningThreadId ?? window.__queueFixtureThreadId ?? null;
-    const now = new Date().toISOString();
+    const now = "2026-10-24T12:00:00.000Z";
     // A real deferred V2 run below exercises queue persistence without starting
     // a provider. Present its preparing state as running only in the UI.
     const runningSnapshot = (value) => {
@@ -180,14 +180,16 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
     const dispatch = (payload) =>
       new Promise((resolve, reject) => {
         const id = requestId++;
-        const timer = setTimeout(() => {
+        const deadline = AbortSignal.timeout(10_000);
+        const onTimeout = () => {
           socket.removeEventListener("message", receive);
           reject(new Error(`Fixture command ${payload.type} timed out`));
-        }, 10000);
+        };
+        deadline.addEventListener("abort", onTimeout, { once: true });
         const receive = (event) => {
           const packet = JSON.parse(event.data);
           if (packet._tag !== "Exit" || Number(packet.requestId) !== id) return;
-          clearTimeout(timer);
+          deadline.removeEventListener("abort", onTimeout);
           socket.removeEventListener("message", receive);
           if (packet.exit._tag === "Success") resolve(packet.exit.value);
           else reject(new Error(JSON.stringify(packet.exit)));

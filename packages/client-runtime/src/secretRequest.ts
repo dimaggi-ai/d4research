@@ -181,5 +181,3 @@ export function secretRequestFailureMessage(failure: unknown): string {
   }
   return "Could not answer the request. Try again.";
 }
-
-export const SECRET_REQUEST_PRIVACY_NOTE = "Stored securely, never shown to the agent";

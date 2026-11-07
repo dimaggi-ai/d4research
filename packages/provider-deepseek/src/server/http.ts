@@ -51,12 +51,12 @@ const Completion = Schema.Struct({
 
 const decodeCompletion = Schema.decodeUnknownEffect(Schema.fromJsonString(Completion));
 
-export const requestCompletion = (
-  client: HttpClient.HttpClient,
-  config: DeepSeekSettings,
-  messages: ReadonlyArray<ChatMessage>,
-) =>
-  Effect.gen(function* () {
+export const requestCompletion = Effect.fn("DeepSeekHttp.requestCompletion")(
+  function* (
+    client: HttpClient.HttpClient,
+    config: DeepSeekSettings,
+    messages: ReadonlyArray<ChatMessage>,
+  ) {
     if (!isLoopbackEndpoint(config.endpoint))
       return yield* new DeepSeekRequestError({ category: "configuration" });
     // A UTF-8 byte bound is conservative for tokenization and never silently drops history.
@@ -110,10 +110,13 @@ export const requestCompletion = (
       return yield* new DeepSeekRequestError({ category: "protocol" });
     }
     return { text: choice.message.content, usage: completion.usage };
-  }).pipe(
-    Effect.timeout(config.requestTimeoutMs),
-    Effect.catchTags({
-      TimeoutError: (cause) =>
-        Effect.fail(new DeepSeekRequestError({ category: "timeout", cause })),
-    }),
-  );
+  },
+  (effect, _client, config) =>
+    effect.pipe(
+      Effect.timeout(config.requestTimeoutMs),
+      Effect.catchTags({
+        TimeoutError: (cause) =>
+          Effect.fail(new DeepSeekRequestError({ category: "timeout", cause })),
+      }),
+    ),
+);

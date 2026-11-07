@@ -56,7 +56,7 @@ async function fixture() {
 const fs = require('node:fs');
 const base = process.env.HOME + '/.t3';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('t3 v0.1.1'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('d4research v0.1.1'); process.exit(0); }
 if (args[0] === '__ssh-helper' && args[1] === 'pick-port') { process.stdout.write('4173'); process.exit(0); }
 if (args[0] === '__ssh-helper' && args[1] === 'runtime-port') {
  const info = JSON.parse(fs.readFileSync(args[2])); process.kill(info.pid, 0); process.stdout.write(info.pid + ' ' + info.port); process.exit(0);
@@ -65,8 +65,9 @@ if (args[0] === '__ssh-helper' && args[1] === 'wait-ready') {
  if (args[3] === '30000') process.exit(0);
  const ready = () => { try { const r = JSON.parse(fs.readFileSync(base + '/userdata/server-runtime.json')); return r.buildId === '${runtime.buildId}'; } catch { return false; } };
  const finish = () => process.exit(fs.existsSync(base + '/fail-trial') ? 1 : 0);
- if (ready()) finish();
+ // Check again after watching: a record written before fs.watch starts sends no event.
  const watcher = fs.watch(base + '/userdata', () => { if (ready()) { watcher.close(); finish(); } });
+ if (ready()) { watcher.close(); finish(); }
 } else {
  if (process.env.T3CODE_SERVER_BUILD_ID && fs.existsSync(base + '/fail-trial')) fs.writeFileSync(base + '/userdata/statev2.sqlite', 'trial database');
  fs.writeFileSync(base + '/userdata/server-runtime.json', JSON.stringify({pid:process.pid,port:4173,buildId:process.env.T3CODE_SERVER_BUILD_ID ?? 'old'}));

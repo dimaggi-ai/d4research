@@ -6,6 +6,7 @@ import { serverEnvironment } from "../../state/server";
 
 function useDocumentVisible() {
   const [visible, setVisible] = useState(() => document.visibilityState === "visible");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe to document visibility so backgrounded pages detach their live queries.
   useEffect(() => {
     const update = () => setVisible(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", update);

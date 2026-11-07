@@ -77,14 +77,23 @@ export function SymbolNavigationDialog(props: SymbolNavigationDialogProps) {
 
   const modeLabel = props.mode === "usages" ? "usages" : "definitions";
 
+  const [wasOpen, setWasOpen] = useState(props.open);
+  if (wasOpen !== props.open) {
+    setWasOpen(props.open);
+    if (props.open) {
+      setQuery("");
+      setSelectedIndex(0);
+    }
+  }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Focus the dialog input DOM after its opening render commits.
   useEffect(() => {
     if (!props.open) return;
-    setQuery("");
-    setSelectedIndex(0);
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [props.open]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scroll the selected result DOM row into the visible list viewport.
   useEffect(() => {
     const row = listRef.current?.querySelector<HTMLElement>(`[data-row-index="${selectedIndex}"]`);
     row?.scrollIntoView({ block: "nearest" });

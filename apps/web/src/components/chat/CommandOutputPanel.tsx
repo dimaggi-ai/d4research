@@ -40,6 +40,7 @@ export function CommandOutputPanel(props: {
   const { resolvedTheme } = useTheme();
 
   // This panel only re-renders when its output changes, so keep the end in view after each.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scrolls the output DOM to the live edge after streamed content commits.
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (element && followRef.current) element.scrollTop = element.scrollHeight;

@@ -26,7 +26,7 @@ be verified against current source — never copy forward stale prose.
 ## Procedure
 
 1. **Diff-driven survey.** `git log --oneline -60` and `git diff --stat
-<last-docs-commit>..HEAD` to find what changed since docs were last touched
+   <last-docs-commit>..HEAD` to find what changed since docs were last touched
    (find it with `git log --oneline -20 -- docs/`). Read the touched
    subsystems' source, not just commit messages.
 2. **Contracts spec.** Enumerate `packages/contracts/src/*.ts` and compare

@@ -79,8 +79,6 @@ const pendingAgentRequestMethods = new Map<string, string>();
 // The test reads status while this agent may still be running; rename makes each
 // write atomic so a reader never sees a truncated file.
 function writeStatus(failure?: unknown): void {
-  // The test reads this file while the agent runs; a rename never exposes a truncated write.
-  const pendingPath = `${replayStatusPath}.${process.pid}.tmp`;
   const temporaryStatusPath = `${replayStatusPath}.${process.pid}.tmp`;
   NodeFS.writeFileSync(
     temporaryStatusPath,

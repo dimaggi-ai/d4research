@@ -23,7 +23,7 @@ const CLAUDE_RESUME_COMPACTION_FALLBACK_MS = 70 * 60_000;
 
 // A typed `/compact`, with or without instructions, is already the compaction. Queueing a
 // bare one ahead of it would run an uninstructed compaction first and charge for two.
-export const COMPACT_COMMAND_PATTERN = /^\/compact(?:\s|$)/i;
+const COMPACT_COMMAND_PATTERN = /^\/compact(?:\s|$)/i;
 
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;

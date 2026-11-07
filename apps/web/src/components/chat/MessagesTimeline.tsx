@@ -1117,6 +1117,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         cancelPositionRestoreRef.current = null;
     };
   }, [
+    cancelPositionRestoreRef,
     citationRequest,
     findOpenAtOpening,
     listIdentityKey,
@@ -1309,7 +1310,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
   });
 
-  // Keeps the persisted reading position in step with follow mode when a wheel is measured before the parent commits.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Updates the persisted timeline position when a wheel releases follow before the parent commits.
   useEffect(() => {
     if (!liveFollowEnabled) rememberReleasedPosition();
   }, [liveFollowEnabled, rememberReleasedPosition]);
@@ -1885,6 +1886,7 @@ function TimelineMinimap({
   const pressedOnStripRef = useRef(false);
   const [passThrough, setPassThrough] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes to native mouse-button release while selection passes through the overlay.
   useEffect(() => {
     if (!passThrough) return;
     return onMouseButtonsReleased(() => setPassThrough(false));
@@ -3797,6 +3799,7 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
   const textRef = useRef<HTMLSpanElement>(null);
   const initialText = formatWorkingTimerNow(createdAt);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Updates the working timer DOM text once per second while mounted.
   useEffect(() => {
     const updateText = () => {
       if (textRef.current) {
@@ -3897,6 +3900,7 @@ function ExpandedWorkGroupEntries({
     setRestoringPosition(false);
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes timeline DOM resizing to update scroll fade visibility.
   useLayoutEffect(() => {
     const element = listRef.current?.getScrollableNode();
     if (!element) return;
@@ -3922,6 +3926,7 @@ function ExpandedWorkGroupEntries({
     setExpandedContentHeight(height);
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures expanded timeline DOM height after its entries change.
   useLayoutEffect(updateExpandedContentHeight, [entries, updateExpandedContentHeight]);
 
   return (

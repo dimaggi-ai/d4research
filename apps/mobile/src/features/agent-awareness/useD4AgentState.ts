@@ -7,6 +7,7 @@ import { serverEnvironment } from "../../state/server";
 
 function useAppActive() {
   const [active, setActive] = useState(() => AppState.currentState === "active");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe to native AppState so hidden screens pause agent queries.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       setActive(state === "active"),
@@ -18,6 +19,7 @@ function useAppActive() {
 
 function useAgentRefresh(refreshQuery: () => void, visible: boolean) {
   const refresh = useEffectEvent(refreshQuery);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the agent-refresh interval only while the screen is visible.
   useEffect(() => {
     if (!visible) return;
     const timer = setInterval(refresh, 15_000);

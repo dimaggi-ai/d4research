@@ -538,6 +538,7 @@ function ThreadTerminal(props: {
       bufferReplayTimerRef.current = null;
     }
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the terminal replay stability timer when the route unmounts.
   useEffect(() => clearBufferReplayTimer, [clearBufferReplayTimer]);
   const scheduleBufferReplayReady = () => {
     clearBufferReplayTimer();
@@ -546,11 +547,14 @@ function ThreadTerminal(props: {
       setReadyBufferReplayKey(bufferReplayKey);
     }, TERMINAL_BUFFER_REPLAY_STABILITY_DELAY_MS);
   };
-  const terminalSurfaceBuffer = streamingOutput ? terminal.buffer : getTerminalSurfaceReplayBuffer({
-    buffer: terminal.buffer,
-    replayKey: bufferReplayKey,
-    readyReplayKey: readyBufferReplayKey,
-  });
+  const terminalSurfaceBuffer = streamingOutput
+    ? terminal.buffer
+    : getTerminalSurfaceReplayBuffer({
+        buffer: terminal.buffer,
+        replayKey: bufferReplayKey,
+        readyReplayKey: readyBufferReplayKey,
+      });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Record committed remote PTY status changes in the external diagnostic log.
   useEffect(() => {
     terminalDebugLog("session:status", {
       terminalKey,
@@ -560,7 +564,14 @@ function ThreadTerminal(props: {
       bufferLen: terminal.buffer.length,
       version: terminal.version,
     });
-  }, [terminalKey, terminal.status, terminal.error, terminal.summary?.cwd, terminal.buffer.length, terminal.version]);
+  }, [
+    terminalKey,
+    terminal.status,
+    terminal.error,
+    terminal.summary?.cwd,
+    terminal.buffer.length,
+    terminal.version,
+  ]);
   const isRunning = terminal.status === "running" || terminal.status === "starting";
 
   const cwd = terminal.summary?.cwd ?? selectedThreadProject?.workspaceRoot ?? null;

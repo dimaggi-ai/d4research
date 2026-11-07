@@ -64,10 +64,12 @@ function EdgeDictationPill(props: { readonly collapseRef: RefObject<(() => void)
   const { fabSize } = useAndroidControlSizing();
   const [expanded, setExpanded] = useState(false);
   const progress = useSharedValue(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate the native dictation pill when its expanded state changes.
   useEffect(() => {
-    progress.value = withTiming(expanded ? 1 : 0, MORPH_TIMING);
+    progress.set(withTiming(expanded ? 1 : 0, MORPH_TIMING));
   }, [expanded, progress]);
   const { collapseRef } = props;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Register the expanded pill dismissal callback for the parent native touch responder until collapse or unmount.
   useEffect(() => {
     if (!expanded) return;
     collapseRef.current = () => setExpanded(false);

@@ -40,6 +40,7 @@ function EnvironmentMonitorNotifications({
   const enabled =
     config?.settings.agentMonitor?.enabled === true &&
     config.settings.agentMonitor.notificationsEnabled;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Invalidate in-flight native notification delivery when permission or mount lifetime ends.
   useLayoutEffect(() => {
     available.current = Boolean(enabled && allowed && shell.status === "live");
     return () => {
@@ -60,6 +61,7 @@ function EnvironmentMonitorNotifications({
       thread.deletedAt === null
     );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Deliver eligible agent reports through the native notification service.
   useEffect(() => {
     if (
       !enabled ||

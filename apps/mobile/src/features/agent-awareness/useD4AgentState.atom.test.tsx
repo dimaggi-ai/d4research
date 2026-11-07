@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { RegistryContext } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -50,13 +49,17 @@ function Chat() {
     <p>Loading</p>
   );
 }
-const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+const settle = () =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
 const setAppState = (next: string) =>
   act(() => {
     app.currentState = next;
     app.listener?.(next);
   });
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   app.pending = [];
   app.currentState = "active";
@@ -67,6 +70,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   registry.dispose();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 

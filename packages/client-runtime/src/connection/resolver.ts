@@ -2,7 +2,6 @@ import type {
   AuthClientPresentationMetadata,
   ExecutionEnvironmentDescriptor,
 } from "@d4research/contracts";
-import { withRelayClientTracing } from "@d4research/shared/relayTracing";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

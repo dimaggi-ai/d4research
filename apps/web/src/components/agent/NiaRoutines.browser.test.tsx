@@ -1,6 +1,6 @@
-import { act, cloneElement, type ReactElement, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { act, render as renderComponent, type Screen } from "../../../test/render";
+import { cloneElement, type ReactElement, type ReactNode } from "react";
+import { expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, type D4AgentState } from "@d4research/contracts";
 import { NiaRoutines } from "./NiaRoutines";
 
@@ -76,7 +76,8 @@ vi.mock("../../state/query", () => ({
     refresh: vi.fn(),
   }),
 }));
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   Link: ({ children, params }: { children: ReactNode; params: { threadId: string } }) => (
     <a href={`#${params.threadId}`}>{children}</a>
   ),
@@ -156,30 +157,34 @@ vi.mock("../chat/ProviderModelPicker", () => ({
 }));
 
 let host: HTMLDivElement;
-let root: Root;
+let root: Screen;
 const state = {
   brainContext: "Global",
   threadId: "nia:synthetic",
   routines: [],
 } as unknown as D4AgentState;
-beforeEach(() => {
+async function setupFixture() {
   mocks.allowed = true;
   mocks.connected = true;
   mocks.toggle.mockClear();
   mocks.send.mockClear();
   host = document.createElement("div");
   document.body.append(host);
-  root = createRoot(host);
-});
-afterEach(async () => {
-  await act(async () => root.unmount());
-  host.remove();
-});
+  root = await renderComponent(null, { container: host, router: false });
+  return {
+    async [Symbol.asyncDispose]() {
+      await root[Symbol.asyncDispose]();
+      host.remove();
+    },
+  };
+}
+
 async function open(inputState = state) {
-  await act(async () =>
-    root.render(
-      <NiaRoutines environmentId={EnvironmentId.make("env:synthetic")} state={inputState} />,
-    ),
+  await act(
+    async () =>
+      await root.rerender(
+        <NiaRoutines environmentId={EnvironmentId.make("env:synthetic")} state={inputState} />,
+      ),
   );
   await act(async () =>
     (host.querySelector('[aria-label="Open routines"]') as HTMLButtonElement).click(),
@@ -189,6 +194,7 @@ function button(text: string) {
   return [...host.querySelectorAll("button")].find((node) => node.textContent === text)!;
 }
 it("lists status, next run and latest execution link; disables the exact selected job", async () => {
+  await using _fixture = await setupFixture();
   await open();
   expect(host.textContent).toContain("Example routine");
   expect(host.textContent).toContain("Next: No next run");
@@ -200,6 +206,7 @@ it("lists status, next run and latest execution link; disables the exact selecte
   });
 });
 it("keeps read-only access visible while disabling mutations", async () => {
+  await using _fixture = await setupFixture();
   mocks.allowed = false;
   await open();
   expect(button("Disable").disabled).toBe(true);
@@ -208,6 +215,7 @@ it("keeps read-only access visible while disabling mutations", async () => {
   expect(mocks.toggle).not.toHaveBeenCalled();
 });
 it("does not expose cached rows while disconnected", async () => {
+  await using _fixture = await setupFixture();
   mocks.connected = false;
   await open();
   expect(host.textContent).toContain("Connect to view routines.");
@@ -215,6 +223,7 @@ it("does not expose cached rows while disconnected", async () => {
 });
 
 it("preserves the brief after failure and retries in the bound session", async () => {
+  await using _fixture = await setupFixture();
   mocks.send.mockResolvedValueOnce({ _tag: "Failure" });
   await open();
   await act(async () => button("Worker picker").click());
@@ -244,6 +253,7 @@ it("preserves the brief after failure and retries in the bound session", async (
 });
 
 it("does not send duplicate preparation requests while one is in flight", async () => {
+  await using _fixture = await setupFixture();
   let finish!: (value: { _tag: string }) => void;
   mocks.send.mockImplementationOnce(
     () =>
@@ -270,6 +280,7 @@ it("does not send duplicate preparation requests while one is in flight", async 
 });
 
 it("shows host inventory as dated read-only snapshots", async () => {
+  await using _fixture = await setupFixture();
   await open({
     ...state,
     hostRoutines: {

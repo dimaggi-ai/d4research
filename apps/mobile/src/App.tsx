@@ -58,7 +58,11 @@ import {
   settingsLinkPage,
 } from "./features/layout/workspace/workspace-selection-store";
 import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
-import { pairingFormLinkAction, startDevAutoConnect, withoutPairingTarget } from "./features/connection/devAutoConnect";
+import {
+  pairingFormLinkAction,
+  startDevAutoConnect,
+  withoutPairingTarget,
+} from "./features/connection/devAutoConnect";
 import { workspaceDetailLinkAction } from "./features/layout/workspace/workspace-detail-selection";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
 
@@ -116,6 +120,7 @@ function handleNavigationStateChange(state: NavigationState | undefined) {
 function SplashScreenCoordinator() {
   const { isReady } = useAppearancePreferences();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hide the native splash screen once application resources are ready.
   useEffect(() => {
     if (isReady) void SplashScreen.hide();
   }, [isReady]);
@@ -125,6 +130,7 @@ function SplashScreenCoordinator() {
 
 export default function App() {
   useUiRuntimeMemoryWarningGc();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Install application subscriptions and native share, upload, and appearance runtimes until unmount.
   useEffect(() => {
     void hydrateWorkspaceSelections();
     const cleanup = [
@@ -164,11 +170,8 @@ function AppContent() {
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>
             <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />
-            {/* The navigation theme drives the NATIVE header appearance: native-stack
-                forwards `dark` as the nav bar's overrideUserInterfaceStyle. Without
-                this, React Navigation defaults to its light theme and every native
-                header (glass buttons, title, materials) is forced light even when
-                the system is in dark mode. */}
+            {/* Native-stack forwards the navigation theme to overrideUserInterfaceStyle;
+                without it, native headers stay light when the system is dark. */}
             <GlobalVoiceInputControl>
               <NativeLayoutMetricsProvider>
                 <Navigation

@@ -18,7 +18,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import { createModelCapabilities } from "@d4research/shared/model";
+import { createModelCapabilities, readCustomModelEntries } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 
 import {
@@ -65,16 +65,26 @@ const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabili
   optionDescriptors: [],
 });
 
-function claudeProviderModels(
+// Endpoint-discovered models stay visible when clients replace custom entries from settings.
+/** @public */
+export function claudeProviderModels(
   builtInModels: ReadonlyArray<ServerProviderModel>,
-  customModels: ClaudeSettings["customModels"],
+  settingsModels: ClaudeSettings["customModels"],
+  endpointModels: ReadonlyArray<string>,
 ): ReadonlyArray<ServerProviderModel> {
+  const settingsSlugs = new Set(readCustomModelEntries(settingsModels).map((entry) => entry.slug));
   return providerModelsFromSettings(
     builtInModels,
-    customModels,
+    [...settingsModels, ...endpointModels],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   ).map((model) =>
-    model.isCustom ? { ...model, capabilities: withUltracodeToggle(model.capabilities) } : model,
+    model.isCustom
+      ? {
+          ...model,
+          isCustom: settingsSlugs.has(model.slug),
+          capabilities: withUltracodeToggle(model.capabilities),
+        }
+      : model,
   );
 }
 
@@ -747,7 +757,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const usesLocalModelGateway = usesLocalOllama || localModelOverrides.length > 0;
   const allModels = claudeProviderModels(
     usesLocalModelGateway ? [] : modelCatalog.models.map((entry) => entry.model),
-    [...claudeSettings.customModels, ...localModelOverrides],
+    claudeSettings.customModels,
+    localModelOverrides,
   );
 
   if (!claudeSettings.enabled) {
@@ -773,7 +784,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const discoveredOllamaModels = ollamaDiscovery.models;
   const modelsWithDiscovery = claudeProviderModels(
     usesLocalModelGateway ? [] : modelCatalog.models.map((entry) => entry.model),
-    [...claudeSettings.customModels, ...localModelOverrides, ...discoveredOllamaModels],
+    claudeSettings.customModels,
+    [...localModelOverrides, ...discoveredOllamaModels],
   );
 
   const versionProbe = yield* runClaudeCommand(
@@ -862,7 +874,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
           ...resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
           ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
         ],
-    [...claudeSettings.customModels, ...localModelOverrides, ...discoveredOllamaModels],
+    claudeSettings.customModels,
+    [...localModelOverrides, ...discoveredOllamaModels],
   );
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
@@ -1019,7 +1032,8 @@ export const makePendingClaudeProvider = Effect.fn("ClaudeProvider.makePendingCl
       claudeUsesLocalOllama(environment) || localModelOverrides.length > 0
         ? []
         : modelCatalog.models.map((entry) => entry.model),
-      [...claudeSettings.customModels, ...localModelOverrides],
+      claudeSettings.customModels,
+      localModelOverrides,
     );
 
     if (!claudeSettings.enabled) {

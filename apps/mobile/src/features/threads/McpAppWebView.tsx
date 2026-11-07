@@ -173,9 +173,11 @@ export function ThreadMcpApp(props: {
     setDocumentKeyState(next);
   };
   const openNewDocument = useRef(setDocumentKey);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the navigation focus listener pointed at the current document opener.
   useEffect(() => {
     openNewDocument.current = setDocumentKey;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribes to native navigation focus to reopen the inline WebView document.
   useEffect(() => {
     if (!presentedFullscreen) return;
     return navigation.addListener("focus", () => {
@@ -228,9 +230,11 @@ export function ThreadMcpApp(props: {
     navigation,
   };
   const latest = useRef(live);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the long-lived WebView bridge callbacks in step with current host context.
   useEffect(() => {
     latest.current = live;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads tool metadata for the mounted MCP app and discards replies after teardown.
   useEffect(() => {
     let cancelled = false;
     void latest.current
@@ -250,6 +254,7 @@ export function ThreadMcpApp(props: {
   const webView = useRef<WebView<object>>(null);
   const hostRef = useRef<McpAppHost | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the MCP bridge host and tears it down with the WebView document.
   useEffect(() => {
     if (uri === null) return;
     const scope = () => {
@@ -452,10 +457,12 @@ export function ThreadMcpApp(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A restarted view needs a new host.
   }, [uri, app, generation, documentKey]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Sends changed native host context to the imperative MCP bridge.
   useEffect(() => {
     hostRef.current?.updateHostContext();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Context changes trigger a resend.
   }, [theme, props.width, props.height, insets, toolDefinition]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Sends the stored tool call to each new MCP WebView document.
   useEffect(() => {
     if (toolCall !== undefined) hostRef.current?.setToolCall(toolCall);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Each new document needs the call.
@@ -521,11 +528,8 @@ export function ThreadMcpApp(props: {
           style={{ flex: 1, backgroundColor: "transparent" }}
           nestedScrollEnabled
           originWhitelist={["*"]}
-          // Only the outer page loads at the top; the app opens links through
-          // the bridge. Android reports every navigation as top-frame, frames
-          // the app nests included, so it has no gate to apply: there the
-          // outer page never navigates, and the app frame's sandbox already
-          // forbids top navigation and popups.
+          // Android reports nested frames as top-frame; rely on the app sandbox
+          // there. Other platforms allow only the initial outer page navigation.
           onShouldStartLoadWithRequest={(request) =>
             Platform.OS === "android" ||
             request.isTopFrame === false ||

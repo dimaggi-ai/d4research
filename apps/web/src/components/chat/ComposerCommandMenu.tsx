@@ -161,6 +161,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
     props.groupSlashCommandSections ?? true,
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scrolls the active command DOM row into the visible menu viewport.
   useLayoutEffect(() => {
     if (!props.activeItemId || !listRef.current) return;
     const el = listRef.current.querySelector<HTMLElement>(

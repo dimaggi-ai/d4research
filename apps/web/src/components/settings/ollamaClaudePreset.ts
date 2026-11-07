@@ -35,13 +35,8 @@ const OLLAMA_ENVIRONMENT: ReadonlyArray<ProviderInstanceEnvironmentVariable> = [
   { name: "ANTHROPIC_BASE_URL", value: OLLAMA_ANTHROPIC_BASE_URL, sensitive: false },
 ];
 
-/**
- * Claude Code resolves its `haiku`/`sonnet`/`opus` aliases for background work
- * (titles, summaries, subagents) even when the user picks an explicit model.
- * Against Ollama those aliases are unknown models, so `ollama launch claude`
- * pins all three to the selected tag — mirror that or every background call
- * fails.
- */
+// Background calls still resolve Claude's aliases when an explicit model is selected.
+// Ollama does not recognize those aliases, so pin all three to the selected tag.
 const OLLAMA_DEFAULT_MODEL_VARIABLES = [
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -127,13 +122,7 @@ export type OllamaDiscoveryResult = {
   readonly reachable: boolean;
 };
 
-/**
- * Candidate daemon origins, in order. `127.0.0.1` is correct when the browser
- * and the Ollama daemon share a machine; when the UI is opened from another
- * device (tablet, phone) loopback resolves to *that* device, so fall back to
- * the host serving the app, which is where the T3 server — and therefore
- * Ollama — actually runs.
- */
+// On remote clients, loopback names the client itself; also try the app host for its daemon.
 export function ollamaDiscoveryOrigins(location?: {
   readonly protocol?: string;
   readonly hostname?: string;
@@ -243,13 +232,8 @@ function readPresetBackup(config: Record<string, unknown>): OllamaPresetBackup |
   };
 }
 
-/**
- * Whether a custom model came from the preset. The driver config schema is a
- * closed struct, so the applied tags cannot be recorded alongside them — but
- * Ollama tags are recognisable: they are either in the bundled roster or carry
- * a `:cloud`/`-cloud` suffix, neither of which a hand-entered Anthropic model
- * slug ever does.
- */
+// The closed driver config cannot record applied tags. Recognize the bundled roster and cloud
+// suffixes so removing the preset can preserve unrelated hand-entered Anthropic models.
 function isOllamaPresetModel(model: string): boolean {
   const id = model.trim();
   return (
@@ -258,13 +242,8 @@ function isOllamaPresetModel(model: string): boolean {
   );
 }
 
-/**
- * Undo {@link applyOllamaClaudePreset}, returning the instance to whatever it
- * was before Ollama was switched on. Pass the models discovery currently
- * reports so locally pulled tags (which carry no `:cloud` marker) are cleaned
- * up too; without it only recognisable tags are removed and anything the user
- * typed themselves is preserved either way.
- */
+// Discovery identifies local tags without cloud suffixes; pass them to remove those preset models
+// as well. Without discovery, preserve unrecognizable tags to avoid deleting user-entered models.
 export function removeOllamaClaudePreset(
   instance: ProviderInstanceConfig,
   discoveredLocalModels: ReadonlyArray<string> = [],

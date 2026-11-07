@@ -26,7 +26,7 @@ import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } fr
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
 import { flattenThemeColor } from "../../lib/mobileTheme";
-import { useFontFamily } from "../../lib/useFontFamily";
+import { getFontFamily } from "../../lib/useFontFamily";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
@@ -42,6 +42,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
+import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { ModelRow } from "../threads/ThreadSettingsRows";
 import { AppBar } from "../../components/ui/AppBar";
@@ -85,8 +86,8 @@ function taskFailureMessage(
 function useNiaMarkdownStyles() {
   const { appearance } = useAppearancePreferences();
   const theme = useUniwindTheme();
-  const fontFamily = useFontFamily("regular");
-  const boldFontFamily = useFontFamily("bold");
+  const fontFamily = getFontFamily("regular");
+  const boldFontFamily = getFontFamily("bold");
   return useMemo(() => {
     const typography = resolveNativeMarkdownTypography(appearance.baseFontSize);
     const common = {
@@ -435,7 +436,7 @@ export function D4AgentChat({
                 icon="brain"
                 label={
                   taskSelection
-                    ? `${taskSelection.instanceId} · ${taskSelection.model}`
+                    ? formatModelSelectionLabel(config?.providers, taskSelection)
                     : "No task model"
                 }
                 onPress={() => setTaskPickerOpen(true)}

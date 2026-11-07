@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Keyboard, View } from "react-native";
 import {
   CommonActions,
@@ -80,13 +80,14 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
   const [requestedScene, setRequestedScene] = useState<ShowcaseScene | null>(null);
   const [requestedTheme, setRequestedTheme] = useState<MobileThemeId | null>(null);
   const [themeRequestSettled, setThemeRequestSettled] = useState(false);
-  const [readyScene, setReadyScene] = useState<ShowcaseScene | null>(null);
-  const [orientationSettled, setOrientationSettled] = useState(false);
+  const [requestedOrientation] = useState(getNativeShowcaseOrientation);
+  const [orientationSettled, setOrientationSettled] = useState(requestedOrientation === null);
   const [agentActivityStaged, setAgentActivityStaged] = useState(false);
   const requestedSceneRef = useRef<ShowcaseScene | null>(null);
   // Staging reads the latest entities without restarting on every shell
   // update, which would re-enter a permission prompt that is still open.
   const entitiesRef = useRef({ threads, projects });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the showcase retry callback pointed at committed entities without restarting an open native permission prompt.
   useEffect(() => {
     entitiesRef.current = { threads, projects };
   }, [projects, threads]);
@@ -96,6 +97,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     getShowcaseRenderSignal,
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Poll the native capture harness launch arguments until its pairing URLs become available.
   useEffect(() => {
     if (pairingUrls.length > 0) return;
 
@@ -111,17 +113,13 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     return () => clearInterval(interval);
   }, [pairingUrls.length]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Apply the native capture harness orientation request and cancel retries when the coordinator unmounts.
   useEffect(() => {
     if (orientationSettled) return;
-    const orientation = getNativeShowcaseOrientation();
-    if (orientation === null) {
-      setOrientationSettled(true);
-      return;
-    }
+    if (requestedOrientation === null) return;
 
     let cancelled = false;
-    let lastOutcome: string | null = null;
-    void retryShowcaseOperation(async () => applyNativeShowcaseOrientation(orientation), {
+    void retryShowcaseOperation(async () => applyNativeShowcaseOrientation(requestedOrientation), {
       isCancelled: () => cancelled,
     }).then((applied) => {
       if (!cancelled && applied) setOrientationSettled(true);
@@ -129,8 +127,9 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     return () => {
       cancelled = true;
     };
-  }, [orientationSettled]);
+  }, [orientationSettled, requestedOrientation]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Poll the native capture harness for scene requests and invalidate the previous native draw signal.
   useEffect(() => {
     const readRequestedScene = () => {
       const value = getNativeShowcaseScene();
@@ -152,6 +151,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
       ? themeRequestSettled
       : themeIds.light === requestedTheme && themeIds.dark === requestedTheme;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Apply the native capture harness theme request to the persisted appearance preferences once hydrated.
   useEffect(() => {
     if (requestedTheme === null || themeApplied || !appearancePreferencesReady) {
       return;
@@ -159,6 +159,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     setThemeIdForBothAppearances(requestedTheme);
   }, [appearancePreferencesReady, requestedTheme, setThemeIdForBothAppearances, themeApplied]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Pair the remote showcase fixture environments requested by the native capture harness.
   useEffect(() => {
     if (pairingUrls.length === 0) return;
     let cancelled = false;
@@ -190,6 +191,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
   const hasFixture = hasServerFixture && pendingTasksReady;
   const showcaseThread = threads.find((thread) => String(thread.id) === SHOWCASE_THREAD_ID);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Seed the remote showcase outbox fixture after the paired server data has hydrated.
   useEffect(() => {
     if (!hasServerFixture || pendingTasksReady) return;
 
@@ -221,6 +223,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     };
   }, [hasServerFixture, pendingTasksReady, projects]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Navigate the native stack to the scene requested by the screenshot harness after fixture preparation.
   useEffect(() => {
     if (requestedScene === null || !hasFixture || !showcaseThread) return;
     if (scene === requestedScene) return;
@@ -273,6 +276,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     );
   }, [hasFixture, navigation, requestedScene, scene, showcaseThread]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Stage remote agent activity for the native screenshot harness with cancellable retry work.
   useEffect(() => {
     if (scene !== "agent-activity" || !hasFixture || agentActivityStaged) {
       return;
@@ -303,7 +307,7 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     };
   }, [agentActivityStaged, hasFixture, scene]);
 
-  useEffect(() => {
+  const readyRequest = useMemo(() => {
     if (
       scene === null ||
       requestedScene === null ||
@@ -313,27 +317,9 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
       !themeApplied ||
       (scene === "agent-activity" && !agentActivityStaged) ||
       !isShowcaseNativeContentReady({ scene, themeId, renderSignal })
-    ) {
-      setReadyScene(null);
-      return;
-    }
-    if (scene === "terminal") Keyboard.dismiss();
-
-    let renderFrame: number | null = null;
-    let readyFrame: number | null = null;
-    const settleTimer = setTimeout(() => {
-      renderFrame = requestAnimationFrame(() => {
-        readyFrame = requestAnimationFrame(() => {
-          markNativeShowcaseReady(scene);
-          setReadyScene(scene);
-        });
-      });
-    }, 500);
-    return () => {
-      clearTimeout(settleTimer);
-      if (renderFrame !== null) cancelAnimationFrame(renderFrame);
-      if (readyFrame !== null) cancelAnimationFrame(readyFrame);
-    };
+    )
+      return null;
+    return { scene };
   }, [
     agentActivityStaged,
     hasFixture,
@@ -344,6 +330,30 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     themeApplied,
     themeId,
   ]);
+  const [completedReadyRequest, setCompletedReadyRequest] = useState<typeof readyRequest>(null);
+  const readyScene = completedReadyRequest === readyRequest ? (readyRequest?.scene ?? null) : null;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Wait for native render frames before reporting this scene request as ready to the capture harness.
+  useEffect(() => {
+    if (readyRequest === null) return;
+    if (readyRequest.scene === "terminal") Keyboard.dismiss();
+
+    let renderFrame: number | null = null;
+    let readyFrame: number | null = null;
+    const settleTimer = setTimeout(() => {
+      renderFrame = requestAnimationFrame(() => {
+        readyFrame = requestAnimationFrame(() => {
+          markNativeShowcaseReady(readyRequest.scene);
+          setCompletedReadyRequest(readyRequest);
+        });
+      });
+    }, 500);
+    return () => {
+      clearTimeout(settleTimer);
+      if (renderFrame !== null) cancelAnimationFrame(renderFrame);
+      if (readyFrame !== null) cancelAnimationFrame(readyFrame);
+    };
+  }, [readyRequest]);
 
   if (readyScene === null) return null;
 

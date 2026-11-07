@@ -1,11 +1,5 @@
-/**
- * Research honesty guard — pure detection over one persisted V2 run.
- *
- * A research/dev orchestrator must call the real research delegate. Assistant
- * narration, a ToolSearch discovery item, or a completion claim is not proof
- * that research ran. The reactor consumes completed runs and persists a
- * warning system notice when the run claims progress without a delegate call.
- */
+// Only a recorded research delegate call proves research ran. Narration, tool
+// discovery and completion claims alone must trigger the persisted warning.
 import type { OrchestrationV2ThreadProjection, RunId } from "@d4research/contracts";
 import { parseDevTrigger } from "@d4research/shared/devPipeline";
 import { parseResearchTrigger } from "@d4research/shared/researchPipeline";

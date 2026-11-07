@@ -2,7 +2,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import { resolveAssetUrl } from "@d4research/client-runtime/state/assets";
 import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import * as Option from "effect/Option";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
 import { assetEnvironment } from "../../state/assets";
@@ -21,11 +21,8 @@ export function useFileChipShare(
     refresh: true,
     reportFailure: false,
   });
-  const connectionRef = useRef(httpBaseUrl);
-  useLayoutEffect(() => {
-    connectionRef.current = httpBaseUrl;
-  }, [httpBaseUrl]);
   const requestRef = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Aborts the attachment download when the sharing component unmounts.
   useEffect(() => () => requestRef.current?.abort(), []);
 
   const share = useCallback(
@@ -34,7 +31,6 @@ export function useFileChipShare(
       if (!source || requestRef.current) return;
       const request = new AbortController();
       requestRef.current = request;
-      const httpBaseUrl = connectionRef.current;
       void (async () => {
         if (httpBaseUrl === null) throw new Error("Reconnect to the environment and try again.");
         const result = await createUrl({ environmentId, input: { resource: source.resource } });
@@ -63,7 +59,7 @@ export function useFileChipShare(
           }
         });
     },
-    [createUrl, environmentId, sourceIdentifier, threadId],
+    [createUrl, environmentId, httpBaseUrl, sourceIdentifier, threadId],
   );
   return share;
 }

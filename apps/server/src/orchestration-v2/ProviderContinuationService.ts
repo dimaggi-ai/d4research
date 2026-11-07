@@ -211,12 +211,8 @@ export const layer = Layer.effectDiscard(
             creationSource: request.delivery === "message_text" ? "server" : "provider",
           })
           .pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"));
-        // This catch sits outside dispatchIfCurrent so an adapter that clears
-        // its own sticky offer flag on dispatch failure (inside
-        // dispatchIfCurrent) observes the raw failure first. Not every adapter
-        // self-clears that way, so the explicit callback is called here too;
-        // clearIfCurrent implementations are idempotent, so a source that
-        // already cleared is unaffected.
+        // Catch outside dispatchIfCurrent so adapters see the raw failure before clearing
+        // their sticky offer. Also call the idempotent clear callback for other adapters.
         const logInstanceDisabled = (
           error: ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
         ) =>

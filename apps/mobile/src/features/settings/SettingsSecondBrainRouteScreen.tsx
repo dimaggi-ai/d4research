@@ -1,3 +1,4 @@
+import { StackActions } from "@react-navigation/native";
 import { ThreadId, MessageId } from "@d4research/contracts";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -275,7 +276,7 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
               issues.map((issue) => (
                 <Text key={`${issue.path}:${issue.code}:${issue.line ?? 0}`}>
                   {issue.path}
-                  {issue.line ? `:${issue.line}` : ""} — {issue.code}
+                  {issue.line ? `:${issue.line}` : ""}: {issue.code}
                 </Text>
               ))
             )}
@@ -342,10 +343,12 @@ function BrainInbox({ environmentId }: { environmentId: EnvironmentId }) {
             <SettingsActionRow
               label="Source thread"
               onPress={() =>
-                navigation.navigate("Thread", {
-                  environmentId,
-                  threadId: proposal.evidence[0]!.threadId,
-                })
+                navigation.dispatch(
+                  StackActions.push("Thread", {
+                    environmentId,
+                    threadId: proposal.evidence[0]!.threadId,
+                  }),
+                )
               }
             />
           ) : null}
@@ -472,7 +475,7 @@ function ProposalDetail({
       </Text>
       {data.proposal.possibleDuplicates?.map((duplicate) => (
         <Text key={duplicate.path}>
-          Possible duplicate: {duplicate.path} — {duplicate.reason}
+          Possible duplicate: {duplicate.path}: {duplicate.reason}
         </Text>
       ))}
       {data.proposal.evidence.map((evidence) => (
@@ -485,7 +488,9 @@ function ProposalDetail({
                 scopedThreadKey(environmentId, ThreadId.make(evidence.threadId)),
                 MessageId.make(evidence.messageId),
               );
-              navigation.navigate("Thread", { environmentId, threadId: evidence.threadId });
+              navigation.dispatch(
+                StackActions.push("Thread", { environmentId, threadId: evidence.threadId }),
+              );
             }}
           />
         </View>

@@ -545,16 +545,8 @@ function RailEndDropZone() {
   return <div ref={setNodeRef} aria-hidden="true" className="min-h-6 w-full flex-1" />;
 }
 
-/**
- * A column of project icons left of the sidebar, so switching project is one
- * click instead of opening the picker first. Desktop only: the mobile sidebar
- * is a sheet with no room beside it.
- *
- * The rail always uses the manual project order, whatever the sidebar's sort is
- * set to. Groups sit at their first member's place in that order, and every
- * rail move writes the order back, so the rail and the manual order never
- * disagree.
- */
+// Use manual order even when the sidebar is sorted differently: group placement and drag writes
+// must share one ordering. Mobile sheets leave no room for the rail.
 export const ProjectRail = memo(function ProjectRail() {
   const isMobile = useIsMobile();
   const [visible, setVisible] = useProjectRailVisible();

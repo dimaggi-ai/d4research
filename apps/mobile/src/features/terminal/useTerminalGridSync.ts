@@ -35,6 +35,7 @@ export function useTerminalGridSync({
       ? terminal.output.generation
       : null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Resize the remote PTY to the measured native grid after attachment or a new output generation.
   useEffect(() => {
     if (
       generation === null ||

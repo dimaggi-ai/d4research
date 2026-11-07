@@ -4,7 +4,11 @@ import {
   scopedThreadKey,
   scopeProjectRef,
 } from "@d4research/client-runtime/environment";
-import type { DesktopPreviewFavicon, ScopedProjectRef, ScopedThreadRef } from "@d4research/contracts";
+import type {
+  DesktopPreviewFavicon,
+  ScopedProjectRef,
+  ScopedThreadRef,
+} from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";

@@ -127,15 +127,9 @@ const ACP_REGISTRY_DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
 
-/**
- * Static fallback used wherever no live `model/list` response is available yet:
- * server startup, Codex session normalization, and the composer's first draft.
- * It has to be a slug Codex actually accepts for every account type, so it is
- * deliberately not `gpt-5.6-sol` — Codex rejects that one outright on ChatGPT
- * accounts and does not return it from `model/list`. Preference for a newer
- * model belongs in `PREFERRED_DEFAULT_CODEX_MODELS`, which is filtered against
- * what the account can really see.
- */
+// The static fallback must work before live model discovery on every account.
+// Keep newer-model preference in PREFERRED_DEFAULT_CODEX_MODELS, filtered
+// against the models the account actually reports.
 export const DEFAULT_MODEL = "gpt-5.6-terra";
 
 /** First model present in model/list wins; otherwise use Codex's isDefault. */

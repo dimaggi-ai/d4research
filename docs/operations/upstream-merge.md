@@ -40,7 +40,7 @@ map in `release-ops/merge-upstream.sh` before merging.
   `vp i` after the merge to fold in upstream's dependency changes.
 - **Deleted-by-us clusters**: `git rm` anything upstream modified or added
   under the removed integrations: `infra/relay/`, `apps/server/src/{relay,
-telemetry}/`, `apps/server/src/cloud/` except the service-launcher files the
+  telemetry}/`, `apps/server/src/cloud/` except the service-launcher files the
   fork keeps (`bootService`, `pinnedRuntime`, `selfUpdate`, `serviceLauncherClient`,
   `servicePreflight`, `serviceProtocol`, `traceRelayRequest`), `apps/web/src/cloud/`,
   `apps/web/src/components/{clerk,cloud}/`, `apps/mobile/src/features/{cloud,observability}/`, Clerk/vercel/web-preview workflow
@@ -55,7 +55,7 @@ telemetry}/`, `apps/server/src/cloud/` except the service-launcher files the
   removal.
 - **Heavily hand-edited files** (real semantic conflicts; read both sides):
   `apps/server/src/server.ts` and its tests, `packages/client-runtime/src/
-{authorization,connection}/`, `packages/shared/src/connectAuth.ts`,
+  {authorization,connection}/`, `packages/shared/src/connectAuth.ts`,
   `scripts/build-desktop-artifact.ts`, `.github/workflows/release.yml`,
   `docs/`, `README.md`, `AGENTS.md`.
 

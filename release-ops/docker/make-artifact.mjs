@@ -1,13 +1,6 @@
-// Produce an installable distribution tarball from apps/server/dist.
-//
-// The workspace package.json declares external dependencies with "catalog:"
-// specifiers that only the workspace package manager understands; a raw
-// `npm pack` of it is not installable anywhere else (the P0 smoke caught
-// exactly this). This step resolves catalog specifiers against
-// pnpm-workspace.yaml, drops the dependencies the bundler already inlined,
-// and packs a staging manifest without mutating the repo.
-//
-//   node release-ops/docker/make-artifact.mjs <out-tarball-path>
+// Build an installable tarball without changing the workspace manifest.
+// Resolve catalog specifiers and omit dependencies already bundled in apps/server/dist.
+// Usage: node release-ops/docker/make-artifact.mjs <out-tarball-path>
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";

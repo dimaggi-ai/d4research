@@ -119,6 +119,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   }
 
   // A delayed answer only advances its own question, while permission remains granted.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancels the auto-advance timer when its question changes or response permission is lost.
   useEffect(() => {
     const clearAutoAdvance = () => {
       if (autoAdvanceTimerRef.current !== null) {
@@ -149,6 +150,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
 
   const selectOptionFromShortcut = useEffectEvent(handleOptionSelection);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Installs native digit shortcuts for the currently answerable question.
   useEffect(() => {
     if (!activeQuestion || responseDisabled || isCollapsed) return;
     const handler = (event: globalThis.KeyboardEvent) => {

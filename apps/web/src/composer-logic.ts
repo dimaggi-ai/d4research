@@ -32,7 +32,7 @@ export function formatAssistantCitationForComposer(citation: AssistantCitation, 
   return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 
-export function composerRequiresModifier(
+function composerRequiresModifier(
   sendShortcut: ClientSettings["sendShortcut"] | undefined,
   prompt: string,
 ) {
@@ -411,4 +411,4 @@ export const extendReplacementRangeForTrailingSpace = (
   return text[rangeEnd] === " " ? rangeEnd + 1 : rangeEnd;
 };
 
-export { parseSideChatCommand, replaceTextRange } from "@d4research/shared/composerTrigger";
+export { replaceTextRange } from "@d4research/shared/composerTrigger";

@@ -4,7 +4,7 @@ import { EnvironmentId, ProjectId, ThreadId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as DateTime from "effect/DateTime";
 
-import { buildArchivedThreadGroups } from "./archivedThreadList";
+import { buildArchivedThreadGroups, splitArchiveEnvironments } from "./archivedThreadList";
 import { makeRawThreadShell } from "../../test-fixtures";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -133,4 +133,17 @@ describe("buildArchivedThreadGroups", () => {
 
     expect(result).toEqual([]);
   });
+});
+
+it("loads connected archive environments and names the offline ones", () => {
+  const offlineId = EnvironmentId.make("environment-2");
+  expect(
+    splitArchiveEnvironments(
+      [
+        { environmentId, label: "Studio" },
+        { environmentId: offlineId, label: "Laptop" },
+      ],
+      new Set([environmentId]),
+    ),
+  ).toEqual({ environmentIds: [environmentId], offlineLabels: ["Laptop"] });
 });

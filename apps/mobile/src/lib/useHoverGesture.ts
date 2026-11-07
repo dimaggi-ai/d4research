@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { Gesture, PointerType } from "react-native-gesture-handler";
 
+const createHoverGesture = Gesture.Hover;
+
 export function useHoverGesture(disabled = false) {
   const [hovered, setHovered] = useState(false);
   const hoverGesture = useMemo(
     () =>
-      Gesture.Hover()
+      createHoverGesture()
         .manualActivation(true)
         .enabled(!disabled)
         .cancelsTouchesInView(false)

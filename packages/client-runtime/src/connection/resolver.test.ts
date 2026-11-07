@@ -21,8 +21,6 @@ import {
 } from "./catalog.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
-  BearerConnectionTarget,
-  ConnectionBlockedError,
   ConnectionTransientError,
   PrimaryConnectionTarget,
   SshConnectionTarget,
@@ -37,10 +35,6 @@ import {
 } from "./pullRequestRoutingPermissions.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
-const ENDPOINT = {
-  httpBaseUrl: "https://environment.example.test",
-  wsBaseUrl: "wss://environment.example.test",
-};
 const SSH_TARGET: DesktopSshEnvironmentTarget = {
   alias: "development",
   hostname: "development.example.test",

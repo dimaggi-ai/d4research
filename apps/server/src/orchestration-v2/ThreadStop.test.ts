@@ -43,6 +43,10 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 
+const decodeEffectPayload = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+
 const instanceId = ProviderInstanceId.make("codex");
 const modelSelection = { instanceId, model: "gpt-5.1-codex" };
 const adapter = {
@@ -1422,18 +1426,13 @@ it.effect.each(["missing session", "completed", "failed", "cancelled"] as const)
       SELECT payload_json FROM orchestration_v2_effect_outbox WHERE command_id = ${commandId}
     `;
       assert.equal(effects.length, 1);
-      assert.deepEqual(
-        yield* Schema.decodeUnknownEffect(
-          Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-        )(effects[0]!.payload_json),
-        {
-          type: "provider-turn.interrupt",
-          providerSessionId: "session:native-child-stop",
-          providerThreadId: providerThread.id,
-          providerTurnId,
-          subagent: { id: subagent.id, nativeTaskId: "claude-task" },
-        },
-      );
+      assert.deepEqual(yield* decodeEffectPayload(effects[0]!.payload_json), {
+        type: "provider-turn.interrupt",
+        providerSessionId: "session:native-child-stop",
+        providerThreadId: providerThread.id,
+        providerTurnId,
+        subagent: { id: subagent.id, nativeTaskId: "claude-task" },
+      });
       assert.equal(
         (yield* orchestrator.getThreadProjection(threadId)).subagents[0]?.status,
         "running",

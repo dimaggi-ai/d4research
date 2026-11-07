@@ -1,22 +1,12 @@
 // RFC 9449 DPoP proofs for relay requests. Platforms supply the key: web keeps a
 // non-extractable WebCrypto key, mobile signs with @noble/curves (Hermes has no SubtleCrypto).
 import { normalizeDpopHtu, type DpopPublicJwk } from "@d4research/shared/dpopCommon";
-import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
-
-import {
-  ManagedRelayDpopKeyLoadError,
-  ManagedRelayDpopProofCreationError,
-  ManagedRelayDpopSigner,
-} from "./managedRelay.ts";
 
 export class DpopProofError extends Schema.TaggedError<DpopProofError>()("DpopProofError", {
   message: Schema.String,
@@ -61,51 +51,3 @@ export const createProof = Effect.fn("DpopProof.createProof")(function* (input: 
   const signature = yield* input.key.sign(utf8(`${header}.${payload}`));
   return `${header}.${payload}.${Base64Url.encode(signature)}`;
 });
-
-/** A relay DPoP signer that loads its key once and keeps it; a failed load is retried. */
-export const layerSigner = <E, R>(options: {
-  readonly keyStore: ManagedRelayDpopKeyLoadError["keyStore"];
-  readonly loadOrCreateKey: Effect.Effect<DpopProofKey, E, R>;
-}) =>
-  Layer.effect(
-    ManagedRelayDpopSigner,
-    Effect.gen(function* () {
-      const random = yield* SecureRandom.SecureRandom;
-      const digest = yield* Digest.Digest;
-      const context = yield* Effect.context<R>();
-      const keyCache = yield* Cache.makeWith(
-        () =>
-          options.loadOrCreateKey.pipe(
-            Effect.flatMap((key) =>
-              thumbprint(key.publicJwk).pipe(Effect.map((value) => ({ key, thumbprint: value }))),
-            ),
-            Effect.provideService(Digest.Digest, digest),
-            Effect.provideContext(context),
-          ),
-        {
-          capacity: 1,
-          timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
-        },
-      );
-      const loadKey = Cache.get(keyCache, undefined);
-      return ManagedRelayDpopSigner.of({
-        thumbprint: loadKey.pipe(
-          Effect.map((loaded) => loaded.thumbprint),
-          Effect.mapError(
-            (cause) => new ManagedRelayDpopKeyLoadError({ keyStore: options.keyStore, cause }),
-          ),
-          Effect.withSpan("managedRelayDpopSigner.loadThumbprint"),
-        ),
-        createProof: Effect.fn("managedRelayDpopSigner.createProof")(function* (input) {
-          const creationError = (cause: unknown) =>
-            new ManagedRelayDpopProofCreationError({ method: input.method, url: input.url, cause });
-          const loaded = yield* loadKey.pipe(Effect.mapError(creationError));
-          return yield* createProof({ ...input, key: loaded.key }).pipe(
-            Effect.provideService(SecureRandom.SecureRandom, random),
-            Effect.provideService(Digest.Digest, digest),
-            Effect.mapError(creationError),
-          );
-        }),
-      });
-    }),
-  );

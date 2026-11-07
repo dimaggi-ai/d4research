@@ -1,6 +1,7 @@
 import * as Exit from "effect/Exit";
 // @effect-diagnostics nodeBuiltinImport:off - FileSystem cannot create a FIFO, and reads spy on native realpath.
 import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
 import * as NodePath from "@effect/platform-node/NodePath";
@@ -609,6 +610,29 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           { relativePath: "notes/status.md", revision: 0 },
           { relativePath: "notes/status.md", revision: 1 },
         ]);
+      }),
+    );
+
+    it.effect("sees a write made the moment the initial event arrives", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "status.md", "before\n");
+        const events = yield* workspaceFileSystem
+          .watchFile({ cwd, relativePath: "status.md" })
+          .pipe(
+            Stream.tap((event) =>
+              event.revision === 0
+                ? Effect.sync(() => NodeFS.writeFileSync(path.join(cwd, "status.md"), "after\n"))
+                : Effect.void,
+            ),
+            Stream.take(2),
+            Stream.runCollect,
+            Effect.timeout(Duration.seconds(5)),
+          );
+
+        expect(Array.from(events).map((event) => event.revision)).toEqual([0, 1]);
       }),
     );
 

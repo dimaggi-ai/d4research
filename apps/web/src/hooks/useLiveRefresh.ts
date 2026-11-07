@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useRef } from "react";
+import { useEffect, useEffectEvent, useId } from "react";
 
 export const LIVE_REFRESH_MIN_INTERVAL_MS = 10_000;
 

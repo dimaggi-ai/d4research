@@ -32,6 +32,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { useEnvironment, useEnvironments } from "../../state/environments";
 import { useProject, useThreadShell } from "../../state/entities";
+import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
@@ -458,6 +459,7 @@ function AgentActionRecord({
     options?: { editedText?: string; sendOriginal?: boolean },
   ) => Promise<void>;
 }) {
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const undoArchive = useAtomCommand(serverEnvironment.undoD4AgentArchive);
   const canUndoArchive = useAtomValue(
     serverEnvironment.undoD4AgentArchive.permissionAtom(environmentId),
@@ -487,6 +489,7 @@ function AgentActionRecord({
   );
   const refreshDetail = useEffectEvent(detail.refresh);
   const previousResolution = useRef({ status: record.status, resolvedAt: record.resolvedAt });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches action detail when its resolution changes on the server
   useEffect(() => {
     if (
       reviewing &&
@@ -638,7 +641,7 @@ function AgentActionRecord({
             <p className="text-xs text-muted-foreground">Pipeline · {launchAction.pipelineId}</p>
           ) : null}
           <p className="text-xs text-muted-foreground">
-            Model · {launchAction.modelSelection.instanceId} / {launchAction.modelSelection.model}
+            Model · {formatModelSelectionLabel(config?.providers, launchAction.modelSelection)}
           </p>
           {launchAction.modelSelection.options?.map((option) => (
             <p key={option.id} className="text-xs text-muted-foreground">

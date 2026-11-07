@@ -1,12 +1,11 @@
+import { act, render as renderComponent, type Screen } from "../../../test/render";
 import {
   EnvironmentId,
   ThreadId,
   ScheduledTaskId,
   type ScheduledTask,
 } from "@d4research/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({ allowed: true, toggle: vi.fn(), run: vi.fn() }));
 vi.mock(import("../../state/session"), async (importOriginal) => ({
@@ -47,32 +46,37 @@ const task = {
   schedule: { type: "interval", everyMs: 60000 },
   lastRunStatus: "never",
 } as ScheduledTask;
-let root: Root;
+let root: Screen;
 let container: HTMLDivElement;
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+async function setupFixture() {
   state.allowed = true;
   state.toggle.mockReset().mockResolvedValue({ _tag: "Success" });
   state.run.mockReset().mockResolvedValue({ _tag: "Success" });
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
-});
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
+  root = await renderComponent(null, { container: container, router: false });
+  return {
+    async [Symbol.asyncDispose]() {
+      await root[Symbol.asyncDispose]();
+      container.remove();
+      vi.unstubAllGlobals();
+    },
+  };
+}
 
 async function renderPanel() {
-  await act(async () =>
-    root.render(<ThreadAutomationsPanel environmentId={environmentId} threadId={threadId} />),
+  await act(
+    async () =>
+      await root.rerender(
+        <ThreadAutomationsPanel environmentId={environmentId} threadId={threadId} />,
+      ),
   );
 }
 
 const byLabel = (label: string) => container.querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
 
 it.each([true, false])("runs scheduled work only with task permission (%s)", async (allowed) => {
+  await using _fixture = await setupFixture();
   state.allowed = allowed;
   await renderPanel();
   await act(async () => byLabel("Run Daily review now").click());
@@ -80,6 +84,7 @@ it.each([true, false])("runs scheduled work only with task permission (%s)", asy
 });
 
 it("rejects a retained toggle after task permission is revoked", async () => {
+  await using _fixture = await setupFixture();
   await renderPanel();
   state.allowed = false;
   await act(async () => byLabel("Pause Daily review").click());

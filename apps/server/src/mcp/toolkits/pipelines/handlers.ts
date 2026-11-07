@@ -53,7 +53,7 @@ const taskPipeline = Effect.gen(function* () {
 });
 
 const handlers = {
-  pipeline_list: Effect.fn("pipeline_list")(({ kind }) =>
+  pipeline_list: Effect.fn("pipelinesToolkit.pipeline_list")(({ kind }) =>
     Effect.gen(function* () {
       const authorizedPipeline = yield* taskPipeline;
       const catalog = yield* Catalog.PipelineCatalog;
@@ -75,7 +75,7 @@ const handlers = {
       };
     }).pipe(Effect.provide(Catalog.layer)),
   ),
-  pipeline_get: Effect.fn("pipeline_get")(({ kind, name }) =>
+  pipeline_get: Effect.fn("pipelinesToolkit.pipeline_get")(({ kind, name }) =>
     Effect.gen(function* () {
       const authorizedPipeline = yield* taskPipeline;
       const catalog = yield* Catalog.PipelineCatalog;
@@ -98,69 +98,69 @@ const handlers = {
       };
     }).pipe(Effect.provide(Catalog.layer)),
   ),
-  pipeline_upsert: Effect.fn("pipeline_upsert")(
-    ({ kind, name, pipelinePrompt, promptFiles, makeActive }) =>
-      Effect.gen(function* () {
-        if ((yield* taskPipeline) !== null)
-          return yield* new PipelineToolError({
-            detail: "Context operation refused; inspect the selected scope configuration.",
-          });
-        const service = yield* ServerSettingsService;
-        const scenarioPatch = {
-          name,
-          pipelinePrompt,
-          ...(promptFiles === undefined ? {} : { promptFiles }),
-        };
-        const next = yield* service
-          .updateSettings({
-            [kind]: {
-              upsertScenario: scenarioPatch,
-              ...(makeActive ? { activeScenario: name } : {}),
-            },
-          })
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new PipelineToolError({ detail: `Could not save pipeline: ${error.message}` }),
-            ),
-          );
-        const scenario = findScenario(next, kind, name);
-        if (!scenario) {
-          return yield* new PipelineToolError({
-            detail: `Pipeline "${name}" was saved but could not be read back.`,
-          });
-        }
-        return scenarioOutput(next, kind, scenario);
-      }),
-  ),
-  pipeline_delete: Effect.fn("pipeline_delete")(({ kind, name }) =>
-    Effect.gen(function* () {
-      if ((yield* taskPipeline) !== null)
-        return yield* new PipelineToolError({
-          detail: "Context operation refused; inspect the selected scope configuration.",
-        });
-      const service = yield* ServerSettingsService;
-      const current = yield* readSettings(service);
-      if (!findScenario(current, kind, name)) {
-        return yield* new PipelineToolError({
-          detail: `No ${kind} pipeline named "${name}". Nothing was deleted.`,
-        });
-      }
-      yield* service
-        .updateSettings({
-          [kind]: {
-            removeScenario: name,
-          },
-        })
-        .pipe(
-          Effect.mapError(
-            (error) =>
-              new PipelineToolError({ detail: `Could not delete pipeline: ${error.message}` }),
-          ),
-        );
-      return { kind, name, deleted: true };
-    }),
-  ),
+  pipeline_upsert: Effect.fn("pipelinesToolkit.pipeline_upsert")(function* ({
+    kind,
+    name,
+    pipelinePrompt,
+    promptFiles,
+    makeActive,
+  }) {
+    if ((yield* taskPipeline) !== null)
+      return yield* new PipelineToolError({
+        detail: "Context operation refused; inspect the selected scope configuration.",
+      });
+    const service = yield* ServerSettingsService;
+    const scenarioPatch = {
+      name,
+      pipelinePrompt,
+      ...(promptFiles === undefined ? {} : { promptFiles }),
+    };
+    const next = yield* service
+      .updateSettings({
+        [kind]: {
+          upsertScenario: scenarioPatch,
+          ...(makeActive ? { activeScenario: name } : {}),
+        },
+      })
+      .pipe(
+        Effect.mapError(
+          (error) => new PipelineToolError({ detail: `Could not save pipeline: ${error.message}` }),
+        ),
+      );
+    const scenario = findScenario(next, kind, name);
+    if (!scenario) {
+      return yield* new PipelineToolError({
+        detail: `Pipeline "${name}" was saved but could not be read back.`,
+      });
+    }
+    return scenarioOutput(next, kind, scenario);
+  }),
+  pipeline_delete: Effect.fn("pipelinesToolkit.pipeline_delete")(function* ({ kind, name }) {
+    if ((yield* taskPipeline) !== null)
+      return yield* new PipelineToolError({
+        detail: "Context operation refused; inspect the selected scope configuration.",
+      });
+    const service = yield* ServerSettingsService;
+    const current = yield* readSettings(service);
+    if (!findScenario(current, kind, name)) {
+      return yield* new PipelineToolError({
+        detail: `No ${kind} pipeline named "${name}". Nothing was deleted.`,
+      });
+    }
+    yield* service
+      .updateSettings({
+        [kind]: {
+          removeScenario: name,
+        },
+      })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new PipelineToolError({ detail: `Could not delete pipeline: ${error.message}` }),
+        ),
+      );
+    return { kind, name, deleted: true };
+  }),
 } satisfies Parameters<typeof PipelinesToolkit.toLayer>[0];
 
 export const PipelinesToolkitHandlersLive = PipelinesToolkit.toLayer(handlers);

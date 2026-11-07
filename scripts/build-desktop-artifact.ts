@@ -965,6 +965,20 @@ interface StagePackageJson {
   };
 }
 
+/** Node single-executables segfault on x64 macOS, so only arm64 apps carry the SSH runtime. */
+export const bundlesMacServerRuntime = (platform: string, arch: string): boolean =>
+  platform === "mac" && arch === "arm64";
+
+/**
+ * CI builds the executable in an earlier step that writes no stamp, so --skip-build accepts a
+ * missing one. A stamp from a different build is stale in every mode.
+ */
+export const isBundledServerBuildUsable = (
+  builtInfo: string | undefined,
+  expectedInfo: string,
+  skipBuild: boolean,
+): boolean => (builtInfo === undefined ? skipBuild : builtInfo === expectedInfo);
+
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
@@ -1430,13 +1444,8 @@ export function resolveKeyringNativeArtifacts(
   }));
 }
 
-/**
- * pnpm keeps the platform package under `@napi-rs/keyring`, electron-builder
- * only retains collected top-level dependencies, and the generated loader
- * checks for a sibling
- * `keyring.<platform>.node` before falling back to the package. Staging the
- * binary beside `index.js` lets that first branch win.
- */
+// electron-builder omits nested keyring platform packages. Stage the native binary
+// beside index.js so the generated loader finds it before its package fallback.
 const stageKeyringNativeBinaries = Effect.fn("stageKeyringNativeBinaries")(function* (
   stageAppDir: string,
   platform: typeof BuildPlatform.Type,
@@ -3597,7 +3606,9 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       repoRoot,
       appVersion,
       options.verbose,
-      options.platform === "mac" ? `darwin-${bundledServerArch}` : undefined,
+      bundlesMacServerRuntime(options.platform, bundledServerArch)
+        ? `darwin-${bundledServerArch}`
+        : undefined,
     );
   }
 
@@ -3741,7 +3752,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
   const signingEnv = loadRepoEnv({ repoRoot });
-  if (options.platform === "mac") {
+  if (bundlesMacServerRuntime(options.platform, bundledServerArch)) {
     const runtimeDir = path.join(stageProdResourcesDir, "server-runtime");
     const infoPath = path.join(repoRoot, "apps/server/dist-exe/bundled-build.json");
     const expectedInfo = yield* encodeJsonString({
@@ -3749,7 +3760,8 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       buildId: commitHash,
       target: `darwin-${bundledServerArch}`,
     });
-    if (!(yield* fs.exists(infoPath)) || (yield* fs.readFileString(infoPath)) !== expectedInfo) {
+    const builtInfo = (yield* fs.exists(infoPath)) ? yield* fs.readFileString(infoPath) : undefined;
+    if (!isBundledServerBuildUsable(builtInfo, expectedInfo, options.skipBuild)) {
       return yield* new MissingDesktopBuildInputError({
         artifact: "server-dist",
         artifactPath: infoPath,

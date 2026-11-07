@@ -690,10 +690,26 @@ const build = Effect.fn("nativeClient.build")(function* (
   const path = yield* Path.Path;
   const { repo, mobile } = yield* roots;
   const tracked = yield* command("git", ["ls-files", `apps/mobile/${platform}`], false, repo);
-  if (tracked)
+  // apps/mobile/ios is tracked for Xcode Cloud. A development build replaces it with a clean
+  // prebuild, so it must start clean to be restored exactly.
+  if (tracked && platform !== "ios")
     return yield* new NativeClientError({
       message: "Native directory contains tracked files; clean prebuild would overwrite them.",
     });
+  const nativeDirectory = `apps/mobile/${platform}`;
+  if (
+    tracked &&
+    (yield* command("git", ["status", "--porcelain", "--", nativeDirectory], false, repo))
+  )
+    return yield* new NativeClientError({
+      message: `Commit or discard changes in ${nativeDirectory} first; a development build temporarily replaces it.`,
+    });
+  const restoreTracked = tracked
+    ? command("git", ["checkout", "--", nativeDirectory], false, repo).pipe(
+        Effect.andThen(command("git", ["clean", "-fdq", "--", nativeDirectory], false, repo)),
+        Effect.asVoid,
+      )
+    : Effect.void;
   const prebuild = command(
     "vp",
     ["exec", "expo", "prebuild", "--clean", "--platform", platform, "--no-install"],
@@ -701,7 +717,7 @@ const build = Effect.fn("nativeClient.build")(function* (
   ).pipe(Effect.asVoid);
   const onEas = platform === "ios" && !(yield* hasXcode);
   if (platform === "android") yield* prebuildAndroid(mobile, prebuild);
-  else if (!onEas) yield* prebuild;
+  else if (!onEas) yield* prebuild.pipe(Effect.onError(() => Effect.ignore(restoreTracked)));
   const staging = yield* fs.makeTempDirectory({
     directory: path.dirname(target),
     prefix: ".build-",
@@ -750,6 +766,7 @@ const build = Effect.fn("nativeClient.build")(function* (
         path.join(staging, artifactNames.android),
       );
     }
+    yield* restoreTracked;
     // Native edits during the build would publish this binary under a fingerprint it doesn't match.
     if ((yield* fingerprint(platform)) !== expected)
       return yield* new NativeClientError({
@@ -758,6 +775,7 @@ const build = Effect.fn("nativeClient.build")(function* (
     yield* publish(staging, target);
   }).pipe(
     Effect.scoped,
+    Effect.ensuring(Effect.ignore(restoreTracked)),
     Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),
   );
 });

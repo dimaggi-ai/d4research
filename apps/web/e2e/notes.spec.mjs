@@ -12,7 +12,8 @@ async function saveFolder(page, app, value) {
   const input = page.getByRole("textbox", { name: "Notes folder", exact: true });
   await input.waitFor();
   let watcher;
-  let timer;
+  const deadline = AbortSignal.timeout(10_000);
+  let onTimeout;
   const saved = new Promise((resolve, reject) => {
     const check = async () => {
       try {
@@ -23,14 +24,15 @@ async function saveFolder(page, app, value) {
       } catch {}
     };
     watcher = NodeFS.watch(NodePath.join(app.baseDir, "userdata"), () => void check());
-    timer = setTimeout(() => reject(new Error("Notes folder persistence exceeded 10s")), 10000);
+    onTimeout = () => reject(new Error("Notes folder persistence exceeded 10s"));
+    deadline.addEventListener("abort", onTimeout, { once: true });
   });
   try {
     await input.fill(value);
     await input.press("Tab");
     await saved;
   } finally {
-    clearTimeout(timer);
+    deadline.removeEventListener("abort", onTimeout);
     watcher.close();
   }
 }
@@ -60,15 +62,17 @@ export async function notesFlows({ page, context, app, screenshotDir }) {
         const receive = (event) => {
           const packet = JSON.parse(event.data);
           if (packet._tag !== "Exit" || Number(packet.requestId) !== id) return;
-          clearTimeout(timer);
+          deadline.removeEventListener("abort", onTimeout);
           socket.removeEventListener("message", receive);
           if (packet.exit._tag === "Success") resolve();
           else reject(new Error(JSON.stringify(packet.exit)));
         };
-        const timer = setTimeout(() => {
+        const deadline = AbortSignal.timeout(10_000);
+        const onTimeout = () => {
           socket.removeEventListener("message", receive);
           reject(new Error("Notes fixture RPC timeout"));
-        }, 10000);
+        };
+        deadline.addEventListener("abort", onTimeout, { once: true });
         socket.addEventListener("message", receive);
         socket.send(JSON.stringify({ _tag: "Request", id, tag, headers: [], payload }));
       });
@@ -190,7 +194,7 @@ export async function notesFlows({ page, context, app, screenshotDir }) {
     JSON.stringify({
       seq: 1,
       threadId: ids[0],
-      at: new Date().toISOString(),
+      at: "2026-10-24T12:00:00.000Z",
       runId: `${ids[0]}:synthetic`,
       step: "1",
       visit: 1,

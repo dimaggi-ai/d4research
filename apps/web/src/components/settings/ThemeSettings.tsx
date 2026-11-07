@@ -581,7 +581,7 @@ export function ThemeLibrary({
       return;
     }
     for (const appearance of ["light", "dark"] as const) {
-      const half = themeHalves?.[appearance];
+      const half = storedHalves[appearance];
       if (half === undefined) continue;
       const next = half && removedIds.has(half) ? null : removesBase ? half : undefined;
       if (next !== undefined && !setThemeHalf(appearance, next)) {

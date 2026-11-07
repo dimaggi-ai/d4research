@@ -23,6 +23,7 @@ function EnvironmentTrends({
   );
   const result = useAtomValue(query);
   const history = Option.getOrNull(AsyncResult.value(result));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the refresh timer for visible quota history and clear it when the subscription changes.
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") appAtomRegistry.refresh(query);

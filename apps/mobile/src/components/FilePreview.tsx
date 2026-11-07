@@ -4,7 +4,10 @@ import { Modal, Pressable, View } from "react-native";
 import ImageViewing from "react-native-image-viewing";
 
 import { openAttachmentInViewer } from "../lib/attachmentDownload";
-import type { ResolvedFilePreviewDocument, ResolvedFilePreviewSource } from "./FilePreviewModal.types";
+import type {
+  ResolvedFilePreviewDocument,
+  ResolvedFilePreviewSource,
+} from "./FilePreviewModal.types";
 import { imageViewingProps, MediaImagePreview } from "./MediaImagePreview";
 import { AppText as Text } from "./ui/AppText";
 
@@ -23,6 +26,7 @@ function DocumentPreview(props: {
         "A compatible viewer must be installed. Check your connection and try again.",
       );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Open the platform document viewer and cancel its request when this preview unmounts.
   useEffect(() => {
     const controller = new AbortController();
     const input = {

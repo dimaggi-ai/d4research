@@ -1058,20 +1058,19 @@ export const layer: Layer.Layer<
       const session = sessionResult.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-      const loadFromProvider = (
+      const loadFromProvider = Effect.fn("ProviderTurnStartService.loadFromProvider")(function* (
         load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapter.ProviderAdapterV2Error>,
-      ) =>
-        Effect.gen(function* () {
-          const loaded = yield* Effect.result(load);
-          if (loaded._tag === "Success") return loaded.success;
-          if (input.willRetry === true) return yield* loaded.failure;
-          yield* settleStartFailure({
-            signal: "provider-thread-load-failure",
-            title: "Provider turn failed to start",
-            error: loaded.failure,
-          });
-          return undefined;
+      ) {
+        const loaded = yield* Effect.result(load);
+        if (loaded._tag === "Success") return loaded.success;
+        if (input.willRetry === true) return yield* loaded.failure;
+        yield* settleStartFailure({
+          signal: "provider-thread-load-failure",
+          title: "Provider turn failed to start",
+          error: loaded.failure,
         });
+        return undefined;
+      });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
       const userText = projectComposerContextForProvider({
@@ -1943,89 +1942,86 @@ export const layer: Layer.Layer<
         });
       });
       // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-      const startWithHandoffs = (
-        turnInput: Parameters<typeof session.startTurn>[0],
-        compact = false,
-      ) =>
-        Effect.gen(function* () {
-          const compression =
-            d4AgentPrefix === null && !scopedAgentTask
-              ? settings.handoff.contextCompression
-              : { ...settings.handoff.contextCompression, mode: "bounded" as const };
-          compact = compact && d4AgentPrefix === null && !scopedAgentTask;
-          let deliveryHandoffs = [...effectiveHandoffs, ...retryHandoff];
-          if (compression.mode !== "bounded" && deliveryHandoffs.length > 0) {
-            // Preparation is pure and bounded. Recover intact covered items here,
-            // in the effect worker, before choosing direct or smart delivery.
-            const history = yield* projectionStore.getTurnStartHistory(input.threadId);
-            deliveryHandoffs = deliveryHandoffs.map((handoff) =>
-              restoreHandoffHistory(handoff, history, projection.runs),
-            );
-          }
-          if (
-            d4AgentPrefix === null &&
-            !scopedAgentTask &&
-            settings.handoff.memoryBackend === "meko" &&
-            deliveryHandoffs.length > 0
-          ) {
-            yield* saveHandoff(
-              deliveryHandoffs
-                .map((handoff) => handoff.summaryText)
-                .join("\n\n")
-                .slice(0, 60_000),
-            );
-          }
-          const deliver = () =>
-            deliverContextHandoffs({
-              handoffs: deliveryHandoffs,
-              mode: compression.mode,
-              compact: (transcript, maxCharacters) =>
-                compressHandoffContextLocal({
-                  transcript,
-                  task: userText,
-                  model: compression.localModel,
-                  judgeModel: compression.judgeModel || compression.localModel,
-                  ...(compression.judgeBaseUrl ? { judgeBaseUrl: compression.judgeBaseUrl } : {}),
-                  ...(compression.secondaryJudgeModel && compression.secondaryJudgeBaseUrl
-                    ? {
-                        secondaryJudge: {
-                          model: compression.secondaryJudgeModel,
-                          baseUrl: compression.secondaryJudgeBaseUrl,
-                        },
-                      }
-                    : {}),
-                  maxInputCharacters: compression.maxInputCharacters,
-                  maxOutputCharacters: Math.min(maxCharacters, compression.maxOutputCharacters),
-                  customPrompt: compression.customPrompt,
-                }),
-              deferInline: compact || goalCommand,
-              providerThread: runningProviderThread,
-              budget: Effect.gen(function* () {
-                return handoffBudget({
-                  tokenCap: compression.mode === "direct" ? Number.MAX_SAFE_INTEGER : tokenCap,
-                  modelContextWindow,
-                  userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
-                  attachments: message.attachments,
-                  providerThread: budgetProviderThread,
-                  nativeContextEstimate:
-                    budgetProviderThread.contextUsage?.usedTokens === undefined
-                      ? yield* nativeContextEstimate
-                      : 0,
-                });
-              }),
-              alreadyDeliveredItemIds: deliveredItemIds,
-              ...(session.injectHistory === undefined
-                ? {}
-                : {
-                    inject: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
-                      session.injectHistory!({
-                        providerThread: runningProviderThread,
-                        ...history,
-                      }),
+      const startWithHandoffs = Effect.fn("ProviderTurnStartService.startWithHandoffs")(
+        (turnInput: Parameters<typeof session.startTurn>[0], compact = false) =>
+          Effect.gen(function* () {
+            const compression =
+              d4AgentPrefix === null && !scopedAgentTask
+                ? settings.handoff.contextCompression
+                : { ...settings.handoff.contextCompression, mode: "bounded" as const };
+            compact = compact && d4AgentPrefix === null && !scopedAgentTask;
+            let deliveryHandoffs = [...effectiveHandoffs, ...retryHandoff];
+            if (compression.mode !== "bounded" && deliveryHandoffs.length > 0) {
+              // Preparation is pure and bounded. Recover intact covered items here,
+              // in the effect worker, before choosing direct or smart delivery.
+              const history = yield* projectionStore.getTurnStartHistory(input.threadId);
+              deliveryHandoffs = deliveryHandoffs.map((handoff) =>
+                restoreHandoffHistory(handoff, history, projection.runs),
+              );
+            }
+            if (
+              d4AgentPrefix === null &&
+              !scopedAgentTask &&
+              settings.handoff.memoryBackend === "meko" &&
+              deliveryHandoffs.length > 0
+            ) {
+              yield* saveHandoff(
+                deliveryHandoffs
+                  .map((handoff) => handoff.summaryText)
+                  .join("\n\n")
+                  .slice(0, 60_000),
+              );
+            }
+            const deliver = () =>
+              deliverContextHandoffs({
+                handoffs: deliveryHandoffs,
+                mode: compression.mode,
+                compact: (transcript, maxCharacters) =>
+                  compressHandoffContextLocal({
+                    transcript,
+                    task: userText,
+                    model: compression.localModel,
+                    judgeModel: compression.judgeModel || compression.localModel,
+                    ...(compression.judgeBaseUrl ? { judgeBaseUrl: compression.judgeBaseUrl } : {}),
+                    ...(compression.secondaryJudgeModel && compression.secondaryJudgeBaseUrl
+                      ? {
+                          secondaryJudge: {
+                            model: compression.secondaryJudgeModel,
+                            baseUrl: compression.secondaryJudgeBaseUrl,
+                          },
+                        }
+                      : {}),
+                    maxInputCharacters: compression.maxInputCharacters,
+                    maxOutputCharacters: Math.min(maxCharacters, compression.maxOutputCharacters),
+                    customPrompt: compression.customPrompt,
                   }),
-              // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-              persist: (handoff) =>
-                Effect.gen(function* () {
+                deferInline: compact || goalCommand,
+                providerThread: runningProviderThread,
+                budget: Effect.gen(function* () {
+                  return handoffBudget({
+                    tokenCap: compression.mode === "direct" ? Number.MAX_SAFE_INTEGER : tokenCap,
+                    modelContextWindow,
+                    userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                    attachments: message.attachments,
+                    providerThread: budgetProviderThread,
+                    nativeContextEstimate:
+                      budgetProviderThread.contextUsage?.usedTokens === undefined
+                        ? yield* nativeContextEstimate
+                        : 0,
+                  });
+                }),
+                alreadyDeliveredItemIds: deliveredItemIds,
+                ...(session.injectHistory === undefined
+                  ? {}
+                  : {
+                      inject: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
+                        session.injectHistory!({
+                          providerThread: runningProviderThread,
+                          ...history,
+                        }),
+                    }),
+                // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
+                persist: Effect.fn("ProviderTurnStartService.persist")(function* (handoff) {
                   const updatedAt = yield* DateTime.now;
                   yield* eventSink.write({
                     events: [
@@ -2043,143 +2039,146 @@ export const layer: Layer.Layer<
                     ],
                   });
                 }),
-            });
-          const delivery = yield* deliver().pipe(
-            Effect.catchTags({
-              // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
-              ContextHandoffBudgetError: (error) =>
-                Effect.gen(function* () {
-                  if (
-                    compact ||
-                    d4AgentPrefix !== null ||
-                    scopedAgentTask ||
-                    !nativeThreadHasTurns ||
-                    handoffBudget({
-                      tokenCap,
-                      modelContextWindow,
-                      userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
-                      attachments: message.attachments,
-                      providerThread: { ...budgetProviderThread, contextUsage: null },
-                      nativeContextEstimate: 0,
-                    }) === 0 ||
-                    !(yield* isCurrentAttemptInStatus("running"))
-                  )
-                    return yield* error;
-                  budgetProviderThread.contextUsage = yield* recovery.compact(turnInput);
-                  recoveredNativeContext = true;
-                  if (!(yield* isCurrentAttemptInStatus("running")))
-                    return { context: "", delivered: Effect.void, unsent: Effect.void };
-                  // Delivery rejected before any persistence/injection. Retry only this phase;
-                  // never retry startTurn, whose acknowledgement can be ambiguous.
-                  return yield* deliver();
-                }),
-            }),
-          );
-          if (!(yield* isCurrentAttemptInStatus("running"))) return;
-          if (
-            session.providerSession.capabilities.context.requiresAppHistory &&
-            session.injectHistory
-          ) {
-            yield* session.injectHistory({
-              providerThread: runningProviderThread,
-              messages: selectAppProviderHistory(
-                yield* projectionStore.getTurnStartHistory(input.threadId),
-                projection.runs,
-                run.id,
-              ),
-              context: "",
-            });
-          }
-          const start = compact ? session.compactThread! : session.startTurn;
-          // Like history, the side chat context waits for a turn that sends a prompt.
-          const sideChatContext =
-            sideChatHandoff === undefined || compact || goalCommand
-              ? ""
-              : sideChatHandoff.summaryText;
-          const context = [
-            delivery.context,
-            sideChatContext,
-            restartNote,
-            compact || goalCommand ? "" : brainText,
-          ]
-            .filter((part) => part !== "")
-            .join("\n\n");
-          const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
-          yield* start({
-            ...(noteContinuation ? promptedInput : turnInput),
-            ...(recoveredNativeContext
-              ? { providerTurnOrdinal: turnInput.providerTurnOrdinal + 1 }
-              : {}),
-            message: {
-              ...turnInput.message,
-              text:
-                d4AgentPrefix !== null
-                  ? `${d4AgentPrefix}\n\n${context === "" ? "" : `${context}\n\n`}User message:\n${userText}`
-                  : goalCommand
-                    ? userText
-                    : withInlineContext(context, userText),
-            },
-          }).pipe(
-            // A pending marker would make the next turn abandon this native
-            // session, though the refused prompt never reached it.
-            Effect.tapError((error) =>
-              refusedBeforePrompt(error)
-                ? delivery.unsent.pipe(
-                    Effect.catchCause(() =>
-                      Effect.logWarning("Failed to restore unsent context handoffs", {
-                        runId: run.id,
-                      }),
-                    ),
-                  )
-                : Effect.void,
-            ),
-          );
-          if (!compact && brainContext)
-            yield* brain.markContextDelivered(brainContext).pipe(
-              Effect.timeout("100 millis"),
-              Effect.catchCause(() =>
-                Effect.logWarning("Second brain delivery receipt unavailable"),
+              });
+            const delivery = yield* deliver().pipe(
+              Effect.catchTags({
+                // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
+                ContextHandoffBudgetError: (error) =>
+                  Effect.gen(function* () {
+                    if (
+                      compact ||
+                      d4AgentPrefix !== null ||
+                      scopedAgentTask ||
+                      !nativeThreadHasTurns ||
+                      handoffBudget({
+                        tokenCap,
+                        modelContextWindow,
+                        userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                        attachments: message.attachments,
+                        providerThread: { ...budgetProviderThread, contextUsage: null },
+                        nativeContextEstimate: 0,
+                      }) === 0 ||
+                      !(yield* isCurrentAttemptInStatus("running"))
+                    )
+                      return yield* error;
+                    budgetProviderThread.contextUsage = yield* recovery.compact(turnInput);
+                    recoveredNativeContext = true;
+                    if (!(yield* isCurrentAttemptInStatus("running")))
+                      return { context: "", delivered: Effect.void, unsent: Effect.void };
+                    // Delivery rejected before any persistence/injection. Retry only this phase;
+                    // never retry startTurn, whose acknowledgement can be ambiguous.
+                    return yield* deliver();
+                  }),
+              }),
+            );
+            if (!(yield* isCurrentAttemptInStatus("running"))) return;
+            if (
+              session.providerSession.capabilities.context.requiresAppHistory &&
+              session.injectHistory
+            ) {
+              yield* session.injectHistory({
+                providerThread: runningProviderThread,
+                messages: selectAppProviderHistory(
+                  yield* projectionStore.getTurnStartHistory(input.threadId),
+                  projection.runs,
+                  run.id,
+                ),
+                context: "",
+              });
+            }
+            const start = compact ? session.compactThread! : session.startTurn;
+            // Like history, the side chat context waits for a turn that sends a prompt.
+            const sideChatContext =
+              sideChatHandoff === undefined || compact || goalCommand
+                ? ""
+                : sideChatHandoff.summaryText;
+            const context = [
+              delivery.context,
+              sideChatContext,
+              restartNote,
+              compact || goalCommand ? "" : brainText,
+            ]
+              .filter((part) => part !== "")
+              .join("\n\n");
+            const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
+            yield* start({
+              ...(noteContinuation ? promptedInput : turnInput),
+              ...(recoveredNativeContext
+                ? { providerTurnOrdinal: turnInput.providerTurnOrdinal + 1 }
+                : {}),
+              message: {
+                ...turnInput.message,
+                text:
+                  d4AgentPrefix !== null
+                    ? `${d4AgentPrefix}\n\n${context === "" ? "" : `${context}\n\n`}User message:\n${userText}`
+                    : goalCommand
+                      ? userText
+                      : withInlineContext(context, userText),
+              },
+            }).pipe(
+              // A pending marker would make the next turn abandon this native
+              // session, though the refused prompt never reached it.
+              Effect.tapError((error) =>
+                refusedBeforePrompt(error)
+                  ? delivery.unsent.pipe(
+                      Effect.catchCause(() =>
+                        Effect.logWarning("Failed to restore unsent context handoffs", {
+                          runId: run.id,
+                        }),
+                      ),
+                    )
+                  : Effect.void,
               ),
             );
-          // After provider acceptance, failed delivery bookkeeping must not stop live ingestion.
-          const nativeThreadId = runningProviderThread.nativeThreadRef?.nativeId;
-          yield* Effect.forEach(
-            [
-              delivery.delivered,
-              ...(sideChatContext === "" || sideChatHandoff === undefined || nativeThreadId == null
-                ? []
-                : [
-                    persistHandoff({
-                      ...sideChatHandoff,
-                      toProviderThreadId: runningProviderThread.id,
-                      delivery: { nativeThreadId, status: "inline" as const, itemIds: [] },
-                    }),
-                  ]),
-            ],
-            (record) =>
-              record.pipe(
+            if (!compact && brainContext)
+              yield* brain.markContextDelivered(brainContext).pipe(
+                Effect.timeout("100 millis"),
                 Effect.catchCause(() =>
-                  Effect.logWarning("Failed to record accepted context handoff delivery", {
-                    runId: run.id,
-                    deliveryStatus: "pending",
-                  }),
+                  Effect.logWarning("Second brain delivery receipt unavailable"),
                 ),
-              ),
-            { discard: true },
-          );
-        }).pipe(
-          Effect.mapError((cause) =>
-            cause._tag === "ProviderAdapterTurnStartError"
-              ? cause
-              : new ProviderAdapter.ProviderAdapterTurnStartError({
-                  driver: session.driver,
-                  threadId: projection.thread.id,
-                  providerThreadId: providerThread.id,
-                  runId: run.id,
-                  cause,
-                }),
+              );
+            // After provider acceptance, failed delivery bookkeeping must not stop live ingestion.
+            const nativeThreadId = runningProviderThread.nativeThreadRef?.nativeId;
+            yield* Effect.forEach(
+              [
+                delivery.delivered,
+                ...(sideChatContext === "" ||
+                sideChatHandoff === undefined ||
+                nativeThreadId == null
+                  ? []
+                  : [
+                      persistHandoff({
+                        ...sideChatHandoff,
+                        toProviderThreadId: runningProviderThread.id,
+                        delivery: { nativeThreadId, status: "inline" as const, itemIds: [] },
+                      }),
+                    ]),
+              ],
+              (record) =>
+                record.pipe(
+                  Effect.catchCause(() =>
+                    Effect.logWarning("Failed to record accepted context handoff delivery", {
+                      runId: run.id,
+                      deliveryStatus: "pending",
+                    }),
+                  ),
+                ),
+              { discard: true },
+            );
+          }).pipe(
+            Effect.mapError((cause) =>
+              cause._tag === "ProviderAdapterTurnStartError"
+                ? cause
+                : new ProviderAdapter.ProviderAdapterTurnStartError({
+                    driver: session.driver,
+                    threadId: projection.thread.id,
+                    providerThreadId: providerThread.id,
+                    runId: run.id,
+                    cause,
+                  }),
+            ),
           ),
-        );
+      );
       const deliverySession =
         d4AgentPrefix === null &&
         !session.providerSession.capabilities.context.requiresAppHistory &&
@@ -2244,7 +2243,7 @@ export const layer: Layer.Layer<
     });
 
     return ProviderTurnStartServiceV2.of({
-      start: (input) =>
+      start: Effect.fn("ProviderTurnStartService.start")((input) =>
         Effect.gen(function* () {
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
@@ -2260,6 +2259,7 @@ export const layer: Layer.Layer<
               : new ProviderTurnStartError({ runId: input.runId, cause }),
           ),
         ),
+      ),
     });
   }),
 ).pipe(Layer.provide(HandoffMemory.layer.pipe(Layer.provide(FetchHttpClient.layer))));

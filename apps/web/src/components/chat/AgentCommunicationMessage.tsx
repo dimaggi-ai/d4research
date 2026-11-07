@@ -91,6 +91,7 @@ export const AgentCommunicationMessage = memo(function AgentCommunicationMessage
   const compactText =
     (message.summary ? `${message.summary} · ` : "") +
     plainText(message.text.slice(0, 400)).slice(0, 250);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measures rendered message DOM overflow after its text or presentation changes.
   useLayoutEffect(() => {
     const element = body.current;
     if (!element) return;

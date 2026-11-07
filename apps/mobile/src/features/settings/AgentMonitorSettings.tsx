@@ -27,6 +27,7 @@ import { AppState, Linking, Modal, Pressable, View } from "react-native";
 import * as Effect from "effect/Effect";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
+import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { useEnvironmentServerConfig, useThreadShells } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -95,7 +96,7 @@ function EnvironmentMonitorSettings({
   const [picker, setPicker] = useState<"manager" | "task" | null>(null);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState("Checking notification permission…");
-  // Keep notification permission in sync with the native app lifecycle.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe to native app activation to refresh notification permission changed in system settings.
   useEffect(() => {
     let active = true;
     const readPermission = () => {
@@ -242,7 +243,7 @@ function EnvironmentMonitorSettings({
           label="Nia model"
           value={
             agent.modelSelection
-              ? `${agent.modelSelection.instanceId} · ${agent.modelSelection.model}`
+              ? formatModelSelectionLabel(config?.providers, agent.modelSelection)
               : "Choose model"
           }
           disabled={!allowed || saving}
@@ -272,7 +273,7 @@ function EnvironmentMonitorSettings({
           label="Task model"
           value={
             agent.taskModelSelection
-              ? `${agent.taskModelSelection.instanceId} · ${agent.taskModelSelection.model}`
+              ? formatModelSelectionLabel(config?.providers, agent.taskModelSelection)
               : "Choose model"
           }
           disabled={!allowed || saving}

@@ -432,7 +432,7 @@ export const make = Effect.gen(function* () {
     }
     return next;
   };
-  const persist = Effect.fn("persist")(
+  const persist = Effect.fn("AgentMonitorReactor.persist")(
     (root: Metadata, report: AgentMonitorReport | null, state: Candidate | undefined) =>
       Effect.gen(function* () {
         const revision = (yield* sql<{ revision: number }>`UPDATE agent_monitor_control
@@ -594,7 +594,7 @@ export const make = Effect.gen(function* () {
   );
 
   const claimAttention: AgentMonitorReactor["Service"]["claimAttention"] = Effect.fn(
-    "claimAttention",
+    "AgentMonitorReactor.claimAttention",
   )((input) =>
     Effect.gen(function* () {
       const config = (yield* settings.getSettings).agentMonitor;

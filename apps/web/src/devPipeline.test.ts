@@ -274,8 +274,8 @@ describe("default pipeline targets", () => {
   it("keeps the reviewer in a different family from the builder", () => {
     // Same-family review is a rubber stamp; this is the whole point of step 3.
     const prompt = buildDefaultDevPipelinePrompt(CANDIDATES);
-    const build = /STEP 2 — BUILD[\s\S]*?Directive: (\S+)/.exec(prompt);
-    const review = /STEP 3 — REVIEW[\s\S]*?Directive: (\S+)/.exec(prompt);
+    const build = /STEP 2: BUILD[\s\S]*?Directive: (\S+)/.exec(prompt);
+    const review = /STEP 3: REVIEW[\s\S]*?Directive: (\S+)/.exec(prompt);
     expect(build).not.toBeNull();
     expect(review).not.toBeNull();
     expect(build![1]).toBe("!junie:grok-4.5");

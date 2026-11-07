@@ -12,13 +12,8 @@ import {
 
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 
-/**
- * Desktop-oriented effort keywords that don't belong in the phone picker.
- * Prompt-injected values (ultrathink and friends) are filtered from the
- * descriptor metadata; ultracode is a real option but a workflow trigger, not
- * a reasoning level. A value set elsewhere still displays, it just isn't
- * offered.
- */
+// ultracode triggers a workflow rather than a reasoning level. Hide it from
+// choices while still displaying values selected elsewhere.
 export const HIDDEN_EFFORT_OPTION_IDS: ReadonlySet<string> = new Set(["ultracode"]);
 
 export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
@@ -68,17 +63,8 @@ export type ThreadSettingsMenu = {
   readonly events: ReadonlyMap<string, ThreadSettingsMenuEvent>;
 };
 
-/**
- * Native menu replacement for the thread settings sheet (model, select and
- * boolean provider options, runtime mode). The menu presents from the
- * composer pill without resigning the keyboard, so adjusting settings never
- * bounces focus. A thread is bound to one harness, so the menu covers the
- * sheet's full surface for existing threads; the sheet remains the Android
- * and new-task-draft surface.
- *
- * Selections apply immediately — the sheet's stage-then-Save flow only exists
- * because the sheet batches a model change with its option edits.
- */
+// Native menu selections apply immediately without resigning the keyboard.
+// Android and new-task drafts retain the settings sheet's staged edits.
 export function buildThreadSettingsMenu(input: {
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
@@ -95,11 +81,8 @@ export function buildThreadSettingsMenu(input: {
     option.selection.instanceId === input.selectedModel?.instanceId &&
     option.selection.model === input.selectedModel.model;
 
-  // Only top-level leaves (boolean toggles) keep the menu presented (iOS
-  // 16+): the root refreshes in place with clean chrome. Picks inside nested
-  // submenus close the menu — keeping the submenu presented renders an
-  // expanded-submenu header with no way to pop back to the root, and the
-  // bottom-anchored collapse back out travels the levels' height difference.
+  // Only root toggles stay open: keeping nested submenus presented traps their
+  // expanded header without a route back to the root on iOS 16+.
   const keepPresented = { keepsMenuPresented: true } as const;
 
   const modelAction = (option: ModelOption, id: string): MenuAction => {

@@ -104,6 +104,7 @@ export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   const conversation = useThreadShell(scopeThreadRef(environmentId, conversationThreadId));
   const awaitingUser =
     conversation?.hasPendingApprovals === true || conversation?.hasPendingUserInput === true;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Closes the navigation modal when its conversation needs attention or an exit is pending.
   useEffect(() => {
     if ((awaitingUser || exitRequested) && focused) navigation.goBack();
   }, [awaitingUser, exitRequested, focused, navigation]);

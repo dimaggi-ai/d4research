@@ -83,6 +83,7 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
     }
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retain the abortable policy request lifecycle; moving this async load to an atom requires separate cache and cancellation design.
   useEffect(() => {
     const { enabled } = request;
     if (!enabled) return;

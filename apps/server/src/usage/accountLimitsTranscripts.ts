@@ -1,18 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * Codex transcript recovery for account limits.
- *
- * Codex writes its full rate-limit snapshot beside every `token_count` line in
- * `~/.codex/sessions/**\/*.jsonl`, so the latest snapshot survives on disk even
- * when no session has run through T3 Code. Claude has no equivalent: its
- * limits exist only on the live SDK stream.
- *
- * Only file tails are read: the newest lines carry the newest snapshot, and a
- * session file can be tens of megabytes. Direct `node:fs` is deliberate, same
- * as `usageTranscriptReader`: this is bulk raw-file access on a request path.
- *
- * @module accountLimitsTranscripts
- */
+// Codex persists rate-limit snapshots with token_count events; Claude has no disk equivalent.
+// Read only file tails because transcripts can be large. Direct node:fs access is
+// deliberate for bulk raw-file reads on this request path, as in usageTranscriptReader.
 import * as NodeFSP from "node:fs/promises";
 
 import {
@@ -48,11 +37,8 @@ export async function readLatestCodexRateLimits(
     return null;
   }
   const newestFirst = [...files.files].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, MAX_FILES);
-  // The newest-mtime file does not necessarily hold the newest snapshot: a
-  // session can keep appending non-token events after its last rate-limit
-  // line. A file's snapshot can never be newer than the file's mtime, so
-  // keep scanning only while a remaining file's mtime could still beat the
-  // best snapshot found - which usually stops after one or two files.
+  // Later non-token events can make an older snapshot's file newer. Stop scanning
+  // only when remaining mtimes cannot beat the best snapshot timestamp.
   let best: CodexTranscriptRateLimits | null = null;
   for (const file of newestFirst) {
     if (best !== null && file.mtimeMs <= best.asOfMs) break;

@@ -2,11 +2,9 @@ import "vite-plus/test/config";
 import { defaultInclude, defineConfig } from "vite-plus";
 
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
-// The main process is bundled the same way the server CLI is: every JS
-// dependency is inlined and only packages Node must load from disk stay
-// external. The packaged app then installs just those externals, instead of a
-// full production install of apps/desktop's dependency tree next to a server
-// bundle that already carries its own copy of the same libraries.
+// The main process is bundled like the server CLI: every JS dependency is
+// inlined and only packages Node must load from disk stay external, so the
+// packaged app installs just those instead of a second production tree.
 const isMainProcessExternal = (id: string) =>
   id === "electron" || id.startsWith("electron/") || isDesktopRuntimeExternalDependency(id);
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";

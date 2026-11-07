@@ -21,6 +21,7 @@ export function SliderRow(props: SliderRowProps) {
   const { colors } = useControlTheme();
   const draft = useRef(props.value);
   const editing = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the imperative native slider draft current without replacing an in-progress drag.
   useEffect(() => {
     if (!editing.current) draft.current = props.value;
   }, [props.value]);

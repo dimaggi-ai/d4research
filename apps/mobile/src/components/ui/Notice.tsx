@@ -17,6 +17,7 @@ export function Notice(props: {
   readonly dismissLabel?: string;
 }) {
   const danger = props.tone === "danger";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Announce the current message through the native VoiceOver accessibility service.
   useEffect(() => {
     // Live regions reach TalkBack; VoiceOver needs an explicit announcement.
     if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(props.message);

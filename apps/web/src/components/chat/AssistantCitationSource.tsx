@@ -348,6 +348,7 @@ export function AssistantCitationSource({
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes the citation source DOM and reveals its requested range in the list.
   useEffect(() => {
     const root = rootRef.current;
     const list = listRef.current;

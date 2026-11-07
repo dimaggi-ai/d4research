@@ -31,6 +31,8 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 
+const isD4AgentError = Schema.is(D4AgentError);
+
 export const StoredSession = Schema.Struct({
   ...D4AgentOpenSession.fields,
   scopeHash: Schema.String,
@@ -448,9 +450,7 @@ export const layer = Layer.effect(
             const next = yield* Effect.try({
               try: () => boundStoredState(change(current), now),
               catch: (cause) =>
-                Schema.is(D4AgentError)(cause)
-                  ? cause
-                  : new D4AgentError({ reason: "storage", cause }),
+                isD4AgentError(cause) ? cause : new D4AgentError({ reason: "storage", cause }),
             });
             const encoded = yield* encodeState(next);
             if (encoded === persisted) return current;
@@ -464,9 +464,7 @@ export const layer = Layer.effect(
             return next;
           }).pipe(
             Effect.mapError((cause) =>
-              Schema.is(D4AgentError)(cause)
-                ? cause
-                : new D4AgentError({ reason: "storage", cause }),
+              isD4AgentError(cause) ? cause : new D4AgentError({ reason: "storage", cause }),
             ),
           ),
         ),

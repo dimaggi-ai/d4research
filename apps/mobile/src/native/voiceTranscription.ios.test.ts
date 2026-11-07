@@ -1,7 +1,10 @@
 import type { TranscriptionResult } from "@react-native-ai/apple/src/NativeAppleTranscription";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { VoiceInputController, VoiceTranscriptionError } from "@d4research/client-runtime/voice-input";
+import {
+  VoiceInputController,
+  VoiceTranscriptionError,
+} from "@d4research/client-runtime/voice-input";
 import { resetVoiceInputGlobalsForTests } from "../../../../packages/client-runtime/src/voice-input/controller";
 
 const mocks = vi.hoisted(() => ({
@@ -111,6 +114,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -281,5 +285,30 @@ describe("getLocalVoiceTranscriber", () => {
     expect(error).toMatchObject({ code: "cancelled" });
     expect(mocks.transcribe).not.toHaveBeenCalled();
   });
+  it("waits for native transcription to finish before settling cancellation", async () => {
+    vi.useFakeTimers();
+    const enteredNative = Promise.withResolvers<void>();
+    const finishNative = Promise.withResolvers<void>();
+    mocks.transcribe.mockImplementation(async () => {
+      enteredNative.resolve();
+      await finishNative.promise;
+      return nativeTranscript;
+    });
+    const controller = new AbortController();
+    const options = { signal: controller.signal };
+    const transcriber = (await getLocalVoiceTranscriber())!;
+    const prepared = await transcriber.prepare(options);
+    const settled = vi.fn((value: unknown) => value);
+    const result = prepared.transcribe("file:///voice.m4a", options).then(settled, settled);
 
+    await enteredNative.promise;
+    controller.abort();
+    await vi.runAllTimersAsync();
+    expect(settled).not.toHaveBeenCalled();
+    finishNative.resolve();
+
+    const error = await result;
+    expect(error).toBeInstanceOf(VoiceTranscriptionError);
+    expect(error).toMatchObject({ code: "cancelled" });
+  });
 });

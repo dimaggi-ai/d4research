@@ -18,6 +18,7 @@ export function VideoThumbnailImage(props: {
   const [loaded, setLoaded] = useState<{ key: string; thumbnail: VideoThumbnail } | null>(null);
   const thumbnail = loaded?.key === cacheKey ? loaded.thumbnail : cachedVideoThumbnail(cacheKey);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Acquire a native thumbnail cache resource while this focused preview is mounted.
   useEffect(() => {
     if (!source || !isFocused) return;
     const controller = new AbortController();

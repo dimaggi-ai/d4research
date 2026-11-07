@@ -11,12 +11,14 @@ export function useAgentNotificationNavigation(pathname: string): void {
   const linkTo = useLinkTo();
   const handledResponseIds = useRef(new Set<string>());
   const deepLinkOnScreen = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep Android notification suppression aligned with the thread currently shown by navigation.
   useLayoutEffect(() => {
     const thread = threadDeepLinkOnScreen(pathname);
     deepLinkOnScreen.current = thread;
     setAndroidThreadOnScreen(thread);
   }, [pathname]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Install the native foreground-notification handler for this mounted navigator.
   useEffect(() => {
     Notifications.setNotificationHandler({
       handleNotification: (notification) =>
@@ -27,6 +29,7 @@ export function useAgentNotificationNavigation(pathname: string): void {
     };
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Route native notification responses and remove the listener when the navigator unmounts.
   useEffect(() => {
     const handleResponse = (response: Notifications.NotificationResponse): void => {
       routeAgentNotificationResponseOnce({

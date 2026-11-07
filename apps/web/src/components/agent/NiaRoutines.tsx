@@ -11,6 +11,7 @@ import { createModelSelection } from "@d4research/shared/model";
 import { Link } from "@tanstack/react-router";
 import { CalendarClockIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useMergedSettings } from "../../hooks/useSettings";
@@ -236,9 +237,7 @@ function NiaRoutinesContent({
               <details>
                 <summary className="cursor-pointer">Proposed job</summary>
                 <p>{routineScheduleLabel(routine.draft.schedule)}</p>
-                <p>
-                  {routine.draft.modelSelection.instanceId} / {routine.draft.modelSelection.model}
-                </p>
+                <p>{formatModelSelectionLabel(providers, routine.draft.modelSelection)}</p>
                 {routine.draft.pipelineId ? <p>{routine.draft.pipelineId}</p> : null}
                 <p className="whitespace-pre-wrap break-words">{routine.draft.text}</p>
               </details>

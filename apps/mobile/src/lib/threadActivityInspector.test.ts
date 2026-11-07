@@ -123,7 +123,7 @@ describe("buildThreadActivityInspector", () => {
     );
     expect(fileModel.fileLinks).toEqual([
       {
-        label: "src/session.ts — function resolveSession()",
+        label: "src/session.ts: function resolveSession()",
         path: "src/session.ts",
         line: 42,
       },

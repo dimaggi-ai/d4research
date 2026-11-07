@@ -2,13 +2,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import { TextInputWrapper } from "expo-paste-input";
 import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import { useEffect, useState } from "react";
-import {
-  Platform,
-  ScrollView,
-  View,
-  useColorScheme,
-  useWindowDimensions,
-} from "react-native";
+import { Platform, ScrollView, View, useColorScheme, useWindowDimensions } from "react-native";
 import { KeyboardAvoidingView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ImageViewing from "react-native-image-viewing";
@@ -62,6 +56,15 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
 
   const selectedLines = target ? getSelectedReviewCommentLines(target) : [];
+  const hasSelectedLines = selectedLines.length > 0;
+  const [highlightSelection, setHighlightSelection] = useState({ target, hasSelectedLines });
+  if (
+    highlightSelection.target !== target ||
+    highlightSelection.hasSelectedLines !== hasSelectedLines
+  ) {
+    setHighlightSelection({ target, hasSelectedLines });
+    setHighlightedLinesById({});
+  }
   const firstLine = selectedLines[0] ?? null;
   const lastLine = selectedLines[selectedLines.length - 1] ?? null;
   const firstNumber = firstLine ? getReviewUnifiedLineNumber(firstLine) : null;
@@ -102,11 +105,9 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     })();
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Run the asynchronous syntax highlighter for the selected review lines and cancel stale results.
   useEffect(() => {
-    if (!target || selectedLines.length === 0) {
-      setHighlightedLinesById({});
-      return;
-    }
+    if (!target || selectedLines.length === 0) return;
 
     let cancelled = false;
     void highlightReviewSelectedLines({

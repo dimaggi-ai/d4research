@@ -59,6 +59,8 @@ import {
 } from "./desktopLocal";
 import * as ConnectionStorage from "./storage";
 
+const isConnectionTransientError = Schema.is(ConnectionTransientError);
+
 let nextObservedRpcRequestId = 0;
 
 function currentNetworkStatus(): "unknown" | "offline" | "online" {
@@ -199,7 +201,7 @@ export const provisionDesktopSshEnvironment = Effect.fn(
     try: () => bridge.bootstrapSshBearerSession(bootstrap.httpBaseUrl, pairingToken),
     catch: (cause) => {
       const error = sshPreparationError(cause);
-      return Schema.is(ConnectionTransientError)(error) &&
+      return isConnectionTransientError(error) &&
         error.detail.includes("[ssh_http:500]") &&
         descriptor.serverVersion !== APP_VERSION
         ? new ConnectionBlockedError({

@@ -14,6 +14,7 @@ function collectUiRuntimeGarbage() {
  * serializables alive until its own GC runs, so collect it on the same warning.
  */
 export function useUiRuntimeMemoryWarningGc() {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe the native memory-warning listener and release it when this runtime unmounts.
   useEffect(() => {
     const subscription = AppState.addEventListener("memoryWarning", () => {
       scheduleOnUI(collectUiRuntimeGarbage);

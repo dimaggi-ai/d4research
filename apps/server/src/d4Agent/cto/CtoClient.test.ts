@@ -268,27 +268,38 @@ it.live(
   }),
 );
 
-it.live(
+it.effect(
   "bounds a stalled response body to five seconds and closes the request",
   Effect.fnUntraced(function* () {
+    const responseStarted = yield* Deferred.make<void>();
     let requestClosed: Promise<void> = Promise.resolve();
     const input = yield* Effect.promise(() =>
-      fake((req, res) => {
-        requestClosed = new Promise<void>((resolve) => req.on("close", resolve));
+      fake((_req, res) => {
+        requestClosed = new Promise<void>((resolve) => res.on("close", resolve));
         res.writeHead(200, { "transfer-encoding": "chunked" });
         res.write('{"unfinished":');
       }),
     );
-    const started = performance.now();
-    expect(yield* result(client.status(input))).toMatchObject({
+    const nativeFetch = yield* FetchHttpClient.Fetch;
+    const fetch: typeof globalThis.fetch = async (url, init) => {
+      const response = await nativeFetch(url, init);
+      Deferred.doneUnsafe(responseStarted, Effect.void);
+      return response;
+    };
+    const fiber = yield* result(client.status(input)).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+      Effect.forkChild,
+    );
+    yield* Deferred.await(responseStarted);
+    yield* TestClock.adjust(4999);
+    expect(fiber.pollUnsafe()).toBeUndefined();
+    yield* TestClock.adjust(1);
+    expect(yield* Fiber.join(fiber)).toMatchObject({
       _tag: "Failure",
       failure: { reason: "unreachable", message: "CTO server unreachable" },
     });
-    expect(performance.now() - started).toBeGreaterThanOrEqual(4900);
-    expect(performance.now() - started).toBeLessThan(6500);
     yield* Effect.promise(() => requestClosed);
   }),
-  8000,
 );
 
 it.live(

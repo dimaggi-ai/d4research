@@ -176,6 +176,7 @@ export function useSkillsInventory(
     setError(null);
   }
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the polling timer for on-disk skills so CLI installs and removals appear while mounted.
   useEffect(() => {
     const { cwd, enabled, preparedConnection } = request;
     if (!enabled || !preparedConnection) return;

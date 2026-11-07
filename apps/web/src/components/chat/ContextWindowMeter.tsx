@@ -1,4 +1,3 @@
-import { cn } from "~/lib/utils";
 import type { ContextWindowSnapshot } from "@d4research/client-runtime/state/context-window";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";

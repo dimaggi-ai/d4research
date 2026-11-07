@@ -1,16 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off, preferSchemaOverJson:off, anyUnknownInErrorContext:off
-/**
- * Behavioural coverage for the agy adapter.
- *
- * Agy is the only provider driven as a spawned one-shot CLI (everything else
- * goes through an SDK or ACP), so it is the only adapter that owns process
- * lifecycle, stdin delivery, stream parsing, and exit-code interpretation
- * itself. That surface is where its bugs have actually lived, so it gets
- * direct tests rather than relying on the shared provider suites.
- *
- * Each case drives a scripted mock CLI so the real behaviour — argv, stdin,
- * stdout framing, exit codes — is exercised end to end.
- */
+// Scripted subprocesses exercise argv, stdin, framing and exit handling because
+// Agy owns its one-shot CLI lifecycle rather than delegating it to an SDK or ACP.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -18,6 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
@@ -117,31 +108,31 @@ const collectEvents = Effect.fn("collectEvents")(function* (
     ? A
     : never,
 ) {
+  const firstDelta = yield* Deferred.make<void>();
+  const completed = yield* Deferred.make<void>();
   const ref = yield* Ref.make<Array<{ type: string; payload?: unknown }>>([]);
   const fiber = yield* adapter.streamEvents.pipe(
     Stream.runForEach((event) =>
-      Ref.update(ref, (events) => [
-        ...events,
-        { type: event.type, payload: "payload" in event ? event.payload : undefined },
-      ]),
+      Effect.gen(function* () {
+        yield* Ref.update(ref, (events) => [
+          ...events,
+          { type: event.type, payload: "payload" in event ? event.payload : undefined },
+        ]);
+        if (event.type === "content.delta") yield* Deferred.succeed(firstDelta, undefined);
+        if (event.type === "turn.completed") yield* Deferred.succeed(completed, undefined);
+      }),
     ),
-    Effect.forkChild,
+    Effect.forkScoped({ startImmediately: true }),
   );
   // PubSub is intentionally hot. Let the subscription fiber enter the stream
   // before the test asks the adapter to publish turn events.
   for (let attempt = 0; attempt < 4; attempt += 1) yield* Effect.yieldNow;
-  return { ref, fiber };
+  return { ref, fiber, firstDelta, completed };
 });
 
 /** Yields enough for the adapter's forked stream fibers to drain. */
 const settle = Effect.gen(function* () {
   for (let attempt = 0; attempt < 30; attempt += 1) yield* Effect.yieldNow;
-});
-
-/** Live-clock variant: also waits real time for the child process to move. */
-const settleLive = Effect.gen(function* () {
-  yield* Effect.sleep("150 millis");
-  yield* settle;
 });
 
 it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
@@ -494,7 +485,7 @@ describe("AgyAdapter process lifecycle", () => {
         ],
         { concurrency: 2 },
       );
-      yield* settleLive;
+      yield* Deferred.await(events.completed);
       yield* Fiber.interrupt(events.fiber);
 
       assert.equal(exits.filter(Exit.isSuccess).length, 1);
@@ -555,19 +546,19 @@ describe("AgyAdapter process lifecycle", () => {
 
   it.live("marks an interrupted turn cancelled rather than failed", () =>
     Effect.gen(function* () {
-      const hangingMock = yield* writeMock(HANGING_MOCK);
+      const hangingMock = yield* writeMock(
+        `console.log(${JSON.stringify(stepUpdate("started"))});\n${HANGING_MOCK}`,
+      );
       const { adapter, threadId } = yield* startAdapter(hangingMock.file, hangingMock.dir);
       const events = yield* collectEvents(adapter);
 
-      // Let the child actually start before interrupting it.
-      yield* settleLive;
       const turnFiber = yield* Effect.forkChild(
         Effect.exit(adapter.sendTurn({ threadId, input: "long work", attachments: [] })),
       );
-      yield* settleLive;
+      yield* Deferred.await(events.firstDelta);
       yield* adapter.interruptTurn(threadId, undefined as never);
       yield* Fiber.join(turnFiber);
-      yield* settleLive;
+      yield* Deferred.await(events.completed);
       yield* Fiber.interrupt(events.fiber);
 
       const seen = yield* Ref.get(events.ref);

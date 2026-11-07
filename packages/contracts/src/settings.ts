@@ -1597,7 +1597,7 @@ const MekoEndpoint = TrimmedString.check(
   }),
 );
 
-export const DEFAULT_DECISION_MODEL = "openjev-0.1";
+const DEFAULT_DECISION_MODEL = "openjev-0.1";
 
 /** An empty baseUrl keeps decisions off, so no content leaves until a user names an endpoint. */
 export const DecisionSettings = Schema.Struct({

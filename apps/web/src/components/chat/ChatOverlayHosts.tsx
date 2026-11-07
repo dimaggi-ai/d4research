@@ -47,6 +47,7 @@ function closeThreadOverlay<T>(atom: ThreadOverlayAtom<T>): void {
 
 function useThreadOverlay<T>(atom: ThreadOverlayAtom<T>, threadKey: string | null): T | null {
   const entry = useAtomValue(atom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases the mounted thread overlay registry entry when its host unmounts.
   useEffect(
     () => () => {
       if (appAtomRegistry.get(atom)?.threadKey === threadKey) closeThreadOverlay(atom);

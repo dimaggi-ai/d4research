@@ -1,27 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * skillsInventory — unified discovery of agent skills across every root the
- * local agents read from, powering the /settings/skills page.
- *
- * Roots scanned:
- * - `<home>/.claude/skills` (recursive, category subdirectories) — Claude
- * - `<home>/.agents/skills` — the shared Agent Skills root read by Codex,
- *   Cursor, Grok, and OpenCode
- * - `<home>/.codex/skills/.system` — Codex's bundled system skills
- * - `<home>/.junie/skills` and `<home>/.junie/commands/*.md` — Junie
- * - `<home>/.gemini/config/skills.json` — Agy registration for the shared
- *   `<home>/.agents/skills` root
- * - `<cwd>/.agents/skills` and `<cwd>/.claude/skills` — project scope; the
- *   two commonly alias each other via a symlink, so entries are deduplicated
- *   by realpath while the symlink relationship is still reported.
- *
- * The share operation makes a skill visible to another agent root by
- * symlinking it there (falling back to a recursive copy when symlinks are
- * unavailable), refusing traversal outside known roots and never overwriting
- * an existing target.
- *
- * @module skillsInventory
- */
+// Discover native and shared skills roots, deduplicating symlink aliases by realpath.
+// Sharing stays inside known roots and never overwrites an existing target.
 import * as NodeOS from "node:os";
 import * as NodeChildProcess from "node:child_process";
 
@@ -634,13 +613,8 @@ function isInsideRoot(path: Path.Path, root: string, candidate: string): boolean
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-/**
- * Make a skill visible to another agent root by symlinking its directory
- * there, falling back to a recursive copy when the symlink fails (e.g. on a
- * filesystem without symlink support). The source must resolve inside a known
- * skills root — path traversal is rejected — and an existing target is never
- * overwritten.
- */
+// Reject sources outside known roots and never overwrite targets. Use a recursive
+// copy when the destination filesystem cannot create the sharing symlink.
 const shareSkillUnlocked = Effect.fn("shareSkillUnlocked")(function* (
   input: { readonly sourcePath: string; readonly targetRoot: ShareSkillTargetRoot },
   options: SkillsInventoryOptions = {},
@@ -838,16 +812,9 @@ export interface UserSkillReconciliationResult {
   }>;
 }
 
-/**
- * Reconcile user skills without prompting or overwriting anything.
- *
- * `~/.agents/skills` is canonical because Codex, Cursor, Grok, and OpenCode
- * read it natively. Skills found only in Claude, Junie, or d4's obsolete
- * `~/.codex/skills` location are first linked into the canonical root, then
- * missing Claude and Junie aliases are created from there. Agy receives the
- * canonical root through its documented global skills.json registry. Existing
- * divergent skills are reported as conflicts and left untouched.
- */
+// ~/.agents/skills is canonical for Codex, Cursor, Grok and OpenCode. Link legacy
+// roots into it, create missing Claude/Junie aliases and register Agy's shared root.
+// Report divergent existing skills without overwriting them.
 export const reconcileUserSkills = Effect.fn("reconcileUserSkills")(function* (
   options: SkillsInventoryOptions = {},
 ): Effect.fn.Return<UserSkillReconciliationResult, never, FileSystem.FileSystem | Path.Path> {
@@ -1117,15 +1084,8 @@ const defaultSkillInstallRuntime: SkillInstallRuntime = {
   installAgyPlugin,
 };
 
-/**
- * Atomically fans every skill in a prepared repository into Claude, Codex,
- * Junie, and Agy's documented registry. All names and destinations are preflighted before the first
- * write; if any later copy/link fails, every path created by this transaction
- * is removed. Existing skills are never touched.
- *
- * Exported so tests can exercise the exact production install transaction
- * against a local repository without mocking git or the filesystem.
- */
+// Preflight every name and destination before installing; roll back every created
+// path on failure and leave existing skills untouched. Exported for filesystem tests.
 const installSkillsFromRepositoryUnlocked = Effect.fn("installSkillsFromRepositoryUnlocked")(
   function* (
     input: { readonly repoDir: string; readonly sourceUrl: string; readonly cwd?: string },

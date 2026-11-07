@@ -27,6 +27,8 @@ import {
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { Pressable, View, ScrollView, TextInput } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
+import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
+import { cn } from "../../lib/cn";
 import { useEnvironmentServerConfig, useProject } from "../../state/entities";
 import { useEnvironmentConnectionState } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
@@ -74,34 +76,39 @@ export function D4AgentHomeHeader({
   selectedEnvironmentId: EnvironmentId | null;
   children?: ReactNode;
 }) {
+  const visible = environments.filter(
+    (environment) =>
+      selectedEnvironmentId === null || environment.environmentId === selectedEnvironmentId,
+  );
   return (
     <>
-      {environments
-        .filter(
-          (environment) =>
-            selectedEnvironmentId === null || environment.environmentId === selectedEnvironmentId,
-        )
-        .map((environment) => (
+      <View className={visible.length > 1 ? "flex-row flex-wrap gap-2 px-4 py-2" : "px-4 py-2"}>
+        {visible.map((environment) => (
           <D4AgentEntry
             key={environment.environmentId}
+            compact={visible.length > 1}
             environmentId={environment.environmentId}
             label={environments.length > 1 ? environment.label : undefined}
           />
         ))}
+      </View>
       {children}
     </>
   );
 }
 
 export function D4AgentEntry({
+  compact = false,
   environmentId,
   label,
 }: {
+  compact?: boolean;
   environmentId: EnvironmentId;
   label?: string;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const connection = useEnvironmentConnectionState(environmentId);
+  const connected = connection.data?.phase === "connected";
   const state = useD4AgentState(environmentId, config?.settings.d4Agent.enabled === true);
   const ensure = useAtomCommand(serverEnvironment.ensureD4AgentThread);
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
@@ -109,18 +116,31 @@ export function D4AgentEntry({
   const navigation = useNavigation();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const phaseLabel = connected
+    ? ""
+    : connection.data?.phase === "connecting"
+      ? " · Connecting"
+      : " · Offline";
+  const title = `Nia${label ? ` · ${label}` : ""}${phaseLabel}`;
   return (
-    <View className="px-4 py-2">
+    <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Nia${label ? ` · ${label}` : ""}`}
+        accessibilityLabel={title}
         disabled={
           !config ||
           opening ||
-          (config.settings.d4Agent.enabled === true &&
-            (allowed ? connection.data?.phase !== "connected" : !state.data?.threadId))
+          (config.settings.d4Agent.enabled === true
+            ? allowed
+              ? !connected
+              : !state.data?.threadId
+            : !connected)
         }
-        className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3"
+        className={cn(
+          "rounded-xl border border-primary/30 bg-primary/10",
+          compact ? "px-3 py-1.5" : "px-4 py-3",
+          !connected && "opacity-60",
+        )}
         onPress={async () => {
           if (!config) return;
           if (!config.settings.d4Agent.enabled) {
@@ -151,8 +171,8 @@ export function D4AgentEntry({
             .finally(() => setOpening(false));
         }}
       >
-        <Text className="text-base font-t3-semibold text-foreground">
-          {`Nia${label ? ` · ${label}` : ""}`}
+        <Text className={cn("font-t3-semibold text-foreground", compact ? "text-sm" : "text-base")}>
+          {title}
         </Text>
       </Pressable>
       {error ? (
@@ -444,6 +464,7 @@ function AgentActionRecord({
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState<string | null>(null);
   const linkTo = useLinkTo();
+  const config = useEnvironmentServerConfig(environmentId);
   const tag = launchTag(record.type);
   const project = useProject(
     tag === null ? null : scopeProjectRef(environmentId, ProjectId.make(record.targetId)),
@@ -458,6 +479,7 @@ function AgentActionRecord({
   );
   const refreshDetail = useEffectEvent(detail.refresh);
   const previousResolution = useRef({ status: record.status, resolvedAt: record.resolvedAt });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches action detail when its resolution changes on the server
   useEffect(() => {
     if (
       reviewing &&
@@ -617,7 +639,7 @@ function AgentActionRecord({
             </Text>
           ) : null}
           <Text className="text-xs text-foreground-muted">
-            Model · {launchAction.modelSelection.instanceId} / {launchAction.modelSelection.model}
+            Model · {formatModelSelectionLabel(config?.providers, launchAction.modelSelection)}
           </Text>
           {launchAction.modelSelection.options?.map((option) => (
             <Text key={option.id} className="text-xs text-foreground-muted">

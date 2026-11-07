@@ -1,4 +1,6 @@
-import { expect, it } from "vite-plus/test";
+import { expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
+import { Effect, Option } from "effect";
 import * as NodeWorkerThreads from "node:worker_threads";
 import { javascriptTestDocument } from "./javascriptTest";
 function workerSource(code: string) {
@@ -7,38 +9,39 @@ function workerSource(code: string) {
   if (!match) throw new Error("Worker source missing");
   return JSON.parse(match[1]!) as string;
 }
-async function run(code: string) {
-  const source = `const {parentPort} = require('node:worker_threads'); const self = globalThis; const postMessage = value => parentPort.postMessage(value); ${workerSource(code)}`;
-  const worker = new NodeWorkerThreads.Worker(source, { eval: true });
-  return new Promise<{ ok: boolean; logs?: string[]; error?: string }>((resolve) => {
-    const timeout = setTimeout(() => {
-      void worker.terminate();
-      resolve({ ok: false, error: "timeout" });
-    }, 2000);
-    worker.on("message", (result) => {
-      clearTimeout(timeout);
-      void worker.terminate();
-      resolve(result);
-    });
-    worker.on("error", (error) => {
-      clearTimeout(timeout);
-      void worker.terminate();
-      resolve({ ok: false, error: error.message });
-    });
+function run(code: string) {
+  return Effect.gen(function* () {
+    const source = `const {parentPort} = require('node:worker_threads'); const self = globalThis; const postMessage = value => parentPort.postMessage(value); ${workerSource(code)}`;
+    const worker = new NodeWorkerThreads.Worker(source, { eval: true });
+    return yield* Effect.promise(
+      () =>
+        new Promise<{ ok: boolean; logs?: string[]; error?: string }>((resolve) => {
+          worker.once("message", resolve);
+          worker.once("error", (error) => resolve({ ok: false, error: error.message }));
+        }),
+    ).pipe(
+      Effect.timeoutOption("2 seconds"),
+      Effect.map(Option.getOrElse(() => ({ ok: false, error: "timeout" }))),
+      Effect.ensuring(Effect.promise(() => worker.terminate())),
+    );
   });
 }
-it("runs actual JavaScript assertions and captures results", async () => {
-  expect(await run("assert(2+2===4); console.log('ok')")).toEqual({ ok: true, logs: ["ok"] });
-  expect(await run("assert(false, 'wrong')")).toEqual({
-    ok: false,
-    logs: [],
-    error: "Error: wrong",
-  });
-});
-it("terminates an infinite loop and disables fetch in the worker", async () => {
-  expect(await run("while(true) {} ")).toEqual({ ok: false, error: "timeout" });
-  expect((await run("assert(typeof fetch === 'undefined')")).ok).toBe(true);
-});
+it.live("runs actual JavaScript assertions and captures results", () =>
+  Effect.gen(function* () {
+    expect(yield* run("assert(2+2===4); console.log('ok')")).toEqual({ ok: true, logs: ["ok"] });
+    expect(yield* run("assert(false, 'wrong')")).toEqual({
+      ok: false,
+      logs: [],
+      error: "Error: wrong",
+    });
+  }),
+);
+it.live("terminates an infinite loop and disables fetch in the worker", () =>
+  Effect.gen(function* () {
+    expect(yield* run("while(true) {} ")).toEqual({ ok: false, error: "timeout" });
+    expect((yield* run("assert(typeof fetch === 'undefined')")).ok).toBe(true);
+  }),
+);
 it("escapes closing script tags and declares network isolation", () => {
   const html = javascriptTestDocument("console.log('</script><img src=evil>')");
   expect(html.match(/<\/script>/g)).toHaveLength(1);

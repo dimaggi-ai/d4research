@@ -1,17 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 
-// Converts the stored structured-patch document behind a `toolCall` item's
-// `patchRef` (fetched via `item/readOutput`, mediaType `application/json`)
-// into a unified diff string for `turn.diff.updated` events.
-//
-// Observed body shape from `muse serve` 1.3.0:
-//   {"files":[{"hunks":[{"lines":["-old","+new"],"newLines":1,"newStart":1,
-//                        "oldLines":1,"oldStart":1}],
-//              "path":"/abs/workspace/notes.txt"}]}
-// `path` is absolute; hunk line entries carry their `-`/`+`/` ` prefix.
-// The schema names no other fields, so everything beyond files/hunks/lines
-// is read defensively and anything unparsable yields undefined.
+// Muse 1.3.0 item/readOutput returns files/hunks/lines JSON behind patchRef.
+// Paths are absolute and lines include diff prefixes; read undocumented fields
+// defensively and return undefined for an unparsable patch.
 interface PatchHunk {
   readonly lines: ReadonlyArray<string>;
   readonly oldStart: number;

@@ -65,6 +65,7 @@ export function DevPipelinesSettingsPanel() {
     settings.dev.activeScenario || persistedPipelines[0]?.name || "default",
   );
   const selectedPipelineNameRef = useRef(selectedPipelineName);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Preserve focused unsaved DOM edits while applying remote settings updates to the local pipeline draft.
   useEffect(() => {
     // Do not replace a focused, unsaved prompt because an unrelated settings
     // patch arrived. The local canonical array is flushed on blur/switch.
@@ -153,6 +154,7 @@ export function DevPipelinesSettingsPanel() {
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Preserve the focused textarea draft on remote saves while replacing it when the selected pipeline changes.
   useEffect(() => {
     const pipelineChanged = promptPipelineNameRef.current !== pipeline.name;
     promptPipelineNameRef.current = pipeline.name;
@@ -407,7 +409,7 @@ export function DevPipelinesSettingsPanel() {
                   >
                     {resolution.ok
                       ? `${resolution.directive.raw} → ${resolution.providerName} / ${resolution.model}`
-                      : `${resolution.directive.raw} — ${resolution.error}`}
+                      : `${resolution.directive.raw}: ${resolution.error}`}
                   </li>
                 ))}
               </ul>

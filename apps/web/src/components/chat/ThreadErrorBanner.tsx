@@ -26,7 +26,7 @@ export function copyAdminRequest() {
   );
 }
 
-export function getThreadErrorBannerMessage(error: string): string {
+function getThreadErrorBannerMessage(error: string): string {
   let payload: unknown;
   try {
     payload = JSON.parse(error);
@@ -54,7 +54,10 @@ export function shouldShowThreadErrorBanner(
   error: string | null,
   isDismissed: boolean,
 ): boolean {
-  if (error === "The provider session ended while d4research was offline. Retry the turn to continue.") return false;
+  if (
+    error === "The provider session ended while d4research was offline. Retry the turn to continue."
+  )
+    return false;
   return getThreadErrorBannerKey(threadKey, error) !== null && !isDismissed;
 }
 
@@ -85,7 +88,8 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
 }) {
   if (!error) return null;
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
-  const chatGptLimit = chatGptUsageLimit || workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
+  const chatGptLimit =
+    chatGptUsageLimit || workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
   const variant = errorClass === "usage_limit" || chatGptLimit ? "warning" : "error";
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">

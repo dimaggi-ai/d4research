@@ -138,56 +138,57 @@ export const makeHandoffCompactionRecovery = <
             ),
           }),
     },
-    compact: Effect.fn("compact")((input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
-      Effect.gen(function* () {
-        if (attempted || !session.compactThread) return yield* new ContextHandoffBudgetError();
-        attempted = true;
-        const done = yield* Deferred.make<
-          ThreadTokenUsageSnapshot,
-          ContextHandoffBudgetError | ProviderAdapter.ProviderAdapterTurnStartError
-        >();
-        const maintenanceInput = {
-          ...input,
-          runId: RunId.make(`${input.runId}:handoff-compaction`),
-          attemptId: RunAttemptId.make(`${input.attemptId}:handoff-compaction`),
-          rootNodeId: NodeId.make(`${input.rootNodeId}:handoff-compaction`),
-          message: { ...input.message, text: "/compact", attachments: [] },
-        };
-        const current = { input: maintenanceInput, done, terminal: false } as NonNullable<
-          typeof state
-        >;
-        state = current;
-        yield* Effect.logInfo("handoff.budget.recovery", {
-          strategy: "native-compaction",
-          runId: input.runId,
-        });
-        return yield* session.compactThread(maintenanceInput).pipe(
-          Effect.andThen(Deferred.await(done)),
-          Effect.timeout("60 seconds"),
-          Effect.onError(() =>
-            current.turnId && !current.terminal
-              ? session
-                  .interruptTurn({
-                    providerThread: input.providerThread,
-                    providerTurnId: current.turnId,
-                  })
-                  .pipe(
-                    Effect.timeout("5 seconds"),
-                    Effect.catchCause(() =>
-                      Effect.logWarning("handoff.budget.recovery.interrupt-failed", {
-                        runId: input.runId,
-                      }),
-                    ),
-                  )
-              : Effect.void,
-          ),
-          Effect.ensuring(
-            Effect.sync(() => {
-              state = undefined;
-            }),
-          ),
-        );
-      }),
+    compact: Effect.fn("HandoffCompactionRecovery.compact")(
+      (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+        Effect.gen(function* () {
+          if (attempted || !session.compactThread) return yield* new ContextHandoffBudgetError();
+          attempted = true;
+          const done = yield* Deferred.make<
+            ThreadTokenUsageSnapshot,
+            ContextHandoffBudgetError | ProviderAdapter.ProviderAdapterTurnStartError
+          >();
+          const maintenanceInput = {
+            ...input,
+            runId: RunId.make(`${input.runId}:handoff-compaction`),
+            attemptId: RunAttemptId.make(`${input.attemptId}:handoff-compaction`),
+            rootNodeId: NodeId.make(`${input.rootNodeId}:handoff-compaction`),
+            message: { ...input.message, text: "/compact", attachments: [] },
+          };
+          const current = { input: maintenanceInput, done, terminal: false } as NonNullable<
+            typeof state
+          >;
+          state = current;
+          yield* Effect.logInfo("handoff.budget.recovery", {
+            strategy: "native-compaction",
+            runId: input.runId,
+          });
+          return yield* session.compactThread(maintenanceInput).pipe(
+            Effect.andThen(Deferred.await(done)),
+            Effect.timeout("60 seconds"),
+            Effect.onError(() =>
+              current.turnId && !current.terminal
+                ? session
+                    .interruptTurn({
+                      providerThread: input.providerThread,
+                      providerTurnId: current.turnId,
+                    })
+                    .pipe(
+                      Effect.timeout("5 seconds"),
+                      Effect.catchCause(() =>
+                        Effect.logWarning("handoff.budget.recovery.interrupt-failed", {
+                          runId: input.runId,
+                        }),
+                      ),
+                    )
+                : Effect.void,
+            ),
+            Effect.ensuring(
+              Effect.sync(() => {
+                state = undefined;
+              }),
+            ),
+          );
+        }),
     ),
   };
 };

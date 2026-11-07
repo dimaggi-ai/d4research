@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createAppUpdateDeferral,
@@ -18,6 +18,8 @@ vi.mock("expo-updates", () => ({
   fetchUpdateAsync: vi.fn(),
   reloadAsync: vi.fn(),
 }));
+
+afterEach(() => vi.useRealTimers());
 
 function makeUpdateClient(overrides: Partial<AppUpdateClient> = {}): AppUpdateClient {
   return {
@@ -286,8 +288,10 @@ describe("runAppUpdateCheck", () => {
 
     backgroundCallbacks[0]!();
     await vi.waitFor(() => expect(flushPendingWrites).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
     foregroundStayCallbacks[0]!();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
     expect(environment.confirmInstallNow).not.toHaveBeenCalled();
 
     releaseFlush();

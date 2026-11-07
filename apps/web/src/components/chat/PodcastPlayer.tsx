@@ -47,11 +47,8 @@ function basename(path: string): string {
 }
 
 /**
- * Plays audio artifacts an agent generated in the active thread. The player
- * only mounts when `artifacts` is non-empty (ChatView gates it), so a chat with
- * no audio never shows it. Each artifact resolves to a workspace-file asset URL;
- * time updates ride the element's `timeupdate` event rather than a rAF loop, so
- * the player does not repaint continuously.
+ * ChatView mounts this only for audio artifacts. Native timeupdate events
+ * drive playback progress without a continuously repainting animation loop.
  */
 export function PodcastPlayer(props: {
   environmentId: EnvironmentId;

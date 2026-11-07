@@ -39,15 +39,14 @@ export function WorkspaceInspectorPane(props: {
   const renderedContentWidth = useSharedValue(inspectorWidth ?? 0);
 
   const onClosed = props.onClosed;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate the native inspector position and width when visibility or resizing changes.
   useEffect(() => {
-    inspectorProgress.value = withTiming(
-      inspectorVisible ? 1 : 0,
-      WORKSPACE_PANE_TIMING,
-      (finished) => {
+    inspectorProgress.set(
+      withTiming(inspectorVisible ? 1 : 0, WORKSPACE_PANE_TIMING, (finished) => {
         if (finished === true && !inspectorVisible && onClosed !== undefined) {
           runOnJS(onClosed)();
         }
-      },
+      }),
     );
     const targetWidth = inspectorVisible ? (inspectorWidth ?? 0) : 0;
     renderedInspectorWidth.set(
@@ -62,13 +61,14 @@ export function WorkspaceInspectorPane(props: {
     resizing,
   ]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the native content width aligned with the inspector during resizing and transitions.
   useEffect(() => {
     const targetWidth = inspectorWidth ?? 0;
     if (!inspectorVisible || resizing) {
-      renderedContentWidth.value = targetWidth;
+      renderedContentWidth.set(targetWidth);
       return;
     }
-    renderedContentWidth.value = withTiming(targetWidth, WORKSPACE_PANE_TIMING);
+    renderedContentWidth.set(withTiming(targetWidth, WORKSPACE_PANE_TIMING));
   }, [inspectorVisible, inspectorWidth, renderedContentWidth, resizing]);
 
   const inspectorStyle = useAnimatedStyle(

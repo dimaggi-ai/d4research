@@ -83,7 +83,7 @@ describe("uniwind platform variants compile per platform", () => {
 
   beforeAll(() => {
     output = runFixture('@import "tailwindcss";\n@import "uniwind";\n', FIXTURE_SOURCE);
-  }, 60_000);
+  });
 
   it("compiles the fixture utilities into shared platform blocks", () => {
     expect(output.tailwindChecks).toEqual({
@@ -169,7 +169,7 @@ describe("uniwind keeps media rules nested inside class rules attached to the cl
       ].join("\n"),
       'export const Probe = () => <div className="container-x foo-x" />;\n',
     );
-  }, 60_000);
+  });
 
   it("keeps the nested breakpoint entry of a nested media rule", () => {
     for (const platform of ["ios", "android"]) {
@@ -203,7 +203,7 @@ describe("uniwind keeps selector and transformer behavior", () => {
       '@import "tailwindcss";\n@import "uniwind";\n',
       'export const Probe = () => <div className="active:opacity-50 disabled:opacity-50 data-x:underline aria-disabled:text-red-500" />;\n',
     );
-  }, 60_000);
+  });
 
   it("keeps state and data variants conditioned, and rejects unsupported compounds", () => {
     for (const platform of ["ios", "android"]) {

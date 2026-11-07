@@ -1,8 +1,7 @@
+import { act, render as renderComponent, type Screen } from "../../../test/render";
 import { EnvironmentId, type PullRequestCheck } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   status: "success" as PullRequestCheck["status"],
@@ -50,23 +49,25 @@ vi.mock(import("../pullRequest/usePullRequestActions"), async (importOriginal) =
 
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 
-let root: Root;
+let root: Screen;
 let container: HTMLDivElement;
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+async function setupFixture() {
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
-});
-afterEach(() => {
-  act(() => root.unmount());
-  document.body.replaceChildren();
-  vi.unstubAllGlobals();
-  state.status = "success";
-  state.extraStatus = null;
-});
+  root = await renderComponent(null, { container: container, router: false });
+  return {
+    async [Symbol.asyncDispose]() {
+      await root[Symbol.asyncDispose]();
+      document.body.replaceChildren();
+      vi.unstubAllGlobals();
+      state.status = "success";
+      state.extraStatus = null;
+    },
+  };
+}
 
-it("requires a new merge click after passing checks become pending and pass again", () => {
+it("requires a new merge click after passing checks become pending and pass again", async () => {
+  await using _fixture = await setupFixture();
   const render = () => (
     <ThreadDetailsPrRow
       environmentId={EnvironmentId.make("environment")}
@@ -80,27 +81,27 @@ it("requires a new merge click after passing checks become pending and pass agai
     />
   );
   const clickMerge = () =>
-    act(() => {
+    act(async () => {
       [...container.querySelectorAll("button")]
         .find((button) => button.textContent?.trim() === "Merge")!
         .click();
     });
   const dialogs = () => [...document.querySelectorAll('[role="alertdialog"]')];
 
-  act(() => root.render(render()));
-  clickMerge();
+  await act(async () => await root.rerender(render()));
+  await clickMerge();
   expect(dialogs()).toHaveLength(1);
-  act(() => {
+  await act(async () => {
     state.status = "pending";
-    root.render(render());
+    await root.rerender(render());
   });
   expect(dialogs()).toHaveLength(0);
-  act(() => {
+  await act(async () => {
     state.status = "success";
-    root.render(render());
+    await root.rerender(render());
   });
   expect(dialogs()).toHaveLength(0);
-  clickMerge();
+  await clickMerge();
   expect(dialogs()).toHaveLength(1);
   expect(state.perform).not.toHaveBeenCalled();
 });
@@ -111,25 +112,29 @@ it.each<[PullRequestCheck["status"], PullRequestCheck["status"], string]>([
   ["success", "action-required", "1/2"],
   ["success", "pending", "1/2"],
   ["failure", "pending", "1/2"],
-])("shows a completion count for incomplete checks (%s, %s)", (status, extraStatus, count) => {
-  state.status = status;
-  state.extraStatus = extraStatus;
-  act(() => {
-    root.render(
-      <ThreadDetailsPrRow
-        environmentId={EnvironmentId.make("environment")}
-        pr={null}
-        number={1}
-        status={null}
-        project={null}
-        label="Test PR"
-        openAriaLabel="Open PR"
-        onOpen={vi.fn()}
-      />,
-    );
-  });
-  const counts = [...container.querySelectorAll("*")]
-    .map((element) => element.textContent?.trim() ?? "")
-    .flatMap((value) => /^(\d+\/\d+) checks$/.exec(value)?.[1] ?? []);
-  expect(new Set(counts)).toEqual(new Set(count ? [count] : []));
-});
+])(
+  "shows a completion count for incomplete checks (%s, %s)",
+  async (status, extraStatus, count) => {
+    await using _fixture = await setupFixture();
+    state.status = status;
+    state.extraStatus = extraStatus;
+    await act(async () => {
+      await root.rerender(
+        <ThreadDetailsPrRow
+          environmentId={EnvironmentId.make("environment")}
+          pr={null}
+          number={1}
+          status={null}
+          project={null}
+          label="Test PR"
+          openAriaLabel="Open PR"
+          onOpen={vi.fn()}
+        />,
+      );
+    });
+    const counts = [...container.querySelectorAll("*")]
+      .map((element) => element.textContent?.trim() ?? "")
+      .flatMap((value) => /^(\d+\/\d+) checks$/.exec(value)?.[1] ?? []);
+    expect(new Set(counts)).toEqual(new Set(count ? [count] : []));
+  },
+);

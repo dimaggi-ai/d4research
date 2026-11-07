@@ -50,6 +50,7 @@ function AppSettingsSection() {
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the update-status expiry timer when the status changes or the screen unmounts.
   useEffect(() => {
     if (updateState !== "current") return;
     const timer = setTimeout(() => setUpdateState("idle"), 3000);

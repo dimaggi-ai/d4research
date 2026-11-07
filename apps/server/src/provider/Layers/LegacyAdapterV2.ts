@@ -18,6 +18,9 @@ import * as V2 from "@d4research/provider-core/server/ProviderAdapter";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
 
+const isReadOnlySandbox = Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }));
+const isProviderAdapterV2Error = Schema.is(V2.ProviderAdapterV2Error);
+
 const decodeEvent = Schema.decodeUnknownSync(Schema.toType(V2.ProviderAdapterV2Event));
 const decodeCursor = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const encodeCursor = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -573,9 +576,7 @@ export function makeLegacyAdapterV2(
             if (thread && !args.forceNewNativeThread) return thread;
             if (
               ["agy", "muse", "junie"].includes(driver) &&
-              Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }))(
-                args.runtimePolicy.sandboxPolicy,
-              )
+              isReadOnlySandbox(args.runtimePolicy.sandboxPolicy)
             ) {
               return yield* new V2.ProviderAdapterEnsureThreadError({
                 driver,
@@ -602,9 +603,7 @@ export function makeLegacyAdapterV2(
                 cwd: args.runtimePolicy.cwd ?? undefined,
                 modelSelection: args.modelSelection,
                 runtimeMode: args.runtimePolicy.runtimeMode,
-                ...(Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }))(
-                  args.runtimePolicy.sandboxPolicy,
-                )
+                ...(isReadOnlySandbox(args.runtimePolicy.sandboxPolicy)
                   ? { sandboxMode: "read-only" as const }
                   : {}),
                 ...(cursor === undefined ? {} : { resumeCursor: cursor }),
@@ -647,9 +646,7 @@ export function makeLegacyAdapterV2(
           providerSession,
           events: Stream.fromPubSub(events).pipe(
             Stream.mapEffect((event) =>
-              Schema.is(V2.ProviderAdapterV2Error)(event)
-                ? Effect.fail(event)
-                : Effect.succeed(event),
+              isProviderAdapterV2Error(event) ? Effect.fail(event) : Effect.succeed(event),
             ),
           ),
           ensureThread,

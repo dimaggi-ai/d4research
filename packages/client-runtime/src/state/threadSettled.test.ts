@@ -92,11 +92,8 @@ describe("effectiveSettled", () => {
             activityAt,
             running,
             pending,
-            // Settled iff nothing blocks (pending work / live session) AND
-            // the override says settled, or (with no override) a merged PR
-            // or staleness auto-settles. The "active" pin suppresses both
-            // auto signals, and an open PR suppresses the inactivity path:
-            // a thread with a PR out for review is never done, however quiet.
+            // Pending work and live sessions block settling; active pins block auto-settle.
+            // Open change requests suppress inactivity, even for otherwise stale threads.
             expected:
               pending === undefined &&
               !running &&
@@ -371,11 +368,9 @@ describe("canSettle", () => {
   });
 
   it("lets a server-accepted settle overrule the clock-derived queued blocker", () => {
-    // The settle action ran with wall-clock `now` (past the grace window);
-    // the list partition re-evaluates with a minute-floored `now` that is
-    // still INSIDE the window. settledAt >= message time proves the server
-    // already adjudicated this exact message, so the row must not snap back
-    // to active until the coarser clock catches up.
+    // The list clock may lag the settle action within the adoption window.
+    // settledAt >= message time proves the server already accepted this work
+    // as settled, so the row must stay settled until the coarse clock catches up.
     const messageAt = "2026-04-09T12:00:00.000Z";
     const flooredNow = "2026-04-09T12:01:00.000Z";
     const base = makeShell({ settledOverride: "settled", activityAt: null });

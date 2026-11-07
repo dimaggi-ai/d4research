@@ -71,6 +71,9 @@ class LocalHandoffCompressionError extends Schema.TaggedError<LocalHandoffCompre
   },
 ) {}
 
+const isLocalHandoffCompressionError = Schema.is(LocalHandoffCompressionError);
+const encodeJsonPromise = Schema.encodeUnknownPromise(Schema.fromJsonString(Schema.Unknown));
+
 export interface CompressHandoffContextLocalInput {
   readonly transcript: string;
   readonly task?: string;
@@ -167,14 +170,8 @@ function omissionNotice(count: number): string {
   return `[... ${count} earlier message${count === 1 ? "" : "s"} compressed into the summary below ...]`;
 }
 
-/**
- * Pure selection: given per-unit importance scores (0 skip … 2 keep verbatim),
- * decides which units travel verbatim, which are summarized, and which are
- * dropped, within `maxOutputCharacters`. The original task and the newest
- * message are always kept; the remainder is ranked by score with a small
- * recency bonus, and when not everything fits, a share of the budget is left
- * for a summary of what was omitted.
- */
+// Always retain the original task and newest message. Rank other units by
+// importance and recency, reserving summary space when verbatim units do not fit.
 export function planHandoffCompaction(
   units: ReadonlyArray<HandoffUnit>,
   scores: ReadonlyMap<number, number>,
@@ -288,7 +285,7 @@ const summarizeWithLocalModel = Effect.fn("summarizeWithLocalModel")(function* (
         signal,
         headers: { "content-type": "application/json" },
         // Ollama's /api/chat body is a fixed vendor shape, not a domain schema.
-        body: await Schema.encodeUnknownPromise(Schema.fromJsonString(Schema.Unknown))({
+        body: await encodeJsonPromise({
           model: input.model,
           stream: false,
           // Handoffs cluster within a work session but rarely land twice in
@@ -316,7 +313,7 @@ const summarizeWithLocalModel = Effect.fn("summarizeWithLocalModel")(function* (
       return typeof content === "string" ? content.trim() : "";
     },
     catch: (cause) =>
-      Schema.is(LocalHandoffCompressionError)(cause)
+      isLocalHandoffCompressionError(cause)
         ? cause
         : new LocalHandoffCompressionError({ detail: String(cause) }),
   }).pipe(
@@ -375,14 +372,8 @@ const judgeHandoffUnits = Effect.fn("judgeHandoffUnits")(function* (input: {
   return scores;
 });
 
-/**
- * Compacts a handoff transcript with the local model stack. The judge scores
- * each message for the next agent; essential messages travel verbatim, useful
- * background is summarized into the remaining budget, filler is dropped. Total
- * by design: a judge failure degrades to a whole-transcript summary, and a
- * summary failure degrades to plain structured truncation, so a handoff never
- * blocks on the local model.
- */
+// Judge failures fall back to a whole-transcript summary; summary failures use
+// structured truncation so local model availability cannot block a handoff.
 export const compressHandoffContextLocal = Effect.fn("compressHandoffContextLocal")(function* (
   input: CompressHandoffContextLocalInput,
 ): Effect.fn.Return<string, never, never> {
@@ -542,16 +533,9 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
     : compressed;
 });
 
-/**
- * Provider-session compression that can never make a handoff fail: it bounds
- * {@link compressHandoffContext} by {@link PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS},
- * logs the failure cause, and on any recoverable failure — a provider error or
- * a timeout, both of which surface on the Fail channel — resolves to a
- * deterministic truncation of `clipped`. A defect (Die) still propagates: the
- * only known source is malformed adapter output, which every adapter's typed
- * `readThread` snapshot rules out. `clipped` is the already-input-clipped
- * transcript so the fallback honours the same input budget as compression.
- */
+// Bound compression by PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS. Recoverable
+// failures log their cause and truncate the already-clipped input; defects still
+// propagate because adapter snapshots must satisfy the typed readThread contract.
 export const compressHandoffContextWithFallback = (
   input: CompressHandoffContextInput & { readonly clipped: string },
 ): Effect.Effect<string, never, ProviderAdapterRegistryV2> =>

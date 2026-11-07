@@ -108,7 +108,7 @@ export function isDeepResearchPrompt(prompt: string): boolean {
 
 /**
  * Drops a leading research trigger, keeping the task the user already typed.
- * Slicing a fixed tag length is wrong here — triggers vary in length
+ * Slicing a fixed tag length is wrong here: triggers vary in length
  * (`!research`, `!research:blog`, `#deep-research`).
  */
 export function stripResearchTrigger(prompt: string): string {
@@ -145,7 +145,7 @@ export function deriveResearchProviderCandidatesFromProviders(
 ): ReadonlyArray<ResearchProviderCandidate> {
   // The same strict readiness rule the delegation target resolver enforces.
   // A looser list here would let a composer accept a target the server then
-  // rejects — after the draft is already cleared.
+  // rejects: after the draft is already cleared.
   return providers
     .filter(canStartProviderTurn)
     .map((provider) => ({
@@ -162,7 +162,7 @@ export function deriveResearchProviderCandidatesFromProviders(
 /**
  * One `!provider:model[:file.md]` reference found in the pipeline prompt.
  * `promptFile` is only split off when the trailing segment looks like a file
- * name — model slugs legitimately contain colons (`glm-5.2:cloud`), so the
+ * name: model slugs legitimately contain colons (`glm-5.2:cloud`), so the
  * split is by suffix, not by position.
  */
 export interface ResearchModelDirective {
@@ -181,7 +181,7 @@ export function parseResearchDirectives(text: string): ReadonlyArray<ResearchMod
   const seen = new Set<string>();
   for (const match of text.matchAll(DIRECTIVE_REGEX)) {
     const provider = match[1] ?? "";
-    // Directives live inside prose — "fan out to !claude:fable." captures the
+    // Directives live inside prose: "fan out to !claude:fable." captures the
     // sentence's period. Trailing punctuation is never part of a model slug or
     // file name, so strip it before splitting.
     let model = (match[2] ?? "").replace(/[.,;:!?]+$/u, "");
@@ -276,13 +276,8 @@ export function mightBeInlineDelegateTrigger(prompt: string): boolean {
   return head.includes("!") && /^\s*(?:Ultrathink:\s*\n\s*)?!/.test(head);
 }
 
-/**
- * Reads a leading `!provider:model <task>` message as one bounded delegation.
- * Tolerates leading whitespace and the Claude effort marker, because both sit
- * in front of text the user authored as a trigger. Returns null for anything
- * that is not one, including a bare trigger with no task: a delegation with
- * nothing to ask is not a delegation.
- */
+// Leading whitespace and Claude effort markers may precede user triggers.
+// A bare trigger without a task must not start delegation.
 export function parseInlineDelegateTrigger(prompt: string): InlineDelegateTrigger | null {
   if (!mightBeInlineDelegateTrigger(prompt)) return null;
   const text = peelInlineDelegatePrefixes(prompt);
@@ -315,13 +310,8 @@ export type ResearchDirectiveResolution =
     }
   | { readonly directive: ResearchModelDirective; readonly ok: false; readonly error: string };
 
-/**
- * How well a candidate answers to a directive's provider name. Lower is
- * better, and the distinction is load-bearing: an "Ollama" instance is usually
- * a `claudeAgent` driver pointed at another endpoint, so it answers to `claude`
- * on CLI while the real Claude answers to it by name. Taking the first match
- * would route `!claude:` to whichever the server streamed first.
- */
+// Prefer display-name matches: an Ollama instance may use the Claude driver,
+// so matching CLI first could route Claude requests to the wrong endpoint.
 function providerMatchRank(
   candidate: ResearchProviderCandidate,
   providerNeedle: string,
@@ -334,13 +324,8 @@ function providerMatchRank(
   return null;
 }
 
-/**
- * Resolves a directive against ready providers and attached prompt files.
- * Provider matches by display name, then CLI, then name prefix — a tie at the
- * best rank is an error rather than a guess. Model matches exactly first, then
- * as a unique substring: `fable` finds `claude-fable-5`, but an ambiguous
- * fragment is an error too.
- */
+// Resolve providers by name, CLI, then prefix; reject ties at the best rank.
+// Resolve models exactly before allowing unique substrings; reject ambiguity.
 export function resolveResearchDirective(
   directive: ResearchModelDirective,
   candidates: ReadonlyArray<ResearchProviderCandidate>,
@@ -516,7 +501,7 @@ export function deriveDirectiveSuggestions(
   const providerPart = match[1] ?? "";
   const rest = match[2] ?? "";
 
-  // No colon yet — complete the provider.
+  // No colon yet: complete the provider.
   if (rest.length === 0) {
     const needle = providerPart.toLowerCase();
     return candidates
@@ -528,7 +513,7 @@ export function deriveDirectiveSuggestions(
       .slice(0, MAX_DIRECTIVE_SUGGESTIONS)
       .map((candidate) => ({
         insert: `!${candidate.cli}:`,
-        label: `${candidate.name} — ${candidate.models.length} models`,
+        label: `${candidate.name}: ${candidate.models.length} models`,
         tokenStart,
       }));
   }
@@ -541,7 +526,7 @@ export function deriveDirectiveSuggestions(
   if (!provider) return [];
   const afterProvider = rest.slice(1); // drop the leading ':'
 
-  // A full model followed by ':' — offer the attached prompt files.
+  // A full model followed by ':': offer the attached prompt files.
   const modelExact = provider.models.find(
     (model) =>
       afterProvider.toLowerCase() === `${model.toLowerCase()}:` ||
@@ -624,22 +609,12 @@ export function findResearchScenario(
   );
 }
 
-/**
- * Compiles the orchestrator turn for a `!research[:scenario]` prompt (legacy
- * `#deep-research` still works). The scenario's pipeline is quoted verbatim
- * and framed with a strict execution protocol: step-by-step tracing through
- * the plan tool, delegation only through `research_delegate`, and explicit
- * loop budgets so a cyclic pipeline (fan out → summarize → argue → regenerate
- * → summarize again) terminates instead of orbiting. Returns the prompt
- * unchanged when it is not a research prompt, and refuses to improvise when
- * the named scenario does not exist.
- */
-// Unique lines the expanded orchestrator prompt always contains. Used to
-// detect an already-expanded prompt so expansion stays idempotent. Kept as
-// constants so the wrapper and the guard can never drift apart.
+// Share sentinel constants between the wrapper and guard so expansion stays idempotent.
 const RESEARCH_ORCHESTRATOR_SENTINEL = "Execution protocol (non-negotiable):";
 const RESEARCH_PIPELINE_SENTINEL = "PIPELINE (verbatim):";
 
+// Quote the configured pipeline verbatim; require traceable, bounded delegation.
+// Leave ordinary prompts unchanged and reject unknown scenarios rather than improvise.
 export function expandResearchPipelinePrompt(
   prompt: string,
   settings: ResearchSettingsLike | undefined,
@@ -649,11 +624,8 @@ export function expandResearchPipelinePrompt(
   const trigger = parseResearchTrigger(prompt);
   if (!trigger) return prompt;
 
-  // Expansion is idempotent. The wrapper it emits itself begins with the
-  // `!research:<scenario>` trigger, so a second pass (a resend, a paste of a
-  // prior run, a handoff round-trip) would re-satisfy parseResearchTrigger and
-  // wrap the whole pipeline again — the "research context twice" duplication.
-  // If the text already carries the wrapper, it is already expanded; return it.
+  // The wrapper begins with the trigger too; detect it to prevent expansion
+  // from duplicating research context on resend, paste, or handoff.
   if (
     prompt.includes(RESEARCH_ORCHESTRATOR_SENTINEL) &&
     prompt.includes(RESEARCH_PIPELINE_SENTINEL)
@@ -707,14 +679,14 @@ export function expandResearchPipelinePrompt(
     `You are the research orchestrator for this thread, running the \`${scenario.name}\` scenario. The PIPELINE below is authoritative: follow its steps exactly, in order, including any loops it defines. Do not add, skip, merge, or reorder steps.`,
     "",
     RESEARCH_ORCHESTRATOR_SENTINEL,
-    "1. TRACE — Maintain the plan tool as your step ledger: one entry per pipeline step titled `Step N: <title>`. Exactly one entry is in-progress at any time. On a revisit, append ` (visit K)` to the entry text. Begin every message with the marker `[step N | visit K]`.",
-    `2. DELEGATE — A \`!provider:model[:file.md]\` directive is executed only by calling the \`research_delegate\` tool. Its \`target\` argument must be the resolved \`instanceId:model\` string from the "Delegation targets" list below, copied exactly — never the \`!\` directive itself. Pass your request as \`prompt\`, the file name as \`promptFileName\` when the directive names one, \`scenario\` as \`${scenario.name}\`, and the current \`step\`/\`visit\`. Never claim a delegation ran unless the tool returned its answer. Never delegate to yourself recursively.`,
+    "1. TRACE: Maintain the plan tool as your step ledger: one entry per pipeline step titled `Step N: <title>`. Exactly one entry is in-progress at any time. On a revisit, append ` (visit K)` to the entry text. Begin every message with the marker `[step N | visit K]`.",
+    `2. DELEGATE: A \`!provider:model[:file.md]\` directive is executed only by calling the \`research_delegate\` tool. Its \`target\` argument must be the resolved \`instanceId:model\` string from the "Delegation targets" list below, copied exactly: never the \`!\` directive itself. Pass your request as \`prompt\`, the file name as \`promptFileName\` when the directive names one, \`scenario\` as \`${scenario.name}\`, and the current \`step\`/\`visit\`. Never claim a delegation ran unless the tool returned its answer. Never delegate to yourself recursively.`,
     targetPolicy === "labeled-fallback"
-      ? "3. TARGET POLICY — Labeled fallback is enabled. Pass `fallbackTargets` only for targets the PIPELINE explicitly labels as fallbacks for this step, in authored order. The tool returns `requestedTarget`, `resolvedTarget`, and `substituted`; report the resolved target and never describe a fallback as the requested model."
-      : "3. TARGET POLICY — Exact targets only. Do not pass or invent fallbacks. If a target is unavailable, report that step as failed.",
-    `4. LOOP GUARD — A step may run at most ${RESEARCH_STEP_VISIT_LIMIT} visits and the whole turn has a hard budget of ${RESEARCH_DELEGATION_BUDGET_PER_TURN} delegations, enforced by the server. When a guard trips, stop looping, synthesize from what you have, and state plainly which loop was cut and why.`,
-    "5. HONESTY — Preserve links, file paths, commands, disagreements, and uncertainty when summarizing delegate answers. A delegate that failed or timed out is reported as failed, not paraphrased into a result. When delegates disagree, record both positions as competing claims; never let a later answer silently overwrite an earlier one.",
-    "6. RUN STATE — End the run with a `RUN STATE` section listing every step: requested target, actual resolved target, whether a labeled fallback was used, visits, and outcome (`SUCCESS`, or the failure the tool reported: refusal, timeout, error, empty). The synthesis must state which conclusions rest on failed or missing steps. A run report that hides a failure is a failed run.",
+      ? "3. TARGET POLICY: Labeled fallback is enabled. Pass `fallbackTargets` only for targets the PIPELINE explicitly labels as fallbacks for this step, in authored order. The tool returns `requestedTarget`, `resolvedTarget`, and `substituted`; report the resolved target and never describe a fallback as the requested model."
+      : "3. TARGET POLICY: Exact targets only. Do not pass or invent fallbacks. If a target is unavailable, report that step as failed.",
+    `4. LOOP GUARD: A step may run at most ${RESEARCH_STEP_VISIT_LIMIT} visits and the whole turn has a hard budget of ${RESEARCH_DELEGATION_BUDGET_PER_TURN} delegations, enforced by the server. When a guard trips, stop looping, synthesize from what you have, and state plainly which loop was cut and why.`,
+    "5. HONESTY: Preserve links, file paths, commands, disagreements, and uncertainty when summarizing delegate answers. A delegate that failed or timed out is reported as failed, not paraphrased into a result. When delegates disagree, record both positions as competing claims; never let a later answer silently overwrite an earlier one.",
+    "6. RUN STATE: End the run with a `RUN STATE` section listing every step: requested target, actual resolved target, whether a labeled fallback was used, visits, and outcome (`SUCCESS`, or the failure the tool reported: refusal, timeout, error, empty). The synthesis must state which conclusions rest on failed or missing steps. A run report that hides a failure is a failed run.",
     "",
     "Delegation targets referenced by the pipeline:",
     ...(targetLines.length > 0
@@ -723,7 +695,7 @@ export function expandResearchPipelinePrompt(
           "- The pipeline references no `!provider:model` targets. Execute it with this model only.",
         ]),
     "",
-    "Prompt files attached in Settings → Research (contents are inlined server-side when a directive names them — do not paste them yourself):",
+    "Prompt files attached in Settings → Research (contents are inlined server-side when a directive names them: do not paste them yourself):",
     ...(fileLines.length > 0 ? fileLines : ["- none"]),
     "",
     RESEARCH_PIPELINE_SENTINEL,

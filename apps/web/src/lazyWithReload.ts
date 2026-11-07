@@ -5,14 +5,9 @@ import { lazy, type ComponentType } from "react";
 type Any = any;
 
 /**
- * A deployed build renames its hashed chunks. A tab left open across a deploy
- * still holds the old names, so the first lazily-loaded panel it opens (a file
- * preview, a diff) fetches a chunk the server no longer has and the import
- * rejects — the panel never appears until the user reloads by hand.
- *
- * The tab is simply out of date, and reloading is the fix, so do it: reload
- * once per session on a chunk-load failure. The guard keeps a genuinely broken
- * deployment from looping — a second failure surfaces as a normal error.
+ * Deployments invalidate old hashed chunk URLs held by open tabs. Reload once
+ * on a chunk-load failure; a session guard prevents broken deployments from
+ * causing a reload loop.
  */
 export const CHUNK_RELOAD_STORAGE_KEY = "t3code:chunk-reload-attempted:v1";
 

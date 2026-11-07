@@ -1,12 +1,24 @@
 import * as Schema from "effect/Schema";
 import * as Dialog from "./ui/Dialog";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useContext, useEffect, useEffectEvent, useState, useSyncExternalStore, useMemo } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useState,
+  useSyncExternalStore,
+  useMemo,
+} from "react";
 import { Keyboard, Platform } from "react-native";
 
 import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import { refreshAssetUrl } from "../state/assets";
-import { downloadAndShareAttachment, nativeViewerErrorMessage, shareLocalAttachment } from "../lib/attachmentDownload";
+import {
+  downloadAndShareAttachment,
+  nativeViewerErrorMessage,
+  shareLocalAttachment,
+} from "../lib/attachmentDownload";
 import { filePreviewGallery, filePreviewKey, filePreviewName } from "../lib/filePreviewGallery";
 import { FilePreviewGallery } from "./FilePreviewGallery";
 import { FilePreview } from "./FilePreview";
@@ -70,6 +82,7 @@ function ResolvedFilePreview(props: {
 }) {
   // Freeze the group at opening; streaming messages and URL refreshes must not reopen the viewer.
   const [items] = useState(() => filePreviewGallery(props.source, []));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Dismiss the native keyboard before presenting the document viewer.
   useEffect(() => Keyboard.dismiss(), []);
   const selectedKey = filePreviewKey(props.source);
   const selectedIndex = items.findIndex((item) => filePreviewKey(item) === selectedKey);
@@ -210,6 +223,7 @@ export function FilePreviewModal(props: {
   );
   const hasSource = props.source !== null;
   const onRequestClose = useEffectEvent(props.onRequestClose);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Close the native document presentation when navigation loses focus.
   useEffect(() => {
     if (!isFocused && hasSource) onRequestClose();
   }, [isFocused, hasSource]);

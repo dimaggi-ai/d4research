@@ -1,10 +1,8 @@
-// @vitest-environment jsdom
+import { act, render as renderComponent, fakeTimers, type Screen } from "../../../test/render";
 import { RegistryContext } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import { Atom, AtomRegistry } from "effect/reactivity";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { useD4AgentState } from "./useD4AgentState";
 
 // The real query atom and hook, with only the network fetch replaced: every subscription after a
@@ -22,7 +20,7 @@ vi.mock("../../state/server", () => ({
 }));
 
 let visibility: DocumentVisibilityState;
-let root: Root;
+let root: Screen;
 let container: HTMLDivElement;
 let registry: AtomRegistry.AtomRegistry;
 function Chat() {
@@ -37,35 +35,39 @@ function Chat() {
     <p>Loading</p>
   );
 }
-const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+const settle = () => act(async () => vi.advanceTimersByTimeAsync(0));
 const setVisibility = (next: DocumentVisibilityState) =>
-  act(() => {
+  act(async () => {
     visibility = next;
     document.dispatchEvent(new Event("visibilitychange"));
   });
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+async function setupFixture() {
   visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
   fetches.pending = [];
   registry = AtomRegistry.make();
   container = document.createElement("div");
-  root = createRoot(container);
-});
-afterEach(() => {
-  act(() => root.unmount());
-  registry.dispose();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+  root = await renderComponent(null, { container: container, router: false });
+  return {
+    async [Symbol.asyncDispose]() {
+      await root[Symbol.asyncDispose]();
+      registry.dispose();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    },
+  };
+}
 
 it("keeps the chat and its draft through a full background and foreground cycle", async () => {
-  await act(() =>
-    root.render(
-      <RegistryContext.Provider value={registry}>
-        <Chat />
-      </RegistryContext.Provider>,
-    ),
+  using _timers = fakeTimers();
+  await using _fixture = await setupFixture();
+  await act(
+    async () =>
+      await root.rerender(
+        <RegistryContext.Provider value={registry}>
+          <Chat />
+        </RegistryContext.Provider>,
+      ),
   );
   expect(fetches.pending).toHaveLength(1);
   await act(async () => fetches.pending[0]!({ brainContext: "Global" }));
@@ -73,9 +75,9 @@ it("keeps the chat and its draft through a full background and foreground cycle"
   const draft = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="draft"]')!;
   draft.value = "Unsent request";
 
-  setVisibility("hidden");
+  await setVisibility("hidden");
   await settle();
-  setVisibility("visible");
+  await setVisibility("visible");
   await settle();
   // The atom was disposed while hidden, so foregrounding starts a fresh fetch with no data yet.
   expect(fetches.pending).toHaveLength(2);

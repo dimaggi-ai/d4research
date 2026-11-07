@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { measureHandoffParsing } from "./providerHandoffPrompt.benchmark.ts";
 
 import {
   appendProviderHandoffContext,
@@ -206,6 +207,34 @@ describe("combined provider handoff context block", () => {
     expect(extracted.handoff?.summary).toBe(decoySummary);
   });
 
+  it("recognizes persisted handoff blocks with the historical trailer", () => {
+    // Keep this fixture independent of the current builder and trailer constant.
+    const historical = [
+      "Continue the fix.",
+      "",
+      "<handoff_context>",
+      "Handoff to Claude / claude-sonnet-5.",
+      "Source thread: Historical thread (thread-old)",
+      "Target model: claude / claude-sonnet-5",
+      "",
+      "Context summary (reference only):",
+      "The existing test reproduces the failure.",
+      "",
+      "This provider handoff stays in the same d4research thread; the visible transcript remains authoritative. " +
+        `The user's message above this block is the current instruction ${String.fromCodePoint(0x2014)} act on it. ` +
+        'Use memory_search with connector="local" for more shared context. ' +
+        "Do not resume other prior work beyond the user's instruction.",
+      "</handoff_context>",
+    ].join("\n");
+    expect(extractTrailingProviderHandoffContext(historical)).toEqual({
+      promptText: "Continue the fix.",
+      handoff: {
+        target: "Claude / claude-sonnet-5",
+        summary: "The existing test reproduces the failure.",
+      },
+    });
+  });
+
   it("recognizes a block whose newlines were normalized to CRLF", () => {
     const text = appendProviderHandoffContext(instruction, baseInput).replace(/\n/gu, "\r\n");
     const extracted = extractTrailingProviderHandoffContext(text);
@@ -218,9 +247,10 @@ describe("combined provider handoff context block", () => {
     const noise = `${"filler line\n".repeat(4_000)}<handoff_context>\n`.repeat(10);
     const text = appendProviderHandoffContext(noise, baseInput);
     expect(text.length).toBeGreaterThan(100_000);
-    const started = performance.now();
-    const extracted = extractTrailingProviderHandoffContext(text);
-    expect(performance.now() - started).toBeLessThan(25);
+    const { result: extracted, elapsedMillis } = measureHandoffParsing(() =>
+      extractTrailingProviderHandoffContext(text),
+    );
+    expect(elapsedMillis).toBeLessThan(25);
     expect(extracted.handoff?.target).toBe("claude / claude-sonnet-5");
   });
 
@@ -238,9 +268,10 @@ describe("combined provider handoff context block", () => {
     ].join("\n");
     const text = appendProviderHandoffContext(`${decoy}\n`.repeat(3_000), baseInput);
     expect(text.length).toBeGreaterThan(100_000);
-    const started = performance.now();
-    const extracted = extractTrailingProviderHandoffContext(text);
-    expect(performance.now() - started).toBeLessThan(25);
+    const { result: extracted, elapsedMillis } = measureHandoffParsing(() =>
+      extractTrailingProviderHandoffContext(text),
+    );
+    expect(elapsedMillis).toBeLessThan(25);
     expect(extracted.handoff?.target).toBe("claude / claude-sonnet-5");
   });
 

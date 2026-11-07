@@ -60,6 +60,7 @@ export function HomeListOptionsProvider({
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const saved = useRef(savedFilters);
   const { selectedEnvironmentId: environmentId, selectedProjectKey: projectKey } = options;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Persists the selected list filters to the external mobile preferences store.
   useEffect(() => {
     if (
       (saved.current?.environmentId ?? null) === environmentId &&

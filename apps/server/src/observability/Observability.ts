@@ -1,4 +1,3 @@
-import * as HostProcess from "@d4research/shared/HostProcess";
 import * as HttpObservability from "@d4research/shared/httpObservability";
 import { makeLocalFileTracer, makeTraceSink } from "@d4research/shared/observability";
 import * as SharedObservability from "@d4research/shared/observability";

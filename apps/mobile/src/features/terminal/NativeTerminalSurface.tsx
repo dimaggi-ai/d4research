@@ -89,9 +89,13 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface({
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
   const inputRef = useRef<TextInputInstance>(null);
   const focusFrame = useRef<number | null>(null);
-  useEffect(() => () => {
-    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
-  }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the pending native keyboard focus frame when the fallback surface unmounts.
+  useEffect(
+    () => () => {
+      if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+    },
+    [],
+  );
   const { themeAppearance, themeId } = useAppearancePreferences();
   const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
   const statusLabel = props.readOnly
@@ -220,8 +224,9 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
   const appearanceScheme = useColorScheme() === "light" ? "light" : "dark";
   const theme = props.theme ?? getPierreTerminalTheme(appearanceScheme);
   const { onInput, onResize } = props;
-  const NativeTerminalSurfaceView = resolveNativeTerminalSurfaceView();
+  const [NativeTerminalSurfaceView] = useState(resolveNativeTerminalSurfaceView);
   const hasNativeSurface = Boolean(NativeTerminalSurfaceView);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Record committed native terminal surface changes in the external debug log.
   useEffect(() => {
     terminalDebugLog("native:surface", {
       terminalKey: props.terminalKey,
@@ -293,7 +298,6 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
   if (NativeTerminalSurfaceView) {
     return (
       <View style={props.style}>
-        {/* oxlint-disable-next-line react/static-components -- The resolver returns a cached native component with stable identity. */}
         <NativeTerminalSurfaceView
           ref={nativeRef}
           appearanceScheme={appearanceScheme}

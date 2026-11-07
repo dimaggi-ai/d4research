@@ -81,7 +81,7 @@ const make = Effect.gen(function* () {
   const brain = yield* Brain.SecondBrainService;
   const index = yield* Index.SecondBrainIndex;
   const lock = yield* Semaphore.make(1);
-  const enqueue: SecondBrainCapture["Service"]["enqueue"] = Effect.fn("enqueue")(
+  const enqueue: SecondBrainCapture["Service"]["enqueue"] = Effect.fn("SecondBrainCapture.enqueue")(
     (threadId, throughRun) =>
       Effect.gen(function* () {
         if (yield* owns(threadId)) return yield* new SecondBrainError({ code: "disabled" });

@@ -2,9 +2,8 @@ import type { Editor } from "@tiptap/core";
 import { serializeEditorDoc } from "../../composer-rich-text-doc";
 import { ThreadRouteView } from "../ThreadRouteView";
 import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
+import { act, render, type Screen } from "../../../test/render";
 import { D4AgentEntries, D4AgentEntry, D4AgentPanel } from "./D4Agent";
 import { D4AgentSessions } from "./D4AgentSessions";
 import * as Cause from "effect/Cause";
@@ -398,12 +397,12 @@ function niaSubmit() {
   if (!button) throw new Error("Nia submit button is missing");
   return button;
 }
-let root: Root;
+let screen: Screen;
 let container: HTMLDivElement;
 const environmentId = EnvironmentId.make("test-environment");
 const threadId = ThreadId.make("agent-thread");
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+// Tests share one fixture and helpers read `container`, so each test acquires it first.
+async function setupNia() {
   mocks.resolve.mockClear();
   mocks.connectionPhase = "connected";
   mocks.send.mockClear();
@@ -453,21 +452,18 @@ beforeEach(() => {
     systemHealth: [],
     usage: [],
   };
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-afterEach(async () => {
-  await act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
+  screen = await render(null, { router: false });
+  container = screen.container as HTMLDivElement;
+  return screen;
+}
 it("shows an unavailable model without sending a request or selecting a fallback", async () => {
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await using _nia = await setupNia();
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).toContain("The selected model is unavailable.");
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
 it("shows the full message, why and effect, and a live Send without a review step", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     actionLog: [
@@ -486,7 +482,7 @@ it("shows the full message, why and effect, and a live Send without a review ste
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).toContain("target-thread");
   expect(container.textContent).toContain("Run the focused regression tests.");
   const approve = [...container.querySelectorAll("button")].find(
@@ -507,8 +503,8 @@ it("shows the full message, why and effect, and a live Send without a review ste
     resolvedAt: null,
   };
   // The details query resolves on the next mount; the compiler memoizes an identical re-render.
-  await act(() =>
-    root.render(<D4AgentPanel key="loaded" environmentId={environmentId} threadId={threadId} />),
+  await screen.rerender(
+    <D4AgentPanel key="loaded" environmentId={environmentId} threadId={threadId} />,
   );
   const send = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Send",
@@ -526,6 +522,7 @@ it("shows the full message, why and effect, and a live Send without a review ste
   expect(mocks.refresh).toHaveBeenCalledOnce();
 });
 it("keeps the decision buttons in view above a long task description", async () => {
+  await using _nia = await setupNia();
   const longPrompt = Array.from({ length: 120 }, (_, line) => `Step ${line + 1} of the task.`).join(
     "\n",
   );
@@ -563,7 +560,7 @@ it("keeps the decision buttons in view above a long task description", async () 
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   const banner = container.querySelector<HTMLElement>('section[aria-label="Waiting for you"]')!;
   // Browser tests load no Tailwind, so cap the banner the way its max-h class does on a phone.
   Object.assign(banner.style, { maxHeight: "320px", overflowY: "auto" });
@@ -581,6 +578,7 @@ it("keeps the decision buttons in view above a long task description", async () 
   expect(approve.disabled).toBe(false);
 });
 it("archives a thread from one card and restores it with Undo archive", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-27T12:00:00.000Z";
   mocks.detail = {
     context: "Global",
@@ -605,7 +603,7 @@ it("archives a thread from one card and restores it with Undo archive", async ()
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "Archive")!
@@ -619,8 +617,8 @@ it("archives a thread from one card and restores it with Undo archive", async ()
     ...mocks.state!,
     actionLog: [{ ...mocks.state!.actionLog[0]!, status: "executed", resolvedAt: createdAt }],
   };
-  await act(() =>
-    root.render(<D4AgentPanel key="archived" environmentId={environmentId} threadId={threadId} />),
+  await screen.rerender(
+    <D4AgentPanel key="archived" environmentId={environmentId} threadId={threadId} />,
   );
   await act(async () =>
     container.querySelector<HTMLDetailsElement>("details")!.setAttribute("open", ""),
@@ -633,6 +631,7 @@ it("archives a thread from one card and restores it with Undo archive", async ()
   expect(mocks.undo).toHaveBeenCalledWith({ environmentId, input: { actionId: "archive-1" } });
 });
 it("keeps action approval unavailable for a client without operate permission", async () => {
+  await using _nia = await setupNia();
   mocks.allowed = false;
   mocks.state = {
     ...mocks.state!,
@@ -648,7 +647,7 @@ it("keeps action approval unavailable for a client without operate permission", 
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   const approve = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Approve",
   )!;
@@ -657,8 +656,9 @@ it("keeps action approval unavailable for a client without operate permission", 
 });
 
 it("opens the existing agent thread for a client without operate permission", async () => {
+  await using _nia = await setupNia();
   mocks.allowed = false;
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label={null} />);
   await act(async () => container.querySelector("button")!.click());
   expect(mocks.navigate).toHaveBeenCalledWith({
     to: "/$environmentId/$threadId",
@@ -667,8 +667,9 @@ it("opens the existing agent thread for a client without operate permission", as
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
 it("removes Nia from the sidebar when agent chat is disabled", async () => {
+  await using _nia = await setupNia();
   mocks.enabled = false;
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label={null} />);
   expect(container.querySelector("button")).toBeNull();
   expect(container.textContent).toBe("");
   expect(mocks.navigate).not.toHaveBeenCalled();
@@ -676,33 +677,36 @@ it("removes Nia from the sidebar when agent chat is disabled", async () => {
 });
 
 it("does not show Nia before the environment configuration is available", async () => {
+  await using _nia = await setupNia();
   mocks.configLoaded = false;
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label="MacBook" />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label="MacBook" />);
   expect(container.querySelector("button")).toBeNull();
   expect(container.textContent).toBe("");
 });
 
 it("removes Nia when its saved connection is disabled and restores it on re-enable", async () => {
-  await act(() => root.render(<D4AgentEntries />));
+  await using _nia = await setupNia();
+  await screen.rerender(<D4AgentEntries />);
   expect(container.textContent).toContain("Nia");
   mocks.environmentEnabled = false;
-  await act(() => root.render(<D4AgentEntries />));
+  await screen.rerender(<D4AgentEntries />);
   expect(container.textContent).not.toContain("Nia");
   mocks.environmentEnabled = true;
-  await act(() => root.render(<D4AgentEntries />));
+  await screen.rerender(<D4AgentEntries />);
   expect(container.textContent).toContain("Nia");
 });
 
 it("waits for a connection before opening Nia with cached configuration", async () => {
+  await using _nia = await setupNia();
   mocks.state = { ...mocks.state!, threadId: null, projectId: null };
   mocks.connectionPhase = "connecting";
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label={null} />);
   await act(async () => container.querySelector("button")!.click());
   expect(mocks.resolve).not.toHaveBeenCalled();
   expect(mocks.navigate).not.toHaveBeenCalled();
 
   mocks.connectionPhase = "connected";
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label={null} />);
   await act(async () => container.querySelector("button")!.click());
   expect(mocks.resolve).toHaveBeenCalledOnce();
   expect(mocks.navigate).toHaveBeenCalledWith({
@@ -712,14 +716,15 @@ it("waits for a connection before opening Nia with cached configuration", async 
 });
 
 it("waits for configuration before allowing the first pinned-entry click", async () => {
+  await using _nia = await setupNia();
   mocks.configLoaded = false;
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label={null} />);
   const pending = container.querySelector("button")!;
   expect(pending).toBeNull();
   expect(mocks.navigate).not.toHaveBeenCalled();
   expect(mocks.resolve).not.toHaveBeenCalled();
   mocks.configLoaded = true;
-  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await screen.rerender(<D4AgentEntry environmentId={environmentId} label={null} />);
   const loaded = container.querySelector("button")!;
   expect(loaded.disabled).toBe(false);
   await act(async () => loaded.click());
@@ -731,16 +736,16 @@ it("waits for configuration before allowing the first pinned-entry click", async
 });
 
 it("keeps ordinary threads free of agent-state and thread-shell subscriptions", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentPanel environmentId={environmentId} threadId={ThreadId.make("ordinary-thread")} />,
-    ),
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <D4AgentPanel environmentId={environmentId} threadId={ThreadId.make("ordinary-thread")} />,
   );
   expect(mocks.stateQuery).not.toHaveBeenCalled();
   expect(mocks.threadShells).not.toHaveBeenCalled();
   expect(container.textContent).toBe("");
 });
 it("keeps pending approvals older than the latest twenty actions accessible", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     actionLog: Array.from({ length: 25 }, (_, index) => ({
@@ -753,7 +758,7 @@ it("keeps pending approvals older than the latest twenty actions accessible", as
       resolvedAt: null,
     })),
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(
     [...container.querySelectorAll("button")].filter((button) => button.textContent === "Approve"),
   ).toHaveLength(25);
@@ -761,6 +766,7 @@ it("keeps pending approvals older than the latest twenty actions accessible", as
 });
 
 it("loads full details for a completed automatic action only when reviewed", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     actionLog: [
@@ -788,7 +794,7 @@ it("loads full details for a completed automatic action only when reviewed", asy
     createdAt: "2026-10-24T12:00:00.000Z",
     resolvedAt: "2026-10-24T12:00:01.000Z",
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   await act(async () => container.querySelector("summary")!.click());
   expect(container.textContent).toContain("target-completed");
   expect(container.textContent).not.toContain("Complete automatic message");
@@ -805,6 +811,7 @@ it("loads full details for a completed automatic action only when reviewed", asy
 });
 
 it("keeps monitor reports and session banners out of the chat header", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     brainContext: "YB",
@@ -823,13 +830,14 @@ it("keeps monitor reports and session banners out of the chat header", async () 
       source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
     },
   ];
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).not.toContain("Stuck report");
   expect(container.textContent).not.toContain("need attention");
   expect(container.textContent).not.toContain("New session.");
   expect(container.querySelector('[aria-label="Waiting for you"]')).toBeNull();
 });
 it("shows the complete CTO request and persisted result when reviewed", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     actionLog: [
@@ -854,7 +862,7 @@ it("shows the complete CTO request and persisted result when reviewed", async ()
     createdAt: "2026-10-24T00:00:00.000Z",
     resolvedAt: "2026-10-24T00:00:01.000Z",
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   await act(async () => container.querySelector("summary")!.click());
   const review = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Review action",
@@ -865,6 +873,7 @@ it("shows the complete CTO request and persisted result when reviewed", async ()
 });
 
 it("reviews only current-context memory proposals and shows other-context counts", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     brainContext: "YB",
@@ -887,7 +896,7 @@ it("reviews only current-context memory proposals and shows other-context counts
     memoryProposalCount: 60,
     otherContextProposalCounts: [{ context: "Dimaggi", count: 1 }],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).toContain("Keep this scoped note.");
   expect(container.textContent).toContain("Memory proposals · 60 pending");
   expect(container.textContent).toContain("Showing the oldest 1. Review them to see the rest.");
@@ -909,6 +918,7 @@ it("reviews only current-context memory proposals and shows other-context counts
   }
 });
 it("copies approved memory text for manual vault entry", async () => {
+  await using _nia = await setupNia();
   const copy = vi.fn(async () => undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
   mocks.state = {
@@ -924,7 +934,7 @@ it("copies approved memory text for manual vault entry", async () => {
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   const button = [...container.querySelectorAll("button")].find(
     (item) => item.textContent === "Copy text",
   )!;
@@ -933,6 +943,7 @@ it("copies approved memory text for manual vault entry", async () => {
   expect(mocks.resolveProposal).not.toHaveBeenCalled();
 });
 it("requires operate permission for session reset and proposal review", async () => {
+  await using _nia = await setupNia();
   mocks.allowed = false;
   mocks.state = {
     ...mocks.state!,
@@ -947,7 +958,7 @@ it("requires operate permission for session reset and proposal review", async ()
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   for (const label of ["Approve", "Reject"]) {
     const button = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === label || item.getAttribute("aria-label") === label,
@@ -959,6 +970,7 @@ it("requires operate permission for session reset and proposal review", async ()
 });
 
 it("refreshes an open CTO result after completion without collapsing its details", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -986,7 +998,7 @@ it("refreshes an open CTO result after completion without collapsing its details
     resolvedAt: createdAt,
     result: "Asked, answer will be posted.",
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   await act(async () => container.querySelector("summary")!.click());
   const review = [...container.querySelectorAll("button")].find(
     (item) => item.textContent === "Review action",
@@ -1005,7 +1017,7 @@ it("refreshes an open CTO result after completion without collapsing its details
     resolvedAt: completedAt,
     result: "Action log only: First line\nSecond line",
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(mocks.refresh).toHaveBeenCalledOnce();
   expect(container.textContent).toContain("Hide action details");
   expect(container.textContent).toContain("Action log only: First line\nSecond line");
@@ -1014,6 +1026,7 @@ it("refreshes an open CTO result after completion without collapsing its details
 });
 
 it("keeps one visible transcript across isolated context routes and hides provider history", async () => {
+  await using _nia = await setupNia();
   const oldThreadId = ThreadId.make("old-global-session");
   mocks.state = {
     ...mocks.state!,
@@ -1049,12 +1062,10 @@ it("keeps one visible transcript across isolated context routes and hides provid
       },
     ],
   };
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
-        <p>Private provider history</p>
-      </D4AgentRoute>,
-    ),
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
+      <p>Private provider history</p>
+    </D4AgentRoute>,
   );
   expect(container.textContent).toContain("What needs me?");
   expect(container.textContent).not.toContain("Context changed to YB. New session.");
@@ -1067,18 +1078,17 @@ it("keeps one visible transcript across isolated context routes and hides provid
   expect(
     [...container.querySelectorAll("a")].some((item) => item.textContent === "Other context label"),
   ).toBe(false);
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <p>Private YB provider history</p>
-      </D4AgentRoute>,
-    ),
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+      <p>Private YB provider history</p>
+    </D4AgentRoute>,
   );
   expect(container.textContent).toContain("What needs me?");
   expect(container.textContent).not.toContain("Private YB provider history");
 });
 
 it("keeps open sessions out of the chat panel", async () => {
+  await using _nia = await setupNia();
   mocks.state = {
     ...mocks.state!,
     openSessions: [
@@ -1092,30 +1102,29 @@ it("keeps open sessions out of the chat panel", async () => {
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).not.toContain("New session");
   expect(container.textContent).not.toContain("Open sessions");
   expect(container.querySelector("select[aria-label='Agent context']")).toBeNull();
 });
 
 it("settings show session usage and close only the selected context after an explicit click", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentSessions
-        environmentId={environmentId}
-        sessions={[
-          {
-            context: "YB",
-            threadId,
-            providerSessionId: "native-yb",
-            lastActivityAt: "2026-10-24T12:00:00.000Z",
-            inputTokens: 1234,
-            contextWindow: 200000,
-          },
-        ]}
-        refresh={mocks.refresh}
-      />,
-    ),
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <D4AgentSessions
+      environmentId={environmentId}
+      sessions={[
+        {
+          context: "YB",
+          threadId,
+          providerSessionId: "native-yb",
+          lastActivityAt: "2026-10-24T12:00:00.000Z",
+          inputTokens: 1234,
+          contextWindow: 200000,
+        },
+      ]}
+      refresh={mocks.refresh}
+    />,
   );
   expect(container.textContent).toContain("Open sessions · 1/4");
   expect(mocks.closeSession).not.toHaveBeenCalled();
@@ -1130,6 +1139,7 @@ it("settings show session usage and close only the selected context after an exp
 });
 
 it("shows the rewrite without a review step and allows sending the original", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -1159,7 +1169,7 @@ it("shows the rewrite without a review step and allows sending the original", as
     createdAt,
     resolvedAt: null,
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(mocks.resolve).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Original");
   expect(container.textContent).toContain("Check this");
@@ -1182,10 +1192,9 @@ it("shows the rewrite without a review step and allows sending the original", as
 });
 
 it("keeps Nia's literal draft bounded and permits edits after reaching the limit", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   const draft = "x".repeat(16000);
   await act(() => writeNiaDraft(draft));
@@ -1201,12 +1210,11 @@ it("keeps Nia's literal draft bounded and permits edits after reaching the limit
 });
 
 it("sends an agent draft only on explicit submit and preserves the single-chat route", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <p>Native content</p>
-      </D4AgentRoute>,
-    ),
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+      <p>Native content</p>
+    </D4AgentRoute>,
   );
   await act(async () => writeNiaDraft("Research the question"));
   expect(mocks.send).not.toHaveBeenCalled();
@@ -1234,6 +1242,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
 });
 
 it("sends the exact request-local worker without changing Nia's manager model", async () => {
+  await using _nia = await setupNia();
   const manager = {
     instanceId: ProviderInstanceId.make("manager-instance"),
     model: "manager-model",
@@ -1254,10 +1263,8 @@ it("sends the exact request-local worker without changing Nia's manager model", 
       slashCommands: [],
     },
   ];
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   await act(async () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Nia task model"]')!.click(),
@@ -1283,6 +1290,7 @@ it("sends the exact request-local worker without changing Nia's manager model", 
 });
 
 it("sends the human-edited rewrite only after explicit Send", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -1312,7 +1320,7 @@ it("sends the human-edited rewrite only after explicit Send", async () => {
     createdAt,
     resolvedAt: null,
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   await act(async () =>
     [...container.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click(),
   );
@@ -1345,6 +1353,7 @@ it("sends the human-edited rewrite only after explicit Send", async () => {
 it.each(["research", "pipeline"] as const)(
   "shows the final %s prompt, target, pipeline and model before approval",
   async (type) => {
+    await using _nia = await setupNia();
     const createdAt = "2026-10-24T12:00:00.000Z";
     mocks.state = {
       ...mocks.state!,
@@ -1382,15 +1391,13 @@ it.each(["research", "pipeline"] as const)(
       createdAt,
       resolvedAt: null,
     };
-    await act(() =>
-      root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
-    );
+    await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
     expect(mocks.resolve).not.toHaveBeenCalled();
     // A pending launch shows its details without a separate review step.
     expect(container.textContent).toContain(type === "research" ? "Research" : "Pipeline");
     expect(container.textContent).toContain("Target project · Research lab");
     expect(container.textContent).toContain("Pipeline · research:focused");
-    expect(container.textContent).toContain("Model · codex-instance / gpt-test");
+    expect(container.textContent).toContain("Model · codex-instance · gpt-test");
     expect(container.textContent).toContain("Task model option · reasoningEffort: high");
     expect(container.textContent).toContain("Detailed approved research prompt");
     expect(mocks.resolve).not.toHaveBeenCalled();
@@ -1407,6 +1414,7 @@ it.each(["research", "pipeline"] as const)(
 );
 
 it("shows the immutable worker options and schedule before approval and in history", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   const summary = {
     id: "scheduled-launch",
@@ -1447,8 +1455,8 @@ it("shows the immutable worker options and schedule before approval and in histo
     createdAt,
     resolvedAt: null,
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("Model · worker-at-proposal / worker-model");
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
+  expect(container.textContent).toContain("Model · worker-at-proposal · worker-model");
   expect(container.textContent).toContain("Task model option · reasoningEffort: high");
   expect(container.textContent).toContain("Task model option · sandbox: true");
   expect(container.textContent).toContain("Schedule · Mon, Wed at 09:30 (server time)");
@@ -1459,7 +1467,7 @@ it("shows the immutable worker options and schedule before approval and in histo
     actionLog: [{ ...summary, status: "executed", resolvedAt: createdAt }],
   };
   mocks.detail = { ...mocks.detail, status: "executed", resolvedAt: createdAt };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find((item) => item.textContent === "Review action")!
@@ -1470,6 +1478,7 @@ it("shows the immutable worker options and schedule before approval and in histo
 });
 
 it("restores an automatically archived thread only after Undo archive", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -1485,7 +1494,7 @@ it("restores an automatically archived thread only after Undo archive", async ()
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(mocks.undo).not.toHaveBeenCalled();
   await act(async () =>
     [...container.querySelectorAll("button")]
@@ -1496,14 +1505,13 @@ it("restores an automatically archived thread only after Undo archive", async ()
 });
 
 it("keeps ordinary threads on the native surface without polling full agent state", async () => {
+  await using _nia = await setupNia();
   mocks.state = { ...mocks.state!, projectId: ProjectId.make("agent-project") };
   mocks.routeProjectId = ProjectId.make("user-project");
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={ThreadId.make("user-thread")}>
-        <p>Ordinary thread transcript</p>
-      </D4AgentRoute>,
-    ),
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={ThreadId.make("user-thread")}>
+      <p>Ordinary thread transcript</p>
+    </D4AgentRoute>,
   );
   expect(container.textContent).toContain("Ordinary thread transcript");
   expect(container.textContent).not.toContain("Message Nia");
@@ -1511,25 +1519,23 @@ it("keeps ordinary threads on the native surface without polling full agent stat
 });
 
 it("opens ordinary threads while the agent identity request has not settled", async () => {
+  await using _nia = await setupNia();
   mocks.identityMissing = true;
   mocks.identityPending = true;
   mocks.routeProjectId = ProjectId.make("user-project");
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={ThreadId.make("user-thread")}>
-        <p>Ordinary thread transcript</p>
-      </D4AgentRoute>,
-    ),
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={ThreadId.make("user-thread")}>
+      <p>Ordinary thread transcript</p>
+    </D4AgentRoute>,
   );
   expect(container.textContent).toContain("Ordinary thread transcript");
   expect(container.textContent).not.toContain("Loading Nia");
 });
 
 it("removes project-only actions when entering the dedicated agent chat", async () => {
-  await act(() =>
-    root.render(
-      <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
-    ),
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
   );
   expect(container.textContent).toContain("Nia");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
@@ -1537,6 +1543,7 @@ it("removes project-only actions when entering the dedicated agent chat", async 
 });
 
 it("keeps a disabled historical agent route on the special chat surface with sending disabled", async () => {
+  await using _nia = await setupNia();
   mocks.enabled = false;
   mocks.state = {
     ...mocks.state!,
@@ -1544,10 +1551,8 @@ it("keeps a disabled historical agent route on the special chat surface with sen
     threadId: null,
     chatThreadIds: [threadId],
   };
-  await act(() =>
-    root.render(
-      <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
-    ),
+  await screen.rerender(
+    <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
   );
   expect(container.textContent).toContain("Nia");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
@@ -1557,6 +1562,7 @@ it("keeps a disabled historical agent route on the special chat surface with sen
 });
 
 it("reloads an idle-closed archived agent chat without mounting the native missing-thread fallback", async () => {
+  await using _nia = await setupNia();
   mocks.identityMissing = true;
   mocks.routeShellMissing = true;
   mocks.stateUnavailable = true;
@@ -1582,22 +1588,18 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
     mocks.nativeRoute();
     return <button>Initialize Git</button>;
   }
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <NativeMissingRoute />
-      </D4AgentRoute>,
-    ),
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+      <NativeMissingRoute />
+    </D4AgentRoute>,
   );
   expect(mocks.nativeRoute).not.toHaveBeenCalled();
   mocks.stateUnavailable = false;
   mocks.statePending = false;
-  await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <NativeMissingRoute />
-      </D4AgentRoute>,
-    ),
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+      <NativeMissingRoute />
+    </D4AgentRoute>,
   );
   expect(container.textContent).toContain("Retained conversation");
   expect(container.textContent).not.toContain("Initialize Git");
@@ -1606,6 +1608,7 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
 });
 
 it("keeps the actual web route on an archived idle-closed agent conversation after reload", async () => {
+  await using _nia = await setupNia();
   mocks.routeShellMissing = true;
   mocks.state = {
     ...mocks.state!,
@@ -1624,10 +1627,8 @@ it("keeps the actual web route on an archived idle-closed agent conversation aft
       },
     ],
   };
-  await act(() =>
-    root.render(
-      <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
-    ),
+  await screen.rerender(
+    <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
   );
   expect(container.textContent).toContain("Retained conversation");
   expect(container.textContent).not.toContain("Initialize Git");
@@ -1636,6 +1637,7 @@ it("keeps the actual web route on an archived idle-closed agent conversation aft
 });
 
 it("inserts a scoped stable mention and sends its id after the target is renamed", async () => {
+  await using _nia = await setupNia();
   const targetProject = ProjectId.make("yb-project");
   const otherProject = ProjectId.make("other-project");
   mocks.projectContexts = { [targetProject]: "YB", [otherProject]: "Dimaggi" };
@@ -1665,7 +1667,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
   ];
   mocks.state = { ...mocks.state!, brainContext: "YB" };
   const renderChat = () =>
-    root.render(
+    screen.rerender(
       <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
     );
   await act(renderChat);
@@ -1704,15 +1706,14 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
 });
 
 it("keeps the draft and says why when another client changed Nia's context first", async () => {
+  await using _nia = await setupNia();
   mocks.refresh.mockClear();
   mocks.send.mockResolvedValueOnce({
     _tag: "Failure",
     cause: Cause.fail(new D4AgentError({ reason: "stale" })),
   } as never);
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   await act(() => writeNiaDraft("Global-only draft"));
   await act(async () =>
@@ -1740,9 +1741,10 @@ it("keeps the draft and says why when another client changed Nia's context first
 });
 
 it("keeps a draft bound to its context until the user reassigns it", async () => {
+  await using _nia = await setupNia();
   const render = (state: typeof mocks.state) =>
     act(() =>
-      root.render(
+      screen.rerender(
         <D4AgentChat environmentId={environmentId} state={state!} refresh={mocks.refresh} />,
       ),
     );
@@ -1779,6 +1781,7 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
 });
 
 it("does not invent an original message for a heartbeat action", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -1807,7 +1810,7 @@ it("does not invent an original message for a heartbeat action", async () => {
     createdAt,
     resolvedAt: null,
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(mocks.resolve).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain("Original");
   expect(container.textContent).not.toContain("Send original");
@@ -1816,6 +1819,7 @@ it("does not invent an original message for a heartbeat action", async () => {
 });
 
 it("shows the request a pending context switch will resend without expanding the card", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -1846,7 +1850,7 @@ it("shows the request a pending context switch will resend without expanding the
     createdAt,
     resolvedAt: null,
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).toContain("Request to resend in Dimaggi");
   expect(container.textContent).toContain("Add local DeepSeek to the CTO provider list");
   expect(container.textContent).toContain("Switch to Dimaggi: [Private](https://example.test)");
@@ -1864,10 +1868,9 @@ it("shows the request a pending context switch will resend without expanding the
 });
 
 it("keeps an attachment-only draft bound to its context and sends it only after reassignment", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   const upload = container.querySelector<HTMLInputElement>('input[type="file"]')!;
   const transfer = new DataTransfer();
@@ -1882,10 +1885,8 @@ it("keeps an attachment-only draft bound to its context and sends it only after 
     brainContext: "Dimaggi",
     threadId: ThreadId.make("dimaggi-session"),
   };
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   expect(container.textContent).toContain("You wrote this draft while Nia was in Global.");
   const send = niaSubmit;
@@ -1920,11 +1921,10 @@ it("keeps an attachment-only draft bound to its context and sends it only after 
 });
 
 it("sends the selected active-turn queue and steer behavior and preserves rejected attachments", async () => {
+  await using _nia = await setupNia();
   mocks.running = true;
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   const write = async (text: string) => act(async () => writeNiaDraft(text));
   await write("Queue this");
@@ -1974,6 +1974,7 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
 });
 
 it("persists Nia effort in the environment's Nia model selection", async () => {
+  await using _nia = await setupNia();
   const instanceId = ProviderInstanceId.make("codex");
   mocks.modelSelection = {
     instanceId,
@@ -2015,10 +2016,8 @@ it("persists Nia effort in the environment's Nia model selection", async () => {
       skills: [],
     },
   ];
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
   const effort = [...container.querySelectorAll("button")].find(
     (button) => button.getAttribute("aria-label") === "Low",
@@ -2048,6 +2047,7 @@ it("persists Nia effort in the environment's Nia model selection", async () => {
 });
 
 it("asks before creating a thread and then links the thread it created", async () => {
+  await using _nia = await setupNia();
   const createdAt = "2026-10-24T12:00:00.000Z";
   const card = {
     id: "start-1",
@@ -2075,10 +2075,10 @@ it("asks before creating a thread and then links the thread it created", async (
     createdAt,
     resolvedAt: null,
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).toContain("New thread");
   expect(container.textContent).toContain("Web app");
-  expect(container.textContent).toContain("codex-instance / gpt-test");
+  expect(container.textContent).toContain("codex-instance · gpt-test");
   expect(container.textContent).not.toContain("Open thread");
   await act(async () =>
     [...container.querySelectorAll("button")]
@@ -2100,7 +2100,7 @@ it("asks before creating a thread and then links the thread it created", async (
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   const history = [...container.querySelectorAll("summary")].find(
     (item) => item.textContent === "History",
   )!;
@@ -2114,7 +2114,8 @@ it("asks before creating a thread and then links the thread it created", async (
 it.each(["approve", "deny"] as const)(
   "shows pending %s feedback on the host action card",
   async (decision) => {
-    const createdAt = new Date().toISOString();
+    await using _nia = await setupNia();
+    const createdAt = "2026-09-09T00:00:00.000Z";
     mocks.detail = {
       id: "synthetic-pc",
       context: "Global",
@@ -2145,9 +2146,7 @@ it.each(["approve", "deny"] as const)(
           finish = resolve;
         }),
     );
-    await act(() =>
-      root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
-    );
+    await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
     const button = [...container.querySelectorAll("button")].find(
       (b) => b.textContent === (decision === "approve" ? "Approve" : "Deny"),
     )!;
@@ -2165,7 +2164,8 @@ it.each(["approve", "deny"] as const)(
 );
 
 it("keeps permission failures beside the pending host command", async () => {
-  const createdAt = new Date().toISOString();
+  await using _nia = await setupNia();
+  const createdAt = "2026-09-09T00:00:00.000Z";
   mocks.detail = {
     id: "synthetic-pc",
     context: "Global",
@@ -2193,7 +2193,7 @@ it("keeps permission failures beside the pending host command", async () => {
     _tag: "Failure",
     cause: Cause.fail(new D4AgentError({ reason: "read-only" })),
   } as never);
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   const approve = [...container.querySelectorAll("button")].find(
     (b) => b.textContent === "Approve",
   )!;
@@ -2206,7 +2206,8 @@ it("keeps permission failures beside the pending host command", async () => {
 });
 
 it("distinguishes unavailable action details from loading", async () => {
-  const createdAt = new Date().toISOString();
+  await using _nia = await setupNia();
+  const createdAt = "2026-09-09T00:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
     actionLog: [
@@ -2221,7 +2222,7 @@ it("distinguishes unavailable action details from loading", async () => {
       },
     ],
   };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
   expect(container.textContent).toContain("no longer pending or available");
   expect(container.textContent).not.toContain("Loading action details");
   const refresh = [...container.querySelectorAll("button")].find(
@@ -2235,7 +2236,8 @@ it("distinguishes unavailable action details from loading", async () => {
 it.each(["transport", "stale"])(
   "handles a %s host action without claiming execution",
   async (mode) => {
-    const createdAt = new Date().toISOString();
+    await using _nia = await setupNia();
+    const createdAt = "2026-09-09T00:00:00.000Z";
     mocks.detail = {
       id: "synthetic-pc",
       context: "Global",
@@ -2259,9 +2261,7 @@ it.each(["transport", "stale"])(
         },
       ],
     };
-    await act(() =>
-      root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
-    );
+    await screen.rerender(<D4AgentPanel environmentId={environmentId} threadId={threadId} />);
     const approve = [...container.querySelectorAll("button")].find(
       (b) => b.textContent === "Approve",
     )!;

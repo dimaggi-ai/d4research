@@ -1,7 +1,10 @@
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
-import { isPrivateNetworkHost, isSharedAddressSpaceHost } from "@d4research/shared/hostClassification";
+import {
+  isPrivateNetworkHost,
+  isSharedAddressSpaceHost,
+} from "@d4research/shared/hostClassification";
 import { QrCode } from "@d4research/shared/qrCode";
 import { buildPairingAppLink } from "@d4research/shared/remote";
 import * as Effect from "effect/Effect";

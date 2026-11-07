@@ -25,7 +25,6 @@ import {
   xAiBackgroundTaskLifecycleMutation,
   xAiPromptCompleteFromSessionUpdate,
   xAiSubagentFinishedNotice,
-  makeXAiAskUserQuestionCancelledResponse,
   XAiAskUserQuestionRequest,
 } from "./xaiAcpExtension.ts";
 import * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";

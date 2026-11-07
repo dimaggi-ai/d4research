@@ -167,6 +167,7 @@ function AuthorizedPreviewStream({
   const processRetried = useRef(false);
   const unauthorized = useRef(0);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the retry timer and cancels pending stream recovery on unmount.
   useEffect(
     () => () => {
       if (refreshTimer.current !== null) clearTimeout(refreshTimer.current);
@@ -282,6 +283,7 @@ function PreviewStreamDocumentView({
   const bootstrapTimedOut = useEffectEvent(() =>
     fail("Browser viewer could not start. Reconnect to try again."),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the WebView bootstrap timeout until the stream starts.
   useEffect(() => {
     if (started) return;
     const timer = setTimeout(bootstrapTimedOut, 15_000);
@@ -299,6 +301,7 @@ function PreviewStreamDocumentView({
     togglePictureInPicture: () =>
       webView.current?.injectJavaScript("window.T3PreviewStream?.pictureInPicture(); true;"),
   }));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Stops the native WebView stream when its document unmounts.
   useLayoutEffect(() => {
     active.current = true;
     const view = webView.current;
@@ -307,7 +310,9 @@ function PreviewStreamDocumentView({
       view?.injectJavaScript("window.T3PreviewStream?.stop(); true;");
     };
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Releases the parent streaming registration when the WebView unmounts.
   useEffect(() => () => onStreamingChange?.(false), [onStreamingChange]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the external control registration when the stream document unmounts.
   useEffect(() => () => controlChanged(null), []);
   const processTerminated = () => {
     if (!active.current || failed.current) return;

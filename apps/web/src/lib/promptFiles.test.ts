@@ -48,7 +48,7 @@ describe("mergePromptFiles", () => {
     expect(result.promptFiles[3]).toEqual({ name: "3.txt", content: "replacement" });
     expect(overflowReads).toBe(0);
     expect(result.errors).toEqual([
-      `"overflow.txt" skipped — at most ${RESEARCH_PROMPT_FILE_MAX_COUNT} prompt files.`,
+      `"overflow.txt" skipped: at most ${RESEARCH_PROMPT_FILE_MAX_COUNT} prompt files.`,
     ]);
   });
 });

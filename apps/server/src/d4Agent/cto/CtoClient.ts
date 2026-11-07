@@ -156,8 +156,10 @@ export function createCtoClient(): CtoClient["Service"] {
     );
 
   return CtoClient.of({
-    status: (input) => perform(input, (request) => request("/api/status")),
-    brief: (input) =>
+    status: Effect.fn("CtoClient.status")((input) =>
+      perform(input, (request) => request("/api/status")),
+    ),
+    brief: Effect.fn("CtoClient.brief")((input) =>
       perform(
         input,
         Effect.fnUntraced(function* (request) {
@@ -166,7 +168,8 @@ export function createCtoClient(): CtoClient["Service"] {
           return { brief, tasks };
         }),
       ),
-    ask: (input) =>
+    ),
+    ask: Effect.fn("CtoClient.ask")((input) =>
       perform(
         input,
         (request) => {
@@ -179,6 +182,7 @@ export function createCtoClient(): CtoClient["Service"] {
         },
         "450 seconds",
       ),
+    ),
   });
 }
 

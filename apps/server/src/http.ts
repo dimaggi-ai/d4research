@@ -15,7 +15,6 @@ import { isDevProxiedPath } from "@d4research/shared/devProxy";
 import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@d4research/shared/mcpApp";
 import { decodeOtlpTraceRecords } from "@d4research/shared/observability";
 import * as ByteSize from "effect/ByteSize";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -92,6 +91,7 @@ import {
   persistMemoAttachment,
 } from "./memoAttachment.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
+import { requestUrl } from "./requestUrl.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
@@ -106,6 +106,10 @@ const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
 const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
+
+class SystemSnapshotError extends Schema.TaggedError<SystemSnapshotError>()("SystemSnapshotError", {
+  cause: Schema.Defect(),
+}) {}
 
 async function readLocalSystemSnapshot() {
   const cpuCount = Math.max(1, NodeOS.cpus().length);
@@ -455,9 +459,10 @@ export const skillsHttpApiLayer = HttpApiBuilder.group(
   }),
 );
 
-class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
-  readonly cause: unknown;
-}> {}
+class DecodeOtlpTraceRecordsError extends Schema.TaggedError<DecodeOtlpTraceRecordsError>()(
+  "DecodeOtlpTraceRecordsError",
+  { cause: Schema.Defect() },
+) {}
 
 // Tracing once-per-second renderer exports would create more spans than it forwards.
 export const layerOtlpTracesProxyRoute = HttpRouter.add(
@@ -509,7 +514,12 @@ export const missionControlSystemRouteLayer = HttpRouter.add(
         Effect.logWarning("Mission Control service unavailable; using local system metrics", {
           cause,
         }).pipe(
-          Effect.flatMap(() => Effect.tryPromise(() => readLocalSystemSnapshot())),
+          Effect.flatMap(() =>
+            Effect.tryPromise({
+              try: () => readLocalSystemSnapshot(),
+              catch: (cause) => new SystemSnapshotError({ cause }),
+            }),
+          ),
           Effect.map((snapshot) =>
             HttpServerResponse.jsonUnsafe(snapshot, {
               headers: { "cache-control": "no-store" },
@@ -1325,7 +1335,7 @@ export const layerAssetRoute = HttpRouter.add(
   `${ASSET_ROUTE_PREFIX}/*`,
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
+    const url = requestUrl(request);
     if (Option.isNone(url)) {
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
@@ -1383,7 +1393,7 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
   `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/*`,
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
+    const url = requestUrl(request);
     if (Option.isNone(url)) {
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
@@ -1494,7 +1504,7 @@ const streamStaticFile = (file: FileSystem.File, size: bigint) =>
 const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
   function* (immutableBuildAssets: ReadonlySet<string>) {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
+    const url = requestUrl(request);
 
     if (Option.isNone(url)) {
       return HttpServerResponse.text("Bad Request", { status: 400 });

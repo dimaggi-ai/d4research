@@ -14,9 +14,14 @@ import {
 import type { RpcSession } from "@d4research/client-runtime/rpc";
 import { EnvironmentId, WS_METHODS } from "@d4research/contracts";
 
-const { call, watch } = vi.hoisted(() => ({ call: vi.fn(), watch: vi.fn() }));
+const { call, guardedCall, watch } = vi.hoisted(() => ({
+  call: vi.fn(),
+  guardedCall: vi.fn(),
+  watch: vi.fn(),
+}));
 vi.mock("@d4research/client-runtime/rpc", () => ({
   request: (...args: unknown[]) => call(...args),
+  requestGuarded: (...args: unknown[]) => guardedCall(...args),
   subscribe: (...args: unknown[]) => watch(...args),
 }));
 import { readPeerUsageLimits } from "./peerUsageLimits";
@@ -99,6 +104,12 @@ describe("peer usage page reads", () => {
         .mockReturnValue(
           Stream.make({ type: "usageLimitSourcesUpdated", payload: { sources: [] } }),
         );
+      guardedCall.mockReset().mockImplementation((method: string) =>
+        Effect.sync(() => {
+          performed.push(method);
+          return {};
+        }),
+      );
       call.mockReset().mockImplementation((method: string) =>
         Effect.sync(() => {
           performed.push(method);
@@ -107,7 +118,9 @@ describe("peer usage page reads", () => {
       );
       yield* readPeerUsageLimits(true);
       expect(performed).toEqual([WS_METHODS.serverRefreshProviders, WS_METHODS.serverGetConfig]);
-      expect(call).toHaveBeenNthCalledWith(1, WS_METHODS.serverRefreshProviders, { fresh: true });
+      expect(guardedCall).toHaveBeenCalledExactlyOnceWith(WS_METHODS.serverRefreshProviders, {
+        fresh: true,
+      });
     }).pipe(Effect.provide(layerSupervisor)),
   );
 });

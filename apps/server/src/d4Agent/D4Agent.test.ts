@@ -277,7 +277,7 @@ const fixture = (
     const layer = Agent.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.succeed(DocumentText.DocumentText, { ensure: () => Effect.succeed(undefined) }),
+          Layer.succeed(DocumentText.DocumentText, { ensure: () => Effect.undefined }),
           Layer.succeed(
             Store.D4AgentStore,
             store ?? {
@@ -1805,7 +1805,7 @@ it.live.each(["read-only", "ask", "act"] as const)(
       Effect.gen(function* () {
         const requests: string[] = [];
         const server = yield* Effect.acquireRelease(
-          Effect.tryPromise(
+          Effect.promise(
             () =>
               new Promise<NodeHttp.Server>((resolve, reject) => {
                 const instance = NodeHttp.createServer((request, response) => {

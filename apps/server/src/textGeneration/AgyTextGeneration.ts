@@ -1,3 +1,4 @@
+import { TranscriptionPostProcessingOutput } from "@d4research/provider-core/server/textGenerationOperations";
 import { type AgySettings, TextGenerationError, type ModelSelection } from "@d4research/contracts";
 import { tokenizeCliArgs } from "@d4research/shared/cliArgs";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
@@ -42,7 +43,8 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
-      | "generateReviewGuide";
+      | "generateReviewGuide"
+      | "generateTranscriptionPostProcessing";
     readonly cwd: string;
     readonly prompt: string;
     readonly outputSchemaJson: S;
@@ -131,6 +133,14 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
     );
 
   return {
+    generateTranscriptionPostProcessing: (input) =>
+      runAgyJson({
+        operation: "generateTranscriptionPostProcessing",
+        cwd: input.cwd,
+        prompt: input.prompt,
+        outputSchemaJson: TranscriptionPostProcessingOutput,
+        modelSelection: input.modelSelection,
+      }),
     generateReviewGuide: (input) => {
       const { prompt, outputSchema } = buildReviewGuidePrompt(input);
       return runAgyJson({

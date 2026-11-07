@@ -43,8 +43,10 @@
     "sync:pierre-icons": "node scripts/sync-pierre-file-icons.mjs",
     "measure-renders": "node scripts/measure-renders.mts",
     "generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-uniwind-themes.mts",
-    "test": "vp test run --config ../../vite.config.ts --dir .",
-    "typecheck": "tsc --noEmit"
+    "generate:highlights": "node scripts/generate-highlights.mts",
+    "generate:nitro": "cd modules/t3-highlights && nitrogen",
+    "test": "vp test run --project unit --project react && T3_MOBILE_TEST_PLATFORM=android vp test run --project react src/components/FilePreviewModal.test.tsx",
+    "typecheck": "effect-tsgo tsrs --noEmit"
   },
   "dependencies": {
     "@callstack/liquid-glass": "0.3.0",
@@ -116,17 +118,18 @@
     "expo-sqlite": "~58.0.13",
     "expo-symbols": "~58.0.4",
     "expo-updates": "~58.0.17",
-    "expo-video": "~58.0.11",
+    "expo-video": "58.0.11",
     "expo-web-browser": "~58.0.6",
     "expo-widgets": "58.0.20",
     "llama.rn": "0.12.9",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "react-native": "0.88.0",
     "react-native-enriched-markdown": "file:deps/react-native-enriched-markdown-1.2.0-t3.16-29ddd424.tgz",
     "react-native-gesture-handler": "~3.3.0",
     "react-native-image-viewing": "^0.2.2",
-    "react-native-keyboard-controller": "1.22.7",
+    "react-native-keyboard-controller": "1.22.8",
+    "react-native-nitro-modules": "0.37.1",
     "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "file:deps/react-native-screens-5.0.0-t3.48.tgz",
@@ -139,7 +142,7 @@
     "shiki": "4.2.0",
     "tailwind-merge": "^3.5.0",
     "unified": "catalog:",
-    "uniwind": "1.12.1"
+    "uniwind": "1.13.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
@@ -147,12 +150,12 @@
     "@effect/vitest": "catalog:",
     "@pierre/trees": "1.0.0-beta.6",
     "@types/mdast": "^4.0.4",
-    "@types/react": "~19.3.0",
-    "@types/react-dom": "~19.2.3",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "babel-preset-expo": "~58.0.17",
     "jsdom": "^30.0.1",
-    "tailwindcss": "^4.0.0",
-    "typescript": "catalog:"
+    "nitrogen": "0.37.1",
+    "tailwindcss": "^4.0.0"
   },
   "enriched-markdown": {
     "enableMath": false,
@@ -162,7 +165,6 @@
     "install": {
       "exclude": [
         "react-native-keyboard-controller",
-        "typescript",
         "react-native-screens",
         "react-native-enriched-markdown"
       ]

@@ -1,5 +1,6 @@
 import * as SecondBrainService from "../second-brain/SecondBrainService.ts";
 import { SourceControlProviderError, SourceControlProviderKind } from "@d4research/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ServerConfig from "../config.ts";
 import * as GitManager from "../git/GitManager.ts";
@@ -16,7 +17,6 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { ResearchDelegationBudgetLive } from "../mcp/toolkits/research/budget.ts";
@@ -84,5 +84,5 @@ export const layerRealGit = GitWorkflow.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-recreate-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );

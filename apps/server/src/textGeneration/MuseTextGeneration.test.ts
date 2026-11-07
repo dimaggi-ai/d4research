@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -9,10 +11,12 @@ import { Effect } from "effect";
 import { makeMockMuse } from "../provider/msp/mspTestUtils.ts";
 import { makeMuseTextGeneration } from "./MuseTextGeneration.ts";
 const modelSelection = { instanceId: ProviderInstanceId.make("muse"), model: "default" };
-it.layer(NodeServices.layer)("Muse text generation", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Muse text generation", (it) => {
   it.effect("decodes review guides through the legacy MSP transport", () =>
     Effect.gen(function* () {
-      const mock = yield* makeMockMuse({ T3_MSP_RESPONSE_TEXT: '{"stops":[]}' });
+      const mock = yield* makeMockMuse({
+        T3_MSP_RESPONSE_TEXT: '{"stops":[],"transcription":"Fixed transcript"}',
+      });
       const service = yield* makeMuseTextGeneration(mock.settings);
       const result = yield* service.generateReviewGuide({
         cwd: mock.directory,
@@ -25,6 +29,14 @@ it.layer(NodeServices.layer)("Muse text generation", (it) => {
         settledReview: "",
       });
       assert.deepEqual(result, { stops: [] });
+      assert.deepEqual(
+        yield* service.generateTranscriptionPostProcessing({
+          cwd: mock.directory,
+          modelSelection: { instanceId: ProviderInstanceId.make("muse"), model: "default" },
+          prompt: "Fix this transcript",
+        }),
+        { transcription: "Fixed transcript" },
+      );
     }),
   );
   it.effect("collects MSP deltas and decodes structured output", () =>

@@ -44,7 +44,7 @@ export class SecondBrainEmbeddings extends Context.Service<
 const make = Effect.sync(() => {
   const cache = new Map<string, number[]>();
   return SecondBrainEmbeddings.of({
-    rank: (settings, query, candidates) =>
+    rank: Effect.fn("SecondBrainEmbeddings.rank")((settings, query, candidates) =>
       Effect.tryPromise({
         try: async (signal) => {
           const url = new URL(settings.baseUrl);
@@ -124,6 +124,7 @@ const make = Effect.sync(() => {
         Effect.timeout("15 seconds"),
         Effect.mapError(() => new SecondBrainError({ code: "unavailable" })),
       ),
+    ),
   });
 });
 export const layer = Layer.effect(SecondBrainEmbeddings, make);

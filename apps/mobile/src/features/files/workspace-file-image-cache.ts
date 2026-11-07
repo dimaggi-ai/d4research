@@ -1,5 +1,6 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
 const WORKSPACE_IMAGE_IDLE_TTL_MS = 30 * 60_000;
@@ -8,10 +9,13 @@ type ImagePrefetch = (uri: string) => Promise<boolean>;
 
 class WorkspaceImageCacheKey extends Data.Class<{ readonly uri: string }> {}
 
-export class WorkspaceImagePrefetchError extends Data.TaggedError("WorkspaceImagePrefetchError")<{
-  readonly cause?: unknown;
-  readonly uri: string;
-}> {}
+export class WorkspaceImagePrefetchError extends Schema.TaggedError<
+  WorkspaceImagePrefetchError,
+  { readonly brand: unique symbol }
+>()("WorkspaceImagePrefetchError", {
+  cause: Schema.optional(Schema.Defect()),
+  uri: Schema.String,
+}) {}
 
 async function prefetchWithNativeImage(uri: string): Promise<boolean> {
   const { Image } = await import("react-native");
@@ -35,7 +39,7 @@ export function createWorkspaceFileImageAtomFamily(options?: {
           return key.uri;
         },
         catch: (cause) =>
-          cause instanceof WorkspaceImagePrefetchError
+          Schema.is(WorkspaceImagePrefetchError)(cause)
             ? cause
             : new WorkspaceImagePrefetchError({ uri: key.uri, cause }),
       }),

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, describe } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -18,7 +19,7 @@ const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
 const TestLayer = multiworkLayer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provide(ServerConfigLayer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const makeTmpDir = (

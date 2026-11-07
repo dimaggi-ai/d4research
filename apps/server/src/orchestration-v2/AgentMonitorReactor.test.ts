@@ -405,8 +405,8 @@ it.effect("does not infer a wedged provider from a long expired unrenewed effect
       const monitor = yield* AgentMonitor.make;
       yield* monitor.sweep;
       const report = (yield* read(fixture.threadId)).agentMonitor;
-      assert.equal(report?.classification, "suspected_stuck");
-      assert.isTrue(report!.attentionRequired);
+      assert.equal(report?.classification, "slow");
+      assert.isFalse(report!.attentionRequired);
       assert.isFalse(report!.notificationEligible);
     }),
   ),
@@ -930,7 +930,7 @@ it.effect(
     ),
 );
 
-it.effect("requires repeated stale-progress observations before notification eligibility", () =>
+it.effect("requires repeated provider-error observations before notification eligibility", () =>
   isolated(
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(at));
@@ -941,8 +941,24 @@ it.effect("requires repeated stale-progress observations before notification eli
       yield* monitor.sweep;
       yield* TestClock.adjust("10 minutes");
       yield* monitor.sweep;
+      const stale = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.equal(stale.classification, "slow");
+      assert.isFalse(stale.attentionRequired);
+      assert.isFalse(stale.notificationEligible);
+      assert.isFalse(
+        (yield* monitor.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: stale.reportKey,
+          clientId,
+        })).claimed,
+      );
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_provider_sessions SET status = 'error'
+        WHERE provider_session_id = ${`session:${fixture.threadId}`}`;
+      yield* monitor.sweep;
       const first = (yield* read(fixture.threadId)).agentMonitor!;
-      assert.equal(first.classification, "suspected_stuck");
+      assert.equal(first.classification, "wedged");
+      assert.equal(first.reason, "provider_error");
       assert.isTrue(first.attentionRequired);
       assert.isFalse(first.notificationEligible);
       yield* TestClock.adjust("15 seconds");
@@ -1265,75 +1281,92 @@ it.effect(
     ),
 );
 
-it.effect("new progress permits a second stale episode in the same attempt", () =>
-  isolated(
-    Effect.gen(function* () {
-      yield* TestClock.setTime(DateTime.toEpochMillis(at));
-      yield* enable();
-      const monitor = yield* AgentMonitor.make;
-      yield* monitor.sweep;
-      const fixture = yield* seed("stale-twice");
-      yield* monitor.sweep;
-      yield* TestClock.adjust("10 minutes");
-      yield* monitor.sweep;
-      yield* TestClock.adjust("30 seconds");
-      yield* monitor.sweep;
-      const first = (yield* read(fixture.threadId)).agentMonitor!;
-      assert.isTrue(
-        (yield* monitor.claimAttention({
-          threadId: fixture.threadId,
-          reportKey: first.reportKey,
-          clientId,
-        })).claimed,
-      );
-      const sink = yield* EventSink.EventSinkV2;
-      yield* sink.write({
-        events: [
-          {
-            ...fixture,
-            id: EventId.make("stale-twice:progress"),
-            type: "turn-item.updated",
-            payload: {
-              id: TurnItemId.make("stale-twice:item"),
-              threadId: fixture.threadId,
-              runId: fixture.runId,
-              nodeId: fixture.nodeId,
-              providerThreadId: fixture.providerThreadId,
-              providerTurnId: fixture.providerTurnId,
-              nativeItemRef: null,
-              parentItemId: null,
-              ordinal: 1,
-              status: "completed",
-              title: null,
-              startedAt: at,
-              completedAt: DateTime.add(at, { minutes: 10, seconds: 30 }),
-              updatedAt: DateTime.add(at, { minutes: 10, seconds: 30 }),
-              type: "dynamic_tool",
-              toolName: "test",
-              input: {},
+it.effect(
+  "provider recovery and new progress permit a second error episode in the same attempt",
+  () =>
+    isolated(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(DateTime.toEpochMillis(at));
+        yield* enable();
+        const monitor = yield* AgentMonitor.make;
+        yield* monitor.sweep;
+        const fixture = yield* seed("stale-twice");
+        yield* monitor.sweep;
+        const sql = yield* SqlClient.SqlClient;
+        const setStatus = (status: string) =>
+          sql`UPDATE orchestration_v2_projection_provider_sessions SET status = ${status}
+          WHERE provider_session_id = ${`session:${fixture.threadId}`}`;
+        yield* TestClock.adjust("10 minutes");
+        yield* setStatus("error");
+        yield* monitor.sweep;
+        yield* TestClock.adjust("30 seconds");
+        yield* monitor.sweep;
+        const first = (yield* read(fixture.threadId)).agentMonitor!;
+        assert.equal(first.classification, "wedged");
+        assert.equal(first.reason, "provider_error");
+        assert.isTrue(
+          (yield* monitor.claimAttention({
+            threadId: fixture.threadId,
+            reportKey: first.reportKey,
+            clientId,
+          })).claimed,
+        );
+        yield* setStatus("running");
+        const sink = yield* EventSink.EventSinkV2;
+        yield* sink.write({
+          events: [
+            {
+              ...fixture,
+              id: EventId.make("stale-twice:progress"),
+              type: "turn-item.updated",
+              payload: {
+                id: TurnItemId.make("stale-twice:item"),
+                threadId: fixture.threadId,
+                runId: fixture.runId,
+                nodeId: fixture.nodeId,
+                providerThreadId: fixture.providerThreadId,
+                providerTurnId: fixture.providerTurnId,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 1,
+                status: "completed",
+                title: null,
+                startedAt: at,
+                completedAt: DateTime.add(at, { minutes: 10, seconds: 30 }),
+                updatedAt: DateTime.add(at, { minutes: 10, seconds: 30 }),
+                type: "dynamic_tool",
+                toolName: "test",
+                input: {},
+              },
             },
-          },
-        ],
-      });
-      yield* monitor.sweep;
-      assert.equal((yield* read(fixture.threadId)).agentMonitor!.classification, "working");
-      yield* TestClock.adjust("10 minutes");
-      yield* monitor.sweep;
-      yield* TestClock.adjust("30 seconds");
-      yield* monitor.sweep;
-      const second = (yield* read(fixture.threadId)).agentMonitor!;
-      assert.equal(second.classification, "suspected_stuck");
-      assert.equal(second.attemptId, first.attemptId);
-      assert.notEqual(second.reportKey, first.reportKey);
-      assert.isTrue(
-        (yield* monitor.claimAttention({
-          threadId: fixture.threadId,
-          reportKey: second.reportKey,
-          clientId,
-        })).claimed,
-      );
-    }),
-  ),
+          ],
+        });
+        yield* monitor.sweep;
+        assert.equal((yield* read(fixture.threadId)).agentMonitor!.classification, "working");
+        yield* TestClock.adjust("10 minutes");
+        yield* monitor.sweep;
+        const stale = (yield* read(fixture.threadId)).agentMonitor!;
+        assert.equal(stale.classification, "slow");
+        assert.isFalse(stale.attentionRequired);
+        assert.isFalse(stale.notificationEligible);
+        yield* setStatus("error");
+        yield* monitor.sweep;
+        yield* TestClock.adjust("30 seconds");
+        yield* monitor.sweep;
+        const second = (yield* read(fixture.threadId)).agentMonitor!;
+        assert.equal(second.classification, "wedged");
+        assert.equal(second.reason, "provider_error");
+        assert.equal(second.attemptId, first.attemptId);
+        assert.notEqual(second.reportKey, first.reportKey);
+        assert.isTrue(
+          (yield* monitor.claimAttention({
+            threadId: fixture.threadId,
+            reportKey: second.reportKey,
+            clientId,
+          })).claimed,
+        );
+      }),
+    ),
 );
 
 it.effect("notification class controls preserve attention in the digest and gate claims", () =>

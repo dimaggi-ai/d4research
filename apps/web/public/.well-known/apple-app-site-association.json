@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "ARK85ZXQ4Z.ai.dimaggi.d4research",
+          "ARK85ZXQ4Z.ai.dimaggi.d4research.preview",
+          "ARK85ZXQ4Z.ai.dimaggi.d4research.dev"
+        ],
+        "components": [{ "/": "/threads/*" }]
+      }
+    ]
+  }
+}

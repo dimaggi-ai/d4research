@@ -77,6 +77,12 @@ on:
         required: false
         default: ""
         type: string
+      # Whether this job saves the workspace pnpm store. Release's two Macs
+      # install the same store on the same runner type, so only one saves it.
+      save_pnpm_store:
+        required: false
+        default: true
+        type: boolean
       version:
         required: true
         type: string
@@ -136,10 +142,33 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@d4research/desktop... --filter=t3... --filter=@d4research/scripts...
+          install-args: --filter=@d4research/desktop... --filter=d4research... --filter=@d4research/scripts...
+          save-pnpm-store: ${{ inputs.save_pnpm_store }}
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
-        run: vp install --filter=@d4research/desktop... --filter=d4research... --filter=@d4research/scripts...
+
+      # The CLI archive and the staged app install without a lockfile, so they
+      # ask the registry about every package and fetch platform packages the
+      # workspace store lacks. They share this registry metadata and store. A
+      # new week starts cold, which bounds how stale cached ranges can get.
+      - name: Resolve staged install cache
+        id: stage_pnpm
+        shell: bash
+        run: |
+          echo "dir=$RUNNER_TEMP/desktop-stage-pnpm" >> "$GITHUB_OUTPUT"
+          echo "prefix=desktop-stage-pnpm-v2-${{ inputs.platform }}-${{ inputs.arch }}-$(date -u +%G-%V)-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore staged install cache
+        id: stage_pnpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.stage_pnpm.outputs.prefix }}
+
+      - name: Mark staged install cache
+        shell: bash
+        run: mkdir -p "${{ steps.stage_pnpm.outputs.dir }}" && touch "$RUNNER_TEMP/desktop-stage-pnpm.marker"
 
       - name: Cache resource monitor
         id: resource_monitor_cache
@@ -157,6 +186,14 @@ jobs:
             native/kde-snap-shot/target/${{ inputs.rust_target }}/release/t3-kde-snap-shot
             native/hyprland-snap-shot/target/${{ inputs.rust_target }}/release/t3-hyprland-snap-shot
           key: linux-capture-helpers-${{ inputs.rust_target }}-${{ hashFiles('native/kde-snap-shot/Cargo.lock', 'native/kde-snap-shot/Cargo.toml', 'native/kde-snap-shot/src/**', 'native/hyprland-snap-shot/Cargo.lock', 'native/hyprland-snap-shot/Cargo.toml', 'native/hyprland-snap-shot/src/**', 'native/hyprland-snap-shot/protocols/**') }}
+
+      - name: Ensure Rosetta for macOS x64 bytecode generation
+        if: inputs.platform == 'mac' && inputs.arch == 'x64'
+        shell: bash
+        run: |
+          if [[ "$(uname -m)" == "arm64" ]] && ! /usr/bin/arch -x86_64 /usr/bin/true; then
+            sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          fi
 
       - name: Setup Rust
         if: steps.resource_monitor_cache.outputs.cache-hit != 'true' || (inputs.platform == 'linux' && steps.capture_helper_cache.outputs.cache-hit != 'true')
@@ -279,10 +316,6 @@ jobs:
       - name: Build CLI single-executable
         if: inputs.cli_archive
         shell: bash
-        env:
-          # The executable bundles the server again, so it needs the same stamp
-          # as release.yml's JS bundle.
-          T3CODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && inputs.release_channel || 'dev' }}
         run: node apps/server/scripts/cli.ts build-exe --verbose ${{ inputs.platform == 'win' && format('--target win-{0}', inputs.arch) || '' }}
 
       - name: Import macOS signing certificate for the CLI archive
@@ -339,6 +372,7 @@ jobs:
         run: command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf; }
 
       - name: Build CLI archive
+        id: build_cli
         if: inputs.cli_archive
         shell: bash
         env:
@@ -356,30 +390,45 @@ jobs:
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.platform }}" == "mac" && -n "${APPLE_API_KEY:-}" ]]; then
-            key_path="$RUNNER_TEMP/AuthKey_cli_${APPLE_API_KEY_ID}.p8"
-            printf '%s' "$APPLE_API_KEY" > "$key_path"
-            export APPLE_API_KEY="$key_path"
+          extra_args=()
+          if [[ "${{ inputs.platform }}" == "mac" ]]; then
+            if [[ -n "${APPLE_API_KEY:-}" ]]; then
+              key_dir="$(mktemp -d "$RUNNER_TEMP/t3-cli-notary.XXXXXXXX")"
+              trap 'rm -rf "$key_dir"' EXIT
+              key_path="$key_dir/AuthKey.p8"
+              (umask 077 && printf '%s' "$APPLE_API_KEY" > "$key_path")
+              export APPLE_API_KEY="$key_path"
+            fi
+            # Older release refs lack deferred notarization and still wait here.
+            cli_help="$(node scripts/build-cli-archive.ts --help)"
+            if [[ "$cli_help" == *--notary-submission-file* ]]; then
+              extra_args=(--notary-submission-file "$RUNNER_TEMP/t3-cli-notary-submission")
+              echo "deferred_notarization=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
           node scripts/build-cli-archive.ts \
             --platform "${{ inputs.platform }}" \
             --arch "${{ inputs.arch }}" \
             --version "${{ inputs.version }}" \
             --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
-            --output-dir release-cli
+            --output-dir release-cli \
+            ${extra_args[@]+"${extra_args[@]}"}
 
       - name: Smoke-test CLI archive
         if: inputs.cli_archive && inputs.verify_runner == ''
         shell: bash
         run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ inputs.version }}"
 
+      # macOS uploads its archive after "Await CLI notarization" instead.
       - name: Upload CLI archive
-        if: inputs.cli_archive
+        if: inputs.cli_archive && inputs.platform != 'mac'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cli-${{ inputs.platform }}-${{ inputs.arch }}
           path: release-cli/*
           if-no-files-found: error
+          # The archive is already gzip or zip; deflating it again saves under 2%.
+          compression-level: 0
 
       - name: Install Linux desktop build libraries
         if: inputs.platform == 'linux'
@@ -528,7 +577,7 @@ jobs:
           elif [[ "${{ inputs.platform }}" == "win" ]]; then
             # Embed the Linux CLI archive built by the same-arch Linux job as
             # the WSL runtime. Required for a working WSL backend on Windows.
-            args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-${{ inputs.arch }}.tar.gz)
+            args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/d4research-*-linux-${{ inputs.arch }}.tar.gz)
             if has_all \
               "$AZURE_TENANT_ID" \
               "$AZURE_CLIENT_ID" \
@@ -547,6 +596,39 @@ jobs:
           fi
 
           vp run dist:desktop:artifact "${args[@]}"
+
+      # The CLI was submitted without waiting so Apple reviews it while the
+      # desktop builds. Notarization does not change the archive bytes, but
+      # nothing uploads them, so nothing publishes them, until Apple accepts.
+      # With signing configured, a missing submission id fails this step.
+      - name: Await CLI notarization
+        if: inputs.cli_archive && inputs.platform == 'mac' && steps.build_cli.outputs.deferred_notarization == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${APPLE_API_KEY:-}" ]]; then
+            key_dir="$(mktemp -d "$RUNNER_TEMP/t3-cli-notary.XXXXXXXX")"
+            trap 'rm -rf "$key_dir"' EXIT
+            key_path="$key_dir/AuthKey.p8"
+            (umask 077 && printf '%s' "$APPLE_API_KEY" > "$key_path")
+            export APPLE_API_KEY="$key_path"
+          fi
+          node scripts/build-cli-archive.ts await-notarization \
+            --submission-file "$RUNNER_TEMP/t3-cli-notary-submission"
+
+      - name: Upload notarized CLI archive
+        if: inputs.cli_archive && inputs.platform == 'mac'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cli-${{ inputs.platform }}-${{ inputs.arch }}
+          path: release-cli/*
+          if-no-files-found: error
+          # The archive is already gzip or zip; deflating it again saves under 2%.
+          compression-level: 0
 
       # Warm installs only touch the store index, so new content means a fetch.
       - name: Check staged install cache for new content
@@ -691,6 +773,8 @@ jobs:
           name: desktop-${{ inputs.platform }}-${{ inputs.arch }}
           path: release-publish/*
           if-no-files-found: error
+          # Installers, zips and blockmaps are already compressed; deflating them again saves under 0.3%.
+          compression-level: 0
 
       - name: Upload resource monitor
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

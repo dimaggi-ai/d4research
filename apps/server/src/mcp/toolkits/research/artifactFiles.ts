@@ -4,6 +4,20 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+class ResearchArtifactIoError extends Schema.TaggedError<ResearchArtifactIoError>()(
+  "ResearchArtifactIoError",
+  { cause: Schema.Defect() },
+) {}
+
+export const tryArtifactIo = <A>(operation: () => PromiseLike<A>) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) => new ResearchArtifactIoError({ cause }),
+  });
+
 const MAX_SYSTEM_SYMLINKS = 40;
 
 // Root-owned links in a directory only root can rename, such as /tmp -> /private/tmp on

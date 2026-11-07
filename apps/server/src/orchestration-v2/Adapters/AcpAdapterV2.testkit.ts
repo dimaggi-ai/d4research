@@ -15,7 +15,7 @@ import {
 import type * as DateTime from "effect/DateTime";
 import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -26,10 +26,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 import type { ProviderReplayGate } from "@d4research/provider-testing/replayGate";
-import {
-  ACP_PROTOCOL,
-  type AcpAdapterV2RuntimeInput,
-} from "@d4research/provider-acp/server/adapter";
+import { ACP_PROTOCOL, type AcpAdapterV2RuntimeInput } from "@d4research/provider-acp/server/adapter";
 
 export const AcpReplayTranscript = Schema.Struct({
   provider: ProviderDriverKind,
@@ -205,7 +202,7 @@ export function makeAcpReplayRuntime(input: {
 ) => Effect.Effect<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
-  Crypto.Crypto | Scope.Scope
+  SecureRandom.SecureRandom | Scope.Scope
 > {
   // Transcripts exceed the kernel's 128 KiB per-environment-variable limit.
   const transcriptPath = `${input.statusPath}.transcript.json`;

@@ -14,7 +14,7 @@ import {
 import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 import { parseInlineDelegateTrigger } from "@d4research/shared/researchPipeline";
 import * as Cause from "effect/Cause";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -28,9 +28,10 @@ import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 
-class InlineResearchRejected extends Data.TaggedError("InlineResearchRejected")<{
-  readonly message: string;
-}> {}
+class InlineResearchRejected extends Schema.TaggedError<InlineResearchRejected>()(
+  "InlineResearchRejected",
+  { message: Schema.String },
+) {}
 
 type EventPayload = {
   [Type in OrchestrationV2DomainEvent["type"]]: Pick<
@@ -88,7 +89,7 @@ export const tryRunInlineResearchTurn = Effect.fn("tryRunInlineResearchTurn")(fu
     ...payload,
     occurredAt,
   });
-  const wrap = (payload: EventPayload) =>
+  const wrap = Effect.fn("wrap")((payload: EventPayload) =>
     Effect.gen(function* () {
       return {
         ...payload,
@@ -99,7 +100,8 @@ export const tryRunInlineResearchTurn = Effect.fn("tryRunInlineResearchTurn")(fu
         providerInstanceId: run.providerInstanceId,
         occurredAt: now,
       };
-    });
+    }),
+  );
   const started = yield* sink.writeIfRunCurrent({
     threadId: message.threadId,
     runId: run.id,

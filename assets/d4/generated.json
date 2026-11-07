@@ -38,6 +38,14 @@
     "apps/mobile/assets/android-icon-foreground.svg": "67ee78ddab89baf79fb87128fad06e9232a45ce6d82e2fe8c0346dd682707502",
     "apps/mobile/assets/android-icon-foreground.png": "43881824136bce411a022f6f23850aee61f6e2f0b0c1d7c33a26588382ff8d26",
     "apps/mobile/assets/android-icon-mark.png": "43881824136bce411a022f6f23850aee61f6e2f0b0c1d7c33a26588382ff8d26",
-    "apps/mobile/assets/android-notification-icon.png": "06a537212ebf47f4ccb57e566cc38e27beba15ba5cdca1dc47f3dd9c9b6c87b4"
+    "apps/mobile/assets/android-notification-icon.png": "06a537212ebf47f4ccb57e566cc38e27beba15ba5cdca1dc47f3dd9c9b6c87b4",
+    "assets/prod/t3-black-web-icon-192x192.png": "fa700d786bae3e05d640ef2574bfe3dfe16b97783e2a83d809b447d2d71bd0b3",
+    "assets/prod/t3-black-web-icon-512x512.png": "b1274d6a6b6f1d6b3fbe163bbd61236576b841693030a32353ec459a4b1776ad",
+    "assets/nightly/nightly-web-icon-192x192.png": "fa700d786bae3e05d640ef2574bfe3dfe16b97783e2a83d809b447d2d71bd0b3",
+    "assets/nightly/nightly-web-icon-512x512.png": "b1274d6a6b6f1d6b3fbe163bbd61236576b841693030a32353ec459a4b1776ad",
+    "assets/dev/blueprint-web-icon-192x192.png": "fa700d786bae3e05d640ef2574bfe3dfe16b97783e2a83d809b447d2d71bd0b3",
+    "assets/dev/blueprint-web-icon-512x512.png": "b1274d6a6b6f1d6b3fbe163bbd61236576b841693030a32353ec459a4b1776ad",
+    "apps/web/public/icon-192x192.png": "fa700d786bae3e05d640ef2574bfe3dfe16b97783e2a83d809b447d2d71bd0b3",
+    "apps/web/public/icon-512x512.png": "b1274d6a6b6f1d6b3fbe163bbd61236576b841693030a32353ec459a4b1776ad"
   }
 }

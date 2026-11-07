@@ -87,44 +87,48 @@ vi.mock("../../state/environments", () => ({
 }));
 vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: () => "shell" },
+  olderSettledThreads: { shelfAtom: () => "older-settled" },
 }));
 vi.mock("../../state/atom-registry", () => ({ appAtomRegistry: {} }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
-    value === "list-environments"
-      ? {
-          providersByEnvironmentId: new Map(),
-          machineByEnvironmentId: new Map(),
-          settlementEnvironmentIds: new Set(),
-          snoozeEnvironmentIds: new Set(),
-          pinningEnvironmentIds: new Set(),
-          autoSettleOptOutEnvironmentIds: new Set(),
-          pinReorderEnvironmentIds: new Set(),
-          activeReorderEnvironmentIds: new Set(),
-          titleRegenerationEnvironmentIds: new Set(),
-        }
-      : value === mocks.configAtom
-        ? mocks.configLoaded
-          ? {
-              settings: {
-                ...DEFAULT_SERVER_SETTINGS,
-                providerInstances: {
-                  "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+    value === "older-settled"
+      ? new Map()
+      : value === "list-environments"
+        ? {
+            providersByEnvironmentId: new Map(),
+            machineByEnvironmentId: new Map(),
+            settlementEnvironmentIds: new Set(),
+            snoozeEnvironmentIds: new Set(),
+            pinningEnvironmentIds: new Set(),
+            autoSettleOptOutEnvironmentIds: new Set(),
+            pinReorderEnvironmentIds: new Set(),
+            activeReorderEnvironmentIds: new Set(),
+            titleRegenerationEnvironmentIds: new Set(),
+          }
+        : value === mocks.configAtom
+          ? mocks.configLoaded
+            ? {
+                settings: {
+                  ...DEFAULT_SERVER_SETTINGS,
+                  providerInstances: {
+                    "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+                  },
+                  d4Agent: {
+                    ...DEFAULT_SERVER_SETTINGS.d4Agent,
+                    enabled: mocks.enabled,
+                    projectContexts: mocks.projectContexts,
+                    taskModelSelection: mocks.taskModelSelection,
+                  },
+                  agentMonitor: { enabled: mocks.monitorEnabled },
                 },
-                d4Agent: {
-                  ...DEFAULT_SERVER_SETTINGS.d4Agent,
-                  enabled: mocks.enabled,
-                  projectContexts: mocks.projectContexts,
-                  taskModelSelection: mocks.taskModelSelection,
-                },
-                agentMonitor: { enabled: mocks.monitorEnabled },
-              },
-              providers: mocks.providers,
-            }
-          : null
-        : mocks.allowed,
+                providers: mocks.providers,
+              }
+            : null
+          : mocks.allowed,
 }));
+vi.mock("../../state/presentation", () => ({ threadListEnvironmentsAtom: "list-environments" }));
 vi.mock("../../state/server", async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
   mocks.identityAtom = Atom.make(
@@ -342,8 +346,8 @@ vi.mock("react-native", () => ({
   ),
 }));
 
-vi.mock("@legendapp/list/react-native", () => ({
-  LegendList: ({
+vi.mock("@legendapp/list/reanimated", () => ({
+  AnimatedLegendList: ({
     ListHeaderComponent,
     ListEmptyComponent,
   }: {
@@ -367,7 +371,7 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("../../native/v5-workspace-context", async () => ({
   NativePrimaryColumnContext: (await import("react")).createContext(null),
 }));
-vi.mock("../../native/scrollEdgeEffects", () => ({ nativeHeaderScrollEdgeEffects: {} }));
+
 vi.mock("../../native/native-layout-metrics", () => ({
   useNativeColumnLayoutMetrics: () => null,
   useNativeLayoutMetrics: () => null,
@@ -377,7 +381,11 @@ vi.mock("../../native/NativeWorkspaceColumns", () => ({
   useNativeWorkspaceColumnsSupported: () => false,
 }));
 vi.mock("../../state/queries", () => ({
-  useThreadSearch: () => ({ matches: [], isPending: false }),
+  useThreadSearch: (_environmentIds: unknown, query: string) => ({
+    matches: [],
+    query,
+    isPending: false,
+  }),
 }));
 vi.mock("../keyboard/threadKeyboardShortcuts", () => ({ useThreadJumpShortcuts: () => undefined }));
 vi.mock("../../state/thread-order", () => ({ usePendingThreadOrder: () => null }));
@@ -390,6 +398,7 @@ vi.mock("../threads/thread-list-v2-items", () => ({
   ThreadListV2SnoozedShelfHeader: () => null,
   ThreadListV2WorkingShelfHeader: () => null,
 }));
+vi.mock("../threads/threadListAnimations", () => ({ THREAD_SIDEBAR_ROW_LAYOUT: undefined }));
 vi.mock("../threads/thread-provider-instance", () => ({
   useThreadRowProviderInstanceResolver: () => () => null,
 }));
@@ -410,10 +419,10 @@ vi.mock("../home/thread-swipe-actions", () => ({
   useSwipeableScrollGate: () => ({ swipeEnabled: false, scrollGateHandlers: {} }),
 }));
 vi.mock("../home/FabScrollContext", () => ({ useFabScroll: () => null }));
-vi.mock("../workspace/WorkspaceTabsContext", () => ({
+vi.mock("../layout/workspace/WorkspaceTabsContext", () => ({
   useWorkspaceTabs: () => ({ getScrollOffset: () => 0, state: { tabs: { threads: {} } } }),
 }));
-vi.mock("../workspace/ListFilterMenu", () => ({
+vi.mock("../layout/workspace/ListFilterMenu", () => ({
   ListFilterMenu: ({ label, actions }: { label: string; actions: Array<{ title: string }> }) => (
     <div>
       <button>{label}</button>
@@ -436,6 +445,7 @@ vi.mock("../../components/ui/Dialog", () => ({}));
 vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: vi.fn() }));
 vi.mock("../../lib/commandMetadata", () => ({ makeTurnCommandMetadata: vi.fn() }));
 vi.mock("../../lib/projectThreadStartTurn", () => ({ buildProjectThreadStartTurnInput: vi.fn() }));
+vi.mock("../threads/useRememberThreadProject", () => ({ useRememberThreadProject: vi.fn() }));
 vi.mock("../threads/use-worktree-setup", () => ({ useWorktreeSetup: vi.fn() }));
 vi.mock("../../components/ui/AppBar", () => ({
   AppBar: ({ title }: { title: string }) => <div>{title}</div>,
@@ -514,6 +524,7 @@ vi.mock("../terminal/terminalLaunchContext", () => ({
   stagePendingTerminalLaunch: vi.fn(),
 }));
 vi.mock("../terminal/terminalDebugLog", () => ({ terminalDebugLog: vi.fn() }));
+vi.mock("../threads/NewTaskDraftRouteScreen", () => ({ NewTaskDraftRouteScreen: vi.fn() }));
 vi.mock("../threads/ThreadDetailScreen", () => ({ ThreadDetailScreen: vi.fn() }));
 vi.mock("../threads/git/GitOverviewSheet", () => ({ GitOverviewSheet: vi.fn() }));
 vi.mock("../../state/use-selected-thread-git-actions", () => ({
@@ -537,13 +548,21 @@ vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useRegisterWorkspaceInspector: vi.fn(),
 }));
 vi.mock("../files/thread-file-navigator-pane", () => ({ ThreadFileNavigatorPane: vi.fn() }));
+vi.mock("../threads/thread-inspector-preview", () => ({
+  InspectorContentScope: vi.fn(),
+  ThreadInspectorHeader: vi.fn(),
+  ThreadInspectorPreview: vi.fn(),
+}));
+vi.mock("../layout/workspace-inspector-sheet", async () => ({
+  InspectorSheetContext: (await import("react")).createContext(null),
+}));
 vi.mock("../threads/thread-inspector-content-stack", () => ({
   ThreadInspectorContentStack: vi.fn(),
 }));
 vi.mock("../threads/thread-route-hydration", () => ({ threadRouteIsHydrating: vi.fn() }));
 vi.mock("../prompt-links/useThreadPromptLink", () => ({ useThreadPromptLink: vi.fn() }));
 vi.mock("../threads/ThreadHeader", () => ({ ThreadHeader: vi.fn() }));
-vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
+vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
   useAndroidWorkspaceBack: vi.fn(),
   useWorkspaceListNavigation: vi.fn(),
 }));
@@ -1289,19 +1308,50 @@ it("pins the agent above filters in the actual mobile HomeScreen", async () => {
       }),
     ],
     pendingTasks: [],
-    catalogState: { hasConnections: true, hasReadyEnvironment: true },
+    catalogState: {
+      hasConnections: true,
+      hasReadyEnvironment: true,
+      isLoadingConnections: false,
+      hasConnectingEnvironment: false,
+      connectingEnvironments: [],
+      connectionState: "connected",
+      connectionError: null,
+      networkStatus: "online",
+      hasLoadedShellSnapshot: true,
+      hasPendingShellSnapshot: false,
+      shellSnapshotError: null,
+    },
     savedConnectionsById: {},
     environments: [{ environmentId, label: "Local", connectionState: "connected" }],
     searchQuery: "",
     selectedEnvironmentId: null,
     selectedProjectKey: null,
-    projectSortOrder: "name",
-    projectGroupingMode: "none",
+    projectSortOrder: "updated_at",
+    projectGroupingMode: "separate",
     onSearchQueryChange: noop,
     onEnvironmentChange: noop,
     onProjectChange: noop,
     onAddConnection: noop,
-  } as unknown as React.ComponentProps<typeof HomeScreen>;
+    onOpenSettings: noop,
+    onStartNewTask: noop,
+    onSelectThread: noop,
+    onArchiveThread: noop,
+    onDeleteThread: noop,
+    onSettleThread: async () => true,
+    onSnoozeThread: async () => true,
+    onUnsnoozeThread: async () => true,
+    onUnsettleThread: noop,
+    onPinThread: async () => true,
+    onUnpinThread: async () => true,
+    onSetThreadAutoSettle: async () => true,
+    onMoveThread: async () => true,
+    onRenameThread: noop,
+    onRegenerateThreadTitle: async () => true,
+    onSelectPendingTask: noop,
+    onDeletePendingTask: noop,
+    onNewThreadOnBranch: noop,
+    onNewThreadInProject: noop,
+  } satisfies React.ComponentProps<typeof HomeScreen>;
   await act(() => root.render(<HomeScreen {...props} />));
   const buttons = [...container.querySelectorAll("button")];
   expect(buttons[0]?.textContent).toBe("Nia");

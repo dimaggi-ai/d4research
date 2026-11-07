@@ -219,6 +219,18 @@
       "types": "./src/state/deviceHubAccess.ts",
       "default": "./src/state/deviceHubAccess.ts"
     },
+    "./state/peerLinks": {
+      "types": "./src/state/peerLinks.ts",
+      "default": "./src/state/peerLinks.ts"
+    },
+    "./state/environmentHttpAuth": {
+      "types": "./src/state/environmentHttpAuth.ts",
+      "default": "./src/state/environmentHttpAuth.ts"
+    },
+    "./state/peerPairingCode": {
+      "types": "./src/state/peerPairingCode.ts",
+      "default": "./src/state/peerPairingCode.ts"
+    },
     "./state/preview": {
       "types": "./src/state/preview.ts",
       "default": "./src/state/preview.ts"
@@ -334,6 +346,10 @@
     "./state/composer-dispatch": {
       "types": "./src/state/composerDispatch.ts",
       "default": "./src/state/composerDispatch.ts"
+    },
+    "./state/context-window": {
+      "types": "./src/state/contextWindow.ts",
+      "default": "./src/state/contextWindow.ts"
     },
     "./state/thread-subagents": {
       "types": "./src/state/threadSubagents.ts",
@@ -471,18 +487,6 @@
       "types": "./src/d4AgentActionFeedback.ts",
       "default": "./src/d4AgentActionFeedback.ts"
     },
-    "./zip/bounded-zip": {
-      "types": "./src/zip/boundedZip.ts",
-      "default": "./src/zip/boundedZip.ts"
-    },
-    "./zip/directory": {
-      "types": "./src/zip/zipDirectory.ts",
-      "default": "./src/zip/zipDirectory.ts"
-    },
-    "./workspace-basename-lookup": {
-      "types": "./src/workspaceBasenameLookup.ts",
-      "default": "./src/workspaceBasenameLookup.ts"
-    },
     "./link-request": {
       "types": "./src/linkRequest.ts",
       "default": "./src/linkRequest.ts"
@@ -494,14 +498,6 @@
     "./clock": {
       "types": "./src/clock.ts",
       "default": "./src/clock.ts"
-    },
-    "./state/peerLinks": {
-      "types": "./src/state/peerLinks.ts",
-      "default": "./src/state/peerLinks.ts"
-    },
-    "./state/peerPairingCode": {
-      "types": "./src/state/peerPairingCode.ts",
-      "default": "./src/state/peerPairingCode.ts"
     },
     "./state/pending-user-input": {
       "types": "./src/state/pendingUserInput.ts",
@@ -547,17 +543,29 @@
       "types": "./src/pullRequestReactions.ts",
       "default": "./src/pullRequestReactions.ts"
     },
+    "./pull-request-reply": {
+      "types": "./src/pullRequestReply.ts",
+      "default": "./src/pullRequestReply.ts"
+    },
     "./model-traits": {
       "types": "./src/modelTraits.ts",
       "default": "./src/modelTraits.ts"
     },
+    "./pull-request-reviewers": {
+      "types": "./src/pullRequestReviewers.ts",
+      "default": "./src/pullRequestReviewers.ts"
+    },
     "./provider-clients": {
       "types": "./src/providerClients.ts",
       "default": "./src/providerClients.ts"
+    },
+    "./provider-instance-ids": {
+      "types": "./src/providerInstanceIds.ts",
+      "default": "./src/providerInstanceIds.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run"
   },
   "dependencies": {
@@ -575,6 +583,8 @@
     "@d4research/source-control-core": "workspace:*",
     "@d4research/source-control-definitions": "workspace:*",
     "@pierre/diffs": "catalog:",
+    "@d4research/provider-kiro": "workspace:*",
+    "@d4research/secret-provider-definitions": "workspace:*",
     "effect": "catalog:",
     "jszip": "3.10.1",
     "three": "0.180.0"

@@ -2,7 +2,7 @@ import { EnvironmentId, ThreadId, type AssetResource } from "@d4research/contrac
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeRevisionedAssetUrlFamily } from "./assetUrls";
+import { makeRevisionedAssetUrlFamily } from "@d4research/client-runtime/state/assets";
 
 const environmentId = EnvironmentId.make("environment-1");
 const resource: AssetResource = {

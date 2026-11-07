@@ -5,6 +5,8 @@ import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 type AppVariant = "development" | "preview" | "production";
 
 const repoEnv = process.env;
+// Expo must not install TypeScript; this workspace uses tsrs.
+process.env.EXPO_NO_TYPESCRIPT_SETUP = "1";
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
@@ -111,6 +113,8 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
+// Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
+const HOSTED_APP_HOST = "app.t3.codes";
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : teamBundleIdentifier || variant.iosBundleIdentifier;
@@ -252,6 +256,7 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID || "CR2PTQ345T",
+    associatedDomains: [`applinks:${HOSTED_APP_HOST}`],
     infoPlist: {
       UISupportedInterfaceOrientations: [
         "UIInterfaceOrientationPortrait",
@@ -305,6 +310,14 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: true,
     // expo-sensors declares this for its pedometer, which the app does not use.
     blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
+    intentFilters: [
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [{ scheme: "https", host: HOSTED_APP_HOST, pathPrefix: "/threads/" }],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+    ],
   },
   web: {
     favicon: variant.assets.appIcon,
@@ -369,6 +382,15 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-audio",
+      {
+        microphonePermission: "Allow d4research to use your microphone for voice input.",
+        recordAudioAndroid: true,
+        enableBackgroundPlayback: false,
+        enableBackgroundRecording: false,
+      },
+    ],
+    [
       "expo-camera",
       {
         cameraPermission:
@@ -378,7 +400,14 @@ const config: ExpoConfig = {
         recordAudioAndroid: false,
       },
     ],
-    ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
+    [
+      "expo-image-picker",
+      {
+        photosPermission: false,
+        // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.
+        microphonePermission: "Allow d4research to use your microphone for voice input.",
+      },
+    ],
     [
       "expo-splash-screen",
       {
@@ -448,6 +477,9 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    secretsFeatureEnabled: ["1", "true"].includes(
+      process.env.T3CODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
+    ),
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     ...(repoEnv.T3CODE_MOBILE_EAS_PROJECT_ID
       ? { eas: { projectId: repoEnv.T3CODE_MOBILE_EAS_PROJECT_ID } }

@@ -1,6 +1,22 @@
 import { canCreateProjectInEnvironment } from "@d4research/client-runtime/operations/projects";
 import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
-import type { EnvironmentId } from "@d4research/contracts";
+import { type EnvironmentId, FilesystemBrowseError } from "@d4research/contracts";
+import * as Schema from "effect/Schema";
+
+const isFilesystemBrowseError = Schema.is(FilesystemBrowseError);
+
+/** Clone destinations may name folders that do not exist yet; cloning creates them. */
+export function isMissingCloneParentBrowseFailure(input: {
+  readonly cloning: boolean;
+  readonly failure: unknown;
+}): boolean {
+  return (
+    input.cloning &&
+    isFilesystemBrowseError(input.failure) &&
+    input.failure.failure === "read_directory_failed" &&
+    input.failure.pathMissing === true
+  );
+}
 
 export function resolveAddProjectEnvironment<
   T extends {

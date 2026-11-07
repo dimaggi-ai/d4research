@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useMemo } from "react";
 
@@ -27,9 +28,10 @@ type MarkdownCodeHighlighter = (
 
 class MarkdownCodeHighlightCacheKey extends Data.Class<MarkdownCodeHighlightInput> {}
 
-class MarkdownCodeHighlightError extends Data.TaggedError("MarkdownCodeHighlightError")<{
-  readonly cause: unknown;
-}> {}
+class MarkdownCodeHighlightError extends Schema.TaggedError<MarkdownCodeHighlightError>()(
+  "MarkdownCodeHighlightError",
+  { cause: Schema.Defect() },
+) {}
 
 export function createMarkdownCodeHighlightAtomFamily(options?: {
   readonly highlight?: MarkdownCodeHighlighter;

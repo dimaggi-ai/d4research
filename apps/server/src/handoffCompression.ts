@@ -1,6 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { type ProviderInstanceId, ThreadId } from "@d4research/contracts";
 
@@ -64,9 +64,12 @@ export function truncateHandoffTranscript(transcript: string, maxCharacters: num
   return `${trimmed.slice(0, headLength)}${marker}${trimmed.slice(trimmed.length - tailLength)}`;
 }
 
-class LocalHandoffCompressionError extends Data.TaggedError("LocalHandoffCompressionError")<{
-  readonly detail: string;
-}> {}
+class LocalHandoffCompressionError extends Schema.TaggedError<LocalHandoffCompressionError>()(
+  "LocalHandoffCompressionError",
+  {
+    detail: Schema.String,
+  },
+) {}
 
 export interface CompressHandoffContextLocalInput {
   readonly transcript: string;
@@ -285,8 +288,7 @@ const summarizeWithLocalModel = Effect.fn("summarizeWithLocalModel")(function* (
         signal,
         headers: { "content-type": "application/json" },
         // Ollama's /api/chat body is a fixed vendor shape, not a domain schema.
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
-        body: JSON.stringify({
+        body: await Schema.encodeUnknownPromise(Schema.fromJsonString(Schema.Unknown))({
           model: input.model,
           stream: false,
           // Handoffs cluster within a work session but rarely land twice in
@@ -314,7 +316,7 @@ const summarizeWithLocalModel = Effect.fn("summarizeWithLocalModel")(function* (
       return typeof content === "string" ? content.trim() : "";
     },
     catch: (cause) =>
-      cause instanceof LocalHandoffCompressionError
+      Schema.is(LocalHandoffCompressionError)(cause)
         ? cause
         : new LocalHandoffCompressionError({ detail: String(cause) }),
   }).pipe(
@@ -478,9 +480,12 @@ export interface CompressHandoffContextInput {
   readonly cwd: string;
 }
 
-export class HandoffCompressionError extends Data.TaggedError("HandoffCompressionError")<{
-  readonly detail: string;
-}> {}
+export class HandoffCompressionError extends Schema.TaggedError<HandoffCompressionError>()(
+  "HandoffCompressionError",
+  {
+    detail: Schema.String,
+  },
+) {}
 
 export const compressHandoffContext = Effect.fn("compressHandoffContext")(function* (
   input: CompressHandoffContextInput,

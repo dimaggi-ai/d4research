@@ -47,34 +47,36 @@ const unavailable = (reason: string): D4AgentGuardVerdict => ({
   reason,
 });
 
-export const evaluateWithProxy = (url: string, envelope: ToolGuardEnvelope) =>
-  Effect.gen(function* () {
-    const base = yield* Effect.try({ try: () => new URL(url), catch: () => "invalid" as const });
-    if (base.protocol !== "http:" || !isLoopback(base.hostname))
-      return unavailable("Tool Guard URL must be a loopback http address.");
-    const client = yield* HttpClient.HttpClient;
-    const response = yield* client.execute(
-      HttpClientRequest.post(new URL("/evaluate", base).href).pipe(
-        HttpClientRequest.bodyJsonUnsafe(envelope),
-      ),
-    );
-    if (response.status !== 200 && response.status !== 202)
-      return unavailable(`Tool Guard answered HTTP ${response.status}.`);
-    const body = yield* decodeResponse(yield* response.json);
-    return {
-      decision: body.decision,
-      rule: body.rule_results?.find((entry) => entry.matched)?.rule_id.slice(0, 256) ?? null,
-      reason: body.decision_reason?.slice(0, 512) ?? null,
-    } satisfies D4AgentGuardVerdict;
-  }).pipe(
-    Effect.scoped,
-    Effect.timeoutOrElse({
-      duration: "3 seconds",
-      orElse: () => Effect.succeed(unavailable("Tool Guard did not answer in 3 seconds.")),
-    }),
-    Effect.catch(() => Effect.succeed(unavailable("Tool Guard is unreachable."))),
-    Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
-    Effect.provide(FetchHttpClient.layer),
-  );
+export const evaluateWithProxy = Effect.fn("evaluateWithProxy")(
+  (url: string, envelope: ToolGuardEnvelope) =>
+    Effect.gen(function* () {
+      const base = yield* Effect.try({ try: () => new URL(url), catch: () => "invalid" as const });
+      if (base.protocol !== "http:" || !isLoopback(base.hostname))
+        return unavailable("Tool Guard URL must be a loopback http address.");
+      const client = yield* HttpClient.HttpClient;
+      const response = yield* client.execute(
+        HttpClientRequest.post(new URL("/evaluate", base).href).pipe(
+          HttpClientRequest.bodyJsonUnsafe(envelope),
+        ),
+      );
+      if (response.status !== 200 && response.status !== 202)
+        return unavailable(`Tool Guard answered HTTP ${response.status}.`);
+      const body = yield* decodeResponse(yield* response.json);
+      return {
+        decision: body.decision,
+        rule: body.rule_results?.find((entry) => entry.matched)?.rule_id.slice(0, 256) ?? null,
+        reason: body.decision_reason?.slice(0, 512) ?? null,
+      } satisfies D4AgentGuardVerdict;
+    }).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: "3 seconds",
+        orElse: () => Effect.succeed(unavailable("Tool Guard did not answer in 3 seconds.")),
+      }),
+      Effect.catch(() => Effect.succeed(unavailable("Tool Guard is unreachable."))),
+      Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+);
 
 export const proxyGate = ToolGuardGate.of({ evaluate: evaluateWithProxy });

@@ -1,20 +1,34 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as NodeDns from "node:dns";
 import * as NodeOS from "node:os";
 import * as NodeSea from "node:sea";
 
-export const Platform = Context.Reference<NodeJS.Platform>(
-  "@d4research/shared/HostProcess/Platform",
-  {
-    defaultValue: () => process.platform,
-  },
-);
+export const Platform = Context.Reference<NodeJS.Platform>("@d4research/shared/HostProcess/Platform", {
+  defaultValue: () => process.platform,
+});
 
 export const Architecture = Context.Reference<NodeJS.Architecture>(
   "@d4research/shared/HostProcess/Architecture",
   {
     defaultValue: () => process.arch,
+  },
+);
+
+export const LinuxLibc = Context.Reference<"gnu" | "musl">(
+  "@d4research/shared/HostProcess/LinuxLibc",
+  {
+    defaultValue: () => {
+      try {
+        const report = process.report?.getReport() as
+          | { header?: { glibcVersionRuntime?: unknown } }
+          | undefined;
+        return typeof report?.header?.glibcVersionRuntime === "string" ? "gnu" : "musl";
+      } catch {
+        return "musl";
+      }
+    },
   },
 );
 
@@ -75,12 +89,18 @@ export const InvokedAs = Context.Reference<string>("@d4research/shared/HostProce
   defaultValue: () => process.argv0,
 });
 
-export const IsExecutable = Context.Reference<boolean>(
-  "@d4research/shared/HostProcess/IsExecutable",
-  {
-    defaultValue: () => NodeSea.isSea(),
-  },
-);
+export const IsExecutable = Context.Reference<boolean>("@d4research/shared/HostProcess/IsExecutable", {
+  defaultValue: () => NodeSea.isSea(),
+});
+
+export class HostnameLookupError extends Schema.TaggedError<HostnameLookupError>()(
+  "HostnameLookupError",
+  { hostname: Schema.String, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Could not resolve ${this.hostname}.`;
+  }
+}
 
 /** Includes hostname-resolved addresses absent from interfaces, such as Debian's 127.0.1.1 used by Firefox locks. */
 export const Addresses = Context.Reference<Effect.Effect<ReadonlySet<string>>>(
@@ -91,9 +111,11 @@ export const Addresses = Context.Reference<Effect.Effect<ReadonlySet<string>>>(
       const interfaces = Object.values(NodeOS.networkInterfaces())
         .flat()
         .flatMap((entry) => (entry ? [entry.address] : []));
-      const resolved = yield* Effect.tryPromise(() =>
-        NodeDns.promises.lookup(NodeOS.hostname(), { all: true }),
-      ).pipe(
+      const hostname = NodeOS.hostname();
+      const resolved = yield* Effect.tryPromise({
+        try: () => NodeDns.promises.lookup(hostname, { all: true }),
+        catch: (cause) => new HostnameLookupError({ hostname, cause }),
+      }).pipe(
         Effect.map((entries) => entries.map((entry) => entry.address)),
         Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
       );

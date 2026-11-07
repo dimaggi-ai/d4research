@@ -14,7 +14,15 @@ import {
   useRoute,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import * as Option from "effect/Option";
 import {
   AuthOrchestrationOperateScope,
@@ -32,9 +40,7 @@ import {
   projectScriptTerminalInput,
   resolveProjectScripts,
 } from "@d4research/shared/projectScripts";
-import { Platform } from "react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionsReady } from "../../state/workspace";
 import { useEnvironmentShellReadiness } from "../../state/shell";
 import { restoredNewTaskDraftKey } from "../../state/new-task-draft-key";
@@ -91,17 +97,10 @@ import { threadEnvironment } from "../../state/threads";
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@d4research/client-runtime/state/threads";
 import { useProjects } from "../../state/entities";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import {
-  useAdaptiveWorkspaceLayout,
-  useAdaptiveWorkspacePaneRole,
-  useRegisterWorkspaceInspector,
-} from "../layout/AdaptiveWorkspaceLayout";
+import { Inspector, useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
-import {
-  ThreadInspectorContentStack,
-  type ThreadInspectorMode,
-} from "./thread-inspector-content-stack";
+import { InspectorSheetContext } from "../layout/workspace-inspector-sheet";
+import type { InspectorContent } from "../layout/inspector-panes";
 import {
   threadDetailErrorIsCurrent,
   threadRouteIsHydrating,
@@ -112,7 +111,7 @@ import { resumeThread } from "./resume-thread";
 import {
   useAndroidWorkspaceBack,
   useWorkspaceBackNavigation,
-} from "../workspace/useAndroidWorkspaceNavigation";
+} from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { openSettings } from "../settings/settings-navigation";
 import {
   InspectorContentScope,
@@ -120,47 +119,38 @@ import {
   ThreadInspectorPreview,
   type ThreadInspectorPresentation,
 } from "./thread-inspector-preview";
-import type { ThreadInspectorTarget } from "./thread-inspector-navigation";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
-
-function InspectorPaneRoleActivation() {
-  useAdaptiveWorkspacePaneRole("inspector");
-  return null;
-}
+import { useStartSideChat } from "./useStartSideChat";
+import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 function firstRouteParam(value: string | string[] | undefined): string | null {
   const first = Array.isArray(value) ? value[0] : value;
   return first === undefined || first.trim().length === 0 ? null : first;
 }
 
+// The inspector pane's bar belongs to ThreadInspectorHeader; the fallback must not draw its own.
+const InspectorHeaderShownContext = createContext(false);
+
 function ThreadRouteFallbackLayout(props: { readonly children: ReactNode }) {
   const goBack = useWorkspaceBackNavigation("threads");
-  const { layout } = useAdaptiveWorkspaceLayout();
-  const { themeVariables } = useAppearancePreferences();
-  if (Platform.OS !== "android")
-    return <ThreadScreenFallback>{props.children}</ThreadScreenFallback>;
-
+  const inspectorHeaderShown = use(InspectorHeaderShownContext);
   return (
-    <>
-      <AppBar
-        title="Thread"
-        options={{ contentStyle: { backgroundColor: themeVariables["--color-header"] } }}
-        onBack={layout.usesSplitView ? undefined : goBack}
-        hideBottomBorder
-      />
-      <ThreadScreenFallback>{props.children}</ThreadScreenFallback>
-    </>
+    <ThreadScreenFallback
+      header={
+        inspectorHeaderShown ? undefined : (
+          <AppBar title="Thread" onBackToList={goBack} hideBottomBorder />
+        )
+      }
+    >
+      {props.children}
+    </ThreadScreenFallback>
   );
 }
 
 function OpeningThreadLoadingScreen() {
   return (
     <ThreadRouteFallbackLayout>
-      <LoadingScreen
-        message="Opening thread…"
-        messagePlacement="above-spinner"
-        embedded={Platform.OS === "android"}
-      />
+      <LoadingScreen message="Opening thread…" messagePlacement="above-spinner" embedded />
     </ThreadRouteFallbackLayout>
   );
 }
@@ -176,7 +166,7 @@ type ThreadRouteScreenRouteProps = StaticScreenProps<{
 interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
   readonly inspectorPresentation?: ThreadInspectorPresentation;
   readonly onReturnToThread?: () => void;
-  readonly renderInspector?: (headerInset: number) => ReactNode;
+  readonly renderInspector?: () => ReactNode;
 }
 
 function ThreadUnavailableScreen(props: {
@@ -291,17 +281,18 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
   if (routeConnectionState !== "connected" && errorBeforeConnected !== detailError) {
     setErrorBeforeConnected(detailError);
   }
-  const withInspectorHeader = (content: ReactNode) => (
-    <>
-      {props.inspectorPresentation ? (
+  const withInspectorHeader = (content: ReactNode) =>
+    props.inspectorPresentation ? (
+      <InspectorHeaderShownContext value>
         <ThreadInspectorHeader
           title={selectedThread?.title ?? "Thread"}
           {...props.inspectorPresentation}
         />
-      ) : null}
-      {content}
-    </>
-  );
+        {content}
+      </InspectorHeaderShownContext>
+    ) : (
+      content
+    );
 
   if (environmentId === null || threadIdRaw === null) {
     return withInspectorHeader(<OpeningThreadLoadingScreen />);
@@ -366,9 +357,7 @@ function ThreadRouteContent(
     readonly selectedThreadDetailState: ReturnType<typeof useSelectedThreadDetailState>;
   },
 ) {
-  const { themeVariables } = useAppearancePreferences();
-  const headerColor = themeVariables["--color-header"];
-  const { fileInspector, layout, panes, showAuxiliaryPane, toggleAuxiliaryPane } =
+  const { fileInspector, layout, panes, showInspector, toggleAuxiliaryPane } =
     useAdaptiveWorkspaceLayout();
   const { connectionState } = useRemoteConnectionStatus();
   const { onReconnectEnvironment } = useRemoteConnections();
@@ -395,7 +384,8 @@ function ThreadRouteContent(
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const composer = useThreadComposerState();
+  const startSideChat = useStartSideChat();
+  const composer = useThreadComposerState({ startSideChat });
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
@@ -502,27 +492,7 @@ function ThreadRouteContent(
           : chosenInspectorMode;
     return mode === "files" && selectedThreadCwd === null ? null : mode;
   })();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the workspace navigator's auxiliary pane when the thread has no cwd for the file inspector
-  useEffect(() => {
-    if (
-      props.inspectorPresentation === undefined &&
-      fileInspector.supported &&
-      selectedThreadCwd === null &&
-      inspectorMode === null &&
-      panes.auxiliaryPaneVisible
-    ) {
-      toggleAuxiliaryPane();
-    }
-  }, [
-    fileInspector.supported,
-    inspectorMode,
-    panes.auxiliaryPaneVisible,
-    props.inspectorPresentation,
-    selectedThreadCwd,
-    toggleAuxiliaryPane,
-  ]);
-
-  const revealPreview = useEffectEvent(() => showAuxiliaryPane("inspector"));
+  const revealPreview = useEffectEvent(() => showInspector());
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the workspace navigator's inspector pane when route params bring a preview target
   useEffect(() => {
     if (previewTarget) revealPreview();
@@ -591,34 +561,17 @@ function ThreadRouteContent(
   const gitActionProgress = useGitActionProgress(gitActionProgressTarget);
 
   const handleOpenGitInspector = () => {
-    if (!fileInspector.supported) {
-      if (selectedThread === null) {
-        return;
-      }
-      navigation.navigate("GitOverview", {
-        environmentId: String(selectedThread.environmentId),
-        threadId: String(selectedThread.id),
-      });
-      return;
-    }
     navigation.setParams({ inspector: undefined });
     setChosenInspectorMode("git");
-    showAuxiliaryPane("inspector");
+    showInspector();
   };
   const handleOpenFilesInspector = () => {
     if (selectedThread === null || selectedThreadCwd === null) {
       return;
     }
-    if (!fileInspector.supported) {
-      navigation.navigate("ThreadFiles", {
-        environmentId: String(selectedThread.environmentId),
-        threadId: String(selectedThread.id),
-      });
-      return;
-    }
     navigation.setParams({ inspector: undefined });
     setChosenInspectorMode(props.renderInspector === undefined ? "files" : "route");
-    showAuxiliaryPane("inspector");
+    showInspector();
   };
   const handleToggleInspector = () => {
     if (inspectorMode === null) {
@@ -636,33 +589,32 @@ function ThreadRouteContent(
       threadId: String(selectedThread.id),
       path: path.split("/").filter((segment) => segment.length > 0),
     };
-    if (fileInspector.supported) {
-      navigation.navigate("ThreadFile", params);
-      return;
-    }
     navigation.navigate("ThreadFile", params);
   };
-  const safeAreaInsets = useSafeAreaInsets();
-  const inspectorHeaderInset = Platform.OS === "ios" ? 0 : safeAreaInsets.top;
   const renderGitInspector = () => (
     <GitOverviewSheet
-      headerInset={inspectorHeaderInset}
       presentation="inspector"
       route={{ params: { environmentId: environmentId!, threadId: threadId! } }}
     />
   );
   const renderFilesInspector = () =>
     selectedThread !== null && selectedThreadCwd !== null ? (
-      <ThreadFileNavigatorPane
-        cwd={selectedThreadCwd}
-        environmentId={selectedThread.environmentId}
-        headerInset={inspectorHeaderInset}
-        projectName={selectedThreadProject?.title ?? "Files"}
-        selectedPath={null}
-        onSelectFile={handleSelectInspectorFile}
-      />
+      <InspectorSheetContext.Consumer>
+        {(closeInspectorSheet) => (
+          <ThreadFileNavigatorPane
+            cwd={selectedThreadCwd}
+            environmentId={selectedThread.environmentId}
+            projectName={selectedThreadProject?.title ?? "Files"}
+            selectedPath={null}
+            onSelectFile={(path) =>
+              closeInspectorSheet
+                ? closeInspectorSheet(() => handleSelectInspectorFile(path))
+                : handleSelectInspectorFile(path)
+            }
+          />
+        )}
+      </InspectorSheetContext.Consumer>
     ) : null;
-  const renderRouteInspector = () => props.renderInspector?.(inspectorHeaderInset);
   const renderPreviewInspector = () =>
     previewTarget && panes.auxiliaryPaneVisible ? (
       <ThreadInspectorPreview
@@ -682,20 +634,26 @@ function ThreadRouteContent(
         }}
       />
     ) : null;
-  const renderInspectorStack = () =>
-    inspectorMode === null ? null : (
-      <ThreadInspectorContentStack
-        renderPreview={renderPreviewInspector}
-        renderFiles={renderFilesInspector}
-        renderGit={renderGitInspector}
-        mode={inspectorMode}
-        resetKeys={[routeThreadIdentity, selectedThreadCwd]}
-        renderRoute={props.renderInspector ? renderRouteInspector : undefined}
-      />
-    );
-  const activeInspectorRenderer =
-    props.inspectorPresentation || inspectorMode === null ? undefined : renderInspectorStack;
-  useRegisterWorkspaceInspector(activeInspectorRenderer);
+  const inspectorContent: InspectorContent | null =
+    inspectorMode === null
+      ? null
+      : {
+          active: inspectorMode,
+          resetKeys: [routeThreadIdentity, selectedThreadCwd],
+          panes: [
+            ...(inspectorMode === "preview"
+              ? [
+                  {
+                    key: "preview",
+                    render: renderPreviewInspector,
+                  },
+                ]
+              : []),
+            { key: "files", render: renderFilesInspector, prewarm: true },
+            { key: "git", render: renderGitInspector, prewarm: true },
+            ...(props.renderInspector ? [{ key: "route", render: props.renderInspector }] : []),
+          ],
+        };
 
   const handleOpenConnectionEditor = () => {
     void navigation.navigate("Connections");
@@ -824,6 +782,7 @@ function ThreadRouteContent(
         worktreePath: preferredWorktreePath,
         env,
         initialInput: projectScriptTerminalInput(script.command),
+        stopOnSettle: script.stopOnSettle ?? false,
       },
     });
 
@@ -836,16 +795,8 @@ function ThreadRouteContent(
   const threadGitControlProps = {
     environmentId: environmentIdRaw ?? "",
     threadId: threadId ?? "",
-    auxiliaryPaneControl:
-      !layout.usesSplitView && fileInspector.supported && selectedThreadCwd !== null
-        ? {
-            accessibilityLabel: "Toggle inspector",
-            onPress: handleToggleInspector,
-          }
-        : undefined,
-    onOpenFilesInspector:
-      fileInspector.supported && selectedThreadCwd !== null ? handleOpenFilesInspector : undefined,
-    onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
+    onOpenFilesInspector: selectedThreadCwd !== null ? handleOpenFilesInspector : undefined,
+    onOpenGitInspector: handleOpenGitInspector,
     onMergeBack:
       mergeBackTargetThreadId !== null && mergeBackRun !== null
         ? () => void handleMergeBack()
@@ -864,7 +815,6 @@ function ThreadRouteContent(
         )
       : [],
     terminalSessions: terminalMenuSessions,
-    showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,
     onOpenNewTerminal: handleOpenNewTerminal,
     onRunProjectScript: handleRunProjectScript,
@@ -1028,15 +978,11 @@ function ThreadRouteContent(
               <ThreadHeader
                 title={selectedThread.title}
                 subtitle={headerSubtitle}
-                headerColor={headerColor}
-                usesNativeHeaderGlass={usesNativeHeaderGlass}
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
-                hasWorkspaceRoot={Boolean(selectedThreadProject?.workspaceRoot)}
                 fileInspectorSupported={fileInspector.supported}
                 inspectorMode={inspectorMode}
                 onToggleInspector={handleToggleInspector}
-                onOpenGitInspector={handleOpenGitInspector}
                 onOpenFilesInspector={handleOpenFilesInspector}
                 onReturnToThread={props.onReturnToThread}
               />
@@ -1062,6 +1008,7 @@ function ThreadRouteContent(
           }
           isCompacting={composer.isCompacting}
           runlessWorkActive={composer.runlessWorkActive}
+          extensionStatuses={composer.extensionStatuses}
           providerSubagentStatus={composer.providerSubagentStatus}
           creationState={creationState}
           setupWorkingStartedAt={
@@ -1129,6 +1076,7 @@ function ThreadRouteContent(
             composer.queueHeld || composer.resumableRunId !== null ? handleResumeQueue : null
           }
           onSendMessage={composer.onSendMessage}
+          offersSideChat={composer.sideChatUnavailableReason === null}
           onReconnectEnvironment={handleReconnectEnvironment}
           canSwitchThreadProvider={composer.canSwitchThreadProvider}
           onUpdateThreadInteractionMode={composer.onUpdateInteractionMode}
@@ -1144,7 +1092,17 @@ function ThreadRouteContent(
 
   return (
     <>
-      {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
+      {!props.inspectorPresentation && inspectorContent ? (
+        <Inspector
+          // A route's own inspector (files) opens once per thread; going back keeps the user's choice.
+          revealKey={
+            props.renderInspector !== undefined && selectedThreadCwd !== null
+              ? (routeThreadIdentity ?? undefined)
+              : undefined
+          }
+          content={inspectorContent}
+        />
+      ) : null}
 
       {renderThreadRouteBody()}
     </>

@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFSP from "node:fs/promises";
@@ -117,7 +119,7 @@ const makeJunieMockCli = async () => {
   return wrapperPath;
 };
 
-it.layer(NodeServices.layer)("checkJunieProviderStatus", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("checkJunieProviderStatus", (it) => {
   it.effect("discovers models from a successful handshake", () =>
     Effect.gen(function* () {
       const binaryPath = yield* Effect.promise(makeJunieMockCli);

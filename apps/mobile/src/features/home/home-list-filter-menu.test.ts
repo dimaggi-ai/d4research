@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { buildHomeListFilterMenu } from "./home-list-filter-menu";
+import { buildHomeListFilterMenuItems } from "./home-list-filter-menu";
 
-describe("buildHomeListFilterMenu", () => {
+describe("buildHomeListFilterMenuItems", () => {
   it("adds a project scope submenu that selects and clears the same scope as the chips", () => {
     const onProjectChange = vi.fn();
-    const menu = buildHomeListFilterMenu({
+    const menu = buildHomeListFilterMenuItems({
       environments: [],
       projects: [
         { key: "environment-1:project-1", label: "Codething" },
@@ -17,22 +17,21 @@ describe("buildHomeListFilterMenu", () => {
       onProjectChange,
     });
 
-    const projectMenu = menu.items.find(
-      (item) => item.type === "submenu" && item.title === "Project",
-    );
-    expect(menu.items.some((item) => item.title === "Settings")).toBe(false);
+    const projectMenu = menu.find((item) => item.id === "project");
+    expect(menu.some((item) => item.title === "Settings")).toBe(false);
     expect(projectMenu).toMatchObject({
-      type: "submenu",
       items: [
-        { title: "All projects", state: "off" },
-        { title: "Codething", state: "on" },
-        { title: "Website", state: "off" },
+        { title: "All projects", selected: false },
+        { title: "Codething", selected: true },
+        { title: "Website", selected: false },
       ],
     });
-    if (projectMenu?.type !== "submenu") throw new Error("Expected project submenu");
+    if (!projectMenu || !("items" in projectMenu)) throw new Error("Expected project submenu");
 
-    projectMenu.items[0]?.onPress();
-    projectMenu.items[2]?.onPress();
+    const clear = projectMenu.items[0];
+    if (clear && "onPress" in clear) clear.onPress();
+    const select = projectMenu.items[2];
+    if (select && "onPress" in select) select.onPress();
     expect(onProjectChange).toHaveBeenNthCalledWith(1, null);
     expect(onProjectChange).toHaveBeenNthCalledWith(2, "environment-1:project-2");
   });

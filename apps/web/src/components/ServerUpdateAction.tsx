@@ -199,7 +199,7 @@ export function useServerUpdate() {
           ? `Reconnected on this app's bundled server ${targetVersion}.`
           : selfUpdate === "desktop-managed"
             ? `Desktop app relaunched on ${targetVersion}.`
-            : `Reconnected on t3@${targetVersion}.`,
+            : `Reconnected on d4research@${targetVersion}.`,
       });
     }
     return { status: "updated" };
@@ -504,7 +504,7 @@ export function OutdatedServerUpdateAction({
     toastManager.add({
       type: "success",
       title: `${serverLabel} updated`,
-      description: `Reconnected on t3@${targetVersion}.`,
+      description: `Reconnected on d4research@${targetVersion}.`,
     });
   };
   if (fromVersion !== undefined && crossesReleaseTrack(fromVersion, targetVersion)) {

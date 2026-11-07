@@ -1,5 +1,6 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
 import {
@@ -22,9 +23,10 @@ type SourceHighlighter = (input: SourceHighlightInput) => Promise<SourceHighligh
 
 class SourceHighlightCacheKey extends Data.Class<SourceHighlightInput> {}
 
-class SourceHighlightError extends Data.TaggedError("SourceHighlightError")<{
-  readonly cause: unknown;
-}> {}
+class SourceHighlightError extends Schema.TaggedError<
+  SourceHighlightError,
+  { readonly brand: unique symbol }
+>()("SourceHighlightError", { cause: Schema.Defect() }) {}
 
 export function createSourceHighlightAtomFamily(options?: {
   readonly highlight?: SourceHighlighter;

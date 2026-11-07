@@ -5,6 +5,7 @@ import {
 import { isOrchestrationV2WorkActive } from "@d4research/contracts";
 import { ArrowUpLeftIcon } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { Button } from "../ui/button";
@@ -17,6 +18,7 @@ export function ProviderSubagentBar(props: {
   readonly effortLabel: string | null;
   readonly status: ProviderSubagentStatus | null;
   readonly onOpenParent: (() => void) | null;
+  readonly actions?: ReactNode;
 }) {
   const statusRef = useRef<HTMLSpanElement>(null);
   const { status } = props;
@@ -73,6 +75,7 @@ export function ProviderSubagentBar(props: {
         {`${modelDescription} subagent: ${announcement}`}
       </span>
       <span className="ms-auto shrink-0 text-muted-foreground max-sm:hidden">Runs on its own</span>
+      {props.actions}
       {props.onOpenParent ? (
         <Button size="sm" variant="ghost" onClick={props.onOpenParent}>
           <ArrowUpLeftIcon />

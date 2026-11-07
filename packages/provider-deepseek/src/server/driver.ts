@@ -37,6 +37,7 @@ const textGeneration: ProviderTextGeneration = {
   generateBranchName: unavailableText,
   generateThreadTitle: unavailableText,
   generateReviewGuide: unavailableText,
+  generateTranscriptionPostProcessing: unavailableText,
 };
 export const DeepSeekDriver: ProviderDriver<DeepSeekSettings, DeepSeekDriverEnv> = {
   driverKind: DRIVER,

@@ -7,8 +7,8 @@ import { beforeAll, describe, expect, it } from "vite-plus/test";
 
 interface CompiledStyle {
   native: boolean;
-  minWidth: number;
-  maxWidth: number;
+  matchesNarrow: boolean;
+  matchesWide: boolean;
   active: boolean | null;
   focus: boolean | null;
   disabled: boolean | null;
@@ -129,7 +129,8 @@ describe("uniwind platform variants compile per platform", () => {
     for (const platform of ["ios", "android"]) {
       for (const className of RESPONSIVE_CLASSES) {
         const style = output.platforms[platform]?.styles[className]?.at(-1);
-        expect(style?.minWidth, `${className} lost its breakpoint`).toBeGreaterThan(0);
+        expect(style?.matchesNarrow, `${className} lost its breakpoint`).toBe(false);
+        expect(style?.matchesWide, `${className} never matches its breakpoint`).toBe(true);
       }
     }
   });
@@ -174,8 +175,12 @@ describe("uniwind keeps media rules nested inside class rules attached to the cl
     for (const platform of ["ios", "android"]) {
       const entries = nested.platforms[platform]?.styles["container-x"];
       expect(entries, `${platform} lacks container-x`).toBeDefined();
-      expect(entries?.some((style) => !style.native && style.minWidth === 0)).toBe(true);
-      expect(entries?.some((style) => !style.native && style.minWidth > 0)).toBe(true);
+      expect(
+        entries?.some((style) => !style.native && style.matchesNarrow && style.matchesWide),
+      ).toBe(true);
+      expect(
+        entries?.some((style) => !style.native && !style.matchesNarrow && style.matchesWide),
+      ).toBe(true);
     }
   });
 

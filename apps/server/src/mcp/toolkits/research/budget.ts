@@ -63,7 +63,7 @@ export const ResearchDelegationBudgetLive = Layer.effect(
   Effect.gen(function* () {
     const state = yield* Ref.make(new Map<string, RunBudgetState>());
     return {
-      charge: ({ runId, step, target, inherited }) =>
+      charge: Effect.fn("ResearchDelegationBudget.charge")(({ runId, step, target, inherited }) =>
         Effect.gen(function* () {
           const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
           return yield* Ref.modify(
@@ -133,6 +133,7 @@ export const ResearchDelegationBudgetLive = Layer.effect(
             },
           );
         }),
+      ),
     };
   }),
 );

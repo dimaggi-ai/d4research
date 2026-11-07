@@ -1,17 +1,13 @@
-import { ClaudeSettings } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import * as Cause from "effect/Cause";
 import * as Result from "effect/Result";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import * as Deferred from "effect/Deferred";
-import { probeClaudeCapabilities } from "./ClaudeProvider.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- SDK fixture modules create isolated account transcripts.
 import * as NodeFSP from "node:fs/promises";
 import { COMPACT_SLASH_COMMAND } from "@d4research/provider-core/server/snapshotProbe";
-import { probeClaudeWorkspaceSnapshot } from "./ClaudeProvider.ts";
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
-import { type ServerProvider } from "@d4research/contracts";
 import { ProviderDriverKind } from "@d4research/contracts";
 import { ProviderInstanceId } from "@d4research/contracts";
 import * as Path from "effect/Path";
@@ -20,10 +16,16 @@ import * as Effect from "effect/Effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 // @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
 
+import { ClaudeSettings, type ServerProvider } from "@d4research/contracts";
 import { vi } from "vite-plus/test";
 import { assert, it } from "@effect/vitest";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
-import { buildClaudeCapabilitiesProbeQueryOptions } from "./ClaudeProvider.ts";
+import {
+  buildClaudeCapabilitiesProbeQueryOptions,
+  probeClaudeCapabilities,
+  probeClaudeWorkspaceSnapshot,
+} from "./ClaudeProvider.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
 
@@ -178,7 +180,10 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           }) as ReturnType<typeof ClaudeSdk.query>,
       );
       yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
-      const settings = decodeClaudeSettings({ homePath: cwd });
+      const settings = decodeClaudeSettings({
+        homePath: cwd,
+        configDir: path.join(cwd, "user-config"),
+      });
       const failed = yield* probeClaudeWorkspaceSnapshot(settings, machineSnapshot, cwd);
       assert.deepEqual(failed, {
         ...machineSnapshot,
@@ -403,4 +408,46 @@ it.effect("reports a deleted worktree's scan as finished, not pending", () =>
     );
     assert.strictEqual(snapshot.slashCommandsPending, false);
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("keeps the probe subprocess alive while gateway model discovery can finish", () =>
+  Effect.gen(function* () {
+    let abortSignal: AbortSignal | undefined;
+    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
+      abortSignal = options?.abortController?.signal;
+      return {
+        initializationResult: async () => ({
+          account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },
+          commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],
+          models: [{ value: "gateway/claude-relay", displayName: "Relay", description: "" }],
+        }),
+        usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
+          new Promise((_, reject) => reject(new Error("usage unavailable"))),
+      } as ReturnType<typeof ClaudeSdk.query>;
+    });
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const fileSystem = yield* FileSystem.FileSystem;
+    const configDir = yield* fileSystem.makeTempDirectoryScoped();
+    // Claude Code also reads these from settings.json, which is where gateway users set them.
+    yield* fileSystem.writeFileString(
+      `${configDir}/settings.json`,
+      JSON.stringify({
+        env: {
+          ANTHROPIC_BASE_URL: "https://gateway.example",
+          CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
+        },
+      }),
+    );
+    const capabilities = yield* probeClaudeCapabilities(
+      decodeClaudeSettings({ binaryPath: "claude" }),
+      { PATH: (yield* HostProcess.Environment).PATH, CLAUDE_CONFIG_DIR: configDir },
+    );
+    assert.deepEqual(
+      capabilities.models?.map((model) => model.value),
+      ["gateway/claude-relay"],
+    );
+    assert.equal(abortSignal?.aborted, false);
+    yield* TestClock.adjust("3 seconds");
+    assert.equal(abortSignal?.aborted, true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

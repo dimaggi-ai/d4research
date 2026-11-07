@@ -109,3 +109,22 @@ it.each(["prod", ""])("rejects APP_VARIANT=%j before selecting production IDs", 
     "APP_VARIANT must be development, preview, or production.",
   );
 });
+
+it.each([
+  [undefined, "ai.dimaggi.d4research"],
+  ["development", "ai.dimaggi.d4research.dev"],
+  ["preview", "ai.dimaggi.d4research.preview"],
+  ["production", "ai.dimaggi.d4research"],
+])("keeps the iOS and Android identifiers for APP_VARIANT=%j", async (value, identifier) => {
+  vi.stubEnv("APP_VARIANT", value);
+  vi.stubEnv("T3CODE_IOS_BUNDLE_ID", "");
+  vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM", "");
+  const config = await loadConfig();
+  expect(config.ios?.bundleIdentifier).toBe(identifier);
+  expect(config.android?.package).toBe(identifier);
+  const host = "app.t3.codes";
+  expect(config.ios?.associatedDomains).toContain(`applinks:${host}`);
+  expect(config.android?.intentFilters?.[0]?.data).toEqual([
+    { scheme: "https", host, pathPrefix: "/threads/" },
+  ]);
+});

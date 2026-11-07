@@ -248,7 +248,10 @@ export const layer = Layer.effect(
       ),
     );
     const disk = (id: "root-disk" | "data-disk", location: string, threshold: number) =>
-      Effect.tryPromise(() => NodeFSP.statfs(location)).pipe(
+      Effect.tryPromise({
+        try: () => NodeFSP.statfs(location),
+        catch: (cause) => new DoctorReadError({ cause }),
+      }).pipe(
         Effect.timeout("3 seconds"),
         Effect.map((stat) => diskCheck(id, stat.blocks, stat.bavail, threshold)),
         Effect.catch(() => Effect.succeed(unavailable(id))),
@@ -273,7 +276,7 @@ export const layer = Layer.effect(
       ),
     );
     return SystemProbe.of({
-      check: (threshold) =>
+      check: Effect.fn("SystemProbe.check")((threshold) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
@@ -296,6 +299,7 @@ export const layer = Layer.effect(
             return checks;
           }),
         ),
+      ),
     });
   }),
 );

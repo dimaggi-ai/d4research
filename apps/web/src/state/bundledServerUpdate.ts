@@ -11,10 +11,10 @@ import {
   type ServerUpdateStage,
 } from "@d4research/client-runtime/state/server";
 import * as Cause from "effect/Cause";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { useBundledServerRuntime } from "./desktopUpdate";
@@ -31,9 +31,21 @@ export function useResolveBundledServerUpdate() {
     );
 }
 
-class BundledServerReconnectError extends Data.TaggedError("BundledServerReconnectError")<{}> {
+class BundledServerReconnectError extends Schema.TaggedError<BundledServerReconnectError>()(
+  "BundledServerReconnectError",
+  {},
+) {
   override get message() {
     return "The updated server did not reconnect.";
+  }
+}
+
+class BundledServerUploadError extends Schema.TaggedError<BundledServerUploadError>()(
+  "BundledServerUploadError",
+  { cause: Schema.Defect() },
+) {
+  override get message() {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause);
   }
 }
 
@@ -54,10 +66,13 @@ export const updateBundledServer = createRuntimeCommand(connectionAtomRuntime, {
     let stage: ServerUpdateStage = "installing";
     return Effect.gen(function* () {
       registry.set(atom, { status: "running", stage: "installing", ...state });
-      const result = yield* Effect.tryPromise(() => {
-        const update = window.desktopBridge?.updateBundledSshServer;
-        if (!update) throw new Error("This desktop app cannot upload its server runtime.");
-        return update(target);
+      const result = yield* Effect.tryPromise({
+        try: () => {
+          const update = window.desktopBridge?.updateBundledSshServer;
+          if (!update) throw new Error("This desktop app cannot upload its server runtime.");
+          return update(target);
+        },
+        catch: (cause) => new BundledServerUploadError({ cause }),
       });
       stage = "resuming";
       registry.set(atom, { status: "running", stage, ...state });

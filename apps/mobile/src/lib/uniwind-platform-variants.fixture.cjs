@@ -100,17 +100,20 @@ async function main() {
     const payload = compileNativeCSS(bundlerConfig, tailwindCSS);
     const styles = {};
     for (const [className, entries] of Object.entries(compiled)) {
-      styles[className] = entries.map(
-        ({ native, minWidth, maxWidth, active, focus, disabled, dataAttributes }) => ({
-          native,
-          minWidth,
-          maxWidth,
-          active: active ?? null,
-          focus: focus ?? null,
-          disabled: disabled ?? null,
-          dataAttributes: dataAttributes ?? null,
-        }),
-      );
+      styles[className] = entries.map(({ index, matches }) => {
+        const meta = processor.stylesheets[className][index].meta;
+        const match = new Function(`return (${matches})`)();
+        const atWidth = (width) => match({ screen: { width, height: 1000 } }, {}, {}, {}, {});
+        return {
+          native: meta.platform !== null,
+          matchesNarrow: atWidth(0),
+          matchesWide: atWidth(10000),
+          active: meta.active ?? null,
+          focus: meta.focus ?? null,
+          disabled: meta.disabled ?? null,
+          dataAttributes: meta.dataAttributes ?? null,
+        };
+      });
     }
     platforms[platform] = {
       styles,

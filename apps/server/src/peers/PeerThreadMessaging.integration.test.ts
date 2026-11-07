@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -100,7 +101,7 @@ const api = OrchestratorMcpService.layer.pipe(
         Effect.succeedSome({ id: projectId, defaultModelSelection: modelSelection } as never),
     }),
   ),
-  Layer.provide(NodeServices.layer),
+  Layer.provide([NodeServices.layer, NodeCrypto.layer]),
 );
 // Both machines use an isolated in-memory event store. Only the transport is simulated;
 // sends, receipts, projections, watches and wakes use the production implementations.

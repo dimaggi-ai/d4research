@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { afterEach, beforeEach, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -32,7 +32,13 @@ const environmentFor = (
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
 const commandIn = (
-  input: { home: string; baseDir?: string; platform?: NodeJS.Platform; isPackaged?: boolean },
+  input: {
+    home: string;
+    baseDir?: string;
+    platform?: NodeJS.Platform;
+    isPackaged?: boolean;
+    env?: NodeJS.ProcessEnv;
+  },
   spawner?: ChildProcessSpawner.ChildProcessSpawner["Service"],
 ) =>
   Effect.gen(function* () {
@@ -45,6 +51,7 @@ const commandIn = (
         DesktopEnvironment.DesktopEnvironment,
         environmentFor(path, { ...input, baseDir }),
       ),
+      Effect.provideService(HostProcess.Environment, input.env ?? { PATH: "" }),
     );
     return yield* spawner
       ? make.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
@@ -87,15 +94,6 @@ const fakePowerShell = (initial: string) => {
   return { registry, spawner };
 };
 
-// The machine's own PATH may already hold a d4research; each test sets the PATH it means.
-const machinePath = process.env.PATH;
-beforeEach(() => {
-  process.env.PATH = "";
-});
-afterEach(() => {
-  process.env.PATH = machinePath;
-});
-
 it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
   it.effect("links the launcher onto PATH and removes only that link", () =>
     Effect.gen(function* () {
@@ -113,8 +111,8 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       });
       const installed = yield* command.install;
       expect(installed.installedPath).toBe(link);
-      expect(installed.launcherPath).toBe(path.join(home, ".t3", "bin", "t3"));
-      expect(yield* fs.readLink(link)).toBe(path.join(home, ".t3", "bin", "t3"));
+      expect(installed.launcherPath).toBe(path.join(home, ".t3", "bin", "d4research"));
+      expect(yield* fs.readLink(link)).toBe(path.join(home, ".t3", "bin", "d4research"));
       expect((yield* command.install).installedPath).toBe(link);
 
       expect((yield* command.uninstall).installedPath).toBeNull();
@@ -133,8 +131,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const upstream = path.join(bin, "t3");
       yield* fs.makeDirectory(bin, { recursive: true });
       yield* fs.writeFileString(upstream, "#!/bin/sh\n", { mode: 0o755 });
-      process.env.PATH = bin;
-      const command = yield* commandIn({ home });
+      const command = yield* commandIn({ home, env: { PATH: bin } });
 
       expect(yield* command.install).toMatchObject({
         installedPath: path.join(bin, "d4research"),
@@ -152,7 +149,8 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
-      const command = yield* commandIn({ home });
+      const env: NodeJS.ProcessEnv = { PATH: "" };
+      const command = yield* commandIn({ home, env });
       const theirs = path.join(home, ".local", "bin", "d4research");
       yield* fs.makeDirectory(path.dirname(theirs), { recursive: true });
       yield* fs.writeFileString(theirs, "npm's d4research\n");
@@ -163,16 +161,16 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const error = yield* Effect.flip(command.install);
       expect(error.message).toContain("Another d4research command is already installed");
       yield* command.uninstall;
-      expect(yield* fs.readFileString(theirs)).toBe("npm's t3\n");
-      expect(yield* fs.readLink(path.join(home, "bin", "t3"))).toBe(path.join(home, "gone"));
+      expect(yield* fs.readFileString(theirs)).toBe("npm's d4research\n");
+      expect(yield* fs.readLink(path.join(home, "bin", "d4research"))).toBe(path.join(home, "gone"));
 
-      const launcher = path.join(home, ".t3", "bin", "t3");
-      yield* fs.writeFileString(launcher, "npm's t3\n");
-      process.env.PATH = path.dirname(launcher);
+      const launcher = path.join(home, ".t3", "bin", "d4research");
+      yield* fs.writeFileString(launcher, "npm's d4research\n");
+      env.PATH = path.dirname(launcher);
       expect(yield* command.state).toMatchObject({ onPath: false, shadowedBy: launcher });
       expect((yield* Effect.flip(command.install)).message).toContain("Could not set up");
       yield* command.uninstall;
-      expect(yield* fs.readFileString(launcher)).toBe("npm's t3\n");
+      expect(yield* fs.readFileString(launcher)).toBe("npm's d4research\n");
     }).pipe(Effect.scoped),
   );
 
@@ -194,7 +192,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("refuses to install behind another t3 that runs first", () =>
+  it.effect("refuses to install behind another d4research that runs first", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -202,9 +200,9 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const shadow = path.join(home, "shadow");
       yield* fs.makeDirectory(shadow);
       yield* fs.writeFileString(path.join(shadow, "d4research"), "#!/bin/sh\n", { mode: 0o755 });
-      process.env.PATH = [shadow, path.join(home, ".local", "bin")].join(":");
+      const env = { PATH: [shadow, path.join(home, ".local", "bin")].join(":") };
 
-      const command = yield* commandIn({ home });
+      const command = yield* commandIn({ home, env });
       const theirs = path.join(shadow, "d4research");
       expect((yield* command.state).shadowedBy).toBe(theirs);
       const error = yield* Effect.flip(command.install);
@@ -222,7 +220,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
   );
 
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-    "skips a t3 directory or a file this user cannot execute",
+    "skips a d4research directory or a file this user cannot execute",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -231,44 +229,44 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
         const folder = path.join(home, "folder");
         const plain = path.join(home, "plain");
         const shadow = path.join(home, "shadow");
-        yield* fs.makeDirectory(path.join(folder, "t3"), { recursive: true });
+        yield* fs.makeDirectory(path.join(folder, "d4research"), { recursive: true });
         yield* fs.makeDirectory(plain);
-        yield* fs.writeFileString(path.join(plain, "t3"), "notes\n");
+        yield* fs.writeFileString(path.join(plain, "d4research"), "notes\n");
         // Root can execute mode 0o601; other users must honor the owner permissions.
-        yield* fs.chmod(path.join(plain, "t3"), process.getuid?.() === 0 ? 0o600 : 0o601);
+        yield* fs.chmod(path.join(plain, "d4research"), process.getuid?.() === 0 ? 0o600 : 0o601);
         yield* fs.makeDirectory(shadow);
-        yield* fs.writeFileString(path.join(shadow, "t3"), "#!/bin/sh\n", { mode: 0o755 });
-        process.env.PATH = [folder, plain, shadow, path.join(home, ".local", "bin")].join(":");
+        yield* fs.writeFileString(path.join(shadow, "d4research"), "#!/bin/sh\n", { mode: 0o755 });
+        const env = { PATH: [folder, plain, shadow, path.join(home, ".local", "bin")].join(":") };
 
-        const command = yield* commandIn({ home });
-        expect((yield* command.state).shadowedBy).toBe(path.join(shadow, "t3"));
+        const command = yield* commandIn({ home, env });
+        expect((yield* command.state).shadowedBy).toBe(path.join(shadow, "d4research"));
 
         const error = yield* Effect.flip(command.install);
-        expect(error.message).toContain(path.join(shadow, "t3"));
+        expect(error.message).toContain(path.join(shadow, "d4research"));
 
         yield* fs.remove(shadow, { recursive: true });
         expect(yield* command.install).toMatchObject({
           onPath: true,
-          installedPath: path.join(home, ".local", "bin", "t3"),
+          installedPath: path.join(home, ".local", "bin", "d4research"),
         });
       }).pipe(Effect.scoped),
   );
 
-  it.effect("does not treat its own launcher as another t3 when its folder is first on PATH", () =>
+  it.effect("does not treat its own launcher as another d4research when its folder is first on PATH", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
-      const launcher = path.join(home, ".t3", "bin", "t3");
-      process.env.PATH = [path.dirname(launcher), path.join(home, ".local", "bin")].join(":");
+      const launcher = path.join(home, ".t3", "bin", "d4research");
+      const env = { PATH: [path.dirname(launcher), path.join(home, ".local", "bin")].join(":") };
 
-      const command = yield* commandIn({ home });
+      const command = yield* commandIn({ home, env });
       const installed = yield* command.install;
 
       expect(yield* fs.exists(launcher)).toBe(true);
       expect(installed).toMatchObject({
         onPath: true,
-        installedPath: path.join(home, ".local", "bin", "t3"),
+        installedPath: path.join(home, ".local", "bin", "d4research"),
       });
       expect(installed.shadowedBy).toBeUndefined();
       expect(yield* command.state).toEqual(installed);

@@ -54,6 +54,7 @@ describe("sidebar keyboard navigation", () => {
     press(last, "Home");
     expect(document.activeElement).toBe(first);
     expect(activate).not.toHaveBeenCalled();
+    expect([first.tabIndex, second.tabIndex, last.tabIndex]).toEqual([0, -1, -1]);
     expect(tree.root.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
   });
 
@@ -69,15 +70,33 @@ describe("sidebar keyboard navigation", () => {
     });
     tree.install();
     group.focus();
+    let observer: MutationObserver | undefined;
+    using _observer = { [Symbol.dispose]: () => observer?.disconnect() };
+    const childReady = new Promise<void>((resolve) => {
+      observer = new MutationObserver((records) => {
+        for (const record of records) {
+          const target = record.target;
+          if (
+            target instanceof HTMLElement &&
+            target.dataset.sidebarRow === "thread" &&
+            target.getAttribute("aria-level") === "2"
+          ) {
+            observer?.disconnect();
+            resolve();
+            return;
+          }
+        }
+      });
+      observer.observe(tree.root, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["aria-level"],
+      });
+    });
     press(group, "ArrowRight");
     expect(group.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(group);
-    // The tree picks up the new child from its mutation observer.
-    await vi.waitFor(() =>
-      expect(
-        tree.root.querySelector('[data-sidebar-parent="project"]')?.getAttribute("aria-level"),
-      ).toBe("2"),
-    );
+    await childReady;
     press(group, "ArrowRight");
     const child = document.activeElement as HTMLElement;
     expect(child.dataset.sidebarRow).toBe("thread");
@@ -191,7 +210,7 @@ describe("sidebar keyboard navigation", () => {
     expect(tree.root.scrollTop).toBe(0);
   });
 
-  it("does not pull focus back after a click outside the tree", async () => {
+  it("does not pull focus back after a click outside the rows", async () => {
     using tree = setup();
     const first = tree.row("first");
     tree.install();
@@ -199,16 +218,18 @@ describe("sidebar keyboard navigation", () => {
     text.textContent = "Chat text";
     document.body.append(text);
     using _text = { [Symbol.dispose]: () => text.remove() };
-    first.focus();
-    await userEvent.click(text);
-    expect(document.activeElement).toBe(document.body);
-    // A status change re-renders the tree while the user works elsewhere.
-    tree.row("second");
-    await vi.waitFor(() =>
-      expect(
-        tree.root.querySelector('[data-sidebar-row="second"]')?.getAttribute("aria-posinset"),
-      ).toBe("2"),
-    );
-    expect(document.activeElement).toBe(document.body);
+    const spacer = document.createElement("div");
+    spacer.textContent = "Empty list space";
+    tree.root.append(spacer);
+    for (const target of [text, spacer]) {
+      first.focus();
+      await userEvent.click(target);
+      expect(document.activeElement).toBe(document.body);
+      // A status change re-renders the list while the user works elsewhere.
+      tree.row(`second-${target.tagName}`);
+      // The list's mutation observer callback is queued ahead of this continuation.
+      await Promise.resolve();
+      expect(document.activeElement).toBe(document.body);
+    }
   });
 });

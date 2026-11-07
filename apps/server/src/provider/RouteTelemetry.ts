@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off -- d4research host integration uses Node APIs directly.
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect Crypto does not provide HMAC.
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NodeCrypto from "node:crypto";
 
@@ -94,7 +93,7 @@ const make = Effect.gen(function* () {
   const fingerprint = (kind: string, value: string) =>
     NodeCrypto.createHmac("sha256", salt).update(kind).update("\0").update(value).digest("hex");
 
-  const recordStart = (input: RouteStart) =>
+  const recordStart = Effect.fn("RouteTelemetry.recordStart")((input: RouteStart) =>
     Effect.gen(function* () {
       if (
         !isIdentifier(input.threadId) ||
@@ -123,9 +122,10 @@ const make = Effect.gen(function* () {
         ${input.startedAt}, ${input.contextTokens ?? null}, ${input.fallback ? 1 : 0}
       ) ON CONFLICT(run_hash) DO NOTHING
     `;
-    }).pipe(Effect.mapError(() => new RouteTelemetryError({ operation: "start" })));
+    }).pipe(Effect.mapError(() => new RouteTelemetryError({ operation: "start" }))),
+  );
 
-  const recordEnd = (runId: string, input: RouteEnd) =>
+  const recordEnd = Effect.fn("RouteTelemetry.recordEnd")((runId: string, input: RouteEnd) =>
     Effect.gen(function* () {
       if (
         !isIdentifier(runId) ||
@@ -147,30 +147,33 @@ const make = Effect.gen(function* () {
         failures = ${input.outcome === "failed" ? 1 : 0}
       WHERE run_hash = ${fingerprint("run", runId)} AND outcome = 'running'
     `;
-    }).pipe(Effect.mapError(() => new RouteTelemetryError({ operation: "end" })));
+    }).pipe(Effect.mapError(() => new RouteTelemetryError({ operation: "end" }))),
+  );
 
-  const recent = (instanceId: string, model: string, nowMs: number) =>
-    Effect.gen(function* () {
-      if (!isIdentifier(instanceId) || !isIdentifier(model) || !isCount(nowMs)) {
-        return yield* new RouteTelemetryError({ operation: "recent" });
-      }
-      const entries = yield* sql<{
-        readonly latency_ms: number | null;
-        readonly outcome: RouteOutcome;
-        readonly timeout: number;
-      }>`
+  const recent = Effect.fn("RouteTelemetry.recent")(
+    (instanceId: string, model: string, nowMs: number) =>
+      Effect.gen(function* () {
+        if (!isIdentifier(instanceId) || !isIdentifier(model) || !isCount(nowMs)) {
+          return yield* new RouteTelemetryError({ operation: "recent" });
+        }
+        const entries = yield* sql<{
+          readonly latency_ms: number | null;
+          readonly outcome: RouteOutcome;
+          readonly timeout: number;
+        }>`
       SELECT latency_ms, outcome, timeout FROM provider_route_telemetry
       WHERE instance_hash = ${fingerprint("instance", instanceId)}
         AND model_hash = ${fingerprint("model", model)} AND outcome != 'running'
         AND ended_at >= ${Math.max(0, nowMs - 3600000)} AND ended_at <= ${nowMs}
       ORDER BY ended_at DESC, sequence DESC LIMIT 20
     `;
-      return entries.map((entry) => ({
-        latencyMs: entry.latency_ms,
-        outcome: entry.outcome,
-        timeout: entry.timeout === 1,
-      }));
-    }).pipe(Effect.mapError(() => new RouteTelemetryError({ operation: "recent" })));
+        return entries.map((entry) => ({
+          latencyMs: entry.latency_ms,
+          outcome: entry.outcome,
+          timeout: entry.timeout === 1,
+        }));
+      }).pipe(Effect.mapError(() => new RouteTelemetryError({ operation: "recent" }))),
+  );
 
   return RouteTelemetry.of({ recordStart, recordEnd, recent });
 });

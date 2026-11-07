@@ -5,14 +5,15 @@ import {
   OrchestrationV2StoredEvent,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2Run,
-  type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type ModelSelection,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
-  type RuntimeMode,
+  type OrchestrationV2ProviderTurn,
+  type OrchestrationV2RunAttempt,
   type ProviderInteractionMode,
+  type RuntimeMode,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -31,7 +32,7 @@ import * as SqlError from "effect/sql/SqlError";
 
 import { AgentScope } from "@d4research/shared/AgentScope";
 import { isTemporaryWorktreeBranch } from "@d4research/shared/git";
-import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@d4research/shared/model";
+import { modelSelectionsEqual } from "@d4research/shared/model";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as EventSink from "./EventSink.ts";
@@ -84,13 +85,7 @@ export const ProviderEventIngestorV2Error = Schema.Union([
 ]);
 export type ProviderEventIngestorV2Error = typeof ProviderEventIngestorV2Error.Type;
 
-export interface ProviderTurnAnalyticsContext {
-  readonly modelSelection: ModelSelection;
-  readonly runtimeMode?: RuntimeMode;
-  readonly interactionMode?: ProviderInteractionMode;
-  readonly origin?: ProviderTurnOrigin;
-}
-
+// Optional local observation only; the fork has no hosted telemetry layer.
 /**
  * Where the run's starting message came from. Most turns start without a
  * person (provider continuations, agent sends, delegated subagents), so
@@ -103,54 +98,51 @@ export interface ProviderTurnOrigin {
   readonly subagent: boolean;
 }
 
-export class ProviderTurnAnalytics extends Context.Reference<{
-  readonly record: (properties: Readonly<Record<string, unknown>>) => Effect.Effect<void>;
-}>("d4research/orchestration-v2/ProviderTurnAnalytics", {
-  defaultValue: () => ({ record: () => Effect.void }),
-}) {}
+/** What started this provider turn inside its run. */
+export type ProviderTurnSegment =
+  | OrchestrationV2RunAttempt["reason"]
+  | "continuation"
+  | "native_child";
 
-function providerTurnAnalyticsProperties(input: {
-  readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
+export interface ProviderTurnAnalyticsContext {
+  readonly runId?: RunId;
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode?: RuntimeMode;
+  readonly interactionMode?: ProviderInteractionMode;
+  readonly origin?: ProviderTurnOrigin;
+  readonly segment?: ProviderTurnSegment;
+  readonly restartContinuation?: boolean;
+}
+
+export interface ProviderTurnReport {
+  readonly driver: string;
   readonly providerTurn: OrchestrationV2ProviderTurn;
   readonly context?: ProviderTurnAnalyticsContext;
-}): Readonly<Record<string, unknown>> {
-  const usage = input.providerTurn.turnTokenUsage;
-  const modelSelection = input.context?.modelSelection;
-  const effort = modelSelection
-    ? (getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
-      getModelSelectionStringOptionValue(modelSelection, "effort"))
-    : undefined;
-  return {
-    provider: input.driver,
-    terminalStatus: input.providerTurn.status,
-    usageStatus: usage?.usageStatus ?? "unavailable",
-    usageScope: usage?.usageScope ?? "main_agent",
-    ...(usage ? { hasSubagents: usage.hasSubagents } : {}),
-    ...(usage?.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens }),
-    ...(usage?.cachedInputTokens === undefined
-      ? {}
-      : { cachedInputTokens: usage.cachedInputTokens }),
-    ...(usage?.cacheCreationTokens === undefined
-      ? {}
-      : { cacheCreationTokens: usage.cacheCreationTokens }),
-    ...(usage?.outputTokens === undefined ? {} : { outputTokens: usage.outputTokens }),
-    ...(usage?.reasoningTokens === undefined ? {} : { reasoningTokens: usage.reasoningTokens }),
-    ...(modelSelection ? { model: modelSelection.model, mixedModels: false } : {}),
-    ...(effort ? { effort } : {}),
-    ...(input.context?.runtimeMode ? { runtimeMode: input.context.runtimeMode } : {}),
-    ...(input.context?.interactionMode ? { interactionMode: input.context.interactionMode } : {}),
-    ...input.context?.origin,
-    ...(input.providerTurn.startedAt && input.providerTurn.completedAt
-      ? {
-          durationMs: Math.max(
-            0,
-            DateTime.toEpochMillis(input.providerTurn.completedAt) -
-              DateTime.toEpochMillis(input.providerTurn.startedAt),
-          ),
-        }
-      : {}),
-  };
 }
+
+export interface RunSettledReport {
+  readonly runId: RunId;
+  readonly status: OrchestrationV2ProviderTurn["status"];
+  readonly completedAt: DateTime.Utc;
+  // Run-owned children were still open when the run settled; their later turns are not added.
+  readonly childrenRunning: boolean;
+}
+
+export class ProviderTurnAnalytics extends Context.Reference<{
+  readonly runStarted: (input: {
+    readonly runId: RunId;
+    readonly driver: string;
+    readonly context: ProviderTurnAnalyticsContext;
+  }) => Effect.Effect<void>;
+  readonly turnCompleted: (report: ProviderTurnReport) => Effect.Effect<void>;
+  readonly runSettled: (report: RunSettledReport) => Effect.Effect<void>;
+}>("d4research/orchestration-v2/ProviderTurnAnalytics", {
+  defaultValue: () => ({
+    runStarted: () => Effect.void,
+    turnCompleted: () => Effect.void,
+    runSettled: () => Effect.void,
+  }),
+}) {}
 
 type TodoListPlan = Extract<OrchestrationV2PlanArtifact, { readonly kind: "todo_list" }>;
 
@@ -886,15 +878,13 @@ export const layer: Layer.Layer<
                     const oldest = completedTurnAnalytics.values().next().value;
                     if (oldest !== undefined) completedTurnAnalytics.delete(oldest);
                   }
-                  yield* analytics.record(
-                    providerTurnAnalyticsProperties({
-                      driver: input.event.driver,
-                      providerTurn,
-                      ...(input.analyticsContext === undefined
-                        ? {}
-                        : { context: input.analyticsContext }),
-                    }),
-                  );
+                  yield* analytics.turnCompleted({
+                    driver: input.event.driver,
+                    providerTurn,
+                    ...(input.analyticsContext === undefined
+                      ? {}
+                      : { context: input.analyticsContext }),
+                  });
                 }),
               ),
               (effect) =>

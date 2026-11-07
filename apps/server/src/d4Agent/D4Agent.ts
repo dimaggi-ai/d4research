@@ -1,3 +1,4 @@
+import * as HostProcess from "@d4research/shared/HostProcess";
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NiaRequestRecovery from "./NiaRequestRecovery.ts";
 import { providerDecisionContext } from "./providerContext.ts";
@@ -1173,7 +1174,7 @@ export const layer = Layer.effect(
               Effect.mapError(threadError),
               Effect.flatMap((shell) =>
                 shell?.activeRunId == null
-                  ? Effect.succeed(undefined)
+                  ? Effect.undefined
                   : projections
                       .getRunMessage(shell.id, shell.activeRunId)
                       .pipe(Effect.mapError(threadError)),
@@ -2535,7 +2536,8 @@ export const layer = Layer.effect(
             context: state.brainContext,
             enabled: config.ctoEnabled,
             baseUrl: config.ctoBaseUrl,
-            allowRemoteHost: process.env.D4_AGENT_CTO_ALLOW_REMOTE_HOST === "1",
+            allowRemoteHost:
+              (yield* HostProcess.Environment).D4_AGENT_CTO_ALLOW_REMOTE_HOST === "1",
             text: action.text,
             permissionMode: config.permissionMode,
             approved: true,
@@ -4054,11 +4056,12 @@ export const layer = Layer.effect(
     return D4Agent.of({
       overview,
       updateOverview,
-      closeSession: ({ context }) =>
+      closeSession: Effect.fn("D4Agent.closeSession")(({ context }) =>
         lock.withPermits(1)(
           adoptLegacySession.pipe(Effect.andThen(close(context)), Effect.andThen(getState())),
         ),
-      undoArchive: ({ actionId }) =>
+      ),
+      undoArchive: Effect.fn("D4Agent.undoArchive")(({ actionId }) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const state = yield* store.get;
@@ -4124,7 +4127,8 @@ export const layer = Layer.effect(
             return yield* getState();
           }),
         ),
-      listPipelines: () =>
+      ),
+      listPipelines: Effect.fn("D4Agent.listPipelines")(() =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound();
@@ -4155,7 +4159,8 @@ export const layer = Layer.effect(
             };
           }),
         ),
-      resolveReference: (text) =>
+      ),
+      resolveReference: Effect.fn("D4Agent.resolveReference")((text) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound();
@@ -4171,7 +4176,8 @@ export const layer = Layer.effect(
             );
           }),
         ),
-      newSession: () =>
+      ),
+      newSession: Effect.fn("D4Agent.newSession")(() =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             yield* selected;
@@ -4179,7 +4185,8 @@ export const layer = Layer.effect(
             return yield* ensure();
           }),
         ),
-      resolveMemoryProposal: (input) =>
+      ),
+      resolveMemoryProposal: Effect.fn("D4Agent.resolveMemoryProposal")((input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state } = yield* bound();
@@ -4190,7 +4197,8 @@ export const layer = Layer.effect(
             return yield* getState();
           }),
         ),
-      switchContext: (input) =>
+      ),
+      switchContext: Effect.fn("D4Agent.switchContext")((input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const context = yield* Schema.decodeUnknownEffect(D4BrainContext)(input.context).pipe(
@@ -4203,7 +4211,8 @@ export const layer = Layer.effect(
             return yield* ensure();
           }),
         ),
-      memorySearch: (input) =>
+      ),
+      memorySearch: Effect.fn("D4Agent.memorySearch")((input) =>
         Effect.gen(function* () {
           const { state, config } = yield* lock.withPermits(1)(bound(input.context));
           if (!config.memoryEnabled)
@@ -4237,7 +4246,8 @@ export const layer = Layer.effect(
             }),
           );
         }),
-      memoryRead: (input) =>
+      ),
+      memoryRead: Effect.fn("D4Agent.memoryRead")((input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound(input.context);
@@ -4254,7 +4264,8 @@ export const layer = Layer.effect(
             }).pipe(Effect.tapError(memoryFailure));
           }),
         ),
-      ctoRead: (input) =>
+      ),
+      ctoRead: Effect.fn("D4Agent.ctoRead")((input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound(input.context);
@@ -4271,7 +4282,8 @@ export const layer = Layer.effect(
               context: state.brainContext,
               enabled: config.ctoEnabled,
               baseUrl: config.ctoBaseUrl,
-              allowRemoteHost: process.env.D4_AGENT_CTO_ALLOW_REMOTE_HOST === "1",
+              allowRemoteHost:
+                (yield* HostProcess.Environment).D4_AGENT_CTO_ALLOW_REMOTE_HOST === "1",
             }).pipe(
               Effect.mapError(
                 (error) =>
@@ -4282,7 +4294,8 @@ export const layer = Layer.effect(
             );
           }),
         ),
-      getIdentity: () =>
+      ),
+      getIdentity: Effect.fn("D4Agent.getIdentity")(() =>
         store.get.pipe(
           Effect.map((state) =>
             state.identityReady && state.threadId !== null && state.projectId !== null
@@ -4292,7 +4305,8 @@ export const layer = Layer.effect(
                 : null,
           ),
         ),
-      getAction: ({ actionId }) =>
+      ),
+      getAction: Effect.fn("D4Agent.getAction")(({ actionId }) =>
         store.get.pipe(
           Effect.map(
             (state) =>
@@ -4308,7 +4322,8 @@ export const layer = Layer.effect(
               ) ?? null,
           ),
         ),
-      getSystemHealth: () =>
+      ),
+      getSystemHealth: Effect.fn("D4Agent.getSystemHealth")(() =>
         Effect.gen(function* () {
           const state = yield* store.get;
           const config = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
@@ -4317,10 +4332,11 @@ export const layer = Layer.effect(
             systemHealth: cachedHealth(state, config),
           };
         }),
+      ),
       getState,
       claimSystemAttention,
-      ensureThread: () => lock.withPermits(1)(ensure()),
-      sendMessage: (input) =>
+      ensureThread: Effect.fn("D4Agent.ensureThread")(() => lock.withPermits(1)(ensure())),
+      sendMessage: Effect.fn("D4Agent.sendMessage")((input) =>
         withDocumentText(
           lock.withPermits(1)(
             Effect.gen(function* () {
@@ -4340,14 +4356,21 @@ export const layer = Layer.effect(
             }),
           ),
         ),
-      resolveAction: (input) => withDocumentText(resolveAction(input)),
-      requestAction: (action, note) => withDocumentText(requestAction(action, note)),
+      ),
+      resolveAction: Effect.fn("D4Agent.resolveAction")((input) =>
+        withDocumentText(resolveAction(input)),
+      ),
+      requestAction: Effect.fn("D4Agent.requestAction")((action, note) =>
+        withDocumentText(requestAction(action, note)),
+      ),
       tasks,
-      list: () => lock.withPermits(1)(list()),
-      environment: () => lock.withPermits(1)(environment()),
-      systemHealth: () => bound().pipe(Effect.andThen(systemHealth())),
+      list: Effect.fn("D4Agent.list")(() => lock.withPermits(1)(list())),
+      environment: Effect.fn("D4Agent.environment")(() => lock.withPermits(1)(environment())),
+      systemHealth: Effect.fn("D4Agent.systemHealth")(() =>
+        bound().pipe(Effect.andThen(systemHealth())),
+      ),
       tick: withDocumentText(tick),
-      readTail: (threadId, limit) =>
+      readTail: Effect.fn("D4Agent.readTail")((threadId, limit) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound();
@@ -4416,7 +4439,8 @@ export const layer = Layer.effect(
             } satisfies D4AgentThreadTail;
           }),
         ),
-      readHost: (commandText) =>
+      ),
+      readHost: Effect.fn("D4Agent.readHost")((commandText) =>
         Effect.gen(function* () {
           const { state, config } = yield* lock.withPermits(1)(bound());
           if (!config.systemProbeEnabled)
@@ -4463,13 +4487,15 @@ export const layer = Layer.effect(
             output: result.output,
           } satisfies D4AgentHostRead;
         }),
-      start: () =>
+      ),
+      start: Effect.fn("D4Agent.start")(() =>
         withDocumentText(tick).pipe(
           Effect.catch(() => Effect.logWarning("d4 Agent heartbeat unavailable")),
           Effect.repeat(Schedule.spaced("15 seconds")),
           Effect.forkScoped,
           Effect.asVoid,
         ),
+      ),
     });
   }),
 );

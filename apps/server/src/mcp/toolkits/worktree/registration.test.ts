@@ -1,3 +1,5 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as AssetSigner from "../../../assets/AssetSigner.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as D4AgentModule from "../../../d4Agent/D4Agent.ts";
 import * as ProjectStoreModule from "../../../orchestration-v2/ProjectStore.ts";
@@ -56,6 +58,7 @@ import * as UsageService from "../../../usage/UsageService.ts";
 import * as UsageLimitSources from "../../../usage/UsageLimitSources.ts";
 
 const layerStubServices = Layer.mergeAll(
+  Layer.mock(AssetSigner.AssetSigner)({}),
   Layer.mock(RemoteDelegation)({}),
   Layer.mock(PeerLinkRequests)({}),
   Layer.mock(PeerLinks)({}),
@@ -223,6 +226,7 @@ it.effect("production mcp layer lists worktree tools over http", () =>
           Layer.provide(NodeServices.layer),
         ),
         NodeServices.layer,
+        NodeCrypto.layer,
       ),
     ),
   ),

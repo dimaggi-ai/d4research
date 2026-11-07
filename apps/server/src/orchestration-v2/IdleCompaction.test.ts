@@ -257,6 +257,19 @@ it.effect("active work, questions, queued turns, and consecutive compactions rem
       expect(yield* policy.due()).toEqual([]);
     }
     yield* sql`UPDATE orchestration_v2_projection_runs SET status = 'completed'`;
+    yield* sql`INSERT INTO orchestration_v2_projection_runs (
+      run_id, thread_id, ordinal, provider, provider_instance_id, provider_thread_id,
+      status, requested_at, completed_at, payload_json
+    ) SELECT 'cancelled-before-start', thread_id, 2, provider, provider_instance_id,
+      provider_thread_id, 'cancelled', requested_at, completed_at,
+      json_set(payload_json, '$.startedAt', NULL)
+      FROM orchestration_v2_projection_runs WHERE run_id = 'run'`;
+    expect(yield* policy.due()).toHaveLength(1);
+    yield* sql`UPDATE orchestration_v2_projection_runs
+      SET payload_json = json_set(payload_json, '$.startedAt', requested_at)
+      WHERE run_id = 'cancelled-before-start'`;
+    expect(yield* policy.due()).toEqual([]);
+    yield* sql`DELETE FROM orchestration_v2_projection_runs WHERE run_id = 'cancelled-before-start'`;
     yield* sql`INSERT INTO orchestration_v2_projection_runtime_requests ${sql.insert({
       runtime_request_id: "question",
       thread_id: threadId,

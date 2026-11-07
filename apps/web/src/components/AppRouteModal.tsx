@@ -1,7 +1,8 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { Button } from "./ui/button";
 import { SidebarInset } from "./ui/sidebar";
@@ -18,6 +19,7 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // Focus the surface, not its first control: no stray focus ring, no phone keyboard.
   // On close, leave focus alone; returning it to the opener paints a focus ring.
   const popupRef = useRef<HTMLDivElement>(null);
+  const nativeTitlebarHeight = useNativeTitlebarHeight();
   const [paneElement, setPaneElement] = useState<HTMLElement | null>(null);
 
   return (
@@ -48,7 +50,8 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
               aria-label={label}
               data-slot="dialog-popup"
               data-app-modal=""
-              className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground outline-none max-md:pt-[var(--workspace-topbar-height)] [-webkit-app-region:no-drag]"
+              style={{ "--app-modal-top-inset": `max(var(--workspace-topbar-height), env(safe-area-inset-top), ${nativeTitlebarHeight}px)` } as CSSProperties}
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground outline-none max-md:pt-(--app-modal-top-inset) max-md:pb-safe [-webkit-app-region:no-drag]"
             >
               {children}
             </DialogPrimitive.Popup>

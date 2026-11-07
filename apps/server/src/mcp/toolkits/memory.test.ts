@@ -1,4 +1,4 @@
-import { toolkitRegistration } from "../McpHttpServer.ts";
+import { layerInProcessMcpServer, toolkitRegistration } from "../McpHttpServer.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -94,7 +94,7 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
 }
 
 const testLayer = toolkitRegistration(MemoryToolkit, MemoryHandlersLive).pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(layerInProcessMcpServer),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(ThreadManagementService)({

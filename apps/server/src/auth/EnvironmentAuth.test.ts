@@ -1,6 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync or sign.
 import * as NodeCrypto from "node:crypto";
 import { AuthAdministrativeScopes } from "@d4research/contracts";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { authScopeResponse } from "@d4research/contracts";
 import {
@@ -109,7 +110,7 @@ const makeDpopKey = () => {
   };
 };
 
-it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))("EnvironmentAuth.layer", (it) => {
   it.effect(
     "exchanges an operator token repeatedly with static hosting and supports revocation",
     () =>
@@ -802,6 +803,45 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     ),
   );
 
+    it.effect.each(["DPoP", "dpop", "dPoP"])(
+      "accepts %s for a proof-bound HTTP request",
+      (scheme) =>
+        Effect.gen(function* () {
+          const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+          const key = makeDpopKey();
+          const { access_token: token } =
+            yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+              "desktop-bootstrap-token",
+              ["orchestration:read"],
+              requestMetadata,
+              { proofKeyThumbprint: key.thumbprint },
+            );
+          const iat = Math.floor((yield* DateTime.now).epochMilliseconds / 1_000);
+          const request = {
+            method: "GET",
+            url: "/api/auth/session",
+            cookies: {},
+            headers: {
+              host: "192.168.1.50:3773",
+              authorization: `${scheme} ${token}`,
+              dpop: key.sign({
+                method: "GET",
+                url: "http://192.168.1.50:3773/api/auth/session",
+                token,
+                iat,
+              }),
+            },
+          } as never;
+          expect((yield* serverAuth.authenticateHttpRequest(request)).sessionId).toBeTypeOf(
+            "string",
+          );
+        }).pipe(
+          Effect.provide(
+            layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" }),
+          ),
+        ),
+    );
+
   it.effect("rejects a replayed proof on a bound RPC socket ticket", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -839,7 +879,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("client permission updates", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))("client permission updates", (it) => {
   it.effect("applies only explicitly delegated scopes and prevents self edits and escalation", () =>
     Effect.gen(function* () {
       const auth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -879,7 +919,7 @@ it.layer(NodeServices.layer)("client permission updates", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("shared host permission restrictions", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))("shared host permission restrictions", (it) => {
   it.effect(
     "intersects delegated HTTP and socket permissions without changing the credential grant",
     () =>

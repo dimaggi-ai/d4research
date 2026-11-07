@@ -1,3 +1,4 @@
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import { HttpClient } from "effect/http";
@@ -45,7 +46,18 @@ export const makeConfiguredMemoryConnector = Effect.fn("memory.makeConfiguredCon
         message: "Local shared memory is disabled in Settings → Connections.",
       });
     }
-    const envUrl = process.env.T3CODE_LOCAL_MEMO_URL;
+    const envUrl = yield* Config.String("T3CODE_LOCAL_MEMO_URL").pipe(
+      Config.withDefault(undefined),
+      Effect.mapError(
+        (cause) =>
+          new MemoryConnectorError({
+            connector: "local",
+            operation: "configure",
+            message: "Could not read memory connector settings.",
+            cause,
+          }),
+      ),
+    );
     if (settings.memory.localBackend === "memo-rest" || envUrl !== undefined) {
       return yield* makeLocalMemoConnector({
         baseUrl: envUrl ?? settings.memory.localBaseUrl ?? DEFAULT_LOCAL_MEMO_BASE_URL,

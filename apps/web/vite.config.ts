@@ -113,6 +113,15 @@ const browserTestProject = {
     include: [
       "vite-plus/test/browser",
       "@base-ui/react/autocomplete",
+      "@base-ui/react/toolbar",
+      "@base-ui/react/field",
+      "@base-ui/react/radio-group",
+      "@base-ui/react/radio",
+      "@base-ui/react/switch",
+      "@noble/hashes/sha2",
+      "@pierre/diffs/worker",
+      "@pierre/trees/react",
+      "zustand/shallow",
       "saxes",
       "@betteroffice/docx/editor",
       "@betteroffice/docx/layout",
@@ -267,9 +276,9 @@ export default defineConfig(() => {
   return {
     run: {
       tasks: {
-        // tsc (tsc-rs) rewrites the tsbuildinfo it reads, which keeps a task out of the cache.
+        // A local tsbuildinfo is leftover build state, not a typecheck input.
         typecheck: {
-          command: "tsc --noEmit",
+          command: "effect-tsgo tsrs --noEmit",
           cache: { input: [{ auto: true }, "!*.tsbuildinfo"] },
         },
       },

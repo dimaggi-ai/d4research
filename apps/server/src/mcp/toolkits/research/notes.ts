@@ -14,7 +14,7 @@ import * as Path from "effect/Path";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionStoreV2 } from "../../../orchestration-v2/ProjectionStore.ts";
 import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
-import { safeDirectory } from "./artifactFiles.ts";
+import { safeDirectory, tryArtifactIo } from "./artifactFiles.ts";
 import {
   entryBelongsToThread,
   readResearchLedger,
@@ -26,7 +26,7 @@ import {
 // supplies an install-local default, never a path baked into distributed code.
 export const resolveNotesFolder = (configured: string): string =>
   configured.trim() || process.env.D4RESEARCH_NOTES_DIR?.trim() || "";
-const contextFor = (threadId: ThreadId) =>
+const contextFor = Effect.fn("contextFor")((threadId: ThreadId) =>
   Effect.gen(function* () {
     const projections = yield* ProjectionStoreV2;
     const projects = yield* ProjectStoreV2;
@@ -40,15 +40,16 @@ const contextFor = (threadId: ThreadId) =>
       folder: resolveNotesFolder(config.research.notesFolder),
       runDirectory: yield* resolveResearchRunDirectory(project.value.workspaceRoot, threadId),
     };
-  });
+  }),
+);
 
-const listThreadNotesImpl = (threadId: ThreadId) =>
+const listThreadNotesImpl = Effect.fn("listThreadNotesImpl")((threadId: ThreadId) =>
   Effect.gen(function* () {
     const context = yield* contextFor(threadId);
     const platform = yield* HostProcess.Platform;
     const folderError = !context.folder
       ? null
-      : yield* Effect.tryPromise(async () => {
+      : yield* tryArtifactIo(async () => {
           await safeDirectory(context.folder, false, platform);
           await NodeFSP.access(context.folder, NodeFSP.constants.R_OK | NodeFSP.constants.W_OK);
         }).pipe(
@@ -80,32 +81,35 @@ const listThreadNotesImpl = (threadId: ThreadId) =>
         chars,
       })),
     };
-  });
+  }),
+);
 
-const readThreadNoteImpl = (input: { threadId: ThreadId; artifact: string; offset: number }) =>
-  Effect.gen(function* () {
-    const context = yield* contextFor(input.threadId);
-    const entries = (yield* readResearchLedger(context.runDirectory)).filter((entry) =>
-      entryBelongsToThread(entry, input.threadId),
-    );
-    if (!entries.some((entry) => entry.artifact === input.artifact))
-      return yield* Effect.fail(
-        new NotesError({ message: "Artifact is not in this thread's ledger." }),
+const readThreadNoteImpl = Effect.fn("readThreadNoteImpl")(
+  (input: { threadId: ThreadId; artifact: string; offset: number }) =>
+    Effect.gen(function* () {
+      const context = yield* contextFor(input.threadId);
+      const entries = (yield* readResearchLedger(context.runDirectory)).filter((entry) =>
+        entryBelongsToThread(entry, input.threadId),
       );
-    const result = yield* readRunArtifact({
-      runDirectory: context.runDirectory,
-      artifact: input.artifact,
-      threadId: input.threadId,
-      offset: Math.max(0, input.offset),
-    });
-    if (!result.ok) return yield* Effect.fail(new NotesError({ message: result.detail }));
-    return {
-      artifact: result.artifact,
-      text: result.text,
-      totalChars: result.totalChars,
-      nextOffset: result.nextOffset,
-    };
-  });
+      if (!entries.some((entry) => entry.artifact === input.artifact))
+        return yield* Effect.fail(
+          new NotesError({ message: "Artifact is not in this thread's ledger." }),
+        );
+      const result = yield* readRunArtifact({
+        runDirectory: context.runDirectory,
+        artifact: input.artifact,
+        threadId: input.threadId,
+        offset: Math.max(0, input.offset),
+      });
+      if (!result.ok) return yield* Effect.fail(new NotesError({ message: result.detail }));
+      return {
+        artifact: result.artifact,
+        text: result.text,
+        totalChars: result.totalChars,
+        nextOffset: result.nextOffset,
+      };
+    }),
+);
 
 export class ResearchNotes extends Context.Service<
   ResearchNotes,
@@ -131,16 +135,18 @@ const make = Effect.gen(function* () {
           message: "Could not read research artifacts. Check project folder permissions.",
         });
   return ResearchNotes.of({
-    list: (threadId) =>
+    list: Effect.fn("ResearchNotes.list")((threadId) =>
       listThreadNotesImpl(threadId).pipe(
         Effect.provideContext(context),
         Effect.mapError(normalizeError),
       ),
-    read: (input) =>
+    ),
+    read: Effect.fn("ResearchNotes.read")((input) =>
       readThreadNoteImpl(input).pipe(
         Effect.provideContext(context),
         Effect.mapError(normalizeError),
       ),
+    ),
   });
 });
 export const layer = Layer.effect(ResearchNotes, make);

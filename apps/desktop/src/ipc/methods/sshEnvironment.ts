@@ -28,7 +28,6 @@ import {
 } from "@d4research/contracts";
 import { SshHttpBridgeError } from "@d4research/ssh/errors";
 import { resolveLoopbackSshHttpBaseUrl } from "@d4research/ssh/tunnel";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -37,10 +36,12 @@ import * as DesktopIpc from "../DesktopIpc.ts";
 import * as DesktopSshEnvironment from "../../ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.ts";
 
-type DesktopSshEnvironmentRequestOperation =
-  | "fetch-environment-descriptor"
-  | "bootstrap-bearer-session"
-  | "fetch-session-state";
+const DesktopSshEnvironmentRequestOperation = Schema.Literals([
+  "fetch-environment-descriptor",
+  "bootstrap-bearer-session",
+  "fetch-session-state",
+]);
+type DesktopSshEnvironmentRequestOperation = typeof DesktopSshEnvironmentRequestOperation.Type;
 
 type DesktopSshEnvironmentRequestCause = RemoteEnvironmentAuthError | SshHttpBridgeError;
 
@@ -49,12 +50,13 @@ const isEnvironmentInternalError = Schema.is(EnvironmentInternalError);
 const isEnvironmentOperationForbiddenError = Schema.is(EnvironmentOperationForbiddenError);
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
 const isEnvironmentScopeRequiredError = Schema.is(EnvironmentScopeRequiredError);
+const isRemoteEnvironmentAuthUndeclaredStatusError = Schema.is(
+  RemoteEnvironmentAuthUndeclaredStatusError,
+);
+const isSshHttpBridgeError = Schema.is(SshHttpBridgeError);
 
 function readSshHttpStatus(cause: DesktopSshEnvironmentRequestCause): number | null {
-  if (
-    cause instanceof RemoteEnvironmentAuthUndeclaredStatusError ||
-    cause instanceof SshHttpBridgeError
-  ) {
+  if (isRemoteEnvironmentAuthUndeclaredStatusError(cause) || isSshHttpBridgeError(cause)) {
     return cause.status ?? null;
   }
   if (isEnvironmentRequestInvalidError(cause)) {
@@ -75,13 +77,14 @@ function readSshHttpStatus(cause: DesktopSshEnvironmentRequestCause): number | n
   return null;
 }
 
-export class DesktopSshEnvironmentRequestError extends Data.TaggedError(
+export class DesktopSshEnvironmentRequestError extends Schema.TaggedError<DesktopSshEnvironmentRequestError>()(
   "DesktopSshEnvironmentRequestError",
-)<{
-  readonly operation: DesktopSshEnvironmentRequestOperation;
-  readonly cause: DesktopSshEnvironmentRequestCause;
-  readonly sshHttpStatus: number | null;
-}> {
+  {
+    operation: DesktopSshEnvironmentRequestOperation,
+    cause: Schema.Defect(),
+    sshHttpStatus: Schema.NullOr(Schema.Number),
+  },
+) {
   // The web client matches "[ssh_http:500]" to explain version-skewed SSH pairing.
   override get message() {
     const prefix = this.sshHttpStatus === null ? "" : `[ssh_http:${this.sshHttpStatus}] `;

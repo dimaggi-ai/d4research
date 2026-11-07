@@ -19,7 +19,7 @@ it.layer(NodeServices.layer)("Agy text generation", (it) => {
       yield* fs.writeFileString(
         binaryPath,
         `#!/usr/bin/env node
-process.stdout.write('{"status":"SUCCESS","response":{"stops":[]}}');
+process.stdout.write('{"status":"SUCCESS","response":{"stops":[],"transcription":"Fixed transcript"}}');
 `,
       );
       yield* fs.chmod(binaryPath, 0o755);
@@ -35,6 +35,14 @@ process.stdout.write('{"status":"SUCCESS","response":{"stops":[]}}');
         settledReview: "",
       });
       assert.deepEqual(result, { stops: [] });
+      assert.deepEqual(
+        yield* service.generateTranscriptionPostProcessing({
+          cwd: cwd,
+          modelSelection: { instanceId: ProviderInstanceId.make("agy"), model: "default" },
+          prompt: "Fix this transcript",
+        }),
+        { transcription: "Fixed transcript" },
+      );
     }),
   );
 });

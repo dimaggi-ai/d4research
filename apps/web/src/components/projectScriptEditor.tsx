@@ -182,6 +182,7 @@ export interface NewProjectScriptInput {
   /** Setup scripts only: hold the agent until the script exits. */
   waitForSetup: boolean;
   runOnSettle: boolean;
+  stopOnSettle?: boolean;
   /** Omit to preserve the current shortcut when the form did not edit it. */
   keybinding?: string | null;
   previewUrl: string | null;
@@ -198,6 +199,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   workingDirectory: null,
   waitForSetup: false,
   runOnSettle: false,
+  stopOnSettle: false,
   keybinding: null,
   previewUrl: null,
   autoOpenPreview: false,
@@ -223,6 +225,7 @@ export function editorRequestForScript(
       workingDirectory: script.workingDirectory ?? null,
       waitForSetup: script.runOnWorktreeCreate && script.async === false,
       runOnSettle: script.runOnSettle ?? false,
+      stopOnSettle: script.stopOnSettle ?? false,
       keybinding: keybindingValueForCommand(keybindings, commandForProjectScript(script.id)),
       previewUrl: script.previewUrl ?? null,
       autoOpenPreview: script.autoOpenPreview ?? false,
@@ -375,6 +378,7 @@ function ProjectScriptEditorForm({
   const [workingDirectory, setWorkingDirectory] = useState(request.initial.workingDirectory ?? "");
   const [waitForSetup, setWaitForSetup] = useState(request.initial.waitForSetup);
   const [runOnSettle, setRunOnSettle] = useState(request.initial.runOnSettle);
+  const [stopOnSettle, setStopOnSettle] = useState(request.initial.stopOnSettle ?? false);
   const [keybinding, setKeybinding] = useState(request.initial.keybinding ?? "");
   const [previewUrl, setPreviewUrl] = useState(request.initial.previewUrl ?? "");
   const [autoOpenPreview, setAutoOpenPreview] = useState(request.initial.autoOpenPreview);
@@ -468,6 +472,7 @@ function ProjectScriptEditorForm({
         workingDirectory: trimmedWorkingDirectory.length > 0 ? trimmedWorkingDirectory : null,
         waitForSetup: runOnWorktreeCreate && waitForSetup,
         runOnSettle,
+        stopOnSettle,
         ...((request.scriptId === null && canChangeKeybinding) || changesKeybinding
           ? { keybinding: keybindingRule?.key ?? null }
           : {}),
@@ -640,6 +645,13 @@ function ProjectScriptEditorForm({
               <Switch
                 checked={runOnSettle}
                 onCheckedChange={(checked) => setRunOnSettle(Boolean(checked))}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+              <span>Stop this action when the thread settles</span>
+              <Switch
+                checked={stopOnSettle}
+                onCheckedChange={(checked) => setStopOnSettle(Boolean(checked))}
               />
             </label>
             <label

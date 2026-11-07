@@ -16,7 +16,7 @@ split, such as a provider-reported cost for a model without public rates, shows 
 Select a model under **Breakdown** to see its trend, cache hit rate, and cost per million tokens.
 
 Ask an agent to check usage or remaining account limits. Claude, Codex and other agents connected
-to T3 can read the same data through `t3_usage_read` and `t3_usage_limits_read`, without relying
+to d4research can read the same data through `t3_usage_read` and `t3_usage_limits_read`, without relying
 on their provider's native usage tools. Limits stay separate for each configured account and hub;
 agents can request a fresh probe and see when a reading is missing or unavailable. History defaults
 to today in UTC unless you ask for another date range or time zone. History reads the environment
@@ -36,12 +36,13 @@ OpenCode reads its SQLite database and older JSON history. Antigravity reads loc
 databases, including d4research-managed profiles. Set `OPENCODE_DATA_DIR` or `ANTIGRAVITY_DATA_DIR` on the
 server to read a different data directory; comma-separated paths read multiple directories.
 
-Cursor reads account usage from Cursor's dashboard API using the CLI login saved on the server.
+Cursor reads account usage from Cursor's API for the account you signed in with in d4research or set as
+`CURSOR_API_KEY`, or otherwise the CLI login saved on the server.
 This includes headless d4research sessions and desktop usage across machines; the same account counts
-once across connected environments. Without an accessible CLI login, d4research shows a
+once across connected environments. Without any of these, d4research shows a
 notice instead of incomplete local totals. d4research does not estimate missing tokens from conversation text.
-On macOS, choose **Enable Cursor usage** on Usage to allow d4research to read your existing CLI login
-from Keychain. You can turn it off in **Settings → Providers → Usage providers**. macOS may ask
+On macOS without a d4research sign-in, choose **Enable Cursor usage** on Usage to allow d4research to read your
+existing CLI login from Keychain. You can turn it off in **Settings → Providers → Usage providers**. macOS may ask
 you to allow access on the server Mac.
 
 Usage includes each configured account's history, including disabled accounts. Custom homes follow
@@ -184,13 +185,15 @@ usage on web and desktop, enable **Settings → Labs → Legacy → Context wind
 
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
 the environment. d4research cannot report limits for external OpenCode servers because their credentials
-belong to the remote server. Limits need an OpenCode Go API key. A Console sign-in alone
-does not report them. Add your Go API key as `OPENCODE_API_KEY` in the OpenCode instance's
-**Environment variables**, then refresh provider status. Cursor reports
-its monthly allowance, including separate Auto and API usage, using the CLI login or
-`CURSOR_AUTH_TOKEN`. On macOS, this includes the default Keychain login after you enable Cursor
-usage. Keychain login is used for limits only with Cursor's default API endpoint. If you configure
-a custom Cursor endpoint, use an explicit token or file-based CLI login for limits.
+belong to the remote server. Limits need an OpenCode Go API key, or an OpenCode Console connected
+in OpenCode with an API key. A Console browser sign-in alone does not report them. You can also add
+your Go API key as `OPENCODE_API_KEY` in the OpenCode instance's **Environment variables**, then
+refresh provider status. Cursor reports
+its monthly allowance, including separate Auto and API usage, for `CURSOR_AUTH_TOKEN` when it is set,
+otherwise for the account you signed in with in d4research or set as `CURSOR_API_KEY`, otherwise for the CLI
+login. On macOS, this includes the default Keychain login after you enable Cursor usage. Sign-in, API key,
+and Keychain login report limits only with Cursor's default API endpoint. If you configure a custom
+Cursor endpoint, use an explicit token or file-based CLI login for limits.
 
 Grok reports the remaining subscription allowance and reset time for its current billing period
 after signing in with `grok login`. Explicit `XAI_API_KEY` connections and custom authentication

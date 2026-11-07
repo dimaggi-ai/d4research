@@ -533,7 +533,7 @@ function PairingForm({
           <CollapsiblePanel>
             <p className="pt-3 text-sm text-muted-foreground">
               On the computer with your code, start T3 Code or run{" "}
-              <code className="font-mono">npx t3 serve</code>, then run:
+              <code className="font-mono">npx d4research serve</code>, then run:
             </p>
             <CommandBlock command="npx d4research pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">

@@ -1,3 +1,4 @@
+import * as PlatformNodeCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics nodeBuiltinImport:off - modes, symlinks and random bytes need node:fs.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
@@ -52,7 +53,7 @@ const layerTest = Peers.layer.pipe(
       Layer.provide(VcsProcess.layer),
     ),
   ),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, PlatformNodeCrypto.layer)),
 );
 
 const makeFolders = Effect.acquireRelease(

@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { BundledServerRuntime, DesktopBridge, DesktopUpdateState } from "@d4research/contracts";
+import type {
+  BundledServerRuntime,
+  DesktopBridge,
+  DesktopUpdateState,
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -85,12 +89,19 @@ export function useDesktopUpdateState(): DesktopUpdateState | null {
   return AsyncResult.getOrElse(useAtomValue(desktopUpdateStateAtom), () => null);
 }
 
+class BundledServerRuntimeReadError extends Schema.TaggedError<BundledServerRuntimeReadError>()(
+  "BundledServerRuntimeReadError",
+  { cause: Schema.Defect() },
+) {}
+
 const bundledServerRuntimeAtom = Atom.make(
-  Effect.tryPromise(async () =>
-    typeof window === "undefined"
-      ? null
-      : ((await window.desktopBridge?.getBundledServerRuntime?.()) ?? null),
-  ),
+  Effect.tryPromise({
+    try: async () =>
+      typeof window === "undefined"
+        ? null
+        : ((await window.desktopBridge?.getBundledServerRuntime?.()) ?? null),
+    catch: (cause) => new BundledServerRuntimeReadError({ cause }),
+  }),
 ).pipe(Atom.keepAlive);
 export function useBundledServerRuntime(): BundledServerRuntime | null {
   return AsyncResult.getOrElse(useAtomValue(bundledServerRuntimeAtom), () => null);

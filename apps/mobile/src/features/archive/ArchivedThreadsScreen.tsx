@@ -15,7 +15,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
-import { Platform, Pressable, RefreshControl, useWindowDimensions, View } from "react-native";
+import { Pressable, RefreshControl, useWindowDimensions, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
@@ -52,7 +52,6 @@ function ArchivedThreadsHeader(props: {
   return (
     <AppBar
       title="Archived threads"
-      sidebar={false}
       onBack={() => navigation.goBack()}
       search={{
         value: props.searchQuery,
@@ -105,15 +104,11 @@ function ArchivedThreadsHeader(props: {
                 },
               ],
             },
-            ...(Platform.OS === "android"
-              ? [
-                  {
-                    id: "refresh",
-                    title: "Refresh archived threads",
-                    onPress: props.onRefresh,
-                  },
-                ]
-              : []),
+            {
+              id: "refresh",
+              title: "Refresh archived threads",
+              onPress: props.onRefresh,
+            },
           ],
         },
       ]}
@@ -428,7 +423,7 @@ export function ArchivedThreadsScreen(props: {
       <SettingsScreenContent>
         <GestureDetector gesture={archiveScrollGesture}>
           <LegendList
-            renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
+            renderScrollComponent={NativeScrollView}
             className="flex-1"
             contentContainerStyle={{
               paddingBottom: 32,

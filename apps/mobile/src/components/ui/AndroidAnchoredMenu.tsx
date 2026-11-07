@@ -4,7 +4,6 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewInstance, ViewStyle } from "react-native";
 import { BackHandler, Pressable, ScrollView, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
-import Animated, { FadeIn } from "react-native-reanimated";
 
 import { deriveMenuHorizontalPlacement } from "../../lib/menu-placement";
 import { WindowHingeContext } from "../../native/window-hinge-context";
@@ -186,8 +185,8 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                 onClose={close}
               />
             ) : (
-              <Animated.View
-                entering={FadeIn.duration(120)}
+              <View
+                // No entering animation: it freezes this frame before the Compose host reports its size.
                 className="absolute overflow-hidden bg-card-alt shadow-md"
                 style={{
                   left,
@@ -223,7 +222,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     onClose={close}
                   />
                 </ScrollView>
-              </Animated.View>
+              </View>
             )}
           </View>
         </OverlayPortal>

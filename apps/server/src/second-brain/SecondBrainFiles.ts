@@ -142,7 +142,7 @@ const attempt = <A>(body: () => A) => Effect.try({ try: body, catch: normalizeEr
 const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   return SecondBrainFiles.of({
-    root: (configured) =>
+    root: Effect.fn("SecondBrainFiles.root")((configured) =>
       attempt(() => {
         if (!configured) throw new SecondBrainError({ code: "disabled" });
         const expanded =
@@ -156,8 +156,11 @@ const make = Effect.gen(function* () {
           throw new SecondBrainError({ code: "invalid_path" });
         return root;
       }),
-    read: (root, file) => attempt(() => withParent(root, file, false, platform, readTarget)),
-    walk: (root) =>
+    ),
+    read: Effect.fn("SecondBrainFiles.read")((root, file) =>
+      attempt(() => withParent(root, file, false, platform, readTarget)),
+    ),
+    walk: Effect.fn("SecondBrainFiles.walk")((root) =>
       attempt(() => {
         const files: VaultWalk["files"] = [];
         const issues: BrainLintIssue[] = [];
@@ -214,7 +217,8 @@ const make = Effect.gen(function* () {
         walk(root, "", 0);
         return { files: files.sort((a, b) => a.path.localeCompare(b.path)), truncated, issues };
       }),
-    write: (root, file, content, expectedHash) =>
+    ),
+    write: Effect.fn("SecondBrainFiles.write")((root, file, content, expectedHash) =>
       attempt(() => {
         if (Buffer.byteLength(content) > NOTE_BYTES)
           throw new SecondBrainError({ code: "oversized" });
@@ -254,6 +258,7 @@ const make = Effect.gen(function* () {
           }
         });
       }),
+    ),
   });
 });
 export const layer = Layer.effect(SecondBrainFiles, make);

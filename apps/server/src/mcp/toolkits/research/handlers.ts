@@ -8,7 +8,7 @@ import { resolveNotesFolder } from "./notes.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -465,211 +465,216 @@ export interface BoundedDelegationRequest {
   readonly recordArtifacts?: boolean;
 }
 
-export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
-  Effect.gen(function* () {
-    const targetLabel = input.substituted
-      ? `${input.resolvedTarget} (labeled fallback for ${input.requestedTarget})`
-      : input.resolvedTarget;
-    const nowMs = yield* Clock.currentTimeMillis;
+export const runBoundedDelegation = Effect.fn("runBoundedDelegation")(
+  (input: BoundedDelegationRequest) =>
+    Effect.gen(function* () {
+      const targetLabel = input.substituted
+        ? `${input.resolvedTarget} (labeled fallback for ${input.requestedTarget})`
+        : input.resolvedTarget;
+      const nowMs = yield* Clock.currentTimeMillis;
 
-    // Run the delegate in the orchestrator thread's workspace, not the
-    // server process dir. Without this the CLI inherits the server's cwd
-    // (e.g. the user's home), loads whatever agent memory/scope lives there,
-    // and can refuse or misjudge work that is in-scope for the actual
-    // project. Falls back to the default cwd when the thread has no
-    // resolvable workspace yet.
-    const projections = yield* ProjectionStoreV2;
-    const projects = yield* ProjectStoreV2;
-    const orchestrator = yield* projections
-      .getThread(input.orchestratorThreadId)
-      .pipe(Effect.orElseSucceed(() => null));
-    const project = orchestrator
-      ? yield* projects
-          .getShell(orchestrator.projectId)
-          .pipe(Effect.orElseSucceed(() => Option.none()))
-      : Option.none();
-    const memoProject = Option.isSome(project) ? project.value.title : null;
-    const delegateCwd =
-      orchestrator?.worktreePath ??
-      (Option.isSome(project) ? project.value.workspaceRoot : undefined);
-    // Artifacts sit beside the files pipelines already write under the
-    // project root, so a worktree cleanup cannot delete a run's record.
-    const artifactRoot = Option.isSome(project) ? project.value.workspaceRoot : delegateCwd;
-    const runDirectory =
-      input.recordArtifacts === false || artifactRoot === undefined
-        ? null
-        : yield* resolveResearchRunDirectory(artifactRoot, input.orchestratorThreadId, true).pipe(
-            Effect.mapError(
-              () =>
-                new ResearchDelegateError({
-                  detail:
-                    "Could not bind research artifact storage. Check server folder permissions.",
-                  failureKind: "error",
-                }),
-            ),
-          );
-
-    const settingsService = yield* ServerSettingsService;
-    const notesSettings = yield* settingsService.getSettings.pipe(
-      Effect.mapError(
-        () =>
-          new ResearchDelegateError({
-            detail: "Could not read Notes settings.",
-            failureKind: "error",
-          }),
-      ),
-    );
-    const notesFolder = resolveNotesFolder(notesSettings.research.notesFolder);
-    let partialText = "";
-    let checkpointChars = 0;
-    let persistenceFailed = false;
-    let requestHash: string | undefined;
-    const resolvePromptFile = yield* Effect.cached(input.resolvePromptFile);
-    const identifyRequest = Effect.gen(function* () {
-      const promptFile = yield* resolvePromptFile;
-      requestHash = NodeCrypto.createHash("sha256")
-        .update(
-          encodeRequestIdentity({
-            prompt: input.prompt,
-            attachments: input.attachments,
-            promptFile,
-            shareMemoContext: input.shareMemoContext,
-            projectId: Option.isSome(project) ? project.value.id : null,
-            delegateCwd,
-          }),
-        )
-        .digest("hex");
-    });
-    const record = (result: DelegationOutcome["result"]) =>
-      Effect.gen(function* () {
-        if (runDirectory === null) return;
-        const completedAtMs = yield* Clock.currentTimeMillis;
-        const entry = yield* recordDelegationOutcome({
-          runDirectory,
-          ...(Option.isSome(project)
-            ? {
-                notes: {
-                  folder: notesFolder,
-                  projectId: String(project.value.id),
-                  threadId: String(input.orchestratorThreadId),
-                },
-              }
-            : {}),
-          outcome: {
-            ...(requestHash ? { requestHash } : {}),
-            runId: input.runId,
-            step: input.step,
-            visit: input.visit,
-            requestedTarget: input.requestedTarget,
-            resolvedTarget: input.resolvedTarget,
-            substituted: input.substituted,
-            durationMs: Math.max(0, completedAtMs - nowMs),
-            completedAtMs,
-            result,
-          },
-        });
-        if (entry === null) persistenceFailed = true;
-      });
-
-    // A resumed run continues the interrupted one, so it starts from that
-    // run's spend. Best-effort: an unreadable ledger only loses the carry-over.
-    const orchestratorRunId = input.orchestratorRunId;
-    let completedEvidence: ResearchLedgerEntry | undefined;
-    const inherited =
-      runDirectory === null || orchestratorRunId === undefined
-        ? undefined
-        : yield* Effect.gen(function* () {
-            const records = yield* projections.getThreadRecords(input.orchestratorThreadId, [
-              "runs",
-              "messages",
-            ]);
-            const resume = resumeContextFor({
-              runs: records.runs,
-              messages: records.messages,
-              currentRunId: orchestratorRunId,
-            });
-            if (resume === null) return undefined;
-            const entries = yield* readResearchLedger(runDirectory);
-            const chain = new Set(
-              resume.chain.map((run) => budgetRunId(input.orchestratorThreadId, run.id)),
+      // Run the delegate in the orchestrator thread's workspace, not the
+      // server process dir. Without this the CLI inherits the server's cwd
+      // (e.g. the user's home), loads whatever agent memory/scope lives there,
+      // and can refuse or misjudge work that is in-scope for the actual
+      // project. Falls back to the default cwd when the thread has no
+      // resolvable workspace yet.
+      const projections = yield* ProjectionStoreV2;
+      const projects = yield* ProjectStoreV2;
+      const orchestrator = yield* projections
+        .getThread(input.orchestratorThreadId)
+        .pipe(Effect.orElseSucceed(() => null));
+      const project = orchestrator
+        ? yield* projects
+            .getShell(orchestrator.projectId)
+            .pipe(Effect.orElseSucceed(() => Option.none()))
+        : Option.none();
+      const memoProject = Option.isSome(project) ? project.value.title : null;
+      const delegateCwd =
+        orchestrator?.worktreePath ??
+        (Option.isSome(project) ? project.value.workspaceRoot : undefined);
+      // Artifacts sit beside the files pipelines already write under the
+      // project root, so a worktree cleanup cannot delete a run's record.
+      const artifactRoot = Option.isSome(project) ? project.value.workspaceRoot : delegateCwd;
+      const runDirectory =
+        input.recordArtifacts === false || artifactRoot === undefined
+          ? null
+          : yield* resolveResearchRunDirectory(artifactRoot, input.orchestratorThreadId, true).pipe(
+              Effect.mapError(
+                () =>
+                  new ResearchDelegateError({
+                    detail:
+                      "Could not bind research artifact storage. Check server folder permissions.",
+                    failureKind: "error",
+                  }),
+              ),
             );
-            completedEvidence = entries
-              .toReversed()
-              .find(
-                (entry) =>
-                  chain.has(entry.runId) &&
-                  entry.outcome === "success" &&
-                  entry.step === input.step &&
-                  entry.visit === input.visit &&
-                  entry.requestedTarget === input.requestedTarget &&
-                  entry.resolvedTarget === input.resolvedTarget,
-              );
-            return inheritedBudget(entries, chain);
-          }).pipe(Effect.orElseSucceed(() => undefined));
 
-    if (completedEvidence) {
-      const identified = yield* identifyRequest.pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      );
-      // A failed resolver is cached and goes through the charged failure path below.
-      if (!identified || completedEvidence.requestHash !== requestHash)
-        completedEvidence = undefined;
-    }
-    if (completedEvidence && runDirectory !== null) {
-      const saved = yield* readRunArtifact({
-        runDirectory,
-        threadId: input.orchestratorThreadId,
-        artifact: completedEvidence.artifact,
-        offset: 0,
-      }).pipe(
+      const settingsService = yield* ServerSettingsService;
+      const notesSettings = yield* settingsService.getSettings.pipe(
         Effect.mapError(
           () =>
             new ResearchDelegateError({
-              detail:
-                "Saved step evidence is unavailable; restore the step's artifact before continuing.",
+              detail: "Could not read Notes settings.",
               failureKind: "error",
             }),
         ),
       );
-      if (!saved.ok)
-        return yield* new ResearchDelegateError({ detail: saved.detail, failureKind: "error" });
-      const text = saved.text.split("\n---\n").slice(1).join("\n---\n").trimEnd();
-      return {
-        requestedTarget: input.requestedTarget,
-        resolvedTarget: input.resolvedTarget,
-        substituted: completedEvidence.substituted,
-        target: input.resolvedTarget,
-        step: input.step,
-        visit: input.visit,
-        remainingBudget: Math.max(0, RESEARCH_DELEGATION_BUDGET_PER_TURN - (inherited?.total ?? 0)),
-        durationMs: 0,
-        truncated: saved.nextOffset !== null,
-        text,
-      };
-    }
-
-    // The delegate must never be this thread's own session — that is the
-    // recursive-delegation door the product contract keeps shut.
-    const budget = yield* ResearchDelegationBudget;
-    const charge = yield* budget.charge({
-      runId: input.runId,
-      step: input.step,
-      target: input.resolvedTarget,
-      ...(inherited === undefined ? {} : { inherited }),
-    });
-    if (!charge.ok) {
-      const detail = charge.reason ?? "Delegation budget exhausted.";
-      yield* record({ ok: false, detail, failureKind: "budget" });
-      return yield* new ResearchDelegateError({
-        detail,
-        budgetExhausted: true,
-        failureKind: "budget",
+      const notesFolder = resolveNotesFolder(notesSettings.research.notesFolder);
+      let partialText = "";
+      let checkpointChars = 0;
+      let persistenceFailed = false;
+      let requestHash: string | undefined;
+      const resolvePromptFile = yield* Effect.cached(input.resolvePromptFile);
+      const identifyRequest = Effect.gen(function* () {
+        const promptFile = yield* resolvePromptFile;
+        requestHash = NodeCrypto.createHash("sha256")
+          .update(
+            encodeRequestIdentity({
+              prompt: input.prompt,
+              attachments: input.attachments,
+              promptFile,
+              shareMemoContext: input.shareMemoContext,
+              projectId: Option.isSome(project) ? project.value.id : null,
+              delegateCwd,
+            }),
+          )
+          .digest("hex");
       });
-    }
+      const record = Effect.fn("record")((result: DelegationOutcome["result"]) =>
+        Effect.gen(function* () {
+          if (runDirectory === null) return;
+          const completedAtMs = yield* Clock.currentTimeMillis;
+          const entry = yield* recordDelegationOutcome({
+            runDirectory,
+            ...(Option.isSome(project)
+              ? {
+                  notes: {
+                    folder: notesFolder,
+                    projectId: String(project.value.id),
+                    threadId: String(input.orchestratorThreadId),
+                  },
+                }
+              : {}),
+            outcome: {
+              ...(requestHash ? { requestHash } : {}),
+              runId: input.runId,
+              step: input.step,
+              visit: input.visit,
+              requestedTarget: input.requestedTarget,
+              resolvedTarget: input.resolvedTarget,
+              substituted: input.substituted,
+              durationMs: Math.max(0, completedAtMs - nowMs),
+              completedAtMs,
+              result,
+            },
+          });
+          if (entry === null) persistenceFailed = true;
+        }),
+      );
 
-    const onAssistantText = (text: string) =>
-      Effect.gen(function* () {
+      // A resumed run continues the interrupted one, so it starts from that
+      // run's spend. Best-effort: an unreadable ledger only loses the carry-over.
+      const orchestratorRunId = input.orchestratorRunId;
+      let completedEvidence: ResearchLedgerEntry | undefined;
+      const inherited =
+        runDirectory === null || orchestratorRunId === undefined
+          ? undefined
+          : yield* Effect.gen(function* () {
+              const records = yield* projections.getThreadRecords(input.orchestratorThreadId, [
+                "runs",
+                "messages",
+              ]);
+              const resume = resumeContextFor({
+                runs: records.runs,
+                messages: records.messages,
+                currentRunId: orchestratorRunId,
+              });
+              if (resume === null) return undefined;
+              const entries = yield* readResearchLedger(runDirectory);
+              const chain = new Set(
+                resume.chain.map((run) => budgetRunId(input.orchestratorThreadId, run.id)),
+              );
+              completedEvidence = entries
+                .toReversed()
+                .find(
+                  (entry) =>
+                    chain.has(entry.runId) &&
+                    entry.outcome === "success" &&
+                    entry.step === input.step &&
+                    entry.visit === input.visit &&
+                    entry.requestedTarget === input.requestedTarget &&
+                    entry.resolvedTarget === input.resolvedTarget,
+                );
+              return inheritedBudget(entries, chain);
+            }).pipe(Effect.orElseSucceed(() => undefined));
+
+      if (completedEvidence) {
+        const identified = yield* identifyRequest.pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        );
+        // A failed resolver is cached and goes through the charged failure path below.
+        if (!identified || completedEvidence.requestHash !== requestHash)
+          completedEvidence = undefined;
+      }
+      if (completedEvidence && runDirectory !== null) {
+        const saved = yield* readRunArtifact({
+          runDirectory,
+          threadId: input.orchestratorThreadId,
+          artifact: completedEvidence.artifact,
+          offset: 0,
+        }).pipe(
+          Effect.mapError(
+            () =>
+              new ResearchDelegateError({
+                detail:
+                  "Saved step evidence is unavailable; restore the step's artifact before continuing.",
+                failureKind: "error",
+              }),
+          ),
+        );
+        if (!saved.ok)
+          return yield* new ResearchDelegateError({ detail: saved.detail, failureKind: "error" });
+        const text = saved.text.split("\n---\n").slice(1).join("\n---\n").trimEnd();
+        return {
+          requestedTarget: input.requestedTarget,
+          resolvedTarget: input.resolvedTarget,
+          substituted: completedEvidence.substituted,
+          target: input.resolvedTarget,
+          step: input.step,
+          visit: input.visit,
+          remainingBudget: Math.max(
+            0,
+            RESEARCH_DELEGATION_BUDGET_PER_TURN - (inherited?.total ?? 0),
+          ),
+          durationMs: 0,
+          truncated: saved.nextOffset !== null,
+          text,
+        };
+      }
+
+      // The delegate must never be this thread's own session — that is the
+      // recursive-delegation door the product contract keeps shut.
+      const budget = yield* ResearchDelegationBudget;
+      const charge = yield* budget.charge({
+        runId: input.runId,
+        step: input.step,
+        target: input.resolvedTarget,
+        ...(inherited === undefined ? {} : { inherited }),
+      });
+      if (!charge.ok) {
+        const detail = charge.reason ?? "Delegation budget exhausted.";
+        yield* record({ ok: false, detail, failureKind: "budget" });
+        return yield* new ResearchDelegateError({
+          detail,
+          budgetExhausted: true,
+          failureKind: "budget",
+        });
+      }
+
+      // Provider text arrives per chunk; the delegation span already covers it.
+      const onAssistantText = Effect.fnUntraced(function* (text: string) {
         partialText = text;
         // Persist the first output and each further 4 KiB. Failure flushes the tail.
         if (!text || (checkpointChars > 0 && text.length - checkpointChars < 4096)) return;
@@ -681,184 +686,181 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
           partialText: text,
         });
       });
-    const text = yield* identifyRequest.pipe(
-      Effect.andThen(
-        delegate(
-          { ...input, resolvePromptFile },
-          {
-            nowMs,
-            delegateCwd,
-            memoProject,
-            targetLabel,
-            onAssistantText,
-          },
+      const text = yield* identifyRequest.pipe(
+        Effect.andThen(
+          delegate(
+            { ...input, resolvePromptFile },
+            {
+              nowMs,
+              delegateCwd,
+              memoProject,
+              targetLabel,
+              onAssistantText,
+            },
+          ),
         ),
-      ),
-      Effect.onInterrupt(() =>
-        record({
-          ok: false,
-          detail: "Provider step was interrupted. The output may be incomplete.",
-          failureKind: "partial",
-          partialText,
-        }),
-      ),
-      Effect.tapError((error) =>
-        record({
-          ok: false,
-          detail: "Provider step failed. The output may be incomplete.",
-          failureKind: error.failureKind ?? "error",
-          partialText,
-        }),
-      ),
-    );
-    const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
-    yield* record({ ok: true, text, truncated });
-    if (persistenceFailed)
-      return yield* new ResearchDelegateError({
-        detail:
-          "Research artifact could not be saved. Check project folder permissions before continuing.",
-        failureKind: "error",
-      });
-    const completedMs = yield* Clock.currentTimeMillis;
-    return {
-      requestedTarget: input.requestedTarget,
-      resolvedTarget: input.resolvedTarget,
-      substituted: input.substituted,
-      target: input.resolvedTarget,
-      step: input.step,
-      visit: input.visit,
-      remainingBudget: charge.remaining,
-      durationMs: Math.max(0, completedMs - nowMs),
-      truncated,
-      text: truncated ? text.slice(0, DELEGATE_MAX_OUTPUT_CHARS) : text,
-    };
-  });
+        Effect.onInterrupt(() =>
+          record({
+            ok: false,
+            detail: "Provider step was interrupted. The output may be incomplete.",
+            failureKind: "partial",
+            partialText,
+          }),
+        ),
+        Effect.tapError((error) =>
+          record({
+            ok: false,
+            detail: "Provider step failed. The output may be incomplete.",
+            failureKind: error.failureKind ?? "error",
+            partialText,
+          }),
+        ),
+      );
+      const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
+      yield* record({ ok: true, text, truncated });
+      if (persistenceFailed)
+        return yield* new ResearchDelegateError({
+          detail:
+            "Research artifact could not be saved. Check project folder permissions before continuing.",
+          failureKind: "error",
+        });
+      const completedMs = yield* Clock.currentTimeMillis;
+      return {
+        requestedTarget: input.requestedTarget,
+        resolvedTarget: input.resolvedTarget,
+        substituted: input.substituted,
+        target: input.resolvedTarget,
+        step: input.step,
+        visit: input.visit,
+        remainingBudget: charge.remaining,
+        durationMs: Math.max(0, completedMs - nowMs),
+        truncated,
+        text: truncated ? text.slice(0, DELEGATE_MAX_OUTPUT_CHARS) : text,
+      };
+    }),
+);
 
 /** Runs one already-charged delegation and returns the delegate's full answer. */
-const delegate = (
-  input: BoundedDelegationRequest,
-  context: {
-    readonly nowMs: number;
-    readonly delegateCwd: string | undefined;
-    readonly memoProject: string | null;
-    readonly targetLabel: string;
-    readonly onAssistantText: (
-      text: string,
-    ) => Effect.Effect<void, never, FileSystem.FileSystem | Path.Path>;
-  },
-) =>
-  Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
-    const parsedTarget = input.parsedTarget;
-    const { nowMs, delegateCwd, memoProject, targetLabel } = context;
-    const promptFile = yield* input.resolvePromptFile;
+const delegate = Effect.fn("delegate")(
+  (
+    input: BoundedDelegationRequest,
+    context: {
+      readonly nowMs: number;
+      readonly delegateCwd: string | undefined;
+      readonly memoProject: string | null;
+      readonly targetLabel: string;
+      readonly onAssistantText: (
+        text: string,
+      ) => Effect.Effect<void, never, FileSystem.FileSystem | Path.Path>;
+    },
+  ) =>
+    Effect.gen(function* () {
+      const random = yield* SecureRandom.SecureRandom;
+      const parsedTarget = input.parsedTarget;
+      const { nowMs, delegateCwd, memoProject, targetLabel } = context;
+      const promptFile = yield* input.resolvePromptFile;
 
-    const registry = yield* ProviderAdapterRegistryV2;
-    const instanceId = ProviderInstanceId.make(parsedTarget.instanceId);
-    const adapter = yield* registry.get(instanceId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ResearchDelegateError({
-            detail: `Provider "${parsedTarget.instanceId}" unavailable: ${cause.message}`,
-          }),
-      ),
-    );
+      const registry = yield* ProviderAdapterRegistryV2;
+      const instanceId = ProviderInstanceId.make(parsedTarget.instanceId);
+      const adapter = yield* registry.get(instanceId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ResearchDelegateError({
+              detail: `Provider "${parsedTarget.instanceId}" unavailable: ${cause.message}`,
+            }),
+        ),
+      );
 
-    // Shared context rides along as-is — no summarization between what one
-    // model learned and what the next one reads. Best-effort: a memory
-    // outage degrades to a delegate without context, never a failed step.
-    const scopedAgentTask = String(input.orchestratorThreadId).startsWith("d4-action:");
-    let sharedContext: string | null = null;
-    if (!scopedAgentTask && input.shareMemoContext && memoProject !== null) {
-      sharedContext = yield* Effect.gen(function* () {
-        const connector = yield* makeConfiguredMemoryConnector();
-        const found = yield* connector.search(input.prompt, 5, memoProject);
-        return buildResearchSharedMemoContext(found.results);
-      }).pipe(Effect.orElseSucceed(() => null));
-    }
+      // Shared context rides along as-is — no summarization between what one
+      // model learned and what the next one reads. Best-effort: a memory
+      // outage degrades to a delegate without context, never a failed step.
+      const scopedAgentTask = String(input.orchestratorThreadId).startsWith("d4-action:");
+      let sharedContext: string | null = null;
+      if (!scopedAgentTask && input.shareMemoContext && memoProject !== null) {
+        sharedContext = yield* Effect.gen(function* () {
+          const connector = yield* makeConfiguredMemoryConnector();
+          const found = yield* connector.search(input.prompt, 5, memoProject);
+          return buildResearchSharedMemoContext(found.results);
+        }).pipe(Effect.orElseSucceed(() => null));
+      }
 
-    const brain = yield* SecondBrainService.SecondBrainService;
-    const brainContext = scopedAgentTask
-      ? null
-      : yield* brain
-          .buildTurnContext({
-            userText: input.prompt,
-            includeCore: true,
-            ...(memoProject ? { projectTitle: memoProject } : {}),
-            ...(delegateCwd ? { workspacePath: delegateCwd } : {}),
-          })
-          .pipe(
-            Effect.timeout("1500 millis"),
-            Effect.catchCause(() =>
-              Effect.logWarning("Delegate second brain context unavailable").pipe(Effect.as(null)),
-            ),
-          );
-    const turnInput = [
-      ...(brainContext?.policy ? [SecondBrainService.formatTurnContext(brainContext)] : []),
-      ...(sharedContext !== null
-        ? ["--- SHARED CONTEXT (local memory, verbatim) ---", sharedContext, ""]
-        : []),
-      ...(promptFile !== null
-        ? [`--- PROMPT FILE: ${promptFile.name} ---`, promptFile.content, ""]
-        : []),
-      input.prompt,
-    ].join("\n");
-
-    const modelSelection = { instanceId, model: parsedTarget.model };
-    const entropy = yield* crypto.randomUUIDv4().pipe(
-      Effect.mapError(
-        () =>
-          new ResearchDelegateError({
-            detail: "Could not allocate a unique delegate session id.",
-            failureKind: "start",
-          }),
-      ),
-    );
-    const threadId = buildDelegateThreadId(nowMs, entropy);
-
-    const text = yield* runEphemeralProviderV2({
-      adapter,
-      onAssistantText: context.onAssistantText,
-      threadId,
-      modelSelection,
-      cwd: delegateCwd ?? process.cwd(),
-      startTimeoutMillis: DELEGATE_START_TIMEOUT_MILLIS,
-      prompts: [
-        ...(isColdStartProne(parsedTarget.model)
-          ? [
-              {
-                text: "Reply with the single word: OK",
-                timeoutMillis: DELEGATE_WARMUP_TIMEOUT_MILLIS,
-              },
-            ]
+      const brain = yield* SecondBrainService.SecondBrainService;
+      const brainContext = scopedAgentTask
+        ? null
+        : yield* brain
+            .buildTurnContext({
+              userText: input.prompt,
+              includeCore: true,
+              ...(memoProject ? { projectTitle: memoProject } : {}),
+              ...(delegateCwd ? { workspacePath: delegateCwd } : {}),
+            })
+            .pipe(
+              Effect.timeout("1500 millis"),
+              Effect.catchCause(() =>
+                Effect.logWarning("Delegate second brain context unavailable").pipe(
+                  Effect.as(null),
+                ),
+              ),
+            );
+      const turnInput = [
+        ...(brainContext?.policy ? [SecondBrainService.formatTurnContext(brainContext)] : []),
+        ...(sharedContext !== null
+          ? ["--- SHARED CONTEXT (local memory, verbatim) ---", sharedContext, ""]
           : []),
-        {
-          text: turnInput,
-          attachments: input.attachments,
-          timeoutMillis: DELEGATE_TURN_TIMEOUT_MILLIS,
-        },
-      ],
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause as Cause.Cause<never>)
-          : Effect.fail(
-              new ResearchDelegateError({
-                detail: `Delegate turn on ${targetLabel} failed: ${describeCause(cause)}`,
-                failureKind: isTimeoutCause(cause) ? "timeout" : "error",
-              }),
-            ),
-      ),
-    );
+        ...(promptFile !== null
+          ? [`--- PROMPT FILE: ${promptFile.name} ---`, promptFile.content, ""]
+          : []),
+        input.prompt,
+      ].join("\n");
 
-    if (!text) {
-      return yield* new ResearchDelegateError({
-        detail: `Empty response from ${targetLabel}. Report the step as failed rather than inventing its answer.`,
-        failureKind: "empty",
-      });
-    }
-    return text;
-  });
+      const modelSelection = { instanceId, model: parsedTarget.model };
+      const entropy = yield* random.uuidV4();
+      const threadId = buildDelegateThreadId(nowMs, entropy);
+
+      const text = yield* runEphemeralProviderV2({
+        adapter,
+        onAssistantText: context.onAssistantText,
+        threadId,
+        modelSelection,
+        cwd: delegateCwd ?? process.cwd(),
+        startTimeoutMillis: DELEGATE_START_TIMEOUT_MILLIS,
+        prompts: [
+          ...(isColdStartProne(parsedTarget.model)
+            ? [
+                {
+                  text: "Reply with the single word: OK",
+                  timeoutMillis: DELEGATE_WARMUP_TIMEOUT_MILLIS,
+                },
+              ]
+            : []),
+          {
+            text: turnInput,
+            attachments: input.attachments,
+            timeoutMillis: DELEGATE_TURN_TIMEOUT_MILLIS,
+          },
+        ],
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause as Cause.Cause<never>)
+            : Effect.fail(
+                new ResearchDelegateError({
+                  detail: `Delegate turn on ${targetLabel} failed: ${describeCause(cause)}`,
+                  failureKind: isTimeoutCause(cause) ? "timeout" : "error",
+                }),
+              ),
+        ),
+      );
+
+      if (!text) {
+        return yield* new ResearchDelegateError({
+          detail: `Empty response from ${targetLabel}. Report the step as failed rather than inventing its answer.`,
+          failureKind: "empty",
+        });
+      }
+      return text;
+    }),
+);
 
 export const makeResearchDelegateHandler =
   (options?: { readonly pollDelay?: Effect.Effect<void> }) => (input: ResearchDelegateInput) =>
@@ -991,48 +993,50 @@ export const makeResearchDelegateHandler =
       });
     });
 
-export const researchArtifactReadHandler = (input: ResearchArtifactReadInput) =>
-  Effect.gen(function* () {
-    const invocationScope = yield* McpInvocationContext.McpInvocationContext;
-    const invocation = yield* McpInvocationContext.requireThreadScope(
-      invocationScope,
-      "research_artifact_read",
-    ).pipe(Effect.mapError((cause) => new ResearchArtifactReadError({ detail: cause.message })));
-    const threadId = invocation.thread.threadId;
-    const projections = yield* ProjectionStoreV2;
-    const projects = yield* ProjectStoreV2;
-    const thread = yield* projections.getThread(threadId).pipe(Effect.orElseSucceed(() => null));
-    const project = thread
-      ? yield* projects.getShell(thread.projectId).pipe(Effect.orElseSucceed(() => Option.none()))
-      : Option.none();
-    const root = Option.isSome(project) ? project.value.workspaceRoot : thread?.worktreePath;
-    if (root === undefined || root === null) {
-      return yield* new ResearchArtifactReadError({
-        detail: "This thread has no workspace, so it has no saved step artifacts.",
-      });
-    }
-    const result = yield* readRunArtifact({
-      runDirectory: yield* resolveResearchRunDirectory(root, threadId).pipe(
-        Effect.mapError(
-          () =>
-            new ResearchArtifactReadError({
-              detail: "Could not locate this thread's saved artifacts.",
-            }),
+export const researchArtifactReadHandler = Effect.fn("researchArtifactReadHandler")(
+  (input: ResearchArtifactReadInput) =>
+    Effect.gen(function* () {
+      const invocationScope = yield* McpInvocationContext.McpInvocationContext;
+      const invocation = yield* McpInvocationContext.requireThreadScope(
+        invocationScope,
+        "research_artifact_read",
+      ).pipe(Effect.mapError((cause) => new ResearchArtifactReadError({ detail: cause.message })));
+      const threadId = invocation.thread.threadId;
+      const projections = yield* ProjectionStoreV2;
+      const projects = yield* ProjectStoreV2;
+      const thread = yield* projections.getThread(threadId).pipe(Effect.orElseSucceed(() => null));
+      const project = thread
+        ? yield* projects.getShell(thread.projectId).pipe(Effect.orElseSucceed(() => Option.none()))
+        : Option.none();
+      const root = Option.isSome(project) ? project.value.workspaceRoot : thread?.worktreePath;
+      if (root === undefined || root === null) {
+        return yield* new ResearchArtifactReadError({
+          detail: "This thread has no workspace, so it has no saved step artifacts.",
+        });
+      }
+      const result = yield* readRunArtifact({
+        runDirectory: yield* resolveResearchRunDirectory(root, threadId).pipe(
+          Effect.mapError(
+            () =>
+              new ResearchArtifactReadError({
+                detail: "Could not locate this thread's saved artifacts.",
+              }),
+          ),
         ),
-      ),
-      artifact: input.artifact,
-      threadId,
-      offset: input.offset ?? 0,
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ResearchArtifactReadError({ detail: `Could not read artifact: ${cause.message}` }),
-      ),
-    );
-    if (!result.ok) return yield* new ResearchArtifactReadError({ detail: result.detail });
-    const { ok: _ok, ...output } = result;
-    return output;
-  });
+        artifact: input.artifact,
+        threadId,
+        offset: input.offset ?? 0,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ResearchArtifactReadError({ detail: `Could not read artifact: ${cause.message}` }),
+        ),
+      );
+      if (!result.ok) return yield* new ResearchArtifactReadError({ detail: result.detail });
+      const { ok: _ok, ...output } = result;
+      return output;
+    }),
+);
 
 const handlers = {
   research_delegate: makeResearchDelegateHandler(),

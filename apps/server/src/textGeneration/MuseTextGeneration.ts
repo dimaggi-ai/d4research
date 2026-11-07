@@ -1,6 +1,8 @@
+import { TranscriptionPostProcessingOutput } from "@d4research/provider-core/server/textGenerationOperations";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
-import { Crypto, Deferred, Effect, FileSystem, Schema } from "effect";
+import { Deferred, Effect, FileSystem, Schema } from "effect";
 import { ChildProcessSpawner } from "effect/process";
 import { type MuseSettings, type ModelSelection, TextGenerationError } from "@d4research/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
@@ -29,7 +31,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   environment: NodeJS.ProcessEnv = process.env,
   options?: { readonly makeRuntime?: typeof makeMuseMspRuntime },
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fs = yield* FileSystem.FileSystem;
   // Title and commit-message sessions would otherwise linger in `muse`
@@ -62,7 +64,8 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
-      | "generateReviewGuide";
+      | "generateReviewGuide"
+      | "generateTranscriptionPostProcessing";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -70,7 +73,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
       const completed = yield* Deferred.make<void, TextGenerationError>();
-      const commandId = yield* crypto.randomUUIDv7();
+      const commandId = yield* crypto.uuidV7();
       const items = new Set<string>();
       let output = "";
       const runtime = yield* (options?.makeRuntime ?? makeMuseMspRuntime)({
@@ -82,9 +85,15 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
         // @effect-diagnostics-next-line effectFnOpportunity:off -- d4research code predating this style rule.
         onEvent: (method, params) =>
           Effect.gen(function* () {
-            const event = yield* Effect.try(() => decodeMspNotification(method, params)).pipe(
-              Effect.orElseSucceed(() => undefined),
-            );
+            const event = yield* Effect.try({
+              try: () => decodeMspNotification(method, params),
+              catch: (cause) =>
+                new TextGenerationError({
+                  operation,
+                  detail: "Muse text generation failed.",
+                  cause,
+                }),
+            }).pipe(Effect.orElseSucceed(() => undefined));
             if (!event) return;
             if (
               event.method === "item/started" &&
@@ -109,7 +118,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
             }
           }),
       }).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(SecureRandom.SecureRandom, crypto),
         Effect.provideService(FileSystem.FileSystem, fs),
       );
       const session = yield* runtime.startSession({
@@ -245,6 +254,14 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     });
 
   return {
+    generateTranscriptionPostProcessing: (input) =>
+      runMuseJson({
+        operation: "generateTranscriptionPostProcessing",
+        cwd: input.cwd,
+        prompt: input.prompt,
+        outputSchemaJson: TranscriptionPostProcessingOutput,
+        modelSelection: input.modelSelection,
+      }),
     generateReviewGuide: (input) => {
       const { prompt, outputSchema } = buildReviewGuidePrompt(input);
       return runMuseJson({

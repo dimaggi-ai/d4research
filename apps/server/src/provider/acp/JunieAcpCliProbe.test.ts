@@ -1,3 +1,6 @@
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 /**
  * Optional integration check against a real `junie --acp=true` install.
  * Enable with: T3_JUNIE_ACP_PROBE=1 vp test run JunieAcpCliProbe
@@ -78,7 +81,7 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
       const runtime = yield* makeProbeRuntime();
       const started = yield* runtime.start();
       expect(started.initializeResult).toBeDefined();
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("session/new advertises models through configOptions, not SessionModelState", () =>
@@ -95,7 +98,7 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
 
       const discovered = junieModelsFromSessionSetup(result.configOptions, started.modelConfigId);
       expect(discovered.length).toBeGreaterThan(1);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("advertises the ids the default dev pipeline names", () =>
@@ -112,7 +115,7 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
       expect(slugs).toContain("gemini-3.1-pro-preview");
       expect(slugs).toContain("gpt-5.6-sol");
       expect(slugs).toContain("grok-4.5");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -137,7 +140,7 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
         // The generated default dev pipeline prefers Junie's Grok 4.5 for its
         // BUILD role, so the ungated model in this live probe must exercise
         // that actual route rather than a merely available catalog entry.
-        const model = process.env.T3_JUNIE_MODEL_PROBE ?? "grok-4.5";
+        const model = (yield* HostProcess.Environment).T3_JUNIE_MODEL_PROBE ?? "grok-4.5";
         yield* runtime.setModel(model);
         const output = yield* Ref.make<ReadonlyArray<string>>([]);
         const eventsFiber = yield* runtime.getEvents().pipe(
@@ -166,7 +169,11 @@ describe.runIf(process.env.T3_JUNIE_ACP_PROBE === "1")("Junie ACP CLI probe", ()
         if (Option.isNone(result)) return;
         expect(result.value.stopReason).not.toBe("cancelled");
         expect((yield* Ref.get(output)).join("").trim()).toBe(sentinel);
-      }).pipe(Effect.scoped, Effect.timeout("90 seconds"), Effect.provide(NodeServices.layer)),
+      }).pipe(
+        Effect.scoped,
+        Effect.timeout("90 seconds"),
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
     100_000,
   );
 });

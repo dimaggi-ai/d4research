@@ -3,7 +3,7 @@ import * as NodeOS from "node:os";
 import * as NodePerfHooks from "node:perf_hooks";
 
 import type { ServerEventLoopStall } from "@d4research/contracts";
-import { RotatingFileSink } from "@d4research/shared/logging";
+import { RotatingFileSink, RotatingFileSinkError } from "@d4research/shared/logging";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -34,9 +34,8 @@ export class EventLoopMonitor extends Context.Reference<{
    * first, so a stall that ended just before a client reconnected is included.
    */
   readonly latestNoticeableStall: Effect.Effect<ServerEventLoopStall | undefined>;
-}>("t3/observability/EventLoopMonitor", {
-  // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-  defaultValue: () => ({ latestNoticeableStall: Effect.succeed(undefined) }),
+}>("d4research/observability/EventLoopMonitor", {
+  defaultValue: () => ({ latestNoticeableStall: Effect.undefined }),
 }) {}
 
 /** Delay in ns, active time in ms, CPU in µs. */
@@ -151,15 +150,21 @@ const layerWith = (
       const latestNoticeableStall = yield* Ref.make<
         { readonly stall: ServerEventLoopStall; readonly detectedAtMs: number } | undefined
       >(undefined);
-      const stallSink = yield* Effect.try(
-        () =>
+      const stallSink = yield* Effect.try({
+        try: () =>
           new RotatingFileSink({
             filePath: stallLog.filePath,
             maxBytes: stallLog.maxBytes,
             maxFiles: 1,
             throwOnError: true,
           }),
-      ).pipe(
+        catch: (cause) =>
+          new RotatingFileSinkError({
+            operation: "initialize",
+            filePath: stallLog.filePath,
+            cause,
+          }),
+      }).pipe(
         Effect.catch(() =>
           Effect.logWarning("event loop stall log unavailable", {
             filePath: stallLog.filePath,
@@ -202,7 +207,17 @@ const layerWith = (
         );
         if (stallSink !== undefined) {
           yield* encodeStallLine({ time: detectedAt, ...attributes }).pipe(
-            Effect.flatMap((line) => Effect.try(() => stallSink.write(`${line}\n`))),
+            Effect.flatMap((line) =>
+              Effect.try({
+                try: () => stallSink.write(`${line}\n`),
+                catch: (cause) =>
+                  new RotatingFileSinkError({
+                    operation: "write",
+                    filePath: stallLog.filePath,
+                    cause,
+                  }),
+              }),
+            ),
             Effect.catch(() =>
               Effect.logWarning("event loop stall log write failed", {
                 filePath: stallLog.filePath,

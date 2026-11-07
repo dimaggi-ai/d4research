@@ -302,8 +302,9 @@ export function applyOrchestrationV2ProjectionEvent(
         ...base,
         thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
       };
-    // Visited tracking is read state, not activity: skip the updatedAt bump.
+    // Visited tracking and tags are not activity, not activity: skip the updatedAt bump.
     case "thread.visited":
+    case "thread.tags-updated":
     case "thread.marked-unread":
       return {
         ...projection,

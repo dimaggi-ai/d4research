@@ -1,3 +1,4 @@
+import * as SecureRandom from "effect/crypto/SecureRandom";
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import {
   ProviderItemId,
@@ -18,7 +19,6 @@ import {
 } from "@d4research/contracts";
 import {
   Cause,
-  Crypto,
   DateTime,
   Effect,
   Exit,
@@ -106,16 +106,16 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
 ) {
   const mcpProviderSessions = yield* McpProviderSessions.McpProviderSessions;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig;
   const instanceId = options?.instanceId ?? ProviderInstanceId.make("muse");
   const sessions = new Map<ThreadId, MuseContext>();
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
-  const boot = yield* crypto.randomUUIDv7().pipe(Effect.orDie);
+  const boot = yield* crypto.uuidV7().pipe(Effect.orDie);
   let sequence = 0;
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
-  const stamp = (threadId: ThreadId) =>
+  const stamp = Effect.fn("MuseAdapter.stamp")((threadId: ThreadId) =>
     Effect.gen(function* () {
       return {
         eventId: EventId.make(`muse-${boot}-${++sequence}`),
@@ -124,12 +124,14 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
         providerInstanceId: instanceId,
         threadId,
       };
-    });
+    }),
+  );
   const offer = (event: ProviderRuntimeEvent) => PubSub.publish(events, event).pipe(Effect.asVoid);
-  const warning = (threadId: ThreadId, message: string) =>
+  const warning = Effect.fn("MuseAdapter.warning")((threadId: ThreadId, message: string) =>
     Effect.gen(function* () {
       yield* offer({ ...(yield* stamp(threadId)), type: "runtime.warning", payload: { message } });
-    });
+    }),
+  );
   const mapError = (method: string) => (cause: unknown) =>
     new ProviderAdapterRequestError({
       provider: PROVIDER,
@@ -306,7 +308,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           ([, value]) => value.approvalId === p.approvalId,
         );
         if (old) yield* resolveApproval(ctx, old[0], "cancel");
-        const id = ApprovalRequestId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie));
+        const id = ApprovalRequestId.make(yield* crypto.uuidV7().pipe(Effect.orDie));
         ctx.pendingApprovals.set(id, p);
         const auto = p.availableChoices.find((choice) =>
           ["approved", "approvedForSession", "approvedPolicyAmendment"].includes(choice.decision),
@@ -344,7 +346,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           [...ctx.pendingUserInputs.values()].some((value) => value.userInputId === p.userInputId)
         )
           return;
-        const id = ApprovalRequestId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie));
+        const id = ApprovalRequestId.make(yield* crypto.uuidV7().pipe(Effect.orDie));
         ctx.pendingUserInputs.set(id, p);
         yield* offer({
           ...(yield* stamp(ctx.session.threadId)),
@@ -483,13 +485,14 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
       }
     }
   });
-  const stopContext = (ctx: MuseContext) =>
+  const stopContext = Effect.fn("MuseAdapter.stopContext")((ctx: MuseContext) =>
     Effect.gen(function* () {
       ctx.stopped = true;
       for (const id of ctx.pendingApprovals.keys()) yield* resolveApproval(ctx, id, "cancel");
       for (const id of ctx.pendingUserInputs.keys()) yield* resolveInput(ctx, id, {});
       yield* Scope.close(ctx.scope, Exit.void);
-    });
+    }),
+  );
   const mcpConfigFor = Effect.fn(function* (
     threadId: ThreadId,
   ): Effect.fn.Return<Msp.SessionConfig | undefined> {
@@ -507,63 +510,66 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
         }
       : undefined;
   });
-  const spawnHost = (args: {
-    readonly threadId: ThreadId;
-    readonly cwd: string;
-    readonly runtimeMode: MuseContext["session"]["runtimeMode"];
-    readonly planMode: boolean;
-    readonly queue: Queue.Queue<Incoming>;
-    /**
-     * Host generation at spawn time. A dying host emits a last gasp
-     * (`session/closed` with reason `hostShutdown`); tagging frames lets the
-     * pump drop them so a plan-mode respawn never kills its own stream.
-     */
-    readonly generation: number;
-  }) =>
-    Effect.gen(function* () {
-      const mcpSession = yield* mcpProviderSessions.read(args.threadId);
-      return yield* makeMuseMspRuntime({
-        settings,
-        environment: McpProviderSession.withAgentDeviceEnvironment(
-          options?.environment ?? process.env,
-          mcpSession,
-        ),
-        spawner,
-        cwd: args.cwd,
-        runtimeMode: args.runtimeMode,
-        ...(args.planMode ? { planMode: true as const } : {}),
-        clientInfo: { name: "t3_code", version: "0.0.1" },
-        onEvent: (method, params) =>
-          Queue.offer(args.queue, {
-            method,
-            params,
-            request: false,
-            generation: args.generation,
-          }).pipe(Effect.asVoid),
-        onServerRequest: (method, params) =>
-          Queue.offer(args.queue, {
-            method,
-            params,
-            request: true,
-            generation: args.generation,
-          }).pipe(Effect.as({})),
-        onWarning: (message) => warning(args.threadId, message),
-        onError: (error) =>
-          Effect.gen(function* () {
-            if (error.data?.kind === "notInitialized")
-              yield* offer({
-                ...(yield* stamp(args.threadId)),
-                type: "runtime.error",
-                payload: { message: error.message, class: "provider_error", detail: error.data },
-              });
-          }),
-        ...(options?.nativeEventLogger
-          ? {
-              logger: (event: unknown) => options.nativeEventLogger!.write(event, args.threadId),
-            }
-          : {}),
-      });
-    });
+  const spawnHost = Effect.fn("MuseAdapter.spawnHost")(
+    (args: {
+      readonly threadId: ThreadId;
+      readonly cwd: string;
+      readonly runtimeMode: MuseContext["session"]["runtimeMode"];
+      readonly planMode: boolean;
+      readonly queue: Queue.Queue<Incoming>;
+      /**
+       * Host generation at spawn time. A dying host emits a last gasp
+       * (`session/closed` with reason `hostShutdown`); tagging frames lets the
+       * pump drop them so a plan-mode respawn never kills its own stream.
+       */
+      readonly generation: number;
+    }) =>
+      Effect.gen(function* () {
+        const mcpSession = yield* mcpProviderSessions.read(args.threadId);
+        return yield* makeMuseMspRuntime({
+          settings,
+          environment: McpProviderSession.withAgentDeviceEnvironment(
+            options?.environment ?? process.env,
+            mcpSession,
+          ),
+          spawner,
+          cwd: args.cwd,
+          runtimeMode: args.runtimeMode,
+          ...(args.planMode ? { planMode: true as const } : {}),
+          clientInfo: { name: "t3_code", version: "0.0.1" },
+          onEvent: (method, params) =>
+            Queue.offer(args.queue, {
+              method,
+              params,
+              request: false,
+              generation: args.generation,
+            }).pipe(Effect.asVoid),
+          onServerRequest: (method, params) =>
+            Queue.offer(args.queue, {
+              method,
+              params,
+              request: true,
+              generation: args.generation,
+            }).pipe(Effect.as({})),
+          onWarning: (message) => warning(args.threadId, message),
+          onError: Effect.fn("MuseAdapter.onError")((error) =>
+            Effect.gen(function* () {
+              if (error.data?.kind === "notInitialized")
+                yield* offer({
+                  ...(yield* stamp(args.threadId)),
+                  type: "runtime.error",
+                  payload: { message: error.message, class: "provider_error", detail: error.data },
+                });
+            }),
+          ),
+          ...(options?.nativeEventLogger
+            ? {
+                logger: (event: unknown) => options.nativeEventLogger!.write(event, args.threadId),
+              }
+            : {}),
+        });
+      }),
+  );
   // Watches one host process. Stale hosts (replaced by a plan-mode respawn)
   // resolve their `ended` too, but only the current generation may stop the
   // context.
@@ -615,126 +621,128 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
       ctx.interactionMode = desired;
       yield* watchHost(ctx, runtime, generation);
     }).pipe(
-      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(SecureRandom.SecureRandom, crypto),
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Scope.Scope, ctx.scope),
     );
-  const startSession: MuseAdapterShape["startSession"] = (input) =>
-    Effect.gen(function* () {
-      if (!input.cwd?.trim() || (input.provider !== undefined && input.provider !== PROVIDER))
-        return yield* new ProviderAdapterValidationError({
-          provider: PROVIDER,
-          operation: "startSession",
-          issue: "Muse requires a workspace directory and the muse provider.",
-        });
-      const existing = sessions.get(input.threadId);
-      if (existing) {
-        yield* stopContext(existing);
-        sessions.delete(input.threadId);
-      }
-      const scope = yield* Scope.make();
-      const queue = yield* Queue.unbounded<Incoming>();
-      const result = yield* Effect.gen(function* () {
-        const mcpConfig = yield* mcpConfigFor(input.threadId);
-        const runtime = yield* spawnHost({
-          threadId: input.threadId,
-          cwd: input.cwd!,
-          runtimeMode: input.runtimeMode,
-          planMode: false,
-          queue,
-          // First host of the session; must match hostGeneration below.
-          generation: 0,
-        });
-        const resume =
-          input.resumeCursor === undefined
-            ? undefined
-            : yield* decodeResumeCursor(input.resumeCursor);
-        const model = input.modelSelection?.model ?? settings.model;
-        const started = yield* resume
-          ? runtime.resumeSession({
-              sessionId: resume.sessionId,
-              cursor: resume.viewCursor,
-              ...(mcpConfig ? { config: mcpConfig } : {}),
-            })
-          : runtime.startSession({
-              ...(model ? { modelId: model } : {}),
-              ...(mcpConfig ? { config: mcpConfig } : {}),
-            });
-        const timestamp = yield* now;
-        const ctx: MuseContext = {
-          runtime,
-          scope,
-          queue,
-          sessionId: started.session.sessionId,
-          viewCursor: started.viewCursor,
-          activeTurnId: undefined,
-          interactionMode: "default",
-          hostGeneration: 0,
-          pendingApprovals: new Map(),
-          pendingUserInputs: new Map(),
-          items: new Map(),
-          stopped: false,
-          reserved: false,
-          contextUsage: undefined,
-          session: {
+  const startSession: MuseAdapterShape["startSession"] = Effect.fn("MuseAdapter.startSession")(
+    (input) =>
+      Effect.gen(function* () {
+        if (!input.cwd?.trim() || (input.provider !== undefined && input.provider !== PROVIDER))
+          return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
-            providerInstanceId: instanceId,
+            operation: "startSession",
+            issue: "Muse requires a workspace directory and the muse provider.",
+          });
+        const existing = sessions.get(input.threadId);
+        if (existing) {
+          yield* stopContext(existing);
+          sessions.delete(input.threadId);
+        }
+        const scope = yield* Scope.make();
+        const queue = yield* Queue.unbounded<Incoming>();
+        const result = yield* Effect.gen(function* () {
+          const mcpConfig = yield* mcpConfigFor(input.threadId);
+          const runtime = yield* spawnHost({
             threadId: input.threadId,
             cwd: input.cwd!,
             runtimeMode: input.runtimeMode,
-            status: "ready",
-            ...(started.session.modelId ? { model: started.session.modelId } : {}),
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          },
-        };
-        updateCursor(ctx, started.viewCursor);
-        sessions.set(input.threadId, ctx);
-        yield* offer({
-          ...(yield* stamp(input.threadId)),
-          type: "session.started",
-          payload: { resume: ctx.session.resumeCursor },
-        });
-        yield* offer({
-          ...(yield* stamp(input.threadId)),
-          type: "thread.started",
-          payload: { providerThreadId: ctx.sessionId },
-        });
-        yield* offer({
-          ...(yield* stamp(input.threadId)),
-          type: "session.state.changed",
-          payload: { state: "ready", reason: resume ? "session/resume" : "session/start" },
-        });
-        yield* Stream.fromQueue(queue).pipe(
-          // Drop frames from retired hosts before anything else: a dying
-          // host's last gasp (`session/closed`) must neither end this pump
-          // nor mark the context stopped.
-          Stream.filter(
-            (incoming) => "exited" in incoming || incoming.generation === ctx.hostGeneration,
-          ),
-          Stream.takeUntil(
-            (incoming) => "exited" in incoming || incoming.method === "session/closed",
-          ),
-          Stream.runForEach((incoming) =>
-            processIncoming(ctx, incoming).pipe(
-              Effect.catch((error) => warning(input.threadId, String(error))),
+            planMode: false,
+            queue,
+            // First host of the session; must match hostGeneration below.
+            generation: 0,
+          });
+          const resume =
+            input.resumeCursor === undefined
+              ? undefined
+              : yield* decodeResumeCursor(input.resumeCursor);
+          const model = input.modelSelection?.model ?? settings.model;
+          const started = yield* resume
+            ? runtime.resumeSession({
+                sessionId: resume.sessionId,
+                cursor: resume.viewCursor,
+                ...(mcpConfig ? { config: mcpConfig } : {}),
+              })
+            : runtime.startSession({
+                ...(model ? { modelId: model } : {}),
+                ...(mcpConfig ? { config: mcpConfig } : {}),
+              });
+          const timestamp = yield* now;
+          const ctx: MuseContext = {
+            runtime,
+            scope,
+            queue,
+            sessionId: started.session.sessionId,
+            viewCursor: started.viewCursor,
+            activeTurnId: undefined,
+            interactionMode: "default",
+            hostGeneration: 0,
+            pendingApprovals: new Map(),
+            pendingUserInputs: new Map(),
+            items: new Map(),
+            stopped: false,
+            reserved: false,
+            contextUsage: undefined,
+            session: {
+              provider: PROVIDER,
+              providerInstanceId: instanceId,
+              threadId: input.threadId,
+              cwd: input.cwd!,
+              runtimeMode: input.runtimeMode,
+              status: "ready",
+              ...(started.session.modelId ? { model: started.session.modelId } : {}),
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          };
+          updateCursor(ctx, started.viewCursor);
+          sessions.set(input.threadId, ctx);
+          yield* offer({
+            ...(yield* stamp(input.threadId)),
+            type: "session.started",
+            payload: { resume: ctx.session.resumeCursor },
+          });
+          yield* offer({
+            ...(yield* stamp(input.threadId)),
+            type: "thread.started",
+            payload: { providerThreadId: ctx.sessionId },
+          });
+          yield* offer({
+            ...(yield* stamp(input.threadId)),
+            type: "session.state.changed",
+            payload: { state: "ready", reason: resume ? "session/resume" : "session/start" },
+          });
+          yield* Stream.fromQueue(queue).pipe(
+            // Drop frames from retired hosts before anything else: a dying
+            // host's last gasp (`session/closed`) must neither end this pump
+            // nor mark the context stopped.
+            Stream.filter(
+              (incoming) => "exited" in incoming || incoming.generation === ctx.hostGeneration,
             ),
-          ),
-          Effect.forkIn(scope),
+            Stream.takeUntil(
+              (incoming) => "exited" in incoming || incoming.method === "session/closed",
+            ),
+            Stream.runForEach((incoming) =>
+              processIncoming(ctx, incoming).pipe(
+                Effect.catch((error) => warning(input.threadId, String(error))),
+              ),
+            ),
+            Effect.forkIn(scope),
+          );
+          yield* watchHost(ctx, runtime, ctx.hostGeneration);
+          return ctx.session;
+        }).pipe(
+          Effect.provideService(Scope.Scope, scope),
+          Effect.provideService(SecureRandom.SecureRandom, crypto),
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.timeout("30 seconds"),
+          Effect.onError(() => Scope.close(scope, Exit.void)),
+          Effect.mapError(mapError("startSession")),
         );
-        yield* watchHost(ctx, runtime, ctx.hostGeneration);
-        return ctx.session;
-      }).pipe(
-        Effect.provideService(Scope.Scope, scope),
-        Effect.provideService(Crypto.Crypto, crypto),
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.timeout("30 seconds"),
-        Effect.onError(() => Scope.close(scope, Exit.void)),
-        Effect.mapError(mapError("startSession")),
-      );
-      return result;
-    });
-  const sendTurn: MuseAdapterShape["sendTurn"] = (input) =>
+        return result;
+      }),
+  );
+  const sendTurn: MuseAdapterShape["sendTurn"] = Effect.fn("MuseAdapter.sendTurn")((input) =>
     Effect.gen(function* () {
       const ctx = yield* requireSession(input.threadId);
       if (ctx.reserved || ctx.activeTurnId)
@@ -774,7 +782,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           settings.reasoningEffort;
         const reasoningEffort = MUSE_REASONING_EFFORTS.find((value) => value === effort);
         ctx.items.clear();
-        const turnId = TurnId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie));
+        const turnId = TurnId.make(yield* crypto.uuidV7().pipe(Effect.orDie));
         ctx.activeTurnId = turnId;
         const ack = yield* ctx.runtime
           .startTurn({
@@ -801,7 +809,8 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
         ),
         Effect.mapError(mapError("sendTurn")),
       );
-    });
+    }),
+  );
   const stopAll = () =>
     Effect.forEach(sessions.values(), stopContext, { discard: true }).pipe(
       Effect.andThen(Effect.sync(() => sessions.clear())),
@@ -812,16 +821,17 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
     capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
     startSession,
     sendTurn,
-    interruptTurn: (threadId: ThreadId, turnId?: TurnId) =>
+    interruptTurn: Effect.fn("MuseAdapter.interruptTurn")((threadId: ThreadId, turnId?: TurnId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         yield* ctx.runtime
           .interrupt(ctx.sessionId, turnId ?? ctx.activeTurnId)
           .pipe(Effect.mapError(mapError("turn/interrupt")));
       }),
+    ),
     compaction: {
       type: "native",
-      start: (threadId) =>
+      start: Effect.fn("MuseAdapter.start")((threadId) =>
         Effect.gen(function* () {
           const ctx = yield* requireSession(threadId);
           const ack = yield* ctx.runtime
@@ -829,10 +839,11 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
             .pipe(Effect.mapError(mapError("session/compact")));
           if (ack.status === "noop") yield* warning(threadId, "Nothing to compact");
         }),
+      ),
     },
     respondToRequest: (threadId, id, decision) =>
       requireSession(threadId).pipe(Effect.flatMap((ctx) => decide(ctx, id, decision))),
-    respondToUserInput: (threadId, id, answers) =>
+    respondToUserInput: Effect.fn("MuseAdapter.respondToUserInput")((threadId, id, answers) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         const pending = ctx.pendingUserInputs.get(id);
@@ -879,12 +890,14 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
             .pipe(Effect.mapError(mapError("userInput/answer")));
         yield* resolveInput(ctx, id, answers);
       }),
-    stopSession: (threadId) =>
+    ),
+    stopSession: Effect.fn("MuseAdapter.stopSession")((threadId) =>
       Effect.gen(function* () {
         const ctx = sessions.get(threadId);
         if (ctx) yield* stopContext(ctx);
         sessions.delete(threadId);
       }),
+    ),
     listSessions: () => Effect.sync(() => [...sessions.values()].map((ctx) => ctx.session)),
     hasSession: (threadId) =>
       Effect.sync(() => sessions.has(threadId) && !sessions.get(threadId)?.stopped),

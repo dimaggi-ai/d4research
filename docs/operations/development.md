@@ -12,17 +12,111 @@ new browser, unless it already holds the reusable dev credential below. See the
 [root README](../../README.md) for prerequisites and the
 [mobile README](../../apps/mobile/README.md) for native development.
 
-## State and remote access
+## Choosing a dev process
 
-Linked worktrees use their own `.t3/userdata`. Do not start a test server against the live
-`~/.t3/userdata`. Follow the [test-data instructions](../../AGENTS.md#test-data) when taking a
-consistent copy of existing data.
+Use `vp run dev` for server and web, or `vp run dev:desktop` for the Electron client.
+`dev:server` and `dev:web` start those processes separately.
+See the [mobile README](../../apps/mobile/README.md) for native builds and Metro.
 
-Read ports from the dev runner's output because occupied ports can change the selected values.
-Use `vp run dev --share` to share over the tailnet, and give the tester the complete pairing URL.
-Leave `VITE_HTTP_URL` and `VITE_WS_URL` unset: development uses the browser's origin and proxy.
+Flags go directly after the task name, for example `vp run dev --home-dir /tmp/t3code-dev`.
+Add `--browser` to open a browser automatically.
 
-### Reusable dev credential
+To stop a worktree's dev stack when its thread settles, import the **Dev** action from
+`t3.json` in Settings > Projects > Actions and start it through the action menu or its
+keybinding. Its `stopOnSettle` option lets d4research stop the terminal and its child processes.
+Running `vp run dev` through an agent's own shell tool does not attach it to this lifecycle.
+
+### State and ports
+
+Linked worktrees default to their own `.t3/userdata`, even when `T3CODE_HOME` is set.
+The main checkout defaults to `~/.t3/dev`. An explicit `--home-dir` wins in both cases.
+The first start in a worktree seeds its empty database from a read-only copy of
+`~/.t3/userdata/statev2.sqlite` if the source is at most 500 MiB. Larger sources warn
+and dev starts with an empty database. `--no-seed` or `T3CODE_DEV_SEED=0` skips seeding.
+To copy a larger source, run `vp run migrate-dev-db` with dev stopped. It may use
+substantial disk space before pruning.
+Never run a development server against the live `~/.t3/userdata`.
+See [test data](../../AGENTS.md#test-data) for copying a consistent database snapshot.
+
+Read ports from the `[dev-runner]` output. Worktrees derive stable preferences from their paths,
+but occupied ports can shift them. `T3CODE_PORT_OFFSET` or `T3CODE_DEV_INSTANCE` can select a
+different preference when needed.
+
+### Replay provider
+
+`vp run dev` registers `Replay (dev)`, a local ACP agent at
+[dev-replay-agent.ts](../../apps/server/scripts/dev-replay-agent.ts). It plays recorded
+ACP transcripts with simulated streaming, so the real adapter, orchestration, and UI run
+without a paid model. Each scenario is a model, and each prompt plays the next recorded turn.
+Bundled servers, including desktop dev, skip it because they have no agent script.
+Dev servers add it back on start, so turn it off in Settings instead of removing it.
+To add a scenario, point a `SCENARIOS` entry at a generic ACP replay fixture
+(`registry_transcript.ndjson`) or a file in [dev-replay](../../apps/server/scripts/dev-replay).
+The agent replays session updates, permission requests, and questions. It drops session setup
+and vendor frames, so Grok and fx recordings lose their vendor-only behavior.
+
+### Profiling dev startup
+
+Run `vp run profile:startup` to capture the first 20 seconds of inherited Node processes under
+`.t3/startup-profiles/<timestamp>`. Workers that execute the preload get separate profiles.
+It starts the normal dev runner and accepts its flags.
+Stop it with Ctrl+C after the capture. Set `T3CODE_STARTUP_PROFILE_DIR` to choose another output
+directory. Profiling adds overhead, so compare readiness with an ordinary `vp run dev` run.
+
+Open a `.cpuprofile` in Chrome DevTools' Performance panel for sampled function stacks and source
+lines. Each `.modules.json` is a Chrome trace containing timed module resolution, loading,
+synchronous subprocess calls, and startup measures. Per-file records include importer URLs,
+source loading, preparation, recursive dependency linking, and top-level evaluation. Preparation
+uses synchronous loader boundaries; linking includes dependencies, and CommonJS evaluation can
+include nested `require` calls. Some ESM/CommonJS interop reports a combined stage. `.process.json` records the process, Node version, and capture window.
+The server's nested Effect and SQL spans remain in `.t3/userdata/logs/server.trace.ndjson`.
+
+The preload temporarily adds module-body timing markers and uses one automatic debugger pause
+to instrument the live Node loader. The launcher adds `--no-node-snapshot` to inherited
+`NODE_OPTIONS` because Node 26's snapshotted loader cannot accept that breakpoint. Include the
+same flag when using the preload directly. This disables Node's built-in startup snapshot,
+can change compilation-cache hits, and adds overhead.
+Treat per-file captures as diagnostic runs; use uninstrumented runs for baseline startup latency.
+The first entry module can compile before loader instrumentation is installed.
+
+A fresh process still uses filesystem, Node compilation, provider, and Vite dependency caches.
+Measure a missing Vite dependency cache separately from a restart with an existing database.
+Neither the Vite ready message nor the HTTP listener proves that a browser has rendered the app.
+
+### Sharing and remote debugging
+
+`vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL
+for that origin. Give the tester the complete URL, including its token. The dev runner removes
+its mapping on exit.
+
+Leave `VITE_HTTP_URL` and `VITE_WS_URL` unset. Vite proxies the backend through the browser's
+origin so the same build works over localhost and remote connections.
+
+Shared runs enable bundled dev to avoid a network round trip for each import level.
+`T3CODE_BUNDLED_DEV=0` opts out when debugging bundler differences. Three reload traps matter
+when changing this setup:
+
+- The web entry must dynamically import the app so React refresh initializes before application
+  chunks. Static imports can work on first load and fail after a route split.
+- Bundled dev rebuilds Tailwind through watched files. Its ordinary Vite hot-update hook expects
+  a server/module graph that Rolldown does not provide.
+- The app and its routes are lazy chunks, built on first request. A plugin pre-bundles the
+  startup chain when the server starts. Renaming or moving a startup route or the app entry
+  silently drops it from that list.
+
+The workarounds live in the [web entry](../../apps/web/src/bootstrap.ts),
+[Tailwind plugin](../../apps/web/vite/tailwind.ts), and
+[startup warmup](../../apps/web/vite/warmBundledDev.ts).
+
+`vp run dev --share --built` skips the Vite dev server. It runs `vp build --watch` for the web
+app, and the backend serves `apps/web/dist` on the same tailnet URL and pairing flow. Use it when
+someone tests over a slow link or only needs to use the app: loads are production size, and the
+first load does not wait for dev bundling. There is no HMR. After an edit, wait for the
+`built in` line (about 6 s), then reload. Until the first build exists, the URL shows a page that
+reloads by itself. The license manifest is not generated in this mode. `--built` requires
+`--share` and the `dev` mode.
+
+#### Reusable dev credential
 
 Use this only on a hostname where you trust every service. Browsers send cookies to all ports
 on that hostname. Any service you visit there can receive the reusable admin credential,
@@ -76,9 +170,11 @@ In `apps/web`, a test that renders React or touches the DOM is named `*.browser.
 and runs in headless Chromium with the React Compiler on, like the app. There is no jsdom; other
 `*.test.ts` files run in Node.
 
-TypeScript workspaces typecheck with `tsc`. The `typescript` catalog entry is
-`@tsc-rs/typescript`, the tsc-rs drop-in, with Effect diagnostics, quick fixes, and
-refactors built in. VS Code uses it through `js/ts.tsdk.path` in `.vscode/settings.json`.
+TypeScript workspaces typecheck with `effect-tsgo tsrs --noEmit` from `@effect/tsgo`: the
+[tsrs](https://github.com/oxc-project/tsrs) checker with Effect diagnostics, quick fixes, and
+refactors built in. Only `apps/marketing` installs `typescript`, for Astro. VS Code's TypeScript 7
+extension starts the same checker through `.vscode/tsdk/tsgo` (`js/ts.tsdk.path`), a POSIX
+script, so on Windows open the workspace through WSL.
 
 Use `vp run lint:mobile` for native mobile changes. CI owns the full suite; see
 [ci.yml](../../.github/workflows/ci.yml) for its current jobs.
@@ -87,7 +183,7 @@ Windows investigation while that suite is not a required gate.
 
 ### Unused code
 
-`vp run knip:check` checks unused files and dependencies across the repo, then
+`vp run knip:check` checks unused files and dependencies across the repo and, at the same time,
 unused runtime exports in `apps/server`, `apps/desktop`, `apps/web`, and every internal package under
 `packages/`. CI enforces both checks.
 Exported types and Effect schemas are allowed without consumers. The schema preprocessor
@@ -124,8 +220,9 @@ options.
 
 Native macOS and Windows desktop artifact builds generate server bytecode with the packaged
 Electron executable, after ASAR creation and before signing. Linux builds skip generation until
-native packaging and relocated AppImage reuse have been validated. Cross-platform and
-cross-architecture builds also skip generation explicitly. CLI, SEA and WSL runtimes keep their
+native packaging and relocated AppImage reuse have been validated. macOS x64 builds on ARM64
+hosts run the packaged x64 Electron under Rosetta to generate the cache. Other cross-platform and
+cross-architecture builds skip generation explicitly. CLI, SEA and WSL runtimes keep their
 existing behavior; only desktop backend imports covered by generation receive prepared bytecode.
 Worker-only modules compile normally.
 

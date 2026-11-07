@@ -118,6 +118,7 @@ const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const FX_DRIVER_KIND = ProviderDriverKind.make("fx");
+const KIRO_DRIVER_KIND = ProviderDriverKind.make("kiro");
 const MUSE_DRIVER_KIND = ProviderDriverKind.make("muse");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const JUNIE_DRIVER_KIND = ProviderDriverKind.make("junie");
@@ -158,6 +159,8 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   // Product slug meaning the current session model, never an ACP model id.
   [GROK_DRIVER_KIND]: "grok-build",
   [FX_DRIVER_KIND]: "default",
+  // Keeps the Kiro session's current model; real models come from its `model` config option.
+  [KIRO_DRIVER_KIND]: "default",
   [MUSE_DRIVER_KIND]: MUSE_DEFAULT_MODEL,
   [JUNIE_DRIVER_KIND]: "default",
   [ACP_REGISTRY_DRIVER_KIND]: "default",
@@ -235,6 +238,7 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
   [FX_DRIVER_KIND]: "fx",
+  [KIRO_DRIVER_KIND]: "Kiro",
   [MUSE_DRIVER_KIND]: "Muse Code",
   [JUNIE_DRIVER_KIND]: "Junie",
   [ACP_REGISTRY_DRIVER_KIND]: "ACP Registry",

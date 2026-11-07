@@ -20,24 +20,26 @@ allowBuilds:
   llama.rn: true
   msgpackr-extract: true
   msw: false
+  # Ships prebuilds; its host-architecture probe triggers source builds during cross-packaging.
+  koffi: false
   node-pty: true
   # Ships N-API prebuilds; its install script only rebuilds from source.
   objc-js: false
   "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-t3.16-29ddd424.tgz": true
   sharp: true
-  "@tsc-rs/typescript": true
   utf-8-validate: false
   workerd: false
 
 catalog:
-  "@effect/atom-react": 4.0.5
-  "@effect/graphql-generator": 4.0.5
-  "@effect/openapi-generator": 4.0.5
-  "@effect/platform-node": 4.0.5
-  "@effect/platform-node-shared": 4.0.5
-  "@effect/sql-pg": 4.0.5
-  "@effect/sql-sqlite-do": 4.0.5
-  "@effect/vitest": 4.0.5
+  "@effect/atom-react": 4.1.2
+  "@effect/graphql-generator": 4.1.2
+  "@effect/openapi-generator": 4.1.2
+  "@effect/platform-bun": 4.1.2
+  "@effect/platform-node": 4.1.2
+  "@effect/platform-node-shared": 4.1.2
+  "@effect/sql-pg": 4.1.2
+  "@effect/sql-sqlite-do": 4.1.2
+  "@effect/vitest": 4.1.2
   "@electron-webauthn/macos": 1.3.1
   "@legendapp/list": 3.3.5
   "@noble/curves": 1.9.1
@@ -52,7 +54,7 @@ catalog:
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.3.0
   "@types/ws": 8.18.2
-  effect: 4.0.5
+  effect: 4.1.2
   electron-webauthn: 1.3.1
   jose: 6.2.2
   lightningcss: 1.33.0
@@ -62,7 +64,6 @@ catalog:
   react-dom: 19.3.0
   tailwindcss: 4.3.3
   tldts: 7.4.2
-  typescript: npm:@tsc-rs/typescript@0.8.0
   undici: 8.11.2
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
@@ -83,6 +84,14 @@ catalog:
   unified: 11.0.5
 
 minimumReleaseAgeExclude:
+  - "@effect/tsgo-darwin-arm64@0.67.1"
+  - "@effect/tsgo-darwin-x64@0.67.1"
+  - "@effect/tsgo-linux-arm64@0.67.1"
+  - "@effect/tsgo-linux-arm@0.67.1"
+  - "@effect/tsgo-linux-x64@0.67.1"
+  - "@effect/tsgo-win32-arm64@0.67.1"
+  - "@effect/tsgo-win32-x64@0.67.1"
+  - "@effect/tsgo@0.67.1"
   - "@tsc-rs/*"
   - expo-glass-effect@58.0.4
   - expo-blur@58.0.4
@@ -93,15 +102,15 @@ minimumReleaseAgeExclude:
   - "@distilled.cloud/core@1.0.0-rc.13"
   - "@distilled.cloud/neon@1.0.0-rc.13"
   - "@distilled.cloud/planetscale@1.0.0-rc.13"
-  - "@effect/atom-react@4.0.5"
-  - "@effect/graphql-generator@4.0.5"
-  - "@effect/openapi-generator@4.0.5"
-  - "@effect/platform-node-shared@4.0.5"
-  - "@effect/platform-node@4.0.5"
-  - "@effect/sql-pg@4.0.5"
-  - "@effect/sql-sqlite-do@4.0.5"
-  - "@effect/vitest@4.0.5"
-  - effect@4.0.5
+  - "@effect/atom-react@4.1.2"
+  - "@effect/graphql-generator@4.1.2"
+  - "@effect/openapi-generator@4.1.2"
+  - "@effect/platform-node-shared@4.1.2"
+  - "@effect/platform-node@4.1.2"
+  - "@effect/sql-pg@4.1.2"
+  - "@effect/sql-sqlite-do@4.1.2"
+  - "@effect/vitest@4.1.2"
+  - effect@4.1.2
   - "@legendapp/list@3.3.5"
   - "@expo/cli@58.1.1 || 58.1.9 || 58.1.11"
   - "@expo/env@2.5.1"
@@ -248,6 +257,7 @@ overrides:
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-arm64": "-"
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-x64": "-"
   "@effect/atom-react": "catalog:"
+  "@effect/platform-bun": "catalog:"
   "@effect/platform-node": "catalog:"
   "@effect/platform-node-shared": "catalog:"
   "@effect/sql-pg": "catalog:"
@@ -256,10 +266,10 @@ overrides:
   "@expo/dom-webview": 58.0.2
   "@expo/metro-config": 58.0.14
   expo-constants: 58.0.12
-  expo-router: 58.0.20
   "expo-sharing>@expo/config-plugins": 58.0.9
   "expo-sharing>@expo/config-types": 58.0.3
-  "@pierre/diffs>@shikijs/transformers": ^4.2.0
+  # @pierre/trees pins @pierre/theming 1.0.0, whose peer range predates @pierre/theme 2.
+  "@pierre/trees>@pierre/theming": 1.0.2
   # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
   "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
   micromark-extension-gfm-table: 2.1.1
@@ -277,6 +287,9 @@ overrides:
   "@opencode/protocol>effect": "catalog:"
   "@opencode/schema>effect": "catalog:"
   node-abi: 4.33.0
+  # react-native-worklets peers on any version, so a fresh resolve takes the newest
+  # one; React Native's CLI plugin wants exactly its own. Move with react-native.
+  "@react-native/metro-config": 0.88.0
   # The desktop app installs these without a lockfile when it packages them, so
   # pin the native passkey code that runs in its main process.
   "electron-webauthn>@electron-webauthn/macos": "catalog:"
@@ -310,7 +323,7 @@ patchedDependencies:
   expo-audio@58.0.9: patches/expo-audio@58.0.9.patch
   expo-video@58.0.11: patches/expo-video@58.0.11.patch
   expo-network@58.0.3: patches/expo-network@58.0.3.patch
-  "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
+  "@effect/vitest@4.1.2": patches/@effect__vitest@4.1.2.patch
   "@expo/metro-config@58.0.14": patches/@expo__metro-config@58.0.14.patch
   expo-sharing@58.0.19: patches/expo-sharing@58.0.19.patch
   expo-widgets@58.0.20: patches/expo-widgets@58.0.20.patch
@@ -345,6 +358,12 @@ patchedDependencies:
   # Observe the owned host exit independently of descendants retaining its stdio.
   "@muse-code/sdk@1.4.6": patches/@muse-code__sdk@1.4.6.patch
   app-builder-lib@26.16.1: patches/app-builder-lib@26.16.1.patch
+  # A newline in a copied table cell becomes <br>, so Copy as Markdown keeps the row whole.
+  react-native-enriched-markdown@1.2.0-t3.16: patches/react-native-enriched-markdown@1.2.0-t3.16.patch
+
+# Unmet peers fail resolution, so a pin outside a dependency's peer range is
+# caught when the lockfile changes instead of scrolling past as a warning.
+strictPeerDependencies: true
 
 peerDependencyRules:
   allowAny:
@@ -352,6 +371,10 @@ peerDependencyRules:
     - vite
   allowedVersions:
     vite: "*"
+    # Our react-native-screens fork is a 5.x prerelease, which ">= 4.0.0" excludes.
+    "@react-navigation/native-stack>react-native-screens": "*"
+    # ws 7 (React Native dev tooling) only calls isValidUTF8, unchanged in v6.
+    "ws@7>utf-8-validate": "6"
 
 # pnpm 12 links agent skills that dependencies ship into .claude/skills once
 # approved. We curate our own skills, so deny these to keep installs quiet.

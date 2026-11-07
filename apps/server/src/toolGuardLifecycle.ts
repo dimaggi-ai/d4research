@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 // @effect-diagnostics preferSchemaOverJson:off
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -148,7 +149,10 @@ const writeJson = Effect.fn("writeToolGuardJson")(function* (filePath: string, v
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   yield* fileSystem.makeDirectory(path.dirname(filePath), { recursive: true });
-  yield* fileSystem.writeFileString(filePath, `${JSON.stringify(value, null, 2)}\n`);
+  yield* fileSystem.writeFileString(
+    filePath,
+    `${yield* Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))(value)}\n`,
+  );
 });
 
 const providerHookPaths = (home: string, path: Pick<Path.Path, "join">) => [
@@ -195,7 +199,8 @@ const removeExternalToolGuardHooksFromConfigs = Effect.fn(
         if (!(yield* fileSystem.exists(configPath))) return;
         const current = yield* readJson(configPath);
         const next = removeExternalToolGuardHooks(current);
-        if (JSON.stringify(current) !== JSON.stringify(next)) yield* writeJson(configPath, next);
+        const encode = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+        if ((yield* encode(current)) !== (yield* encode(next))) yield* writeJson(configPath, next);
       }),
     { discard: true },
   );

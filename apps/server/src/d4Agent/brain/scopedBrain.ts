@@ -29,16 +29,17 @@ type Embeddings = { enabled: boolean; baseUrl: string; model: string };
 type Hit = { path: string; chunk: number; text: string; score: number };
 type Chunk = { id: number; path: string; chunk: number; text: string };
 
-class BoundaryError extends Error {
-  readonly category: string;
-  constructor(category: string) {
-    super(REFUSAL);
-    this.category = category;
+class BoundaryError extends Schema.TaggedError<BoundaryError>()("BoundaryError", {
+  category: Schema.String,
+  message: Schema.String,
+}) {
+  static new(category: string) {
+    return new BoundaryError({ message: REFUSAL, category });
   }
 }
 const hash = (raw: string | Buffer) => NodeCrypto.createHash("sha256").update(raw).digest("hex");
 const refuse = (category: string): never => {
-  throw new BoundaryError(category);
+  throw BoundaryError.new(category);
 };
 function validateContext(context: string) {
   if (!contexts.has(context)) refuse("context");
@@ -151,7 +152,7 @@ export function createScopedBrain(options: {
     } catch (error) {
       options.diagnostic?.({
         operation,
-        category: error instanceof BoundaryError ? error.category : "unavailable",
+        category: Schema.is(BoundaryError)(error) ? error.category : "unavailable",
       });
       // oxlint-disable-next-line eslint/preserve-caught-error -- Public failures must omit filesystem details; the callback receives only a bounded category.
       throw new Error(REFUSAL);
@@ -167,7 +168,7 @@ export function createScopedBrain(options: {
         if (NodeFS.lstatSync(location).isSymbolicLink()) refuse("database-location");
       } catch (error) {
         if (
-          error instanceof BoundaryError ||
+          Schema.is(BoundaryError)(error) ||
           !error ||
           typeof error !== "object" ||
           !("code" in error) ||
@@ -182,7 +183,7 @@ export function createScopedBrain(options: {
       if (NodeFS.lstatSync(path).isSymbolicLink()) refuse("database-location");
     } catch (error) {
       if (
-        error instanceof BoundaryError ||
+        Schema.is(BoundaryError)(error) ||
         !error ||
         typeof error !== "object" ||
         !("code" in error) ||

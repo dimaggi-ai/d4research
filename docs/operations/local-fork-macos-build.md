@@ -163,7 +163,7 @@ Restarting can interrupt running agent turns. Only do this when the owner explic
 restart. Ask macOS to quit the application by bundle identifier:
 
 ```sh
-osascript -e 'tell application id "com.t3tools.t3code" to quit'
+osascript -e 'tell application id "ai.dimaggi.d4research" to quit'
 ```
 
 Wait until the installed application's processes are gone. Inspecting processes is fine; do not
@@ -189,7 +189,7 @@ open -a "$installed_app"
 Builds before 0.1.0 were branded Alpha and installed at `/Applications/T3 Code (Alpha).app`. The
 first Beta install replaces that bundle: set `installed_app` to the Alpha path for the backup move,
 then move the staged bundle to `/Applications/T3 Code (Beta).app`. Both use the bundle identifier
-`com.t3tools.t3code` and the same user data.
+`ai.dimaggi.d4research` and the same user data.
 
 Do not recursively delete the installed app, the repository root, `release/`, or a broad directory.
 Moving the previous explicit bundle to Trash makes rollback possible.

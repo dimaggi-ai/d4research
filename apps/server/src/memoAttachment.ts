@@ -1,4 +1,4 @@
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 
 import {
@@ -63,9 +63,10 @@ export interface SearchedMemoAttachment {
   }>;
 }
 
-export class MemoAttachmentPersistenceError extends Data.TaggedError(
+export class MemoAttachmentPersistenceError extends Schema.TaggedError<MemoAttachmentPersistenceError>()(
   "MemoAttachmentPersistenceError",
-)<{ readonly message: string }> {}
+  { message: Schema.String },
+) {}
 
 export function isMemoAttachmentDocumentToken(value: string): boolean {
   return MEMO_ATTACHMENT_TOKEN_PATTERN.test(value);

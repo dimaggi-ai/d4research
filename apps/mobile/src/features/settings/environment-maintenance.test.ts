@@ -9,7 +9,7 @@ import {
   supportsEnvironmentUpdate,
 } from "./environment-maintenance";
 
-const provider = Schema.decodeUnknownSync(ServerProvider)({
+const provider = Schema.decodeSync(ServerProvider)({
   instanceId: "codex-personal",
   driver: "codex",
   enabled: true,

@@ -11,6 +11,10 @@ function setTabIndex(element: HTMLElement, value: number) {
 }
 
 /** A roving DOM focus, separate from thread activation, as in VS Code's list commands. */
+export function attachSidebarTree(element: HTMLElement | null) {
+  return element ? installSidebarTree(element) : undefined;
+}
+
 export function installSidebarTree(root: HTMLElement) {
   let rows: HTMLElement[] = [];
   let focusedId: string | undefined;
@@ -47,6 +51,15 @@ export function installSidebarTree(root: HTMLElement) {
     setRowControlsReachable(row, true);
     tabStop = row;
     focusedId = row.dataset.sidebarRow;
+  };
+
+  const ownerRow = (element: HTMLElement) => {
+    const row = element.closest<HTMLElement>(ROW);
+    if (row) return row;
+    const linked = element.dataset.sidebarActionFor;
+    return linked
+      ? root.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(linked)}"]`)
+      : null;
   };
 
   const focusRow = (row: HTMLElement) => {
@@ -119,14 +132,21 @@ export function installSidebarTree(root: HTMLElement) {
     if (ownsFocus && !selected && document.activeElement === document.body) root.focus();
   };
 
-  // Clicking non-focusable content drops focus to the body without a focusin event.
+  // Clicking non-focusable content, including empty list space, drops focus to the body
+  // without a focusin event. A click on the focused row fires no focusin either.
   const onPointerDown = (event: PointerEvent) => {
-    if (!root.contains(event.target as Node)) ownsFocus = false;
+    const focusable =
+      event.target instanceof Element
+        ? event.target.closest(`${ROW}, button, a[href], input, [tabindex]`)
+        : null;
+    ownsFocus = focusable !== null && root.contains(focusable);
   };
   const onFocus = (event: FocusEvent) => {
     ownsFocus = root.contains(event.target as Node);
-    if (!ownsFocus || !(event.target instanceof HTMLElement) || !event.target.matches(ROW)) return;
-    setTabStop(event.target);
+    if (!ownsFocus || !(event.target instanceof HTMLElement)) return;
+    const row = ownerRow(event.target);
+    if (!row) return;
+    setTabStop(row);
   };
   const onKeyDown = (event: KeyboardEvent) => {
     const row = event.target;

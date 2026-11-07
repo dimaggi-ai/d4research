@@ -1,5 +1,6 @@
+import * as HostProcess from "@d4research/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off -- d4research host integration uses Node APIs directly.
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- spawn gives a process group to kill on timeout and lets the wait end when bash exits, even if a started app keeps the pipes open.
+// spawn gives a process group to kill on timeout and lets the wait end when bash exits, even if a started app keeps the pipes open.
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as NodeChildProcess from "node:child_process";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- a synchronous PATH probe at layer build.
@@ -28,7 +29,7 @@ const hasSystemdRun = () =>
 
 export const make = (options: { readonly useScope: boolean }) =>
   PcCommand.of({
-    run: (command, id) =>
+    run: Effect.fn("PcCommand.run")((command, id) =>
       Effect.gen(function* () {
         // A transient scope keeps apps Nia opens alive when the d4research service restarts,
         // because the service's KillMode stops everything left in its own cgroup.
@@ -47,9 +48,10 @@ export const make = (options: { readonly useScope: boolean }) =>
               ],
             ]
           : ["bash", ["-lc", command]];
+        const environment = yield* HostProcess.Environment;
         const child = NodeChildProcess.spawn(file, args, {
-          cwd: process.env.HOME,
-          env: { ...process.env, DISPLAY: process.env.DISPLAY ?? ":0" },
+          cwd: environment.HOME,
+          env: { ...environment, DISPLAY: environment.DISPLAY ?? ":0" },
           detached: true,
           stdio: ["ignore", "pipe", "pipe"],
         });
@@ -87,6 +89,7 @@ export const make = (options: { readonly useScope: boolean }) =>
         child.stderr?.destroy();
         return { ...exit, output: output.slice(0, OUTPUT_LIMIT) } satisfies PcCommandResult;
       }),
+    ),
   });
 
 export const layer = Layer.sync(PcCommand, () => make({ useScope: hasSystemdRun() }));

@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
-import type { VcsStatusResult } from "@d4research/contracts";
+import { VcsStatusResult } from "@d4research/contracts";
 import { act } from "react";
+import * as Schema from "effect/Schema";
+import type { AppBarMenu } from "../../components/ui/AppBar.types";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-// Native header item factories are only read when options are applied, so the fake
-// navigation snapshots the right items at each setOptions, as native-stack does.
 const harness = vi.hoisted(() => ({
-  setOptionsCalls: 0,
-  renderedRightItems: [] as Array<ReadonlyArray<Record<string, unknown>>>,
+  renderedMenus: [] as ReadonlyArray<AppBarMenu>,
   navigatedRoutes: [] as string[],
 }));
 
@@ -21,10 +20,6 @@ vi.mock("@react-navigation/native", () => {
       harness.navigatedRoutes.push(route);
     },
     addListener: () => () => {},
-    setOptions: (options: { unstable_headerRightItems?: () => Array<Record<string, unknown>> }) => {
-      harness.setOptionsCalls += 1;
-      harness.renderedRightItems.push(options.unstable_headerRightItems?.() ?? []);
-    },
   };
   return {
     StackActions: { replace: () => ({}) },
@@ -34,14 +29,16 @@ vi.mock("@react-navigation/native", () => {
 vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: () => () => {} }));
 
 vi.mock("../../state/session", () => ({ useEnvironmentScope: () => true }));
-vi.mock("../../components/ui/AppBar", async () => {
-  const { NativeStackScreenOptions } = await import("../../native/StackHeader");
-  return {
-    AppBar: (props: import("../../components/ui/AppBar.types").AppBarProps) => (
-      <NativeStackScreenOptions options={props.options} optionsVersion={props.optionsVersion} />
-    ),
-  };
-});
+vi.mock("../../components/ui/AppBar", () => ({
+  AppBar: (props: import("../../components/ui/AppBar.types").AppBarProps) => {
+    harness.renderedMenus = props.menus ?? [];
+    return null;
+  },
+}));
+vi.mock("../../components/ui/ScreenHeaderButton", () => ({ ScreenHeaderButton: () => null }));
+vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
+  useWorkspaceBackNavigation: () => () => {},
+}));
 vi.mock("react-native", () => ({ Alert: { alert: () => {} }, Linking: {}, Platform: {} }));
 vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useAdaptiveWorkspaceLayout: () => ({
@@ -67,7 +64,7 @@ function status(
   files: ReadonlyArray<string>,
   overrides: Partial<VcsStatusResult> = {},
 ): VcsStatusResult {
-  return {
+  return Schema.decodeSync(VcsStatusResult)({
     isRepo: true,
     hasPrimaryRemote: false,
     isDefaultRef: true,
@@ -83,7 +80,7 @@ function status(
     behindCount: 0,
     pr: null,
     ...overrides,
-  } as unknown as VcsStatusResult;
+  });
 }
 
 function Header(props: { readonly gitStatus: VcsStatusResult | null; readonly title?: string }) {
@@ -91,8 +88,6 @@ function Header(props: { readonly gitStatus: VcsStatusResult | null; readonly ti
     <ThreadHeader
       title={props.title ?? "Thread"}
       subtitle=""
-      headerColor="#000"
-      usesNativeHeaderGlass
       gitControls={{
         environmentId: "environment-1",
         threadId: "thread-1",
@@ -111,30 +106,21 @@ function Header(props: { readonly gitStatus: VcsStatusResult | null; readonly ti
         onRunProjectScript: async () => {},
       }}
       hasThreadCwd
-      hasWorkspaceRoot
       fileInspectorSupported={false}
       inspectorMode={null}
       onToggleInspector={() => {}}
-      onOpenGitInspector={() => {}}
       onOpenFilesInspector={() => {}}
     />
   );
 }
 
-function renderedGitMenuItems(): Array<{
-  description?: unknown;
-  label?: unknown;
-  onPress?: () => void;
-}> {
-  const items = harness.renderedRightItems.at(-1) ?? [];
-  const git = items.find((item) => item.identifier === "thread-right-git") as
-    | { menu: { items: Array<{ description?: unknown; label?: unknown; onPress?: () => void }> } }
-    | undefined;
-  return git?.menu.items ?? [];
+function renderedGitMenuItems() {
+  return harness.renderedMenus.find((menu) => menu.title === "Git controls")?.items ?? [];
 }
 
-function renderedGitStatusDescription(): unknown {
-  return renderedGitMenuItems()[0]?.description;
+function renderedGitStatusDescription() {
+  const status = renderedGitMenuItems()[0];
+  return status && "subtitle" in status ? status.subtitle : undefined;
 }
 
 let root: Root | null = null;
@@ -148,13 +134,12 @@ function render(element: React.ReactElement) {
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
-  harness.setOptionsCalls = 0;
-  harness.renderedRightItems = [];
+  harness.renderedMenus = [];
   harness.navigatedRoutes = [];
 });
 
 describe("ThreadHeader", () => {
-  it("re-applies native header items when Git status changes", () => {
+  it("updates the menu status when Git status changes", () => {
     render(<Header gitStatus={status([])} />);
     expect(renderedGitStatusDescription()).toBe("Clean");
 
@@ -165,30 +150,40 @@ describe("ThreadHeader", () => {
     expect(renderedGitStatusDescription()).toBe("Clean");
   });
 
-  it("does not re-apply options for re-renders with equivalent header content", () => {
+  it("preserves the menu status and available actions for equivalent header content", () => {
     render(<Header gitStatus={status([])} />);
-    const applied = harness.setOptionsCalls;
+    const before = renderedGitMenuItems().map(({ id, title }) => ({ id, title }));
 
     for (let index = 0; index < 20; index += 1) {
       render(<Header gitStatus={status([])} />);
     }
-    expect(harness.setOptionsCalls).toBe(applied);
+    expect(renderedGitStatusDescription()).toBe("Clean");
+    expect(renderedGitMenuItems().map(({ id, title }) => ({ id, title }))).toEqual(before);
   });
 
-  it("re-applies menu actions when the default ref changes behind the same label", async () => {
+  it("updates menu actions when the default ref changes behind the same label", async () => {
     const pushable = (isDefaultRef: boolean) =>
       status([], {
         isDefaultRef,
         aheadCount: 1,
         hasPrimaryRemote: true,
-        pr: { state: "open", url: "https://example.com/pr/1" },
-      } as Partial<VcsStatusResult>);
+        pr: {
+          state: "open",
+          number: 1,
+          title: "Change",
+          url: "https://example.com/pr/1",
+          baseRef: "master",
+          headRef: "feature",
+        },
+      });
     render(<Header gitStatus={pushable(false)} />);
-    expect(renderedGitMenuItems()[1]?.label).toBe("Push");
+    expect(renderedGitMenuItems()[1]?.title).toBe("Push");
 
     render(<Header gitStatus={pushable(true)} />);
-    expect(renderedGitMenuItems()[1]?.label).toBe("Push");
-    await act(async () => renderedGitMenuItems()[1]?.onPress?.());
+    expect(renderedGitMenuItems()[1]?.title).toBe("Push");
+    const quickAction = renderedGitMenuItems()[1];
+    if (!quickAction || !("onPress" in quickAction)) throw new Error("Missing quick action");
+    await act(async () => quickAction.onPress());
     expect(harness.navigatedRoutes).toEqual(["GitConfirm"]);
   });
 });

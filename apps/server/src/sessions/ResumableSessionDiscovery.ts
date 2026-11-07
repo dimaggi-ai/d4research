@@ -1,3 +1,4 @@
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as NodeOS from "node:os";
 
 import * as Clock from "effect/Clock";
@@ -230,7 +231,7 @@ const make: Effect.Effect<
       const resolved = path.resolve(expandHome(dir));
       if (!stores.has(resolved)) stores.set(resolved, { instanceId, label });
     };
-    const envConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    const envConfigDir = (yield* HostProcess.Environment).CLAUDE_CONFIG_DIR;
     add(
       envConfigDir && envConfigDir.trim().length > 0
         ? envConfigDir
@@ -347,7 +348,7 @@ const make: Effect.Effect<
   });
 
   const listCodexSessions = Effect.fn("listCodexSessions")(function* (cwd: string, now: number) {
-    const codexHomeRaw = process.env.CODEX_HOME;
+    const codexHomeRaw = (yield* HostProcess.Environment).CODEX_HOME;
     const codexHome =
       codexHomeRaw && codexHomeRaw.trim().length > 0
         ? path.resolve(expandHome(codexHomeRaw))

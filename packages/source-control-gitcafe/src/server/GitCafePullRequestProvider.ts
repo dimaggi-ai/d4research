@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { randomUuidV4 } from "@d4research/provider-core/server/randomUuid";
 import {
+  IsoDateTime,
   NonNegativeInt,
   resolvePullRequestAuthorFilter,
   TrimmedNonEmptyString,
@@ -33,6 +34,8 @@ const CAPABILITIES: PullRequestCapabilities = {
   stacks: true,
   stackActions: true,
   reactions: true,
+  mentions: true,
+  referenceSigils: [],
   labels: true,
   // Line comments go through GitCafe's review drafts, which arrive with revision fencing.
   review: {
@@ -41,7 +44,7 @@ const CAPABILITIES: PullRequestCapabilities = {
     resolve: true,
     verdicts: ["approve", "request-changes", "comment"],
   },
-  reviewers: { request: true, listCandidates: true },
+  reviewers: { request: true, listCandidates: true, searchCandidates: false },
   edit: { changeRequest: true, comment: true },
 };
 
@@ -165,6 +168,17 @@ const MergeOutcome = Schema.Struct({
 });
 const StackOutcome = Schema.Struct({ id: Schema.String, state: Schema.String });
 const FAILED_STACK_STATES = new Set(["failed", "stopped", "cancelled", "reconciliation_required"]);
+
+// A pull action replies with the pull it left; `closedAt`/`mergedAt` are read only when sent.
+const decodeActionReply = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      ...Json.GitCafePull.fields,
+      closedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+      mergedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+    }),
+  ),
+);
 
 type PullRef = ProviderRepositoryRef & { readonly number: number };
 
@@ -897,7 +911,7 @@ export const make = Effect.gen(function* () {
     ),
     getChangeRequestPreview: (input) =>
       readPull("getChangeRequestPreview", input).pipe(
-        Effect.map((pull) => Json.toChangeRequest(pull, input)),
+        Effect.map((pull) => ({ ...Json.toChangeRequest(pull, input), ...settledMerge(pull) })),
       ),
     getChangeRequestSummary: Effect.fn("GitCafePullRequestProvider.getChangeRequestSummary")(
       function* (input) {
@@ -942,7 +956,6 @@ export const make = Effect.gen(function* () {
             : readLineStats(input, pull).pipe(Effect.orElseSucceed(() => null)),
           // Reviewers need `pr:review:read`, which a contents-only token lacks.
           readPages("getChangeRequest", input, `${path}/reviewers`, Json.GitCafeActorEntries).pipe(
-            // @effect-diagnostics-next-line catchConditionalRefailToCatchIf:off - catchIf widens this paginated result to any in tsc-rs.
             Effect.catch((error) =>
               isForbidden(error) ? Effect.succeed({ items: [], next: null }) : Effect.fail(error),
             ),
@@ -1025,7 +1038,6 @@ export const make = Effect.gen(function* () {
               : // A closed pull request whose branch is gone keeps its head, but git.cafe answers
                 // 404 for commits it no longer has; the conversation still stands without them.
                 readPages(operation, input, `${path}/commits`, Json.GitCafeCommits).pipe(
-                  // @effect-diagnostics-next-line catchConditionalRefailToCatchIf:off - catchIf widens this paginated result to any in tsc-rs.
                   Effect.catch((error) =>
                     error.reason === "not-found"
                       ? Effect.succeed({ items: [], next: null })
@@ -1127,12 +1139,26 @@ export const make = Effect.gen(function* () {
         case "reopen": {
           const pull = yield* readPull(input.action, input);
           const path = yield* pullPath(input.action, input);
-          yield* send(input.action, input, {
+          const reply = yield* send(input.action, input, {
             method: "POST",
             path: `${path}/${input.action}`,
             body: { expectedVersion: pull.version },
           });
-          return;
+          const left = decodeActionReply(reply);
+          if (Option.isNone(left)) return;
+          // The reply carries no line totals or conflict state, so they stay absent.
+          const {
+            additions: _additions,
+            deletions: _deletions,
+            mergeability: _mergeability,
+            ...summary
+          } = Json.toChangeRequest(left.value, input);
+          return {
+            ...summary,
+            ...(left.value.headOid === null ? {} : { headSha: left.value.headOid }),
+            ...(left.value.closedAt === undefined ? {} : { closedAt: left.value.closedAt }),
+            ...(left.value.mergedAt === undefined ? {} : { mergedAt: left.value.mergedAt }),
+          };
         }
         default:
           return yield* failure(input.action, `GitCafe cannot ${input.action} from T3 Code.`);

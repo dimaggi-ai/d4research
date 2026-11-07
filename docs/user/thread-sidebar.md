@@ -5,8 +5,13 @@ need a separate branch and working directory.
 
 ## Start a thread
 
-Pinned threads can still move to **Settled** when the selected automatic settlement policy applies.
-Their pin order remains intact if they return to the active list.
+On web and desktop, **New thread** opens the project picker when you have multiple
+projects in the default or project-grouped sidebar. The legacy sidebar always
+starts in the current project. **Shift-click** to start in
+the current project, or use a project's own new-thread action. A new thread carries
+your model and mode selections, unless the destination project has its own model default.
+Its branch and workspace mode come from your configured defaults. To continue in
+an existing worktree, use **New thread in this worktree** from the branch toolbar.
 
 Each environment owns one automatic settlement policy. The server checks it even when no web,
 desktop, or mobile client is connected. The default is **Never**, so threads move only when you
@@ -199,7 +204,11 @@ and prevents automatic settlement until new activity resumes the usual rules.
 Manually settling an idle thread dismisses unanswered async questions without
 sending an answer or restarting the agent. Settling also closes the thread's
 terminals that wait at an idle prompt, and keeps their output. A terminal that
-runs a command, such as a dev server, stays open.
+runs a command, such as a dev server, stays open unless its action has **Stop this action
+when the thread settles** enabled in Settings > Projects > Actions. You can also set
+`"stopOnSettle": true` on a `t3.json` action and import it there. Start the command through
+that action so d4research can stop its terminal and child processes. Commands started through an
+agent's own shell tools are managed by the provider.
 
 To reclaim disk space from settled work, turn on **Run in the thread's worktree when the
 thread settles** for one of the project's actions, or set `"runOnSettle": true` on a
@@ -212,6 +221,9 @@ On web and desktop, press a thread's **Settle** button and drag up or down to
 settle every thread in that section between it and the one you release on.
 The **Un-settle** and **Wake** buttons work the same way in their sections.
 Press `Escape` while dragging to cancel.
+
+Pinned threads can still settle automatically when the selected policy applies. Their pin order
+remains intact if they return to the active list.
 
 Automatic settlement is disabled by default. Choose **When PR merges or closes**
 to settle idle threads when their linked pull requests are all closed or merged,
@@ -264,10 +276,12 @@ palette.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's pull request
-link when available, otherwise the thread itself, which pastes into a composer as
-a thread chip. To copy the thread even when it has a PR, choose **Copy → Thread**
-from its context menu, or **Copy thread** from its long-press menu on mobile.
-**Thread ID** copies the bare ID for scripts and the `t3` CLI. See
+link when available, otherwise a link to the thread, which opens it from anywhere
+you paste it and pastes into a composer as a thread chip (see
+[sharing a thread](./prompt-links.md#share-a-thread)). To copy the thread even
+when it has a PR, choose **Copy → Thread** from its context menu, or **Copy
+thread** from its long-press menu on mobile.
+**Thread ID** copies the bare ID for scripts and the `d4research` CLI. See
 [keybindings](./keybindings.md) for custom configuration.
 
 ## Inspect agent work
@@ -367,9 +381,9 @@ You can also choose **Side chat** from the **+** menu in the right panel. The si
 chat opens as a tab there, with its own composer. Side chats do not show in the
 sidebar. Find one again under **Side chats** in thread details.
 
-A side chat works in the same folder as the thread. Its first reply asks before it
-edits files or runs commands. After that, it uses the permission mode you choose
-in its composer.
+A side chat works in the same folder as the thread and inherits its permissions
+when created, including for its first reply. Change permissions for an individual
+side chat in its composer. Later changes to the parent do not change existing side chats.
 
 To use what you learned, choose **Bring back**. It adds the side chat to your next message in the thread. Bring back is available while the thread is idle.
 
@@ -401,5 +415,6 @@ watches. Monitoring threads remain in the Working section when that section is
 enabled, and their project activity dot stays visible. They switch back to Working
 when another agent turn starts, or become ready when their background work ends.
 A snoozed thread keeps working and stays hidden until its wake time, even while
-its agent wakes itself for background work. It comes back early only when it needs
-an approval or answer from you, when a run fails, or when you send it a message.
+its agent wakes itself for background work. It comes back early for an approval,
+a new question, a failed run, or a message or answer you send. You can snooze an existing
+question and answer when the thread wakes; the question stays unanswered.

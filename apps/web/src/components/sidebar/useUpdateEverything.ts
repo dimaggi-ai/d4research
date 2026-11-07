@@ -118,7 +118,7 @@ export function useUpdateEverything(
     }) => {
       if (needsNpm && !(await isNpmReleasePublished(targetVersion))) {
         throw new Error(
-          `t3@${targetVersion} is not published on npm yet. Try again after publication.`,
+          `d4research@${targetVersion} is not published on npm yet. Try again after publication.`,
         );
       }
       const localFailures: Array<string> = [];

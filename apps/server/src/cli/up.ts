@@ -42,12 +42,14 @@ const readSetup = Effect.fn("cli.up.read_setup")(function* () {
   const lan = yield* Config.Boolean("T3CODE_LAN")
     .pipe(Config.option)
     .parse(ConfigProvider.fromEnv({ env: entries }));
+  // Another home's service does not read this home's service.env.
+  const servesThisHome = service.installed && service.otherBaseDir === undefined;
   return {
     service,
     connect: null,
     connectRevoked: false,
-    lan: Option.getOrElse(lan, () => service.installed),
-    lanFromOldDefault: Option.isNone(lan) && service.installed,
+    lan: Option.getOrElse(lan, () => servesThisHome),
+    lanFromOldDefault: Option.isNone(lan) && servesThisHome,
     host: entries.T3CODE_HOST,
   } satisfies Setup;
 });
@@ -88,13 +90,21 @@ const CHOICES = {
 
 const formatSetup = (setup: Setup) => {
   const { service } = setup;
+  // This home's access settings reach no service, so only the service is shown.
+  if (service.otherBaseDir !== undefined) {
+    return [
+      `  ${"Service".padEnd(15)}installed for another T3 home · ${service.otherBaseDir}`,
+      "",
+      `Pass \`${BootService.formatBootServiceBaseDirOption(service.otherBaseDir)}\` to manage it.`,
+    ].join("\n");
+  }
   const rows: ReadonlyArray<readonly [string, string]> = [
     [
       "Service",
       !service.supported
         ? "unavailable"
         : service.installed
-          ? `installed · t3@${service.installedVersion ?? packageJson.version}`
+          ? `installed · d4research@${service.installedVersion ?? packageJson.version}`
           : "not installed",
     ],
     ...(setup.connect === null
@@ -136,12 +146,12 @@ const formatSetup = (setup: Setup) => {
   ].join("\n");
 };
 
-const formatNextSteps = (routes: Routes, serviceInstalled: boolean) =>
+const formatNextSteps = (routes: Routes, serviceInstalled: boolean, pairCommand: string) =>
   [
     ...(routes.connect
       ? ["On your other device, sign in to T3 Connect with the same account."]
       : []),
-    ...(routes.lan ? ["Run `t3 pair`. Use the code on your other device."] : []),
+    ...(routes.lan ? [`Run \`${pairCommand}\`. Use the code on your other device.`] : []),
     ...(routes.connect || routes.lan
       ? []
       : [
@@ -161,7 +171,19 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
 }) {
   const { baseDir } = yield* ServerConfig.ServerConfig;
   const service = yield* BootService.BootService;
+  const baseDirArgs = Option.match(flags.baseDir, {
+    onNone: () => [],
+    onSome: (dir) => ["--base-dir", dir],
+  });
+  const { command: pairCommand } = yield* resolveHostCliCommand("pair", baseDirArgs);
   const before = yield* readSetup();
+  // Before any question or write: install would refuse only after both.
+  if (before.service.otherBaseDir !== undefined) {
+    return yield* new BootService.BootServiceOtherBaseDirError({
+      installedBaseDir: before.service.otherBaseDir,
+      baseDir,
+    });
+  }
   if (before.connect === null && Option.getOrElse(flags.connect, () => false)) {
     return yield* new CliError.UserError({
       cause: "connect",
@@ -207,7 +229,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   // Nothing to run in the background, but a route left on still gets turned off.
   if (!before.service.installed && !routes.connect && !routes.lan) {
     if (current.lan) yield* CliService.writeServiceEnv(baseDir, { T3CODE_LAN: "false" });
-    return yield* Console.log(formatNextSteps(routes, false));
+    return yield* Console.log(formatNextSteps(routes, false, pairCommand));
   }
   const { installedVersion } = before.service;
   const newer =
@@ -257,7 +279,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
 
   const printServeCommand = Effect.fn(function* (reason: string) {
     const { command } = yield* resolveHostCliCommand("serve", [
-      ...Option.match(flags.baseDir, { onNone: () => [], onSome: (dir) => ["--base-dir", dir] }),
+      ...baseDirArgs,
       // Explicit either way, so a T3CODE_LAN in the shell cannot override the choice.
       routes.lan ? "--lan" : "--no-lan",
     ]);
@@ -274,7 +296,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     yield* printServeCommand("Background service unavailable.");
   } else {
     if (newer) {
-      yield* Console.log(`Keeping installed service version t3@${installedVersion}.`);
+      yield* Console.log(`Keeping installed service version d4research@${installedVersion}.`);
     }
     if (update && !interactive) {
       yield* Console.log("Updating T3 Code. Running agent turns will stop.");
@@ -291,8 +313,9 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     if ("failed" in result && before.service.installed) {
       // The old service still runs, so a foreground server would clash with it.
       yield* restoreServiceEnv;
+      const { command } = yield* resolveHostCliCommand("up", baseDirArgs);
       yield* Console.log(
-        `Service setup failed: ${result.failed} Fix that, then run \`t3 up\` again.`,
+        `Service setup failed: ${result.failed} Fix that, then run \`${command}\` again.`,
       );
     } else if ("failed" in result) {
       yield* printServeCommand(`Service setup failed: ${result.failed}`);
@@ -320,6 +343,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     `\nThis machine\n${formatSetup(after)}\n\n${formatNextSteps(
       { connect: after.connect === true, lan: after.lan },
       after.service.installed,
+      pairCommand,
     )}`,
   );
 });
@@ -378,6 +402,7 @@ const setupJson = (setup: Setup) =>
         supported: setup.service.supported,
         installed: setup.service.installed,
         installedVersion: setup.service.installedVersion ?? null,
+        otherBaseDir: setup.service.otherBaseDir ?? null,
       },
       connect:
         setup.connect === null ? null : { enabled: setup.connect, revoked: setup.connectRevoked },
@@ -417,7 +442,9 @@ export const statusCommand = Command.make("status", {
       yield* Console.log(
         flags.json
           ? setupJson(setup)
-          : `This machine\n${formatSetup(setup)}\n\nChange access: \`t3 up\`.`,
+          : setup.service.otherBaseDir !== undefined
+            ? `This machine\n${formatSetup(setup)}`
+            : `This machine\n${formatSetup(setup)}\n\nChange access: \`t3 up\`.`,
       );
     }),
   ),

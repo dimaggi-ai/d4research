@@ -162,15 +162,19 @@ function flattenNode(
   depth: number,
   expanded: ReadonlySet<string>,
   searchTokens: ReadonlyArray<string>,
+  searchResultPaths: ReadonlySet<string> | null,
 ): boolean {
-  const isSearching = searchTokens.length > 0;
-  const matches = isSearching && nodeMatchesSearch(node, searchTokens);
+  const isSearching = searchResultPaths !== null || searchTokens.length > 0;
+  const matches =
+    searchResultPaths !== null
+      ? searchResultPaths.has(node.path)
+      : isSearching && nodeMatchesSearch(node, searchTokens);
   let descendantMatches = false;
   const childOutput: VisibleFileTreeNode[] = [];
 
   if (node.kind === "directory" && (expanded.has(node.path) || isSearching)) {
     for (const child of node.children) {
-      if (flattenNode(childOutput, child, depth + 1, expanded, searchTokens)) {
+      if (flattenNode(childOutput, child, depth + 1, expanded, searchTokens, searchResultPaths)) {
         descendantMatches = true;
       }
     }
@@ -190,12 +194,13 @@ export function flattenFileTree(input: {
   readonly nodes: ReadonlyArray<FileTreeNode>;
   readonly expanded: ReadonlySet<string>;
   readonly searchQuery?: string;
+  readonly searchResultPaths?: ReadonlySet<string> | null;
 }): ReadonlyArray<VisibleFileTreeNode> {
   const output: VisibleFileTreeNode[] = [];
   const normalizedSearch = normalizeSearchQuery(input.searchQuery ?? "");
   const searchTokens = normalizedSearch.split(/[\s/\\._-]+/).filter(Boolean);
   for (const node of input.nodes) {
-    flattenNode(output, node, 0, input.expanded, searchTokens);
+    flattenNode(output, node, 0, input.expanded, searchTokens, input.searchResultPaths ?? null);
   }
   return output;
 }

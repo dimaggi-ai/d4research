@@ -8,11 +8,10 @@ import {
   Connectivity,
   Wakeups,
 } from "@d4research/client-runtime/connection";
-import { AuthStandardClientScopes } from "@d4research/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as Network from "expo-network";
@@ -78,24 +77,67 @@ const layerConnectivity = Connectivity.layer({
   ),
 });
 
+/** Wake connections on network path changes; online/offline misses Wi-Fi-to-cellular moves. */
+const networkPathChanges = Stream.callback<"network-changed">((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      let active = true;
+      let previous: Network.NetworkStateType | undefined;
+      const record = (state: Network.NetworkState) => {
+        const type = state.isConnected === true ? state.type : undefined;
+        if (previous !== undefined && type !== undefined && type !== previous) {
+          Queue.offerUnsafe(queue, "network-changed");
+        }
+        previous = type ?? previous;
+      };
+      // Seed the current type: the listener reports only changes and would miss the first move.
+      void Network.getNetworkStateAsync()
+        .then((state) => {
+          if (active && previous === undefined && state.isConnected === true) {
+            previous = state.type;
+          }
+        })
+        .catch(() => undefined);
+      const subscription = Network.addNetworkStateListener(record);
+      return {
+        remove: () => {
+          active = false;
+          subscription.remove();
+        },
+      };
+    }),
+    (subscription) => Effect.sync(() => subscription.remove()),
+  ).pipe(Effect.asVoid),
+);
+
 const layerWakeups = Wakeups.layer({
-  changes: Stream.callback<"application-active-probe" | "application-active-long">((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => {
-        let backgroundedAtMs = AppState.currentState === "background" ? Date.now() : null;
-        return AppState.addEventListener("change", (state) => {
-          if (state === "background") {
-            backgroundedAtMs = Date.now();
-            return;
-          }
-          if (state === "active") {
-            Queue.offerUnsafe(queue, mobileApplicationActiveWakeup(backgroundedAtMs, Date.now()));
-            backgroundedAtMs = null;
-          }
-        });
-      }),
-      (subscription) => Effect.sync(() => subscription.remove()),
-    ).pipe(Effect.asVoid),
+  changes: Stream.mergeAll(
+    [
+      Stream.callback<"application-active-probe" | "application-active-long">((queue) =>
+        Effect.acquireRelease(
+          Effect.gen(function* () {
+            const nowMs = yield* Clock.currentTimeMillis;
+            let backgroundedAtMs = AppState.currentState === "background" ? nowMs : null;
+            return AppState.addEventListener("change", (state) => {
+              if (state === "background") {
+                backgroundedAtMs = Date.now();
+                return;
+              }
+              if (state === "active") {
+                Queue.offerUnsafe(
+                  queue,
+                  mobileApplicationActiveWakeup(backgroundedAtMs, Date.now()),
+                );
+                backgroundedAtMs = null;
+              }
+            });
+          }),
+          (subscription) => Effect.sync(() => subscription.remove()),
+        ).pipe(Effect.asVoid),
+      ),
+      networkPathChanges,
+    ],
+    { concurrency: "unbounded" },
   ),
 });
 
@@ -103,7 +145,7 @@ const layerCapabilities = Layer.effectContext(
   Effect.sync(() =>
     Context.make(
       ClientCapabilities.PrimaryEnvironmentAuth,
-      ClientCapabilities.PrimaryEnvironmentAuth.of({ bearerToken: Effect.succeed(Option.none()) }),
+      ClientCapabilities.PrimaryEnvironmentAuth.of({ bearerToken: Effect.succeedNone }),
     ).pipe(
       Context.add(
         ClientCapabilities.ClientPresentation,
@@ -114,21 +156,25 @@ const layerCapabilities = Layer.effectContext(
       Context.add(
         ClientCapabilities.SshEnvironmentGateway,
         ClientCapabilities.SshEnvironmentGateway.of({
-          provision: () =>
+          provision: Effect.fn("ClientCapabilities.SshEnvironmentGateway.provision")(() =>
             Effect.fail(
               new ConnectionBlockedError({
                 reason: "unsupported",
                 detail: "SSH environments are only available in the desktop app.",
               }),
             ),
-          prepare: () =>
+          ),
+          prepare: Effect.fn("ClientCapabilities.SshEnvironmentGateway.prepare")(() =>
             Effect.fail(
               new ConnectionBlockedError({
                 reason: "unsupported",
                 detail: "SSH environments are only available in the desktop app.",
               }),
             ),
-          disconnect: () => Effect.void,
+          ),
+          disconnect: Effect.fn("ClientCapabilities.SshEnvironmentGateway.disconnect")(
+            () => Effect.void,
+          ),
         }),
       ),
     ),
@@ -148,7 +194,7 @@ const layerProvidedCapabilities = layerCapabilities.pipe(Layer.provide(Runtime.l
 const layerEnvironmentOwnedDataCleanup = Layer.succeed(
   Persistence.EnvironmentOwnedDataCleanup,
   Persistence.EnvironmentOwnedDataCleanup.of({
-    clear: (environmentId) =>
+    clear: Effect.fn("Persistence.EnvironmentOwnedDataCleanup.clear")((environmentId) =>
       Effect.all(
         [
           Effect.promise(() => clearThreadOutboxEnvironment(environmentId)),
@@ -156,14 +202,8 @@ const layerEnvironmentOwnedDataCleanup = Layer.succeed(
           Effect.sync(() => clearThreadComposerErrorsForEnvironment(environmentId)),
         ],
         { concurrency: "unbounded", discard: true },
-      ).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not clear mobile environment-owned data.", {
-            environmentId,
-            cause,
-          }),
-        ),
       ),
+    ),
   }),
 );
 

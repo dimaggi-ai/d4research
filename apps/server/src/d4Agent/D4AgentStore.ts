@@ -397,7 +397,7 @@ export const layer = Layer.effect(
     return D4AgentStore.of({
       workspace: path.join(directory, "workspace"),
       get: Ref.get(state),
-      readHostRoutines: () =>
+      readHostRoutines: Effect.fn("D4AgentStore.readHostRoutines")(() =>
         Effect.scoped(
           Effect.gen(function* () {
             const filePath = path.join(directory, "host-routines.json");
@@ -418,9 +418,11 @@ export const layer = Layer.effect(
             }
             if (length > HOST_ROUTINES_BYTE_LIMIT)
               return { status: "unavailable" as const, routines: [] };
-            const content = yield* Effect.try(() =>
-              new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)),
-            );
+            const content = yield* Effect.try({
+              try: () =>
+                new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)),
+              catch: (cause) => new D4AgentError({ reason: "context", cause }),
+            });
             const decoded = yield* decodeHostRoutines(content);
             return { status: "available" as const, routines: decoded.routines };
           }),
@@ -437,7 +439,8 @@ export const layer = Layer.effect(
             }),
           ),
         ),
-      update: (change) =>
+      ),
+      update: Effect.fn("D4AgentStore.update")((change) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
             const current = yield* Ref.get(state);
@@ -467,6 +470,7 @@ export const layer = Layer.effect(
             ),
           ),
         ),
+      ),
     });
   }),
 );

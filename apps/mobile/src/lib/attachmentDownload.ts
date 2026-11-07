@@ -271,6 +271,20 @@ export async function shareLocalAttachment(input: {
   }
 }
 
+export async function writeGeneratedAttachmentFile(input: {
+  readonly bytes: Uint8Array;
+  readonly attachment: AttachmentFileMetadata;
+}): Promise<AttachmentPreviewFile> {
+  const cached = await createCachedAttachmentFile(input.attachment);
+  try {
+    cached.file.write(input.bytes);
+    return cached.preview;
+  } catch (cause) {
+    cached.preview.dispose();
+    throw cause;
+  }
+}
+
 export async function shareGeneratedAttachment(input: {
   readonly bytes: Uint8Array;
   readonly attachment: AttachmentFileMetadata;

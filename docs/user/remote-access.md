@@ -296,13 +296,13 @@ Hosted pairing does not proxy traffic through d4research; the browser connects d
 ### Local servers
 
 The browser lists ports held by processes your terminals and agents started.
-T3 Code reads which process holds each port and never connects to the port, so a
+d4research reads which process holds each port and never connects to the port, so a
 listed port opens as `http://localhost:<port>` and might not be a web page. For
 an HTTPS server or a specific path, set the **Preview URL** on the project
-script that starts it; T3 Code checks that address and opens it as written.
+script that starts it; d4research checks that address and opens it as written.
 
 To stop listing ports, set `T3CODE_PORT_DISCOVERY=0` in the environment that
-starts the T3 Code server, such as
+starts the d4research server, such as
 a systemd service override, and restart it. Script preview URLs still appear.
 
 ### Browser host setup
@@ -321,8 +321,8 @@ The server shows the exact line for how you started it, such as
 `sudo node apps/server/src/bin.ts browser setup`, and keeps your `PATH` when Node is installed only
 for your user. Where `d4research` is not on your `PATH`, such as with only the
 desktop app installed, it names the full path of the app's own `d4research` instead. It allows Chrome's sandbox with an AppArmor profile and installs
-any missing libraries with apt. It is safe to run again. Without `sudo`, it
-only reports what it would change.
+any missing libraries and system fonts with apt. Missing fonts can leave pages without text.
+It is safe to run again. Without `sudo`, it only reports what it would change.
 
 The browser runs in Chrome's sandbox by default. Chrome cannot start that sandbox
 as root. If your T3 server runs as root, run it as a nonroot user to keep

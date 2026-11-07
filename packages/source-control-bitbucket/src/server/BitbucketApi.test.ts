@@ -1,5 +1,5 @@
 // @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
-import { SourceControlProviderKind } from "@d4research/contracts";
+import { SecretProviderId, SourceControlProviderKind } from "@d4research/contracts";
 import { assert, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -670,6 +670,24 @@ it.effect("prefers credentials saved in settings over the environment, without a
     });
     yield* bitbucket.probeAuth;
     assert.strictEqual(lastAuthorization(), basic("user@example.com", "token"));
+
+    // A reference left in place by getWithSecrets is one its secret provider could not read.
+    const requests = execute.mock.calls.length;
+    yield* settings.update({
+      sourceControlHosts: {
+        bitbucket: {
+          accessToken: { provider: SecretProviderId.make("vault"), reference: "bb#token" },
+        },
+      },
+    });
+    const auth = yield* bitbucket.probeAuth;
+    assert.strictEqual(auth.status, "unauthenticated");
+    assert.include(Option.getOrThrow(auth.detail), '"vault"');
+    const error = yield* Effect.flip(
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: "feature", state: "open" }),
+    );
+    assert.strictEqual(error._tag, "SettingsSecretUnresolvedError");
+    assert.strictEqual(execute.mock.calls.length, requests);
   }).pipe(Effect.provide(layer));
 });
 

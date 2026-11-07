@@ -1,11 +1,15 @@
-import type { EnvironmentId } from "@d4research/contracts";
-import type { ComposerPathSearchTarget } from "@d4research/client-runtime/state/threads";
 import type { ClientSettings } from "@d4research/contracts/settings";
-import type { AssistantCitation, ResolvedKeybindingsConfig } from "@d4research/contracts";
+import type {
+  AssistantCitation,
+  EnvironmentId,
+  ResolvedKeybindingsConfig,
+} from "@d4research/contracts";
+import type { ComposerPathSearchTarget } from "@d4research/client-runtime/state/threads";
 import {
   serializeAssistantCitation,
   withAssistantCitationComment,
 } from "@d4research/shared/assistantCitations";
+import { isCurrencyAmountQuery, isPathWord } from "@d4research/shared/composerTrigger";
 import {
   splitPromptIntoComposerSegments,
   type ComposerPromptSegment,
@@ -14,7 +18,7 @@ import {
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill" | "directive";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "side" | "btw";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "side" | "btw" | "clear";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -28,7 +32,7 @@ export function formatAssistantCitationForComposer(citation: AssistantCitation, 
   return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 
-function composerRequiresModifier(
+export function composerRequiresModifier(
   sendShortcut: ClientSettings["sendShortcut"] | undefined,
   prompt: string,
 ) {
@@ -263,6 +267,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
   if (token.startsWith("/")) {
+    if (isPathWord(text, tokenStart, cursor, isWhitespace)) return null;
     return {
       kind: "slash-command",
       query: token.slice(1),
@@ -281,6 +286,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   }
   const skillPrefix = /^\p{Sc}/u.exec(token);
   if (skillPrefix) {
+    if (isCurrencyAmountQuery(token.slice(skillPrefix[0].length))) return null;
     return {
       kind: "skill",
       query: token.slice(skillPrefix[0].length),
@@ -329,15 +335,9 @@ export function composerStateAtPromptEnd(
   };
 }
 
-/** `/side [prompt]`, or its alias `/btw [prompt]`, as the whole message. */
-export function parseSideChatCommand(text: string): { prompt: string } | null {
-  const match = /^\/(?:side|btw)(?:\s+([\s\S]*))?$/i.exec(text.trim());
-  return match ? { prompt: match[1]?.trim() ?? "" } : null;
-}
-
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model" | "side" | "btw"> | null {
+): Exclude<ComposerSlashCommand, "model" | "side" | "btw" | "clear"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
@@ -345,18 +345,6 @@ export function parseStandaloneComposerSlashCommand(
   const command = match[1]?.toLowerCase();
   if (command === "plan") return "plan";
   return "default";
-}
-
-export function replaceTextRange(
-  text: string,
-  rangeStart: number,
-  rangeEnd: number,
-  replacement: string,
-): { text: string; cursor: number } {
-  const safeStart = Math.max(0, Math.min(text.length, rangeStart));
-  const safeEnd = Math.max(safeStart, Math.min(text.length, rangeEnd));
-  const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
-  return { text: nextText, cursor: safeStart + replacement.length };
 }
 
 export function shouldSubmitComposerOnEnter(input: {
@@ -422,3 +410,5 @@ export const extendReplacementRangeForTrailingSpace = (
   }
   return text[rangeEnd] === " " ? rangeEnd + 1 : rangeEnd;
 };
+
+export { parseSideChatCommand, replaceTextRange } from "@d4research/shared/composerTrigger";

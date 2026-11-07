@@ -8,9 +8,12 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   createStaticNavigation,
+  getActionFromState,
   getStateFromPath,
   type NavigationState,
 } from "@react-navigation/native";
+import { pipe } from "effect/Function";
+import { DEFAULT_HOSTED_APP_URL } from "@d4research/shared/connectAuth";
 
 import { RegistryContext } from "@effect/atom-react";
 import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
@@ -29,12 +32,6 @@ import {
   rootNavigationRef,
   flushRootNavigationQueue,
 } from "./lib/rootNavigation";
-import {
-  recordWorkspaceSelections,
-  hydrateWorkspaceSelections,
-  settingsLinkPage,
-} from "./features/workspace/workspace-selection-store";
-import { restoreSettingsLinkState } from "./features/settings/settings-navigation";
 import { pruneNewTaskFlowStates } from "./features/threads/new-task-flow-state";
 import { pruneNewTaskBranchCheckouts } from "./features/threads/NewTaskDraftRouteScreen";
 import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-drafts";
@@ -53,6 +50,16 @@ import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
+import { restoreSettingsLinkState } from "./features/settings/settings-navigation";
+import {
+  hydrateWorkspaceSelections,
+  launchWorkspaceURL,
+  recordWorkspaceSelections,
+  settingsLinkPage,
+} from "./features/layout/workspace/workspace-selection-store";
+import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
+import { pairingFormLinkAction, startDevAutoConnect, withoutPairingTarget } from "./features/connection/devAutoConnect";
+import { workspaceDetailLinkAction } from "./features/layout/workspace/workspace-detail-selection";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
 
 import "../global.css";
@@ -64,13 +71,34 @@ if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const appLinking = {
-  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
+  prefixes: [
+    Linking.createURL("/"),
+    "t3code://",
+    "t3code-dev://",
+    "t3code-preview://",
+    DEFAULT_HOSTED_APP_URL,
+  ],
   config: { initialRouteName: "Home" },
   filter: shouldHandleAppLink,
+  getInitialURL: async () => (await Linking.getInitialURL()) ?? (await launchWorkspaceURL()),
+  getActionFromState: (
+    state: Parameters<typeof getActionFromState>[0],
+    options: Parameters<typeof getActionFromState>[1],
+  ): ReturnType<typeof getActionFromState> =>
+    (workspaceDetailLinkAction(state) as ReturnType<typeof getActionFromState>) ??
+    pairingFormLinkAction(
+      state,
+      rootNavigationRef.isReady() ? rootNavigationRef.getRootState() : undefined,
+    ) ??
+    getActionFromState(state, options),
   getStateFromPath: (path: string, options: Parameters<typeof getStateFromPath>[1]) =>
-    restoreSettingsLinkState(
-      restoreDraftLinkState(getStateFromPath(path, options), path),
-      settingsLinkPage(),
+    pipe(
+      getStateFromPath(path, options),
+      (state) => restoreDraftLinkState(state, path),
+      (state) => restoreSettingsLinkState(state, settingsLinkPage()),
+      withoutPairingTarget,
+      startDevAutoConnect,
+      takeScheduledTaskNewLink,
     ),
 };
 

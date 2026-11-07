@@ -1,38 +1,46 @@
-import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@d4research/contracts";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { waitForThreadShellReady } from "./threadForkNavigation";
+const state = vi.hoisted(() => ({ shell: null as { id: string } | null }));
+vi.mock("../../state/atom-registry", () => ({
+  appAtomRegistry: { get: () => state.shell },
+}));
+vi.mock("../../state/threads", () => ({
+  environmentThreadShells: { threadShellAtom: () => ({}) },
+}));
 
-describe("waitForThreadShellReady", () => {
+import { waitForThreadShell } from "./threadForkNavigation";
+
+const ref = {
+  environmentId: EnvironmentId.make("environment-1"),
+  threadId: ThreadId.make("fork-1"),
+};
+
+afterEach(() => {
+  state.shell = null;
+  vi.useRealTimers();
+});
+
+describe("waitForThreadShell", () => {
   it("returns true when the forked thread shell arrives before the deadline", async () => {
-    let elapsedMs = 0;
+    vi.useFakeTimers();
+    const ready = waitForThreadShell(ref);
+    await vi.advanceTimersByTimeAsync(40);
+    state.shell = { id: ref.threadId };
+    await vi.advanceTimersByTimeAsync(40);
 
-    const ready = await waitForThreadShellReady({
-      read: () => elapsedMs >= 80,
-      timeoutMs: 120,
-      pollIntervalMs: 40,
-      now: () => elapsedMs,
-      delay: async (durationMs) => {
-        elapsedMs += durationMs;
-      },
-    });
-
-    expect(ready).toBe(true);
+    expect(await ready).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("returns false instead of navigating when the shell never arrives", async () => {
-    let elapsedMs = 0;
+    vi.useFakeTimers();
+    const startedAt = Date.now();
+    const ready = waitForThreadShell(ref);
+    await vi.advanceTimersByTimeAsync(2_000);
 
-    const ready = await waitForThreadShellReady({
-      read: () => false,
-      timeoutMs: 80,
-      pollIntervalMs: 40,
-      now: () => elapsedMs,
-      delay: async (durationMs) => {
-        elapsedMs += durationMs;
-      },
-    });
-
-    expect(ready).toBe(false);
-    expect(elapsedMs).toBe(80);
+    expect(await ready).toBe(false);
+    expect(Date.now() - startedAt).toBe(2_000);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

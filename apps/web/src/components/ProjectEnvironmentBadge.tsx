@@ -32,7 +32,7 @@ export function ProjectEnvironmentBadge(props: {
           <span
             role="img"
             aria-label={description}
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+            className="inline-flex shrink-0 items-center text-muted-foreground"
           />
         }
       >

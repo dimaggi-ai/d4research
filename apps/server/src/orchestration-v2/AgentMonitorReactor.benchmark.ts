@@ -34,7 +34,7 @@ const seedMonitorBenchmark = Effect.gen(function* () {
     SELECT 'event:'||n, 'thread', 'benchmark:'||(n%694), n, 'turn-item.updated', ${now}, 'server', '{}', '{}', 2 FROM ids`;
 });
 
-export const runMonitorBenchmark = (includeLegacy = true) =>
+export const runMonitorBenchmark = Effect.fn("runMonitorBenchmark")((includeLegacy = true) =>
   Effect.gen(function* () {
     yield* seedMonitorBenchmark;
     const settings = yield* ServerSettings.ServerSettingsService;
@@ -84,7 +84,8 @@ export const runMonitorBenchmark = (includeLegacy = true) =>
     };
   }).pipe(
     Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, ServerSettings.layerTest())),
-  );
+  ),
+);
 
 if (import.meta.main) {
   const benchmark = await Effect.runPromise(runMonitorBenchmark());

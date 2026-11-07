@@ -5,10 +5,7 @@ import type {
   SelectedLineRange,
 } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import type {
-  PullRequestReviewGuideExcerpt,
-  PullRequestReviewPosition,
-} from "@d4research/contracts";
+import type { PullRequestReviewGuideExcerpt, PullRequestReviewPosition } from "@d4research/contracts";
 import { ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -40,6 +37,7 @@ import {
   fileDiffRows,
   rowsToPatch,
 } from "@d4research/client-runtime/review-guide-tour";
+import type { PullRequestCompletionScope } from "../PullRequestMarkdownTextarea";
 import { GuideNoteMarker } from "./GuideNotes";
 import { GuideProse } from "./GuideProse";
 
@@ -58,6 +56,7 @@ export interface ExcerptCommenting {
   readonly canComment: boolean;
   /** The host anchors a comment to a range of lines rather than to its last one. */
   readonly rangeComments: boolean;
+  readonly completionScope: PullRequestCompletionScope | null;
   readonly pending: ReadonlyArray<PendingReviewComment>;
   readonly onComment: (comment: {
     readonly path: string;
@@ -326,6 +325,7 @@ function ExcerptDiff({
                 kind="draft"
                 rangeLabel={`${excerpt.path}:${getReviewPositionAnchor(draft.position).line}`}
                 text=""
+                completionScope={commenting.canComment ? commenting.completionScope : null}
                 placeholder={
                   commenting.canComment ? "Add a comment…" : "Ask the agent about these lines…"
                 }

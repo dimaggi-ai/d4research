@@ -56,7 +56,7 @@ export const layerTest = (policy?: ManagedPolicyDocument | ManagedPolicyFileErro
     DesktopManagedPolicy.of({
       read:
         policy === undefined
-          ? Effect.succeed(undefined)
+          ? Effect.undefined
           : isManagedPolicyFileError(policy)
             ? Effect.fail(policy)
             : Effect.succeed({ source: "/test/policy.json", document: policy }),

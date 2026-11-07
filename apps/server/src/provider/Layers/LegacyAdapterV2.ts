@@ -476,7 +476,7 @@ export function makeLegacyAdapterV2(
           ? { type: "apply_on_next_turn" }
           : { type: "restart_session" },
       ),
-    openSession: (input) =>
+    openSession: Effect.fn("LegacyAdapterV2.openSession")((input) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
         const providerSession = {
@@ -506,20 +506,22 @@ export function makeLegacyAdapterV2(
             detail: "Legacy provider event translation failed",
             cause,
           });
-        const updateCursor = (session: Pick<ProviderSession, "resumeCursor">) =>
-          Effect.gen(function* () {
-            if (!thread || session.resumeCursor === undefined) return;
-            thread = {
-              ...thread,
-              nativeThreadRef: {
-                driver,
-                nativeId: encodeCursor(session.resumeCursor),
-                strength: "weak",
-              },
-              updatedAt: yield* DateTime.now,
-            };
-            yield* publish({ type: "provider_thread.updated", driver, providerThread: thread });
-          });
+        const updateCursor = Effect.fn("LegacyAdapterV2.updateCursor")(
+          (session: Pick<ProviderSession, "resumeCursor">) =>
+            Effect.gen(function* () {
+              if (!thread || session.resumeCursor === undefined) return;
+              thread = {
+                ...thread,
+                nativeThreadRef: {
+                  driver,
+                  nativeId: encodeCursor(session.resumeCursor),
+                  strength: "weak",
+                },
+                updatedAt: yield* DateTime.now,
+              };
+              yield* publish({ type: "provider_thread.updated", driver, providerThread: thread });
+            }),
+        );
         yield* adapter.streamEvents.pipe(
           Stream.filter((event) => event.threadId === input.threadId),
           Stream.runForEach((event) =>
@@ -564,7 +566,9 @@ export function makeLegacyAdapterV2(
           Effect.forkScoped({ startImmediately: true }),
         );
         yield* Effect.addFinalizer(() => adapter.stopSession(input.threadId).pipe(Effect.ignore));
-        const ensureThread: V2.ProviderAdapterV2SessionRuntime["ensureThread"] = (args) =>
+        const ensureThread: V2.ProviderAdapterV2SessionRuntime["ensureThread"] = Effect.fn(
+          "LegacyAdapterV2.ensureThread",
+        )((args) =>
           Effect.gen(function* () {
             if (thread) return thread;
             if (
@@ -629,7 +633,8 @@ export function makeLegacyAdapterV2(
             };
             yield* updateCursor(native);
             return thread;
-          });
+          }),
+        );
         return {
           instanceId,
           driver,
@@ -650,7 +655,7 @@ export function makeLegacyAdapterV2(
               runtimePolicy: args.runtimePolicy ?? input.runtimePolicy,
               existingProviderThread: args.providerThread,
             }),
-          startTurn: (args) =>
+          startTurn: Effect.fn("LegacyAdapterV2.startTurn")((args) =>
             Effect.gen(function* () {
               translator = makeLegacyTurnTranslator(args, driver);
               nativeTurnId = undefined;
@@ -687,6 +692,7 @@ export function makeLegacyAdapterV2(
                 yield* send;
               }
             }),
+          ),
           steerTurn: (args) =>
             Effect.fail(
               new V2.ProviderAdapterSteerRunUnsupportedError({
@@ -766,5 +772,6 @@ export function makeLegacyAdapterV2(
             ),
         } satisfies V2.ProviderAdapterV2SessionRuntime;
       }),
+    ),
   };
 }

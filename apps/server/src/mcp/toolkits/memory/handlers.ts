@@ -10,18 +10,20 @@ import { MemoryToolkit } from "./tools.ts";
 const getLocalConnector = makeConfiguredMemoryConnector;
 
 const handlers = {
-  handoff_status: () =>
+  handoff_status: Effect.fn("handoff_status")(() =>
     Effect.gen(function* () {
       const caller = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* HandoffMemory.HandoffMemory;
       return yield* service.status(caller.thread?.threadId ?? "");
     }),
-  handoff_read: (input) =>
+  ),
+  handoff_read: Effect.fn("handoff_read")((input) =>
     Effect.gen(function* () {
       const caller = yield* McpInvocationContext.McpInvocationContext;
       return yield* (yield* HandoffMemory.HandoffMemory).read(input, caller.thread?.threadId ?? "");
     }),
-  memory_search: (input) =>
+  ),
+  memory_search: Effect.fn("memory_search")((input) =>
     Effect.gen(function* () {
       const result = yield* (yield* getLocalConnector()).search(
         input.query,
@@ -30,7 +32,8 @@ const handlers = {
       );
       return { connector: "local" as const, results: result.results, count: result.results.length };
     }),
-  memory_remember: (input) =>
+  ),
+  memory_remember: Effect.fn("memory_remember")((input) =>
     Effect.gen(function* () {
       const result = yield* (yield* getLocalConnector()).add(
         input.text,
@@ -44,12 +47,14 @@ const handlers = {
         ...(result.hash === undefined ? {} : { hash: result.hash }),
       };
     }),
-  memory_status: () =>
+  ),
+  memory_status: Effect.fn("memory_status")(() =>
     Effect.gen(function* () {
       const result = yield* (yield* getLocalConnector()).health();
       return { connector: "local" as const, ...result };
     }),
-  memory_attachment_search: (input) =>
+  ),
+  memory_attachment_search: Effect.fn("memory_attachment_search")((input) =>
     Effect.gen(function* () {
       const memoConnector = yield* getLocalConnector();
       const searched = yield* searchMemoAttachment({
@@ -67,6 +72,7 @@ const handlers = {
         count: searched.results.length,
       };
     }),
+  ),
 } satisfies Parameters<typeof MemoryToolkit.toLayer>[0];
 
 export const MemoryToolkitHandlersLive = MemoryToolkit.toLayer(handlers);

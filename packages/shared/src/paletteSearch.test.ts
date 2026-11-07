@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { WORKTREE_BRANCH_PREFIX } from "./git.ts";
 import {
   findSearchTokenRanges,
   foldSearchQuery,
@@ -162,9 +163,11 @@ describe("scoreThreadSearch", () => {
   });
 
   it("finds a branch pasted with the app's worktree prefix", () => {
-    const subject = thread("Cmd+K search", { branch: "t3/cmdk-search-v2" });
-    expect(scoreThreadSearch(foldSearchQuery("t3/cmdk-search-v2"), subject, NOW)).not.toBeNull();
-    expect(scoreThreadSearch(foldSearchQuery("t3/cmdk"), subject, NOW)).not.toBeNull();
+    const subject = thread("Cmd+K search", { branch: "d4research/cmdk-search-v2" });
+    expect(
+      scoreThreadSearch(foldSearchQuery("d4research/cmdk-search-v2"), subject, NOW),
+    ).not.toBeNull();
+    expect(scoreThreadSearch(foldSearchQuery("d4research/cmdk"), subject, NOW)).not.toBeNull();
   });
 
   it("ranks a title holding the words above the app's own branch prefix and project name", () => {
@@ -173,7 +176,7 @@ describe("scoreThreadSearch", () => {
       rankTitles("t3 connect", [
         thread("Diagnose Connect provisioning failures", {
           ...busy,
-          branch: "t3/diagnose-connect",
+          branch: "d4research/diagnose-connect",
           projectTitle: "t3code",
         }),
         thread("T3 Connect Tunnel Lifecycle Review", { projectTitle: "t3code" }),
@@ -189,7 +192,7 @@ describe("scoreThreadSearch", () => {
 
   it("matches pull request numbers, branches, and projects with every token somewhere", () => {
     const subject = thread("Trim model lists", {
-      branch: "t3/trim-mcp-models",
+      branch: "d4research/trim-mcp-models",
       projectTitle: "t3code",
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
@@ -279,7 +282,7 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
 
   it("says which field matched when the title does not", () => {
     const subject = thread("Trim model lists", {
-      branch: "t3/cleanup-payloads",
+      branch: `${WORKTREE_BRANCH_PREFIX}/cleanup-payloads`,
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
     for (const query of ["#22889", "pr 22889", "pr22889", "pull request #22889"]) {
@@ -661,6 +664,26 @@ describe("scoreMessageMatch", () => {
     expect(scoreMessageMatch("We trust the build", "rust")).toEqual({ quality: 0.3, offset: 4 });
     expect(scoreMessageMatch("Rust and trust", "rust")).toEqual({ quality: 1, offset: 0 });
     expect(scoreMessageMatch("Use the sidebar", '"sidebar"')).toEqual({ quality: 1, offset: 8 });
+    for (const [text, query, expected] of [
+      ["model mode mode", "mode", { quality: 1, offset: 6 }],
+      ["xmode model models", "mode", { quality: 0.8, offset: 6 }],
+      ["model models", "mode", { quality: 0.8, offset: 0 }],
+      ["xmode ymode", "mode", { quality: 0.3, offset: 1 }],
+      ["mode mode", "mode", { quality: 1, offset: 0 }],
+      ["fts fts", "fts", { quality: 1, offset: 0 }],
+      ["the theme", "he", null],
+      ["he theme", "he", { quality: 1, offset: 0 }],
+      ["notes", "", { quality: 1, offset: 0 }],
+      ["", "notes", null],
+      ["same same same", "same same", { quality: 1.25, offset: 0 }],
+      ["7cafe52bb8 cafe cafe", "cafe", { quality: 1, offset: 11 }],
+      ["7cafe52bb8 7cafe52bb8", "7cafe52", { quality: 1, offset: 0 }],
+      ["明天部署部署到生产环境", "部署", { quality: 1, offset: 2 }],
+      ["gannet’s gannet's", "gannet's", { quality: 1, offset: 9 }],
+      ["gannet's gannet’s", "gannet’s", { quality: 1, offset: 0 }],
+    ] as const) {
+      expect(scoreMessageMatch(text, query), `${query} in ${text}`).toEqual(expected);
+    }
     // Words written together as typed rank above the same words apart, and
     // the snippet starts where they are together.
     const together = "Run the tests, then vp run dev to check";
@@ -736,5 +759,14 @@ describe("scoreMessageMatch", () => {
     expect(scoreMessageMatch("İ Enable fts and model", "fts")).toMatchObject({ offset: 9 });
     expect(scoreMessageMatch("İ Enable fts and model", "model")?.quality).toBe(1);
     expect(scoreMessageMatch("Trip to İstanbul", "İstanbul")).toEqual({ quality: 1, offset: 8 });
+    for (const [text, query, expected] of [
+      ["İ cafeteria Café CAFÉ", "cafe", { quality: 1, offset: 12 }],
+      ["Café cafe", "cafe", { quality: 1, offset: 5 }],
+      ["İ Café Café", "café", { quality: 1, offset: 2 }],
+      ["İ Résumé Résumé", "resume", { quality: 1, offset: 2 }],
+      ["İ résuméprefix résumé", "resume", { quality: 1, offset: 15 }],
+    ] as const) {
+      expect(scoreMessageMatch(text, query), `${query} in ${text}`).toEqual(expected);
+    }
   });
 });

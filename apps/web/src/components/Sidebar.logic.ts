@@ -19,17 +19,13 @@ import {
   rankSearchItems,
   scoreThreadSearch,
 } from "@d4research/shared/paletteSearch";
-import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
 import {
   isListedThreadLineage,
   type ContextMenuItem,
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import type {
-  SidebarProjectSortOrder,
-  SidebarThreadSortOrder,
-} from "@d4research/contracts/settings";
+import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@d4research/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import {
   effectiveSnoozed,
@@ -185,29 +181,6 @@ export function resolveSidebarThreadSection(input: {
   if (input.settled) return "settled";
   if (input.pinned) return "pinned";
   return "active";
-}
-
-// Keep cached placement on the first connection attempt, matching mobile's threadRouteIsHydrating.
-export function isSidebarEnvironmentDisconnected(
-  phase: EnvironmentConnectionPhase,
-  shellIsLive: boolean,
-): boolean {
-  return phase !== "connecting" && (phase !== "connected" || !shellIsLive);
-}
-
-export function belongsInSidebarWorkingShelf<T extends { readonly environmentId: EnvironmentId }>(
-  thread: T,
-  input: {
-    readonly enabled: boolean;
-    readonly disconnectedEnvironmentIds: ReadonlySet<EnvironmentId>;
-    readonly isWorking: (thread: T) => boolean;
-  },
-): boolean {
-  return (
-    input.enabled &&
-    !input.disconnectedEnvironmentIds.has(thread.environmentId) &&
-    input.isWorking(thread)
-  );
 }
 
 const SIDEBAR_MARKER_PREFIX = "sidebar-marker-";
@@ -857,6 +830,7 @@ export type SidebarThreadStatus =
   | "approval"
   | "input"
   | "request"
+  | "preparing"
   | "working"
   | "waiting"
   | "failed"
@@ -878,7 +852,9 @@ export function shouldRecedeSidebarThread(input: {
   ) {
     return false;
   }
-  if (input.status === "working" || input.status === "waiting") return true;
+  if (input.status === "preparing" || input.status === "working" || input.status === "waiting") {
+    return true;
+  }
   if (input.status === "ready" || input.status === "approval") {
     return !input.isUnread && !input.isWoke;
   }
@@ -907,6 +883,7 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "input";
   }
   if ((thread.pendingGuestMessageCount ?? 0) > 0) return "request";
+  if (thread.runtime?.status === "preparing") return "preparing";
   const workPhase = resolveThreadWorkPhase(thread);
   if (workPhase !== null) return workPhase;
   if (thread.runtime?.status === "failed") {
@@ -937,7 +914,7 @@ export function resolveSidebarFolderDot(
     (thread) => resolveSidebarThreadStatus(thread) === "ready" && hasUnseenCompletion(thread),
   );
   if (hasUnread) return "unread";
-  if (statuses.has("working")) return "working";
+  if (statuses.has("working") || statuses.has("preparing")) return "working";
   return null;
 }
 
@@ -1227,14 +1204,17 @@ export function resolveThreadStatusPill(input: {
 }
 
 export function getFallbackThreadIdAfterDelete<
-  T extends Pick<Thread, "id" | "projectId" | "createdAt" | "updatedAt"> & ThreadSortInput,
+  T extends Pick<Thread, "id" | "projectId" | "createdAt" | "updatedAt" | "settledOverride"> &
+    ThreadSortInput &
+    ThreadSnoozeShell,
 >(input: {
   threads: readonly T[];
   deletedThreadId: T["id"];
   sortOrder: SidebarThreadSortOrder;
+  now: string;
   deletedThreadIds?: ReadonlySet<T["id"]>;
 }): T["id"] | null {
-  const { deletedThreadId, deletedThreadIds, sortOrder, threads } = input;
+  const { deletedThreadId, deletedThreadIds, sortOrder, now, threads } = input;
   const deletedThread = threads.find((thread) => thread.id === deletedThreadId);
   if (!deletedThread) {
     return null;
@@ -1246,7 +1226,9 @@ export function getFallbackThreadIdAfterDelete<
         (thread) =>
           thread.projectId === deletedThread.projectId &&
           thread.id !== deletedThreadId &&
-          !deletedThreadIds?.has(thread.id),
+          !deletedThreadIds?.has(thread.id) &&
+          thread.settledOverride !== "settled" &&
+          !effectiveSnoozed(thread, { now }),
       ),
       sortOrder,
     )[0]?.id ?? null

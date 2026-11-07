@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
@@ -146,7 +147,7 @@ describe("askLocalJudge", () => {
       if (exit._tag === "Failure") {
         expect(
           exit.cause.reasons.some(
-            (reason) => "error" in reason && reason.error instanceof LocalJudgeError,
+            (reason) => "error" in reason && Schema.is(LocalJudgeError)(reason.error),
           ),
         ).toBe(true);
       }

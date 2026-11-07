@@ -1,102 +1,81 @@
 # Voice input
 
-> For maintainers. Using T3 Code? See [voice input on iPhone](../user/composer.md#voice-input-on-iphone).
+Transcription edits a composer draft. It does not submit an agent turn. Audio is
+temporary client input, and only normal message submission sends the resulting
+text to the agent. Mobile defaults to on-device transcription. Sending audio off
+the device requires an explicit grant naming one environment and, for cloud
+transcription, one provider.
 
-Voice input produces editable composer text. The current implementation records on the client and
-transcribes locally with Apple's `SpeechAnalyzer` and `SpeechTranscriber` on supported iOS 26+
-devices. Environment-provided transcription and transcription on web and desktop are not implemented.
+The [shared controller](../../packages/client-runtime/src/voice-input/controller.ts)
+owns the operation while the client supplies capture and transcription. Preparation
+binds the transcriber and resolved locale for the whole recording. Draft ownership,
+text, and revision are captured before recording and checked before insertion, so
+a late transcript cannot overwrite a draft that was edited or replaced. A
+transcriber may expose a streaming session, in which case audio leaves during
+capture and `finish` replaces the file-based `transcribe`.
 
-## Current boundaries
+## Where audio may go
 
-The shared [`VoiceInputController`][controller] in `packages/client-runtime` handles preparation,
-recording, transcription, cancellation, temporary-file cleanup, and insertion into the captured
-draft selection. Applications import it as `@d4research/client-runtime/voice-input` via the
-[voice-input entry point][voice-input]. Its dependencies separate capture from transcription; the
-controller imports neither React Native nor an Apple transcription API.
+On mobile, on-device transcription needs no audio grant. Environment and cloud
+transcription share a recorder and upload only finished recordings. The client
+keeps the grant in device-bound secure storage, outside preference backups, and
+rechecks it after native decoding and before upload.
 
-The shared [transcription contract][transcription] defines `VoiceTranscriber`,
-`PreparedVoiceTranscription`, and transcription errors. The controller calls `getTranscriber()` once
-at the start of an operation, before asking for microphone permission. Preparation returns a resolved
-locale and a bound `transcribe` function. The controller retains that result for the recording, so a
-selection change cannot prepare with one implementation and transcribe with another.
+The [web grant](../../apps/web/src/speech/voiceConsent.ts) lives outside the preferences snapshot so another
+window saving unrelated settings cannot resurrect a revoked grant. Each new choice
+gets a distinct grant, even if the destination was previously selected. The
+[web hook](../../apps/web/src/speech/useEnvironmentSpeechInput.ts) binds the
+controller to that grant and the selected environment's connection. It requires
+`voiceTranscription` to use the environment's model or `cloudVoiceTranscription`
+to forward audio to the selected provider. Changing the grant or losing the
+connection, permission, or required capability discards both the active recording
+and any recording retained for retry. It never chooses a fallback destination.
+The settings page's transcription test uses the same hook. The microphone loopback
+test captures separately for local playback and sends nothing. The transport
+refuses redirects so credentials and audio cannot follow one to another host.
 
-[`useVoiceInputController`][hook] supplies Expo audio capture, microphone permissions, audio-session
-management, waveform samples, and app and navigation lifecycle handling. It normalizes Expo's
-`mediaServicesDidReset` into a generic recorder error. [`voiceTranscription.ios.ts`][ios] adapts
-`@react-native-ai/apple` through `getLocalVoiceTranscriber()`, capturing the requested device locale
-and binding the prepared transcriber to Apple's resolved locale. The other-platform binding returns
-no local transcriber. That result describes the local implementation, not whether a client could use
-an environment's transcription service.
+Transcript cleanup requires its own grant, off by default.
+It sends text, never audio, to the text generation provider of the draft's
+own environment, because that is where the provider credentials live.
 
-Mobile's [`voiceInputPresentation.ts`][presentation] maps shared state to toolbar labels and actions.
-Waveform and toolbar rendering stay in mobile. The composer edits draft text without selecting a
-speech vendor.
-Recording captures the draft owner, revision, text, and selection. A late transcript cannot overwrite
-a different or edited draft. Only normal message submission sends the resulting text to an agent.
+A cloud destination binds both the forwarding environment and the named provider.
+It uses a separate, batch-only endpoint: changing a server key cannot upgrade
+an environment-local grant, and a cloud recording never uses the streaming
+socket or falls back to another provider or the environment's native model.
 
-Each operation passes one `AbortSignal` through preparation and transcription. Cancellation
-invalidates the operation and aborts that signal immediately. Implementations settle their promises
-only after their underlying work stops. The Apple binding checks cancellation between asynchronous
-steps but cannot interrupt an in-flight native request. The controller retains its session until
-that work settles, ignores its result, and cleans up the recording.
+OpenRouter routes to many upstreams, so its grant also names the exact model and
+the model travels with every upload as a query parameter. The server accepts only
+ids present in OpenRouter's public ZDR-eligible transcription catalog,
+which it caches for ten minutes after a successful read;
+router aliases such as `openrouter/auto` or `:nitro` fail schema validation before
+that. Requests set `provider.zdr` and carry no `models` fallback list. OpenRouter
+applies the account's safety-retention policy when choosing an endpoint. The catalog
+holds no credential or consent state, which is why it may be cached while key
+presence is read fresh on every request.
 
-## Ownership decisions
+## Server side
 
-The extension boundary separates transcription on the client device from transcription through the
-composer's environment. These constraints apply when adding selectable transcription services:
+The [speech service](../../apps/server/src/speech/SpeechService.ts) runs
+transcribe-cpp in a child process so a hung native call can be killed without
+taking the server down; see [native.ts](../../apps/server/src/speech/native.ts)
+for the packaging constraints (Node SEA, Electron ASAR). One native request runs
+at a time. Batch uploads carry their options in the body framing defined in
+[shared/speech.ts](../../packages/shared/src/speech.ts); streaming sends them in
+the socket's first command. Model files and the selected model, hardware
+placement, and unload timeout are environment state in server settings.
 
-- Local means the client device, regardless of which machine hosts the environment. A device's lack
-  of local recognition does not prevent it from recording audio for an environment service.
-- Remote service configuration and API keys belong to the environment. The environment calls the
-  external service. Clients receive service identifiers, labels, and availability information, never
-  credential values. Transcription services are independent of coding-agent `providerInstances`;
-  selecting OpenAI for transcription does not select Codex for the thread.
-- The client owns its transcription preference, scoped by stable `environmentId`. Its choices are
-  supported local recognition and the services exposed by the composer's environment. A service ID
-  is meaningful only within that environment. Different clients can make different choices.
-- Resolve and capture the environment, selected service, and locale when an operation starts.
-  Preparation and transcription use the same selection; preference changes affect the next
-  recording. Capture environment identity explicitly rather than recovering it from a draft key.
-  Keep the existing draft-owner and revision checks before inserting text.
-- If the selected option is unavailable, report that state and let the user choose another option.
-  A local failure must not silently upload audio, and a disconnected environment must not redirect
-  a recording to another environment or service.
-- Transcription audio is temporary input, separate from durable chat attachments and messages.
-  Remote adapters need cancellation of upload and transcription where supported, cleanup after
-  success, failure, or cancellation, and the same protection against late results as local transcription.
+The Silero silence detector is optional. If its download fails, recordings use
+raw audio during the retry cooldown so a detector outage cannot block dictation.
+Explicitly installing a speech model also retries the detector without waiting.
 
-## Existing integration points
+## Cancellation and resource ownership
 
-[`ServerSettingsService`][settings] and [`ServerSecretStore`][secrets] provide environment-owned
-configuration and secret persistence. Existing settings redaction handles coding-provider environment
-variables only. Any transcription credential fields need their own explicit separation and redaction
-before settings responses or subscriptions reach client caches.
-
-[`ExecutionEnvironmentCapabilities`][capabilities] handles version skew. Remote transcription must be
-opt-in: a missing transcription capability means unsupported. The authenticated server-config
-subscription and [shared environment state][server-state] already distribute configuration per
-environment. A transcription service catalog belongs behind that capability and authenticated
-boundary. Older servers expose no remote transcription choices.
-
-The [attachment upload contracts][uploads] and [shared upload operations][attachment-state] provide a
-pattern for authorized binary uploads through an environment, including remote connections. Their
-existing chat-attachment retention is not a transcription cleanup policy.
-
-Future service selection and environment requests live in `packages/client-runtime` next to the
-controller, with wire contracts in `packages/contracts`. Capture and native local recognition stay
-client-specific. An environment-backed transcriber implements the same shared contract, binding its
-environment and service upon selection. The controller does not own service credentials, provider
-SDKs, or transport selection.
-
-[controller]: ../../packages/client-runtime/src/voice-input/controller.ts
-[voice-input]: ../../packages/client-runtime/src/voice-input/index.ts
-[transcription]: ../../packages/client-runtime/src/voice-input/transcription.ts
-[hook]: ../../apps/mobile/src/features/voice-input/useVoiceInputController.ts
-[presentation]: ../../apps/mobile/src/features/voice-input/voiceInputPresentation.ts
-[ios]: ../../apps/mobile/src/native/voiceTranscription.ios.ts
-[settings]: ../../apps/server/src/serverSettings.ts
-[secrets]: ../../apps/server/src/auth/ServerSecretStore.ts
-[capabilities]: ../../packages/contracts/src/environment.ts
-[server-state]: ../../packages/client-runtime/src/state/server.ts
-[uploads]: ../../packages/contracts/src/assets.ts
-[attachment-state]: ../../packages/client-runtime/src/state/attachments.ts
+Cancellation invalidates a result immediately, but resources stay owned until the
+underlying work settles. Apple's native transcription call cannot be interrupted
+once started. Releasing the session or deleting its recording when the abort signal
+fires would race that work. The [transcription contract](../../packages/client-runtime/src/voice-input/transcription.ts)
+therefore requires implementations to settle only after their work has stopped;
+the [Apple binding](../../apps/mobile/src/native/voiceTranscription.ios.ts) checks
+cancellation between native calls and discards late results. On the server,
+interrupting a batch request kills the worker process instead; the next request
+reloads the model.

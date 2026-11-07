@@ -1,6 +1,6 @@
 # d4research
 
-d4research is a private workspace for long-running research across coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients. The product adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard. Its application foundation is inherited from T3 Code.
+d4research is a private workspace for long-running research across coding agents. A Node WebSocket server wraps provider CLIs (including Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, and Kiro) and serves web, desktop, and mobile clients. The product adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard. Its application foundation is inherited from T3 Code.
 
 The T3 Code architecture and its compatibility names remain the foundation. Do not mechanically rename `t3`, `T3CODE_HOME`, package names, protocols, or inherited release documentation without checking their compatibility role.
 
@@ -15,7 +15,7 @@ The T3 Code architecture and its compatibility names remain the foundation. Do n
 
 ## What the fork inherits from T3 Code
 
-We have over 500,000 users who love T3 Code. It's important we maintain the things they love as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
+Preserve the application foundation inherited from T3 Code while keeping d4research's distribution and local integrations separate.
 
 ### 1. Open at the core
 
@@ -27,17 +27,16 @@ Lots of apps have gotten bogged down with bad tech decisions and "slop". We have
 
 ### 3. Remote ready
 
-The architecture of T3 Code's websocket layer (npx t3) enables a lot of awesome remote features. These have become core to the product. Whether users are connecting directly over their local network, using Tailscale, or leaning in fully with T3 Connect (our tunnel solution, also in this repo), we need to make sure new features are properly supported.
+The WebSocket layer supports local networks, Tailscale, and SSH-managed environments.
+Keep remote behavior working without restoring the removed hosted relay, Clerk login,
+or product analytics integrations.
 
 ### 4. Multi-surface
 
-T3 Code has 3 key app surfaces: **web**, **desktop**, and **mobile**.
-
-**Web** is kind of two surfaces, as we have the public facing "app.t3.codes" as well as locally hosting the web app through the `npx t3` command. Both need to be supported by all new features where reasonable.
-
-**Desktop** is the main surface most users install first. It's a full Electron app that bundles the server runner as well. The desktop app can also be used as the host server, allowing remote connections from app.t3.codes or the mobile app.
-
-**Mobile** is a React Native app for both iOS and Android, available on the App Store and Google Play. The mobile app allows for connecting to any T3 Code server to control work remotely.
+d4research has web, desktop, and mobile clients. The web client can be served by the local
+server. Desktop wraps it in Electron and can host a server for remote clients. Mobile uses
+React Native for iOS and Android and connects to a running environment. Verify the surfaces
+affected by a change; upstream store listings and hosted apps are separate distributions.
 
 ## Engineering approach
 
@@ -77,11 +76,11 @@ The most common defect in this repo is a change that works on the path you teste
 
 - **Entry points.** A behavior reachable from the chat view is usually also reachable from Settings, the command palette, and a keybinding. Fixing one is not fixing the feature.
 - **Clients.** Web, desktop (wraps web, adds Electron shell/IPC), and mobile (React Native, separate navigation). Shared logic lives in `packages/client-runtime`
-- **Providers.** Codex, Claude, Cursor, Grok, OpenCode, and Antigravity each have an adapter. Provider-shaped features need a decision per adapter, even if the decision is "not supported here".
+- **Providers.** Codex, Claude, Cursor, Grok, OpenCode, Antigravity, and Kiro each have an adapter. Provider-shaped features need a decision per adapter, even if the decision is "not supported here".
 - **Agents.** A capability a user can trigger is usually one an agent should reach through MCP tools, and scheduled tasks run the same paths. That only works when it is a service method, not handler code.
 - **Contracts.** Anything crossing the wire is typed in `packages/contracts`. Change the schema and the server, web, mobile, and desktop all follow.
 - **Reverse states.** If you added a way in, add the way out and the way to see it. Snooze needs unsnooze. Close needs reopen. A one-way door is a bug.
-- **Connection modes.** Local, remote/relay, and tunnel behave differently. Multi-device and multi-environment cases are real.
+- **Connection modes.** Local, remote, SSH, and Tailscale connections behave differently. Multi-device and multi-environment cases are real.
 - **Docs.** Check whether the change makes existing guidance inaccurate. Apply the [documentation rules](#documentation) before adding anything.
 
 ## Dev servers
@@ -105,8 +104,14 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 ## Verifying
 
-- Smallest proof that the change works. `vp test run <files>` for the tests you touched, targeted lint and typecheck for the scope you changed.
-- Test meaningful logic or observable behavior. Do not render components to static markup to assert props or attributes, or add tests that merely assert callback wiring or mirror the implementation.
+- Before you push, run `vp run check:changed`. It runs CI's fast checks for changed files: format, lint, knip, typecheck of affected packages and dependents, tests beside changes, and the cross-file checks those miss. CI still runs the full test suites.
+- While you iterate, run `vp test run <files>`. For big files, add `-t "<name>"`.
+- Typecheck only affected packages with `vp run --filter <package> typecheck`. TypeScript workspaces use `effect-tsgo tsrs --noEmit`; marketing uses Astro and TypeScript.
+- Run `node -e` snippets from `apps/server` or the owning package. `effect` does not resolve from the repo root.
+- Test behavior that can break, such as orchestration and event-sourcing, provider protocol translation, auth and permission guards, persistence and migrations, external-format parsing, race fixes, and the logic a bug fix changed. Leave out tests for what types already guarantee, trivial logic, copy text, smoke runs, mock-call mirrors, callback wiring, and props rendered to static markup.
+- Extend before you add. When an existing test or table covers the behavior, add a row or an assertion there. Write a new `it` only when no case fits.
+- Test at one layer: the lowest one that fails on `main`. Do not repeat the case in a wrapper test, at each call site, or in web and mobile copies of the same logic.
+- [Testing](docs/internals/testing.md) carries these same test rules, plus review guidance, for review bots. Change both together.
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Before declaring web/PWA changes or an upstream web merge ready to merge or deploy, run `vp run test:ui-regressions` against a freshly built isolated production bundle. Unit tests and viewport screenshots alone are not enough. Follow the browser-consent rule below; if verification cannot run, report it as unverified. See `apps/web/e2e/README.md` for setup and evidence.
 - Changes to PWA viewport metadata, service-worker delivery, or authentication proxies also require an installed-iPhone check. Chromium safe-area emulation and a Safari tab are not substitutes for that check.
@@ -171,7 +176,7 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 
 ## Where code lives
 
-- `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read [Effect services](docs/internals/effect-services.md) before adding server code, and `.repos/effect-smol/LLMS.md` for the Effect library itself.
+- `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read [Effect services](docs/internals/effect-services.md) before adding server code, and `.repos/effect/LLMS.md` for the Effect library itself.
 - `apps/web` - React/Vite UI. `apps/desktop` wraps it, `apps/mobile` is React Native, `apps/marketing` is the site.
 - `packages/contracts` - Effect/Schema contracts plus small derived helpers. No heavy runtime logic.
 - `packages/shared` - shared runtime utils, subpath exports, no barrel.

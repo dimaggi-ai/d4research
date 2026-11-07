@@ -2,6 +2,7 @@ import {
   inlineCodeFilePathCandidate,
   isConventionalFilePosition,
 } from "@d4research/shared/markdownLinks";
+import { fileLinkLabel } from "@d4research/shared/fileLinks";
 import { parseThreadLinkHref } from "@d4research/shared/threadLinks";
 import { videoMimeType } from "@d4research/shared/video";
 
@@ -409,7 +410,7 @@ export function resolveMarkdownLinkPresentation(href: string): MarkdownLinkPrese
       kind: "file",
       href: normalized,
       icon: resolveMarkdownFileIcon(fileTarget.path),
-      label: fileLabel(targetWithPosition),
+      label: fileLinkLabel(fileTarget, new Map()),
       path: fileTarget.path,
       ...(fileTarget.line ? { line: fileTarget.line } : {}),
       ...(fileTarget.column ? { column: fileTarget.column } : {}),

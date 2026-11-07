@@ -1,5 +1,5 @@
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { NativeHeaderToolbar } from "../../native/StackHeader";
+import { NativeHeaderToolbar } from "../../native/NativeHeaderToolbar";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import type { EnvironmentId } from "@d4research/contracts";

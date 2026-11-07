@@ -7,6 +7,7 @@ import { Effect, Schema } from "effect";
 import { MuseSettings } from "@d4research/contracts";
 import { execScriptSource, writeFakeCli } from "@d4research/provider-testing/fakeCli";
 
+const encodeString = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 const decodeMuseSettings = Schema.decodeUnknownEffect(MuseSettings);
 const sourceRange = {
   first: { id: "r", sequence: 1 },
@@ -59,12 +60,19 @@ export const makeMockMuse = Effect.fn("makeMockMuse")(function* (
     directory,
     name: "fake-muse",
     env: { ...env, T3_MSP_REQUEST_LOG_PATH: logPath },
-    source: execScriptSource({
-      scriptPath: NodeURL.fileURLToPath(
-        new URL("../../../scripts/msp-mock-host.ts", import.meta.url),
-      ),
-      ...(options.argvLog === true ? { argvLogPath: argvPath } : {}),
-    }),
+    source: [
+      ...(options.argvLog === true
+        ? [
+            'import { appendFileSync } from "node:fs";',
+            `appendFileSync(${encodeString(argvPath)}, process.argv.slice(2).join("\\t") + "\\n");`,
+          ]
+        : []),
+      execScriptSource({
+        scriptPath: NodeURL.fileURLToPath(
+          new URL("../../../scripts/msp-mock-host.ts", import.meta.url),
+        ),
+      }),
+    ].join("\n"),
   });
   const decodeRequest = Schema.decodeEffect(
     Schema.fromJsonString(

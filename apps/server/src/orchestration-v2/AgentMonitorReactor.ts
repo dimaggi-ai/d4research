@@ -432,25 +432,23 @@ export const make = Effect.gen(function* () {
     }
     return next;
   };
-  const persist = (
-    root: Metadata,
-    report: AgentMonitorReport | null,
-    state: Candidate | undefined,
-  ) =>
-    Effect.gen(function* () {
-      const revision = (yield* sql<{ revision: number }>`UPDATE agent_monitor_control
+  const persist = Effect.fn("persist")(
+    (root: Metadata, report: AgentMonitorReport | null, state: Candidate | undefined) =>
+      Effect.gen(function* () {
+        const revision = (yield* sql<{ revision: number }>`UPDATE agent_monitor_control
       SET revision = revision + 1 WHERE id = 1 RETURNING revision`)[0]!.revision;
-      const reportJson = yield* encodeReport(report);
-      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = json_set(payload_json,
+        const reportJson = yield* encodeReport(report);
+        yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = json_set(payload_json,
       '$.agentMonitor', json(${reportJson}), '$.agentMonitorRevision', ${revision}) WHERE thread_id = ${root.thread_id}`;
-      yield* sql`DELETE FROM agent_monitor_device_claims WHERE thread_id = ${root.thread_id}
+        yield* sql`DELETE FROM agent_monitor_device_claims WHERE thread_id = ${root.thread_id}
       AND report_key != ${state?.report_key ?? ""}`;
-      return {
-        threadId: ThreadId.make(root.thread_id),
-        report,
-        revision,
-      } satisfies AgentMonitorUpdate;
-    });
+        return {
+          threadId: ThreadId.make(root.thread_id),
+          report,
+          revision,
+        } satisfies AgentMonitorUpdate;
+      }),
+  );
   const persistCandidate = (threadId: string, state: Candidate) => sql`
     INSERT INTO agent_monitor_observations(thread_id, report_key, evidence_key, episode_started_at, first_seen_at, last_seen_at, baseline, eligible_at)
     VALUES (${threadId}, ${state.report_key}, ${state.evidence_key}, ${state.episode_started_at}, ${state.first_seen_at}, ${state.last_seen_at}, ${state.baseline}, ${state.eligible_at})
@@ -595,7 +593,9 @@ export const make = Effect.gen(function* () {
     Effect.mapError(() => new AgentMonitorError({})),
   );
 
-  const claimAttention: AgentMonitorReactor["Service"]["claimAttention"] = (input) =>
+  const claimAttention: AgentMonitorReactor["Service"]["claimAttention"] = Effect.fn(
+    "claimAttention",
+  )((input) =>
     Effect.gen(function* () {
       const config = (yield* settings.getSettings).agentMonitor;
       if (!config.enabled || !config.notificationsEnabled) return { claimed: false };
@@ -639,7 +639,8 @@ export const make = Effect.gen(function* () {
           return { claimed: inserted.length === 1 };
         }),
       );
-    }).pipe(Effect.mapError(() => new AgentMonitorError({})));
+    }).pipe(Effect.mapError(() => new AgentMonitorError({}))),
+  );
   const start = () =>
     forkParked(
       sweep.pipe(

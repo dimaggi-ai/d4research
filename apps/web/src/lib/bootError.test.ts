@@ -43,18 +43,18 @@ describe("resolveTriageCommand", () => {
 
   it("falls back to npx without a usable desktop launcher", async () => {
     using _warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await expect(resolveTriageCommand(undefined)).resolves.toBe("npx t3 triage");
-    await expect(resolveTriageCommand({} as DesktopBridge)).resolves.toBe("npx t3 triage");
+    await expect(resolveTriageCommand(undefined)).resolves.toBe("npx d4research triage");
+    await expect(resolveTriageCommand({} as DesktopBridge)).resolves.toBe("npx d4research triage");
     await expect(resolveTriageCommand(desktopWith(async () => notOnPath(null)))).resolves.toBe(
-      "npx t3 triage",
+      "npx d4research triage",
     );
     const staleWindowsPathEntry = { ...notOnPath(null), supported: true, onPath: true };
     await expect(
       resolveTriageCommand(desktopWith(async () => staleWindowsPathEntry)),
-    ).resolves.toBe("npx t3 triage");
+    ).resolves.toBe("npx d4research triage");
     await expect(
       resolveTriageCommand(desktopWith(() => Promise.reject(new Error("ipc closed")))),
-    ).resolves.toBe("npx t3 triage");
+    ).resolves.toBe("npx d4research triage");
   });
 });
 

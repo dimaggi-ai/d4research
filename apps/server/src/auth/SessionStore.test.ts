@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
@@ -18,7 +19,8 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
-import { base64UrlDecodeUtf8, base64UrlEncode, signPayload } from "./utils.ts";
+import { base64UrlDecodeUtf8, base64UrlEncode } from "./utils.ts";
+import * as PayloadSigner from "./PayloadSigner.ts";
 
 const layerServerConfig = (overrides?: Partial<ServerConfig.ServerConfig["Service"]>) =>
   Layer.effect(
@@ -87,7 +89,7 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
   );
 });
 
-it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.layer", (it) => {
   it.effect.each(["revoke", "revokeAllExcept", "replace"] as const)(
     "invalidates every connection for a session on %s and leaves other sessions active",
     (operation) =>
@@ -402,13 +404,15 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       const [encodedPayload] = issued.token.split(".");
       const currentClaims = base64UrlDecodeUtf8(encodedPayload!);
       expect(currentClaims).toContain('"v":1');
-      const secret = yield* secrets.getOrCreateRandom("server-signing-key", 32);
+      const signer = yield* PayloadSigner.fromSecret(
+        yield* secrets.getOrCreateRandom("server-signing-key", 32),
+      );
       const resign = (claims: string) => {
         const payload = base64UrlEncode(claims);
-        return `${payload}.${signPayload(payload, secret)}`;
+        return signer.sign(payload).pipe(Effect.map((signature) => `${payload}.${signature}`));
       };
-      const legacyToken = resign(currentClaims.replace('"v":1', '"v":2'));
-      const editedToken = resign(
+      const legacyToken = yield* resign(currentClaims.replace('"v":1', '"v":2'));
+      const editedToken = yield* resign(
         currentClaims.replace(/"scopes":\[[^\]]*\]/, '"scopes":["access:write"]'),
       );
 
@@ -627,85 +631,91 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("editable session permissions", (it) => {
-  it.effect.each(["browser-session-cookie", "bearer-access-token", "dpop-access-token"] as const)(
-    "uses saved permissions for an existing %s credential and ticket",
-    (method) =>
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "editable session permissions",
+  (it) => {
+    it.effect.each(["browser-session-cookie", "bearer-access-token", "dpop-access-token"] as const)(
+      "uses saved permissions for an existing %s credential and ticket",
+      (method) =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          const issued = yield* sessions.issue({
+            method,
+            scopes: ["orchestration:read"],
+            ...(method === "dpop-access-token" ? { proofKeyThumbprint: "proof-key" } : {}),
+          });
+          const ticket = yield* sessions.issueWebSocketToken(issued.sessionId);
+          expect(
+            yield* sessions.updateScopes(issued.sessionId, [
+              "orchestration:read",
+              "filesystem:read",
+            ]),
+          ).toBe(true);
+          expect((yield* sessions.verify(issued.token)).scopes).toEqual([
+            "orchestration:read",
+            "filesystem:read",
+          ]);
+          expect((yield* sessions.verifyWebSocketToken(ticket.token)).scopes).toEqual([
+            "orchestration:read",
+            "filesystem:read",
+          ]);
+          if (method === "dpop-access-token")
+            expect((yield* sessions.verify(issued.token)).proofKeyThumbprint).toBe("proof-key");
+          yield* sessions.updateScopes(issued.sessionId, ["orchestration:read"]);
+          expect((yield* sessions.verify(issued.token)).scopes).toEqual(["orchestration:read"]);
+          yield* sessions.revoke(issued.sessionId);
+          expect(yield* sessions.updateScopes(issued.sessionId, ["filesystem:write"])).toBe(false);
+        }).pipe(Effect.provide(layerSessionStore())),
+    );
+    it.effect(
+      "closes every old authorization context and catches an edit racing with subscription",
+      () =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          const client = yield* sessions.issue({ scopes: ["orchestration:read"] });
+          const other = yield* sessions.issue();
+          const otherClosed = yield* Deferred.make<void>();
+          yield* sessions
+            .awaitInvalidation(other.sessionId)
+            .pipe(
+              Effect.andThen(Deferred.succeed(otherClosed, undefined)),
+              Effect.forkScoped({ startImmediately: true }),
+            );
+          const first = yield* sessions
+            .awaitInvalidation(client.sessionId, undefined, client.scopes)
+            .pipe(Effect.forkScoped({ startImmediately: true }));
+          const second = yield* sessions
+            .awaitInvalidation(client.sessionId, undefined, client.scopes)
+            .pipe(Effect.forkScoped({ startImmediately: true }));
+          yield* sessions.updateScopes(client.sessionId, ["orchestration:read", "filesystem:read"]);
+          yield* Fiber.join(first);
+          yield* Fiber.join(second);
+          yield* sessions.awaitInvalidation(client.sessionId, undefined, client.scopes);
+          expect(yield* Deferred.isDone(otherClosed)).toBe(false);
+        }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+    );
+    it.effect("does not restore an expired client or change a grant on a failed save", () =>
       Effect.gen(function* () {
         const sessions = yield* SessionStore.SessionStore;
-        const issued = yield* sessions.issue({
-          method,
+        const sql = yield* SqlClient.SqlClient;
+        const expired = yield* sessions.issue({
+          ttl: Duration.seconds(1),
           scopes: ["orchestration:read"],
-          ...(method === "dpop-access-token" ? { proofKeyThumbprint: "proof-key" } : {}),
         });
-        const ticket = yield* sessions.issueWebSocketToken(issued.sessionId);
+        yield* TestClock.adjust(Duration.seconds(2));
+        expect(yield* sessions.updateScopes(expired.sessionId, ["filesystem:write"])).toBe(false);
+        const active = yield* sessions.issue({ scopes: ["orchestration:read"] });
+        yield* sql`CREATE TRIGGER reject_grant_update BEFORE UPDATE OF scopes ON auth_sessions BEGIN SELECT RAISE(ABORT, 'save failed'); END`;
         expect(
-          yield* sessions.updateScopes(issued.sessionId, ["orchestration:read", "filesystem:read"]),
-        ).toBe(true);
-        expect((yield* sessions.verify(issued.token)).scopes).toEqual([
-          "orchestration:read",
-          "filesystem:read",
-        ]);
-        expect((yield* sessions.verifyWebSocketToken(ticket.token)).scopes).toEqual([
-          "orchestration:read",
-          "filesystem:read",
-        ]);
-        if (method === "dpop-access-token")
-          expect((yield* sessions.verify(issued.token)).proofKeyThumbprint).toBe("proof-key");
-        yield* sessions.updateScopes(issued.sessionId, ["orchestration:read"]);
-        expect((yield* sessions.verify(issued.token)).scopes).toEqual(["orchestration:read"]);
-        yield* sessions.revoke(issued.sessionId);
-        expect(yield* sessions.updateScopes(issued.sessionId, ["filesystem:write"])).toBe(false);
-      }).pipe(Effect.provide(layerSessionStore())),
-  );
-  it.effect(
-    "closes every old authorization context and catches an edit racing with subscription",
-    () =>
-      Effect.gen(function* () {
-        const sessions = yield* SessionStore.SessionStore;
-        const client = yield* sessions.issue({ scopes: ["orchestration:read"] });
-        const other = yield* sessions.issue();
-        const otherClosed = yield* Deferred.make<void>();
-        yield* sessions
-          .awaitInvalidation(other.sessionId)
-          .pipe(
-            Effect.andThen(Deferred.succeed(otherClosed, undefined)),
-            Effect.forkScoped({ startImmediately: true }),
-          );
-        const first = yield* sessions
-          .awaitInvalidation(client.sessionId, undefined, client.scopes)
-          .pipe(Effect.forkScoped({ startImmediately: true }));
-        const second = yield* sessions
-          .awaitInvalidation(client.sessionId, undefined, client.scopes)
-          .pipe(Effect.forkScoped({ startImmediately: true }));
-        yield* sessions.updateScopes(client.sessionId, ["orchestration:read", "filesystem:read"]);
-        yield* Fiber.join(first);
-        yield* Fiber.join(second);
-        yield* sessions.awaitInvalidation(client.sessionId, undefined, client.scopes);
-        expect(yield* Deferred.isDone(otherClosed)).toBe(false);
-      }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
-  );
-  it.effect("does not restore an expired client or change a grant on a failed save", () =>
-    Effect.gen(function* () {
-      const sessions = yield* SessionStore.SessionStore;
-      const sql = yield* SqlClient.SqlClient;
-      const expired = yield* sessions.issue({
-        ttl: Duration.seconds(1),
-        scopes: ["orchestration:read"],
-      });
-      yield* TestClock.adjust(Duration.seconds(2));
-      expect(yield* sessions.updateScopes(expired.sessionId, ["filesystem:write"])).toBe(false);
-      const active = yield* sessions.issue({ scopes: ["orchestration:read"] });
-      yield* sql`CREATE TRIGGER reject_grant_update BEFORE UPDATE OF scopes ON auth_sessions BEGIN SELECT RAISE(ABORT, 'save failed'); END`;
-      expect(
-        (yield* sessions.updateScopes(active.sessionId, ["filesystem:write"]).pipe(Effect.flip))
-          ._tag,
-      ).toBe("SessionScopesUpdateError");
-      expect((yield* sessions.verify(active.token)).scopes).toEqual(["orchestration:read"]);
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(layerSessionStore(), SqlitePersistence.layerMemory, TestClock.layer()),
+          (yield* sessions.updateScopes(active.sessionId, ["filesystem:write"]).pipe(Effect.flip))
+            ._tag,
+        ).toBe("SessionScopesUpdateError");
+        expect((yield* sessions.verify(active.token)).scopes).toEqual(["orchestration:read"]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(layerSessionStore(), SqlitePersistence.layerMemory, TestClock.layer()),
+        ),
       ),
-    ),
-  );
-});
+    );
+  },
+);

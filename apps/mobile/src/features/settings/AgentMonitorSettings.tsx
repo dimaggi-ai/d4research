@@ -141,7 +141,7 @@ function EnvironmentMonitorSettings({
     if (enabled) {
       const permission = await Effect.runPromise(
         requestAgentNotificationPermission.pipe(
-          Effect.catch(() => Effect.succeed({ type: "denied" as const })),
+          Effect.orElseSucceed(() => ({ type: "denied" as const })),
         ),
       );
       if (permission.type !== "granted") {

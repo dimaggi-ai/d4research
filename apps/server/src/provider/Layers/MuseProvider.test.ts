@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, assert } from "@effect/vitest";
 import { MuseSettings } from "@d4research/contracts";
@@ -5,7 +7,7 @@ import { Effect, Schema } from "effect";
 import { checkMuseProviderStatus } from "./MuseProvider.ts";
 import { makeMockMuse } from "../msp/mspTestUtils.ts";
 const decodeMuseSettings = Schema.decodeUnknownEffect(MuseSettings);
-it.layer(NodeServices.layer)("Muse provider discovery", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Muse provider discovery", (it) => {
   it.effect("does not spawn a disabled provider", () =>
     Effect.gen(function* () {
       const settings = yield* decodeMuseSettings({

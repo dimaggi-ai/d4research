@@ -1,6 +1,6 @@
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Effect from "effect/Effect";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -62,7 +62,7 @@ const dependencies = [
   Path.Path,
   FileSystem.FileSystem,
   HttpClient.HttpClient,
-  Crypto.Crypto,
+  SecureRandom.SecureRandom,
 ];
 
 export const ResearchDelegateInput = Schema.Struct({

@@ -21,8 +21,9 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as HttpMethod from "effect/http/HttpMethod";
 import * as Socket from "effect/socket/Socket";
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import {
   HttpClient,
   HttpClientRequest,
@@ -158,18 +159,21 @@ const make = Effect.gen(function* () {
           return yield* new SharedEnvironmentError({ reason: "invalid_registration" });
         ids.add(entry.environmentId);
         if (entry.httpBaseUrl === null && entry.bearerToken === null) continue;
-        const valid = yield* Effect.try(() => {
-          const url = new URL(entry.httpBaseUrl ?? "");
-          // Only authenticated routes from the host are published. Nested gateways and URL credentials are rejected.
-          return (
-            ["http:", "https:"].includes(url.protocol) &&
-            url.pathname === "/" &&
-            !url.username &&
-            !url.password &&
-            !url.search &&
-            !url.hash &&
-            !!entry.bearerToken
-          );
+        const valid = yield* Effect.try({
+          try: () => {
+            const url = new URL(entry.httpBaseUrl ?? "");
+            // Only authenticated routes from the host are published. Nested gateways and URL credentials are rejected.
+            return (
+              ["http:", "https:"].includes(url.protocol) &&
+              url.pathname === "/" &&
+              !url.username &&
+              !url.password &&
+              !url.search &&
+              !url.hash &&
+              !!entry.bearerToken
+            );
+          },
+          catch: (cause) => new SharedEnvironmentError({ reason: "invalid_registration", cause }),
         }).pipe(Effect.orElseSucceed(() => false));
         if (!valid) return yield* new SharedEnvironmentError({ reason: "invalid_registration" });
       }
@@ -262,9 +266,10 @@ const make = Effect.gen(function* () {
       const rest = url.value.pathname.slice(SHARED_ENVIRONMENT_PROXY_PREFIX.length);
       const split = rest.indexOf("/");
       if (split <= 0) return yield* new SharedEnvironmentError({ reason: "unavailable" });
-      const id = yield* Effect.try(() =>
-        EnvironmentId.make(decodeURIComponent(rest.slice(0, split))),
-      );
+      const id = yield* Effect.try({
+        try: () => EnvironmentId.make(decodeURIComponent(rest.slice(0, split))),
+        catch: (cause) => new SharedEnvironmentError({ reason: "unavailable", cause }),
+      });
       const path = rest.slice(split);
       if (
         !(
@@ -340,7 +345,7 @@ const make = Effect.gen(function* () {
         const upstream = yield* Socket.makeWebSocket(upstreamUrl.href, {
           headers: outgoingHeaders,
           openTimeout: "10 seconds",
-        }).pipe(Effect.provide(NodeSocket.layerWebSocketConstructorWS));
+        }).pipe(Effect.provide(NodeWS.layerWebSocketConstructor));
         const socket = yield* request.upgrade;
         yield* Effect.scoped(
           Effect.gen(function* () {
@@ -355,6 +360,9 @@ const make = Effect.gen(function* () {
         return HttpServerResponse.empty();
       }
       const scopedClient = HttpClient.withScope(client);
+      if (!HttpMethod.isHttpMethod(request.method)) {
+        return HttpServerResponse.empty({ status: 405 });
+      }
       const outbound = HttpClientRequest.make(request.method)(upstreamUrl.href).pipe(
         HttpClientRequest.setHeaders(outgoingHeaders),
         request.method === "GET" || request.method === "HEAD"

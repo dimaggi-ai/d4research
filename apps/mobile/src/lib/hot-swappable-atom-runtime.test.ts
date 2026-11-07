@@ -7,7 +7,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { hotSwappableAtomRuntime } from "./hot-swappable-atom-runtime";
 
 class RuntimeValue extends Context.Service<RuntimeValue, { readonly value: string }>()(
-  "d4research/mobile/test/RuntimeValue",
+  "@d4research/mobile/lib/hot-swappable-atom-runtime.test/RuntimeValue",
 ) {}
 
 function layerRuntime(value: string, events: string[]) {
@@ -51,7 +51,7 @@ describe("hotSwappableAtomRuntime", () => {
     const registry = AtomRegistry.make();
     const accept = () => {};
     const events: string[] = [];
-    const id = `test-${crypto.randomUUID()}`;
+    const id = "test-rebuild-mounted-runtime";
     const runtime = hotSwappableAtomRuntime({
       id,
       hotModule: { accept },
@@ -144,7 +144,7 @@ describe("hotSwappableAtomRuntime", () => {
     vi.stubGlobal("__DEV__", true);
     const registry = AtomRegistry.make();
     const events: string[] = [];
-    const id = `test-${crypto.randomUUID()}`;
+    const id = "test-asynchronous-old-layer-release";
     let finishRelease!: () => void;
     const releaseGate = new Promise<void>((resolve) => {
       finishRelease = resolve;
@@ -167,9 +167,13 @@ describe("hotSwappableAtomRuntime", () => {
     });
     const valueAtom = runtime.atom(RuntimeValue.pipe(Effect.map((service) => service.value)));
     const values: string[] = [];
-    const unsubscribe = registry.subscribe(valueAtom, (result) => {
-      if (AsyncResult.isSuccess(result)) values.push(result.value);
-    });
+    const unsubscribe = registry.subscribe(
+      valueAtom,
+      (result) => {
+        if (AsyncResult.isSuccess(result)) values.push(result.value);
+      },
+      { immediate: true },
+    );
     registry.get(valueAtom);
 
     hotSwappableAtomRuntime({

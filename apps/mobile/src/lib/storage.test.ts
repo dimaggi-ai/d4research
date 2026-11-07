@@ -70,6 +70,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock("./protectedData", () => ({ whenProtectedDataAvailable: async () => {} }));
+
 vi.mock("expo-secure-store", () => ({
   deleteItemAsync: mocks.deleteItemAsync,
   getItemAsync: mocks.getItemAsync,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { vi } from "vite-plus/test";
@@ -126,6 +127,7 @@ describe("offline pull request cache", () => {
     () =>
       Effect.scoped(
         Effect.gen(function* () {
+          yield* TestClock.setTime(31 * 24 * 60 * 60_000);
           const sqlite = yield* Effect.promise(sqliteDatabase);
           const database = yield* MobileDatabase.make;
           yield* database.saveCache(environmentId, "thread", "thread", 1, "thread");

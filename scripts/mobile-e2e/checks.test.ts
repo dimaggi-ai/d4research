@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import { layoutChecks, type Snapshot, type SnapshotNode } from "./checks.ts";
 
-const APP = "com.t3tools.t3code.dev";
+const APP = "ai.dimaggi.d4research.dev";
 const node = (index: number, fields: Omit<SnapshotNode, "index">): SnapshotNode => ({
   index,
   hittable: true,

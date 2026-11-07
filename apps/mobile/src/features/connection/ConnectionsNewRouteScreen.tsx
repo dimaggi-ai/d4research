@@ -6,12 +6,11 @@ import {
   StackActions,
   useIsFocused,
   useNavigation,
-  useRoute,
   type StaticScreenProps,
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@d4research/contracts";
-import { AsyncResult } from "effect/reactivity";
-import { useCallback, useEffect, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,11 +21,11 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
 import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
-import {
-  setPendingConnectionError,
-  useRemoteConnections,
-} from "../../state/use-remote-environment-registry";
+import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { autoConnectReport, devAutoConnectAttemptAtom, pairEnvironment } from "./devAutoConnect";
+import { leaveSettingsPage } from "../settings/settings-navigation";
+import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -38,19 +37,44 @@ type ConnectionsNewRouteParams = {
 export function ConnectionsNewRouteScreen({
   route,
 }: StaticScreenProps<ConnectionsNewRouteParams | undefined>) {
-  const {
-    connectionPairingUrl,
-    onChangeConnectionPairingUrl,
-    onConnectPress,
-    pairingConnectionError,
-  } = useRemoteConnections();
-  const navigation = useNavigation();
-  const routeName = useRoute().name;
   const params = route.params ?? {};
+  // Dev-only prefill prevents production links from supplying an attacker-chosen host and token.
+  const routePairingUrl = __DEV__ ? (params.pairingUrl?.trim() ?? "") : "";
+  // A new prefill link replaces whatever the form held.
+  return (
+    <PairingForm
+      key={routePairingUrl}
+      routePairingUrl={routePairingUrl}
+      routeFor={params.routeFor}
+    />
+  );
+}
+
+function PairingForm({
+  routePairingUrl,
+  routeFor,
+}: {
+  readonly routePairingUrl: string;
+  readonly routeFor: EnvironmentId | undefined;
+}) {
+  const { connectionPairingUrl, onChangeConnectionPairingUrl } =
+    useRemoteConnections();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const [hostInput, setHostInput] = useState("");
-  const [codeInput, setCodeInput] = useState("");
+  const [initialPairing] = useState(() => parsePairingUrl(routePairingUrl || connectionPairingUrl));
+  const [hostInput, setHostInput] = useState(initialPairing.host);
+  const [codeInput, setCodeInput] = useState(initialPairing.code);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // The user's own edit or submit dismisses the dev auto-connect report.
+  const [ownAttempt, setOwnAttempt] = useState(false);
+  const autoConnect = autoConnectReport(
+    useAtomValue(devAutoConnectAttemptAtom),
+    routePairingUrl,
+    ownAttempt,
+  );
+  const connecting = isSubmitting || autoConnect.connecting;
+  const pairingConnectionError = submitError ?? autoConnect.error;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const screenFocused = useIsFocused();
   const [scannerLocked, setScannerLocked] = useState(false);
@@ -59,33 +83,24 @@ export function ConnectionsNewRouteScreen({
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
-  const connectDisabled = isSubmitting || hostInput.trim().length === 0;
+  const connectDisabled = connecting || hostInput.trim().length === 0;
 
-  useEffect(() => {
-    const { host, code } = parsePairingUrl(connectionPairingUrl);
-    setHostInput(host);
-    setCodeInput(code);
-  }, [connectionPairingUrl]);
+  const clearError = () => {
+    setSubmitError(null);
+    setOwnAttempt(true);
+  };
 
-  useEffect(() => {
-    if (pairingConnectionError) {
-      setIsSubmitting(false);
-    }
-  }, [pairingConnectionError]);
-
-  const handleHostChange = useCallback((value: string) => {
+  const handleHostChange = (value: string) => {
     setHostInput(value);
-    setPendingConnectionError(null);
-  }, []);
+    clearError();
+  };
 
-  const handleCodeChange = useCallback((value: string) => {
+  const handleCodeChange = (value: string) => {
     setCodeInput(value);
-    setPendingConnectionError(null);
-  }, []);
+    clearError();
+  };
 
-  useEffect(() => () => setPendingConnectionError(null), []);
-
-  const handleScanPress = useCallback(async () => {
+  const handleScanPress = async () => {
     const permission = await requestCameraPermission();
     if (permission.granted) {
       setScanComplete(false);
@@ -100,75 +115,68 @@ export function ConnectionsNewRouteScreen({
         { text: "Open Settings", onPress: () => void Linking.openSettings() },
       ],
     );
-  }, [requestCameraPermission]);
+  };
 
-  const handleQrScan = useCallback(
-    ({ data }: { readonly data: string }) => {
-      if (scannerLocked) {
-        return;
-      }
+  const handleQrScan = ({ data }: { readonly data: string }) => {
+    if (scannerLocked) {
+      return;
+    }
 
-      setScannerLocked(true);
+    setScannerLocked(true);
 
-      try {
-        const pairingUrl = extractPairingUrlFromQrPayload(data);
-        const { host, code } = parsePairingUrl(pairingUrl);
-        setHostInput(host);
-        setCodeInput(code);
-        onChangeConnectionPairingUrl(pairingUrl);
-        setScanComplete(true);
-        setScannerLocked(false);
-      } catch (error) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Dialog.alert(
-          "Invalid QR code",
-          error instanceof Error ? error.message : "Scanned QR code was not recognized.",
-        );
-        setTimeout(() => {
-          setScannerLocked(false);
-        }, 600);
-      }
-    },
-    [onChangeConnectionPairingUrl, scannerLocked],
-  );
-
-  const connectAndClose = useCallback(
-    async (pairingUrl: string) => {
-      setIsSubmitting(true);
+    try {
+      const pairingUrl = extractPairingUrlFromQrPayload(data);
+      const { host, code } = parsePairingUrl(pairingUrl);
+      setHostInput(host);
+      setCodeInput(code);
       onChangeConnectionPairingUrl(pairingUrl);
-      try {
-        const result = await onConnectPress(pairingUrl, params.routeFor);
-        void Haptics.notificationAsync(
-          AsyncResult.isSuccess(result)
-            ? Haptics.NotificationFeedbackType.Success
-            : Haptics.NotificationFeedbackType.Error,
-        );
-        if (AsyncResult.isSuccess(result)) {
-          if (navigation.canGoBack()) {
-            navigation.goBack();
-          } else {
-            navigation.dispatch(StackActions.replace("Home"));
-          }
-        }
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [navigation, onChangeConnectionPairingUrl, onConnectPress, params.routeFor],
-  );
+      setScanComplete(true);
+      setScannerLocked(false);
+    } catch (error) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Dialog.alert(
+        "Invalid QR code",
+        error instanceof Error ? error.message : "Scanned QR code was not recognized.",
+      );
+      setTimeout(() => {
+        setScannerLocked(false);
+      }, 600);
+    }
+  };
 
-  const handleSubmit = useCallback(async () => {
-    await connectAndClose(buildPairingUrl(hostInput, codeInput));
-  }, [codeInput, connectAndClose, hostInput]);
+  const handleSubmit = async () => {
+    const pairingUrl = buildPairingUrl(hostInput, codeInput);
+    setOwnAttempt(true);
+    setSubmitError(null);
+    setIsSubmitting(true);
+    onChangeConnectionPairingUrl(pairingUrl);
+    const outcome = await pairEnvironment(pairingUrl, routeFor);
+    setIsSubmitting(false);
+    setSubmitError(outcome.error);
+    void Haptics.notificationAsync(
+      outcome.ok
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Error,
+    );
+    if (outcome.ok) {
+      onChangeConnectionPairingUrl("");
+      // Replacing with Home would nest it inside any sheet below; return to the opener.
+      if (!navigation.canGoBack()) {
+        navigation.dispatch(StackActions.replace("Home"));
+      } else {
+        // Added from the Settings list, the new environment shows on Environments.
+        leaveSettingsPage(navigation, workspaceHasColumns(), "SettingsEnvironments");
+      }
+    }
+  };
 
   return (
     <SettingsScreen
-      formSheet={routeName === "ConnectionsNew"}
       title="Add environment"
       actions={[
         {
-          accessibilityLabel: isSubmitting ? "Connecting" : "Add environment",
-          loading: isSubmitting,
+          accessibilityLabel: connecting ? "Connecting" : "Add environment",
+          loading: connecting,
           icon: "checkmark",
           tintColor: headerIconColor,
           disabled: connectDisabled,
@@ -238,6 +246,7 @@ export function ConnectionsNewRouteScreen({
                 "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
             </Text>
           </View>
+
         </View>
       </ScrollView>
     </SettingsScreen>
@@ -336,7 +345,6 @@ function PairingScanCard(props: {
   );
 }
 
-/** Inline grouped-list field: fixed label column, input filling the rest. */
 function PairingInputRow({
   label,
   ...inputProps

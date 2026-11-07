@@ -6,7 +6,7 @@ downloads, and mobile-store apps install T3 Code, not d4research.
 ## Requirements
 
 - Git access to `dimaggi-ai/d4research`
-- Node.js `^22.16 || ^23.11 || >=24.10`
+- Node.js `26.12.1`
 - At least one supported provider CLI installed and authenticated on the server machine
 
 ## Start d4research
@@ -43,7 +43,7 @@ is only the usual development default and shifts when occupied.
 5. Run the [starter research scenario](./starter-research.md), then export the result from the
    thread header on web or desktop.
 
-## Provider Commands
+## Providers
 
 Provider CLIs run on the machine hosting the d4research server. A browser or phone connected to
 that server does not supply provider credentials.
@@ -54,6 +54,7 @@ that server does not supply provider credentials.
 | Claude     | `claude`       | `claude auth login`            |
 | Cursor     | `cursor-agent` | `agent login`                  |
 | Grok Build | `grok`         | `grok login`                   |
+| Kiro       | `kiro-cli`     | `kiro-cli login`               |
 | OpenCode   | `opencode`     | `opencode auth login`          |
 | Junie      | `junie`        | Run `junie` and sign in        |
 | Muse       | `muse`         | `muse login`                   |
@@ -85,8 +86,8 @@ their original values.
 
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
-[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md),
-[Muse Code](./providers-muse.md), and [fx](./providers-fx.md).
+[Antigravity](./providers-antigravity.md), [Kiro](./providers-kiro.md),
+[Pi](./providers-pi.md), [Muse Code](./providers-muse.md), and [fx](./providers-fx.md).
 
 ## Target Selection Is Literal
 

@@ -13,7 +13,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import { formatThreadLink } from "@d4research/shared/threadLinks";
+import { formatThreadLink, hostedThreadLink } from "@d4research/shared/threadLinks";
 
 const ALL_MCP_CAPABILITIES = [
   "preview",
@@ -51,8 +51,10 @@ export interface McpClientCaller {
    * another environment passing on the limits of the agent it calls for.
    */
   readonly narrowedTo?: ClientModes | undefined;
-  /** The origin an outside client reached; its thread links open the web app there. */
+  /** Origin of the environment reached by a local or remote MCP client. */
   readonly webOrigin?: string | undefined;
+  /** Explicit hosted-app override for clients that use one. */
+  readonly hostedAppUrl?: string | undefined;
 }
 
 /**
@@ -141,16 +143,19 @@ export interface McpInvocationScope {
 
 /**
  * T3 Code renders `t3-thread://` links as thread chips. Other MCP clients cannot open them, so
- * they get a web URL on the origin they reached instead.
+ * they get a web URL on the origin they reached, or an explicit hosted-app override.
  */
 export const threadLinkFor = (
   scope: Pick<McpInvocationScope, "environmentId" | "client">,
   threadId: ThreadId,
 ): string => {
   const origin = scope.client?.webOrigin;
-  return origin === undefined
-    ? formatThreadLink({ environmentId: scope.environmentId, threadId })
-    : `${origin}/${encodeURIComponent(scope.environmentId)}/${encodeURIComponent(threadId)}`;
+  if (origin !== undefined) {
+    return `${origin}/${encodeURIComponent(scope.environmentId)}/${encodeURIComponent(threadId)}`;
+  }
+  const hostedAppUrl = scope.client?.hostedAppUrl;
+  const ref = { environmentId: scope.environmentId, threadId };
+  return hostedAppUrl === undefined ? formatThreadLink(ref) : hostedThreadLink(ref, hostedAppUrl);
 };
 
 export class McpInvocationContext extends Context.Service<

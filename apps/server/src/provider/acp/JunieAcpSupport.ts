@@ -1,5 +1,5 @@
 import { type JunieSettings } from "@d4research/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
@@ -40,7 +40,7 @@ export const makeJunieAcpRuntime = (
 ): Effect.Effect<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
-  Crypto.Crypto | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+  SecureRandom.SecureRandom | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
 > =>
   Effect.gen(function* () {
     const acpContext = yield* Layer.build(

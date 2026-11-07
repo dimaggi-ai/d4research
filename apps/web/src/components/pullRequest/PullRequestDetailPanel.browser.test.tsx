@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
+import { pullRequestEnvironment } from "~/state/pullRequests";
 import { RightPanelSurfaceContent } from "../chat/RightPanelSurfaceContent";
 
 import "~/index.css";
@@ -65,7 +66,8 @@ vi.mock(import("~/state/sourceControlActions"), async (original) => ({
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
-  useAtomCommand: ((command: unknown) => (command === "update" ? update : hostCommand)) as never,
+  useAtomCommand: ((command: unknown) =>
+    command === pullRequestEnvironment.update ? update : hostCommand) as never,
 }));
 vi.mock(import("~/state/pullRequests"), async (original) => {
   const actual = await original();
@@ -80,7 +82,6 @@ vi.mock(import("~/state/pullRequests"), async (original) => {
       detail: (() => "detail") as never,
       diff: (() => diff) as never,
       activity: (() => "activity") as never,
-      update: "update" as never,
       reviewGuide: (() => "review-guide") as never,
       generateReviewGuide: {
         ...actual.pullRequestEnvironment.generateReviewGuide,

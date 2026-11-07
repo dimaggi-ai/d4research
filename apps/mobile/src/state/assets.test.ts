@@ -37,6 +37,8 @@ vi.mock("./presentation", () => ({
 vi.mock("./query", () => ({
   useEnvironmentQuery: () => ({ data: state.session, error: null }),
 }));
+vi.mock("../connection/catalog", () => ({ environmentCatalog: {} }));
+vi.mock("../lib/projectFaviconDatabaseCache", () => ({ projectFaviconDatabaseCache: {} }));
 vi.mock("./projectClones", () => ({ environmentProjectCloneListAtom: () => null }));
 vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: {} }));
 vi.mock("@d4research/client-runtime/state/assets", async (importOriginal) => ({

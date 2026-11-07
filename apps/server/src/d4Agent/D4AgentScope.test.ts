@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
@@ -118,6 +119,7 @@ const fixture = Effect.gen(function* () {
   return { store, storeLayer, service, contextLayer, bindThread, sql };
 });
 const testLayer = Layer.mergeAll(
+  NodeCrypto.layer,
   NodeServices.layer,
   NodeSqliteClient.layer({ filename: ":memory:" }),
 );

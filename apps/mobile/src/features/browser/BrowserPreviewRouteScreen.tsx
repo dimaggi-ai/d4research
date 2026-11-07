@@ -1,21 +1,15 @@
-import { Toolbar } from "../../components/ui/Toolbar";
+import { SheetHeader } from "../../components/ui/SheetHeader";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import {
-  EnvironmentId,
-  FILL_PREVIEW_VIEWPORT,
-  ThreadId,
-  type PreviewSessionSnapshot,
-} from "@d4research/contracts";
+import { EnvironmentId, ThreadId, type PreviewSessionSnapshot } from "@d4research/contracts";
 import { normalizePreviewUrl } from "@d4research/shared/preview";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Platform, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Platform, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPill } from "../../components/ui/ControlPill";
-import { AppBar } from "../../components/ui/AppBar";
+import { useAppForeground } from "../../lib/appState";
 
 import { useThreadServerBrowserTabs } from "../../state/preview";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -27,8 +21,6 @@ import {
   type PreviewStreamRef,
 } from "./PreviewStreamWebView";
 
-const BrowserPreviewStack = createNativeStackNavigator<{ BrowserPreview: undefined }>();
-
 const NO_PICTURE_IN_PICTURE: PreviewPictureInPictureState = { supported: false, active: false };
 
 type BrowserPreviewRouteScreenProps = StaticScreenProps<{
@@ -39,30 +31,14 @@ type BrowserPreviewRouteScreenProps = StaticScreenProps<{
 
 export function BrowserPreviewRouteScreen({ route }: BrowserPreviewRouteScreenProps) {
   const navigation = useNavigation();
-  const onClose = useCallback(() => navigation.goBack(), [navigation]);
+  const onClose = () => navigation.goBack();
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
-      <BrowserPreviewStack.Navigator
-        screenOptions={{
-          headerShown: Platform.OS === "ios",
-          headerBackVisible: false,
-          headerShadowVisible: false,
-          headerTransparent: false,
-          headerTitleStyle: { fontSize: 17, fontWeight: "600" },
-        }}
-      >
-        <BrowserPreviewStack.Screen name="BrowserPreview">
-          {() => (
-            <BrowserPreviewScreen
-              environmentId={EnvironmentId.make(route.params.environmentId)}
-              threadId={ThreadId.make(route.params.threadId)}
-              initialTabId={route.params.tabId ?? null}
-              onClose={onClose}
-            />
-          )}
-        </BrowserPreviewStack.Screen>
-      </BrowserPreviewStack.Navigator>
-    </View>
+    <BrowserPreviewScreen
+      environmentId={EnvironmentId.make(route.params.environmentId)}
+      threadId={ThreadId.make(route.params.threadId)}
+      initialTabId={route.params.tabId ?? null}
+      onClose={onClose}
+    />
   );
 }
 
@@ -80,7 +56,7 @@ function BrowserPreviewScreen({
   const insets = useSafeAreaInsets();
   const { themeVariables } = useAppearancePreferences();
   const focused = useIsFocused();
-  const [foreground, setForeground] = useState(AppState.currentState !== "background");
+  const foreground = useAppForeground();
   const [selectedTabId, setSelectedTabId] = useState(initialTabId);
   const [pictureInPicture, setPictureInPicture] = useState(NO_PICTURE_IN_PICTURE);
   const [streaming, setStreaming] = useState(false);
@@ -93,19 +69,14 @@ function BrowserPreviewScreen({
     setPictureInPicture(NO_PICTURE_IN_PICTURE);
     setSelectedTabId(tabId);
   }
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) =>
-      setForeground(state !== "background"),
-    );
-    return () => subscription.remove();
-  }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the focused route through the navigator once the thread has no browser tabs left
   useEffect(() => {
     if (focused && loaded && tabs.length === 0) onClose();
   }, [focused, loaded, tabs.length, onClose]);
-  const onPictureInPicture = useCallback((state: PreviewPictureInPictureState, detail?: string) => {
+  const onPictureInPicture = (state: PreviewPictureInPictureState, detail?: string) => {
     setPictureInPicture({ supported: state.supported, active: state.active });
     if (detail) Dialog.alert("Picture in picture is unavailable", detail);
-  }, []);
+  };
   const selectTab = (next: string) => {
     setPictureInPicture(NO_PICTURE_IN_PICTURE);
     setSelectedTabId(next);
@@ -114,11 +85,10 @@ function BrowserPreviewScreen({
 
   return (
     <View className="flex-1 bg-sheet" style={{ paddingBottom: insets.bottom }}>
-      <AppBar
+      <SheetHeader
         title={tab ? browserTabTitle(tab) : "Browser"}
-        sidebar={false}
-        onBack={onClose}
-        options={{ headerBackVisible: false }}
+        onClose={onClose}
+        accessibilityLabel="Close browser"
         actions={
           // Android WebView cannot play video in picture in picture.
           Platform.OS === "ios" && pictureInPicture.supported
@@ -155,16 +125,6 @@ function BrowserPreviewScreen({
             : []
         }
       />
-      {Platform.OS === "ios" ? (
-        <Toolbar placement="left">
-          <Toolbar.Button
-            icon="xmark"
-            accessibilityLabel="Close browser"
-            onPress={onClose}
-            separateBackground
-          />
-        </Toolbar>
-      ) : null}
       {tab ? (
         <>
           <BrowserAddressBar
@@ -255,6 +215,7 @@ function BrowserAddressBar({
         keyboardType="url"
         returnKeyType="go"
         selectTextOnFocus
+        lineBreakModeIOS="tail"
         className="h-10 min-w-0 flex-1 rounded-full border border-input-border bg-input px-4 font-sans text-sm text-foreground"
       />
       <ControlPill
@@ -263,7 +224,11 @@ function BrowserAddressBar({
         disabled={!ready}
         onPress={() => onCommand({ type: "reload" })}
       />
-      <BrowserTabMenu environmentId={environmentId} tab={tab} disabled={!streaming} />
+      <BrowserTabMenu
+        environmentId={environmentId}
+        tab={tab}
+        disabled={!streaming}
+      />
     </View>
   );
 }

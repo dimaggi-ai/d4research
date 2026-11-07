@@ -1,4 +1,4 @@
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 
 /**
@@ -66,9 +66,9 @@ export interface LocalJudgeResult<Q extends Record<string, LocalJudgeQuestion>> 
   readonly model: string;
 }
 
-export class LocalJudgeError extends Data.TaggedError("LocalJudgeError")<{
-  readonly detail: string;
-}> {}
+export class LocalJudgeError extends Schema.TaggedError<LocalJudgeError>()("LocalJudgeError", {
+  detail: Schema.String,
+}) {}
 
 export interface AskLocalJudgeInput<Q extends Record<string, LocalJudgeQuestion>> {
   readonly state: unknown;
@@ -201,7 +201,7 @@ const askOne = Effect.fn("askLocalJudge.question")(function* (input: {
   const options = yield* Effect.try({
     try: () => optionsFor(input.question),
     catch: (cause) =>
-      cause instanceof LocalJudgeError ? cause : new LocalJudgeError({ detail: String(cause) }),
+      Schema.is(LocalJudgeError)(cause) ? cause : new LocalJudgeError({ detail: String(cause) }),
   });
   const user = {
     evidence: input.state,
@@ -210,8 +210,9 @@ const askOne = Effect.fn("askLocalJudge.question")(function* (input: {
   };
   // The judge reads the state as a JSON document inside the user turn; this is
   // prompt text for a vendor endpoint, not a domain schema.
-  // @effect-diagnostics-next-line preferSchemaOverJson:off
-  const evidence = JSON.stringify(user);
+  const evidence = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+    user,
+  ).pipe(Effect.mapError((cause) => new LocalJudgeError({ detail: String(cause) })));
   const payload = yield* Effect.tryPromise({
     try: async (signal) => {
       const response = await input.fetchFn(input.url, {
@@ -219,8 +220,7 @@ const askOne = Effect.fn("askLocalJudge.question")(function* (input: {
         signal,
         headers: { "content-type": "application/json" },
         // OpenAI-compatible completion body: a fixed vendor shape, not a domain schema.
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
-        body: JSON.stringify({
+        body: await Schema.encodeUnknownPromise(Schema.fromJsonString(Schema.Unknown))({
           model: input.model,
           max_tokens: 1,
           temperature: 0,
@@ -243,18 +243,18 @@ const askOne = Effect.fn("askLocalJudge.question")(function* (input: {
       return (await response.json()) as CompletionPayload | null;
     },
     catch: (cause) =>
-      cause instanceof LocalJudgeError ? cause : new LocalJudgeError({ detail: String(cause) }),
+      Schema.is(LocalJudgeError)(cause) ? cause : new LocalJudgeError({ detail: String(cause) }),
   }).pipe(
     Effect.timeout(input.timeoutMillis),
     Effect.mapError((cause) =>
-      cause instanceof LocalJudgeError ? cause : new LocalJudgeError({ detail: String(cause) }),
+      Schema.is(LocalJudgeError)(cause) ? cause : new LocalJudgeError({ detail: String(cause) }),
     ),
   );
   if (!payload) return yield* new LocalJudgeError({ detail: "Judge returned an empty body." });
   const probabilities = yield* Effect.try({
     try: () => letterProbabilities(payload, options),
     catch: (cause) =>
-      cause instanceof LocalJudgeError ? cause : new LocalJudgeError({ detail: String(cause) }),
+      Schema.is(LocalJudgeError)(cause) ? cause : new LocalJudgeError({ detail: String(cause) }),
   });
   const usage = payload.usage;
   return {

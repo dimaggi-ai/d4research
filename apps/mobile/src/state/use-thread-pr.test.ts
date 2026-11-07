@@ -1,8 +1,15 @@
-import { SourceControlProviderKind } from "@d4research/contracts";
-import { ProjectId, type ThreadPullRequestLink, type VcsStatusResult } from "@d4research/contracts";
+import {
+  ProjectId,
+  type PullRequestSummary,
+  type VcsStatusResult,
+  SourceControlProviderKind,
+  type ThreadPullRequestLink,
+} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  knownPullRequestSummary,
+  rememberBounded,
   presentThreadLinkedPullRequests,
   presentThreadPr,
   resolveThreadPrBadgeAction,
@@ -250,5 +257,62 @@ describe("resolveThreadPrSource compatibility", () => {
         { threadPullRequests: true },
       ),
     ).toMatchObject({ linkedPresentation: { number: 3, state: null }, pullRequestRef: null });
+  });
+});
+
+describe("knownPullRequestSummary", () => {
+  it("seeds from the newest summary of the same pull request, never another's", () => {
+    const projectId = ProjectId.make("project");
+    const link = linkedPr(7);
+    const threads = [
+      {
+        projectId,
+        pullRequests: [
+          { ...link, snapshot: { ...link.snapshot!, updatedAt: "2026-09-08T00:00:00.000Z" } },
+        ],
+      },
+    ];
+    const listed: PullRequestSummary = {
+      provider: SourceControlProviderKind.make("github"),
+      projectId,
+      repository: "t3tools/t3code",
+      number: 7,
+      title: "Listed title",
+      url: "https://github.com/t3tools/t3code/pull/7",
+      state: "open",
+      headBranch: "change-7",
+      baseBranch: "main",
+      updatedAt: "2026-09-09T00:00:00.000Z",
+    };
+    const lookup = (host: string, number: number, summaries = [listed]) =>
+      knownPullRequestSummary({ host, repository: "t3tools/t3code", number }, threads, summaries);
+
+    expect(lookup("github.com", 7, [])?.title).toBe("Change 7");
+    expect(lookup("github.com", 7)?.title).toBe("Listed title");
+    expect(lookup("github.com", 8)).toBeUndefined();
+    expect(lookup("gitlab.com", 7)).toBeUndefined();
+
+    const sameVersion = { ...listed, updatedAt: "2026-09-08T00:00:00.000Z" };
+    const syncedAt = Date.parse(link.snapshot!.syncedAt);
+    expect(lookup("github.com", 7, [{ ...sameVersion, observedAt: syncedAt - 1 }])?.title).toBe(
+      "Change 7",
+    );
+    expect(lookup("github.com", 7, [{ ...sameVersion, observedAt: syncedAt + 1 }])?.title).toBe(
+      "Listed title",
+    );
+  });
+});
+
+describe("rememberBounded", () => {
+  it("moves a re-answered entry to the newest slot and evicts the oldest past the limit", () => {
+    let snapshots: ReadonlyMap<string, number> = new Map();
+    snapshots = rememberBounded(snapshots, "a", 1, 2);
+    snapshots = rememberBounded(snapshots, "b", 2, 2);
+    snapshots = rememberBounded(snapshots, "a", 3, 2);
+    snapshots = rememberBounded(snapshots, "c", 4, 2);
+    expect([...snapshots]).toEqual([
+      ["a", 3],
+      ["c", 4],
+    ]);
   });
 });

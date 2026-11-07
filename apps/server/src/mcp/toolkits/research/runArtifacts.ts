@@ -6,6 +6,7 @@ import { exportResearchNote } from "./noteExport.ts";
 import * as NodeCrypto from "node:crypto";
 import {
   appendLedger,
+  tryArtifactIo,
   publishArtifact,
   safeDirectory,
   safeRead,
@@ -105,37 +106,33 @@ const decodeLocation = Schema.decodeUnknownSync(LocationJson);
 const encodeLocation = Schema.encodeSync(LocationJson);
 // An exact-thread pointer survives project workspace edits. It does not scan or
 // migrate historical folders, and never reads another context's index.
-export const resolveResearchRunDirectory = (
-  workspaceRoot: string,
-  threadId: string,
-  bind = false,
-) =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    const fs = yield* FileSystem.FileSystem;
-    const platform = yield* HostProcess.Platform;
-    const config = yield* Effect.serviceOption(ServerConfig);
-    const fallback = researchRunDirectory(path, workspaceRoot, threadId);
-    if (Option.isNone(config)) return fallback;
-    const directory = path.join(config.value.stateDir, "research-artifact-locations");
-    const file = path.join(
-      directory,
-      `${NodeCrypto.createHash("sha256").update(threadId).digest("hex")}.json`,
-    );
-    if (!(yield* fs.exists(file)) && bind) {
-      yield* Effect.tryPromise(() => safeDirectory(directory, true, platform));
-      yield* Effect.tryPromise(() =>
-        publishArtifact(file, encodeLocation(fallback), platform),
-      ).pipe(
-        Effect.catchIf(
-          (error) => (error.cause as { code?: string })?.code === "EEXIST",
-          () => Effect.void,
-        ),
+export const resolveResearchRunDirectory = Effect.fn("resolveResearchRunDirectory")(
+  (workspaceRoot: string, threadId: string, bind = false) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const platform = yield* HostProcess.Platform;
+      const config = yield* Effect.serviceOption(ServerConfig);
+      const fallback = researchRunDirectory(path, workspaceRoot, threadId);
+      if (Option.isNone(config)) return fallback;
+      const directory = path.join(config.value.stateDir, "research-artifact-locations");
+      const file = path.join(
+        directory,
+        `${NodeCrypto.createHash("sha256").update(threadId).digest("hex")}.json`,
       );
-    }
-    if (!(yield* fs.exists(file))) return fallback;
-    return decodeLocation(yield* Effect.tryPromise(() => safeRead(file, platform)));
-  });
+      if (!(yield* fs.exists(file)) && bind) {
+        yield* tryArtifactIo(() => safeDirectory(directory, true, platform));
+        yield* tryArtifactIo(() => publishArtifact(file, encodeLocation(fallback), platform)).pipe(
+          Effect.catchIf(
+            (error) => (error.cause as { code?: string })?.code === "EEXIST",
+            () => Effect.void,
+          ),
+        );
+      }
+      if (!(yield* fs.exists(file))) return fallback;
+      return decodeLocation(yield* tryArtifactIo(() => safeRead(file, platform)));
+    }),
+);
 
 const slugPart = (value: string, maxLength: number): string =>
   value
@@ -186,24 +183,24 @@ export const parseLedger = (text: string): ReadonlyArray<ResearchLedgerEntry> =>
 // unique. Writes are a few KB, so a process-wide lock costs nothing.
 const writeLock = Semaphore.makeUnsafe(1);
 
-export const readResearchLedger = (runDirectory: string) =>
+export const readResearchLedger = Effect.fn("readResearchLedger")((runDirectory: string) =>
   Effect.gen(function* () {
     const platform = yield* HostProcess.Platform;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const ledgerPath = path.join(runDirectory, RESEARCH_LEDGER_FILE);
     const entries = (yield* fs.exists(ledgerPath))
-      ? parseLedger(yield* Effect.tryPromise(() => safeRead(ledgerPath, platform)))
+      ? parseLedger(yield* tryArtifactIo(() => safeRead(ledgerPath, platform)))
       : [];
     const receipts = path.join(runDirectory, "receipts");
     if (!(yield* fs.exists(receipts))) return entries;
     const recovered: ResearchLedgerEntry[] = [];
     const known = new Set(entries.map((entry) => entry.artifact));
-    for (const name of yield* Effect.tryPromise(() => safeList(receipts, platform))) {
+    for (const name of yield* tryArtifactIo(() => safeList(receipts, platform))) {
       if (!/^[A-Za-z0-9._-]+\.json$/.test(name)) continue;
       if (known.has(`steps/${name.slice(0, -5)}`)) continue;
       const decoded = decodeLedgerLine(
-        yield* Effect.tryPromise(() => safeRead(path.join(receipts, name), platform)).pipe(
+        yield* tryArtifactIo(() => safeRead(path.join(receipts, name), platform)).pipe(
           Effect.orElseSucceed(() => ""),
         ),
       );
@@ -217,7 +214,7 @@ export const readResearchLedger = (runDirectory: string) =>
         continue;
       const artifactPath = path.join(runDirectory, entry.artifact);
       if (!(yield* fs.exists(artifactPath))) continue;
-      const text = yield* Effect.tryPromise(() => safeRead(artifactPath, platform)).pipe(
+      const text = yield* tryArtifactIo(() => safeRead(artifactPath, platform)).pipe(
         Effect.orElseSucceed(() => null),
       );
       if (
@@ -230,7 +227,8 @@ export const readResearchLedger = (runDirectory: string) =>
       known.add(entry.artifact);
     }
     return [...entries, ...recovered].sort((a, b) => a.seq - b.seq);
-  });
+  }),
+);
 
 /**
  * Persists one delegation outcome. Never fails: an unwritable workspace logs a
@@ -247,7 +245,7 @@ export const recordDelegationOutcome = (input: {
     const path = yield* Path.Path;
     const { outcome, runDirectory } = input;
     const stepsDirectory = path.join(runDirectory, STEPS_DIRECTORY);
-    yield* Effect.tryPromise(() => safeDirectory(stepsDirectory, true, platform));
+    yield* tryArtifactIo(() => safeDirectory(stepsDirectory, true, platform));
     const previous = yield* readResearchLedger(runDirectory);
     const seq = previous.reduce((max, entry) => Math.max(max, entry.seq), 0) + 1;
     const at = DateTime.formatIso(DateTime.makeUnsafe(outcome.completedAtMs));
@@ -285,8 +283,8 @@ export const recordDelegationOutcome = (input: {
     // The receipt precedes publication so a crash between file and ledger writes
     // can be recovered without inferring ownership from arbitrary workspace files.
     const receipts = path.join(runDirectory, "receipts");
-    yield* Effect.tryPromise(() => safeDirectory(receipts, true, platform));
-    yield* Effect.tryPromise(() =>
+    yield* tryArtifactIo(() => safeDirectory(receipts, true, platform));
+    yield* tryArtifactIo(() =>
       publishArtifact(
         path.join(receipts, `${path.basename(artifact)}.json`),
         encodeLedgerLine({
@@ -301,7 +299,7 @@ export const recordDelegationOutcome = (input: {
         platform,
       ),
     );
-    yield* Effect.tryPromise(() =>
+    yield* tryArtifactIo(() =>
       publishArtifact(artifactPath, renderArtifact(outcome, at), platform),
     );
     const notesError = input.notes?.folder
@@ -319,7 +317,7 @@ export const recordDelegationOutcome = (input: {
       : null;
     const finalEntry = { ...entry, ...(notesError ? { notesError } : {}) };
     // One short O_APPEND write per line; the artifact it names already exists.
-    yield* Effect.tryPromise(() =>
+    yield* tryArtifactIo(() =>
       appendLedger(
         path.join(runDirectory, RESEARCH_LEDGER_FILE),
         `\n${encodeLedgerLine(finalEntry)}\n`,
@@ -436,106 +434,111 @@ const READABLE_ARTIFACT = /^(?:ledger\.jsonl|steps\/[A-Za-z0-9._-]+\.md)$/;
  * this module writes, so `..`, absolute paths, and other files are refused
  * before any path is joined.
  */
-export const readRunArtifact = (input: {
-  readonly runDirectory: string;
-  readonly artifact: string;
-  readonly offset: number;
-  readonly threadId?: string;
-}) =>
-  Effect.gen(function* () {
-    const platform = yield* HostProcess.Platform;
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    if (!READABLE_ARTIFACT.test(input.artifact) || input.artifact.includes(".."))
-      return {
-        ok: false as const,
-        detail: `"${input.artifact}" is not a step artifact name. Use a path the ledger lists, such as "steps/001-step1-v1-….md" or "ledger.jsonl".`,
-      };
-    const artifactPath = path.join(input.runDirectory, input.artifact);
-    const exists = yield* fs.exists(artifactPath).pipe(Effect.orElseSucceed(() => false));
-    if (!exists)
-      return {
-        ok: false as const,
-        detail: `No artifact "${input.artifact}" exists for this thread's run.`,
-      };
-    const scoped =
-      input.threadId === undefined
-        ? null
-        : (yield* readResearchLedger(input.runDirectory)).filter((entry) =>
-            entryBelongsToThread(entry, input.threadId!),
-          );
-    if (
-      scoped &&
-      input.artifact !== RESEARCH_LEDGER_FILE &&
-      !scoped.some((entry) => entry.artifact === input.artifact)
-    )
-      return { ok: false as const, detail: "Artifact is not in this thread's ledger." };
-    const text =
-      scoped && input.artifact === RESEARCH_LEDGER_FILE
-        ? scoped.map((entry) => encodeLedgerLine(entry)).join("\n")
-        : yield* Effect.tryPromise(() => safeRead(artifactPath, platform));
-    if (input.artifact !== RESEARCH_LEDGER_FILE) {
-      const entries = yield* readResearchLedger(input.runDirectory);
-      const entry = entries.find((entry) => entry.artifact === input.artifact);
-      if (
-        entry?.contentHash &&
-        NodeCrypto.createHash("sha256").update(text).digest("hex") !== entry.contentHash
-      )
+export const readRunArtifact = Effect.fn("readRunArtifact")(
+  (input: {
+    readonly runDirectory: string;
+    readonly artifact: string;
+    readonly offset: number;
+    readonly threadId?: string;
+  }) =>
+    Effect.gen(function* () {
+      const platform = yield* HostProcess.Platform;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      if (!READABLE_ARTIFACT.test(input.artifact) || input.artifact.includes(".."))
         return {
           ok: false as const,
-          detail: "Saved artifact changed after recording. Restore the original before continuing.",
+          detail: `"${input.artifact}" is not a step artifact name. Use a path the ledger lists, such as "steps/001-step1-v1-….md" or "ledger.jsonl".`,
         };
-    }
-    const offset = Math.min(Math.max(0, input.offset), text.length);
-    const end = Math.min(text.length, offset + RESEARCH_ARTIFACT_READ_CHUNK_CHARS);
-    return {
-      ok: true as const,
-      artifact: input.artifact,
-      path: artifactPath,
-      offset,
-      totalChars: text.length,
-      nextOffset: end < text.length ? end : null,
-      text: text.slice(offset, end),
-    };
-  });
+      const artifactPath = path.join(input.runDirectory, input.artifact);
+      const exists = yield* fs.exists(artifactPath).pipe(Effect.orElseSucceed(() => false));
+      if (!exists)
+        return {
+          ok: false as const,
+          detail: `No artifact "${input.artifact}" exists for this thread's run.`,
+        };
+      const scoped =
+        input.threadId === undefined
+          ? null
+          : (yield* readResearchLedger(input.runDirectory)).filter((entry) =>
+              entryBelongsToThread(entry, input.threadId!),
+            );
+      if (
+        scoped &&
+        input.artifact !== RESEARCH_LEDGER_FILE &&
+        !scoped.some((entry) => entry.artifact === input.artifact)
+      )
+        return { ok: false as const, detail: "Artifact is not in this thread's ledger." };
+      const text =
+        scoped && input.artifact === RESEARCH_LEDGER_FILE
+          ? scoped.map((entry) => encodeLedgerLine(entry)).join("\n")
+          : yield* tryArtifactIo(() => safeRead(artifactPath, platform));
+      if (input.artifact !== RESEARCH_LEDGER_FILE) {
+        const entries = yield* readResearchLedger(input.runDirectory);
+        const entry = entries.find((entry) => entry.artifact === input.artifact);
+        if (
+          entry?.contentHash &&
+          NodeCrypto.createHash("sha256").update(text).digest("hex") !== entry.contentHash
+        )
+          return {
+            ok: false as const,
+            detail:
+              "Saved artifact changed after recording. Restore the original before continuing.",
+          };
+      }
+      const offset = Math.min(Math.max(0, input.offset), text.length);
+      const end = Math.min(text.length, offset + RESEARCH_ARTIFACT_READ_CHUNK_CHARS);
+      return {
+        ok: true as const,
+        artifact: input.artifact,
+        path: artifactPath,
+        offset,
+        totalChars: text.length,
+        nextOffset: end < text.length ? end : null,
+        text: text.slice(offset, end),
+      };
+    }),
+);
 
 /**
  * The RESUME note for a turn that continues an unfinished pipeline run, or ""
  * when the turn is not a resume. Best-effort: an unreadable ledger still
  * yields the note, minus the entries it could not read.
  */
-export const buildResumeNote = (input: {
-  readonly threadId: ThreadId;
-  readonly currentRunId: string;
-  readonly runs: ReadonlyArray<ResumeChainRun>;
-  readonly messages: ReadonlyArray<ResumeChainMessage>;
-  readonly workspaceRoot: string | undefined;
-}) =>
-  Effect.gen(function* () {
-    const resume = resumeContextFor(input);
-    if (resume === null) return "";
-    const runDirectory =
-      input.workspaceRoot === undefined
-        ? null
-        : yield* resolveResearchRunDirectory(input.workspaceRoot, input.threadId);
-    const entries =
-      runDirectory === null
-        ? []
-        : yield* readResearchLedger(runDirectory).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Research ledger unreadable for resume", {
-                runDirectory,
-                cause,
-              }).pipe(Effect.as([])),
-            ),
-          );
-    return formatResumeBlock({
-      runDirectory: runDirectory ?? "",
-      entries,
-      chainBudgetRunIds: new Set(resume.chain.map((run) => budgetRunId(input.threadId, run.id))),
-      interruption: resume.interruption,
-    });
-  });
+export const buildResumeNote = Effect.fn("buildResumeNote")(
+  (input: {
+    readonly threadId: ThreadId;
+    readonly currentRunId: string;
+    readonly runs: ReadonlyArray<ResumeChainRun>;
+    readonly messages: ReadonlyArray<ResumeChainMessage>;
+    readonly workspaceRoot: string | undefined;
+  }) =>
+    Effect.gen(function* () {
+      const resume = resumeContextFor(input);
+      if (resume === null) return "";
+      const runDirectory =
+        input.workspaceRoot === undefined
+          ? null
+          : yield* resolveResearchRunDirectory(input.workspaceRoot, input.threadId);
+      const entries =
+        runDirectory === null
+          ? []
+          : yield* readResearchLedger(runDirectory).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Research ledger unreadable for resume", {
+                  runDirectory,
+                  cause,
+                }).pipe(Effect.as([])),
+              ),
+            );
+      return formatResumeBlock({
+        runDirectory: runDirectory ?? "",
+        entries,
+        chainBudgetRunIds: new Set(resume.chain.map((run) => budgetRunId(input.threadId, run.id))),
+        interruption: resume.interruption,
+      });
+    }),
+);
 
 // Legacy ledgers lack threadId; their server budget key still carries exact thread scope.
 export const entryBelongsToThread = (entry: ResearchLedgerEntry, threadId: string): boolean =>

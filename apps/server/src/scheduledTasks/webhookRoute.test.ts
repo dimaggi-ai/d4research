@@ -1,3 +1,4 @@
+import * as PlatformNodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -40,7 +41,7 @@ const handlerFor = (
           Layer.provideMerge(Etag.layerWeak),
         ),
       ),
-      Layer.provide(NodeServices.layer),
+      Layer.provide([NodeServices.layer, PlatformNodeCrypto.layerSignature]),
     ),
     { disableLogger: true },
   );

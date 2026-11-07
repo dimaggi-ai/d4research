@@ -12,6 +12,7 @@ import { ThreadWorkspaces } from "../workspace/ThreadWorkspaces.ts";
 import { UsageLimitSources } from "../usage/UsageLimitSources.ts";
 import { UsageService } from "../usage/UsageService.ts";
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@d4research/contracts";
@@ -20,6 +21,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpServer } from "effect/ai";
 
+import { AssetSigner } from "../assets/AssetSigner.ts";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
@@ -66,6 +68,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(UsageLimitSources)({}),
   Layer.mock(UsageService)({}),
   NodeSqliteClient.layer({ filename: ":memory:" }),
+  Layer.mock(AssetSigner)({}),
   Layer.mock(DeviceService)({}),
   Layer.mock(DocumentText)({}),
   Layer.mock(GitVcsDriver)({}),
@@ -105,7 +108,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(SecondBrainCaptureModule.SecondBrainCapture)({}),
   Layer.mock(SecondBrainServiceModule.SecondBrainService)({}),
   FetchHttpClient.layer,
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");
 
@@ -133,6 +136,22 @@ const codexAdditionalContext = () =>
     .map((entry) => entry.value)
     .join("");
 
+const layerAdvertisedTools = McpHttpServer.layerTools.pipe(
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+  Layer.provide(toolHandlerServices),
+);
+
+// Claude Code loads these tools up front instead of behind ToolSearch, outside this budget.
+it.effect("only request_secret asks Claude Code to load it up front", () =>
+  Effect.gen(function* () {
+    const mcp = yield* McpServer.McpServer;
+    const alwaysLoad = mcp.tools
+      .filter(({ tool }) => tool._meta?.["anthropic/alwaysLoad"] !== undefined)
+      .map(({ tool }) => [tool.name, tool._meta]);
+    expect(alwaysLoad).toEqual([["request_secret", { "anthropic/alwaysLoad": true }]]);
+  }).pipe(Effect.provide(layerAdvertisedTools)),
+);
+
 // CI rejects a PR that raises any value above main's agentContextBudget.json, so growth
 // needs the agent-context-increase label. Lower the values when the text shrinks.
 it.effect("agent context matches the committed budget", () =>
@@ -157,12 +176,5 @@ it.effect("agent context matches the committed budget", () =>
       measured,
       "Set agentContextBudget.json to the measured values. Before you cut text to fit, run the evals that cover it (evals/README.md).",
     ).toEqual(budget);
-  }).pipe(
-    Effect.provide(
-      McpHttpServer.layerTools.pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
-        Layer.provide(toolHandlerServices),
-      ),
-    ),
-  ),
+  }).pipe(Effect.provide(layerAdvertisedTools)),
 );

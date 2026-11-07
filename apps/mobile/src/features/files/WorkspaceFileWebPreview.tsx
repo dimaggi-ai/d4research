@@ -8,12 +8,15 @@ import { FilePreviewLoading } from "./FilePreviewFeedback";
 import { LoadingStrip } from "../../components/ui/LoadingStrip";
 
 export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) {
-  const [loadProgress, setLoadProgress] = useState(0);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
   if (props.uri === null) {
     return <FilePreviewLoading message="Preparing preview..." background="card" />;
   }
+  return <DocumentWebPreview key={props.uri} uri={props.uri} />;
+}
+
+function DocumentWebPreview(props: { readonly uri: string }) {
+  const [loadProgress, setLoadProgress] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   return (
     <View className="relative flex-1 bg-card">
@@ -26,6 +29,7 @@ export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) 
       ) : null}
       <WebView
         source={{ uri: props.uri }}
+        contentInsetAdjustmentBehavior="automatic"
         originWhitelist={["*"]}
         allowsBackForwardNavigationGestures
         allowsFullscreenVideo

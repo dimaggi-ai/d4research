@@ -35,97 +35,93 @@ export const makeHandoffCompactionRecovery = <
     | undefined;
   const maintenanceTurns = new Set<ProviderTurnId>();
   let attempted = false;
-  const filter = (event: ProviderAdapter.ProviderAdapterV2Event) =>
-    Effect.gen(function* () {
-      if (
-        !state &&
-        event.type === "provider_turn.updated" &&
-        maintenanceTurns.has(event.providerTurn.id)
-      )
-        return false;
-      if (
-        event.type === "turn_item.updated" &&
-        event.turnItem.providerTurnId !== null &&
-        maintenanceTurns.has(event.turnItem.providerTurnId)
-      )
-        return false;
-      if (
-        event.type === "turn.terminal" &&
-        maintenanceTurns.has(event.providerTurnId) &&
-        (!state || state.terminal)
-      )
-        return false;
-      const current = state;
-      if (!current) return true;
-      switch (event.type) {
-        case "provider_turn.updated":
-          if (
-            event.providerTurn.runAttemptId !== current.input.attemptId ||
-            event.providerTurn.providerThreadId !== current.input.providerThread.id
-          )
-            return true;
-          current.turnId = event.providerTurn.id;
-          maintenanceTurns.add(event.providerTurn.id);
-          if (event.providerTurn.tokenUsage)
-            current.usage = {
-              usedTokens: event.providerTurn.tokenUsage.usedTokens,
-              ...(event.providerTurn.tokenUsage.maxTokens == null
-                ? {}
-                : { maxTokens: event.providerTurn.tokenUsage.maxTokens }),
-            };
-          return false;
-        case "provider_thread.updated":
-          if (event.providerThread.id !== current.input.providerThread.id) return true;
-          // Thread snapshots can replay pre-compaction usage (including on Claude's
-          // terminal update). They carry no measurement provenance; only telemetry
-          // attributed to this maintenance attempt can establish the retry budget.
-          return false;
-        case "turn_item.updated":
-          return event.turnItem.nodeId !== current.input.rootNodeId;
-        case "node.updated":
-          return event.node.id !== current.input.rootNodeId;
-        case "message.updated":
-          return event.message.runId !== current.input.runId;
-        case "turn.terminal":
-          if (
-            event.providerThreadId !== current.input.providerThread.id ||
-            !maintenanceTurns.has(event.providerTurnId)
-          )
-            return true;
-          current.terminal = true;
-          yield* Effect.logInfo("handoff.budget.recovery.terminal", {
-            runId: current.input.runId,
-            status: event.status,
-            measured: current.usage !== undefined,
-            ...(event.status === "failed"
-              ? { failureClass: event.failure.class, failureCode: event.failure.code }
-              : {}),
-          });
-          if (event.status === "failed") {
-            yield* Deferred.fail(
-              current.done,
-              new ProviderAdapter.ProviderAdapterTurnStartError({
-                driver: event.driver,
-                threadId: current.input.threadId,
-                providerThreadId: event.providerThreadId,
-                runId: current.input.runId,
-                cause: event.failure,
-              }),
-            );
-            return false;
-          }
-          if (
-            event.status === "completed" &&
-            event.threadDisposition === "reusable" &&
-            current.usage
-          )
-            yield* Deferred.succeed(current.done, current.usage);
-          else yield* Deferred.fail(current.done, new ContextHandoffBudgetError());
-          return false;
-        default:
+  // Every provider event passes this filter; compaction owns the operation span.
+  const filter = Effect.fnUntraced(function* (event: ProviderAdapter.ProviderAdapterV2Event) {
+    if (
+      !state &&
+      event.type === "provider_turn.updated" &&
+      maintenanceTurns.has(event.providerTurn.id)
+    )
+      return false;
+    if (
+      event.type === "turn_item.updated" &&
+      event.turnItem.providerTurnId !== null &&
+      maintenanceTurns.has(event.turnItem.providerTurnId)
+    )
+      return false;
+    if (
+      event.type === "turn.terminal" &&
+      maintenanceTurns.has(event.providerTurnId) &&
+      (!state || state.terminal)
+    )
+      return false;
+    const current = state;
+    if (!current) return true;
+    switch (event.type) {
+      case "provider_turn.updated":
+        if (
+          event.providerTurn.runAttemptId !== current.input.attemptId ||
+          event.providerTurn.providerThreadId !== current.input.providerThread.id
+        )
           return true;
-      }
-    });
+        current.turnId = event.providerTurn.id;
+        maintenanceTurns.add(event.providerTurn.id);
+        if (event.providerTurn.tokenUsage)
+          current.usage = {
+            usedTokens: event.providerTurn.tokenUsage.usedTokens,
+            ...(event.providerTurn.tokenUsage.maxTokens == null
+              ? {}
+              : { maxTokens: event.providerTurn.tokenUsage.maxTokens }),
+          };
+        return false;
+      case "provider_thread.updated":
+        if (event.providerThread.id !== current.input.providerThread.id) return true;
+        // Thread snapshots can replay pre-compaction usage (including on Claude's
+        // terminal update). They carry no measurement provenance; only telemetry
+        // attributed to this maintenance attempt can establish the retry budget.
+        return false;
+      case "turn_item.updated":
+        return event.turnItem.nodeId !== current.input.rootNodeId;
+      case "node.updated":
+        return event.node.id !== current.input.rootNodeId;
+      case "message.updated":
+        return event.message.runId !== current.input.runId;
+      case "turn.terminal":
+        if (
+          event.providerThreadId !== current.input.providerThread.id ||
+          !maintenanceTurns.has(event.providerTurnId)
+        )
+          return true;
+        current.terminal = true;
+        yield* Effect.logInfo("handoff.budget.recovery.terminal", {
+          runId: current.input.runId,
+          status: event.status,
+          measured: current.usage !== undefined,
+          ...(event.status === "failed"
+            ? { failureClass: event.failure.class, failureCode: event.failure.code }
+            : {}),
+        });
+        if (event.status === "failed") {
+          yield* Deferred.fail(
+            current.done,
+            new ProviderAdapter.ProviderAdapterTurnStartError({
+              driver: event.driver,
+              threadId: current.input.threadId,
+              providerThreadId: event.providerThreadId,
+              runId: current.input.runId,
+              cause: event.failure,
+            }),
+          );
+          return false;
+        }
+        if (event.status === "completed" && event.threadDisposition === "reusable" && current.usage)
+          yield* Deferred.succeed(current.done, current.usage);
+        else yield* Deferred.fail(current.done, new ContextHandoffBudgetError());
+        return false;
+      default:
+        return true;
+    }
+  });
   const wrap = (events: typeof session.events) => events.pipe(Stream.filterEffect(filter));
   return {
     session: {
@@ -142,7 +138,7 @@ export const makeHandoffCompactionRecovery = <
             ),
           }),
     },
-    compact: (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+    compact: Effect.fn("compact")((input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
       Effect.gen(function* () {
         if (attempted || !session.compactThread) return yield* new ContextHandoffBudgetError();
         attempted = true;
@@ -192,5 +188,6 @@ export const makeHandoffCompactionRecovery = <
           ),
         );
       }),
+    ),
   };
 };

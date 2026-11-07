@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 /**
  * Optional integration check against a real, signed-in `muse` install.
  * Enable with: T3_MUSE_MSP_PROBE=1 vp test run MuseCliProbe
@@ -38,7 +39,7 @@ const settings = {
 } as const;
 
 const layer = ServerConfig.layerTest(process.cwd(), { prefix: "muse-cli-probe-" }).pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(McpProviderSessions.layer),
 );
 

@@ -6,7 +6,7 @@ import {
 } from "@d4research/contracts";
 import { createModelCapabilities } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -117,33 +117,37 @@ export const buildInitialJunieProviderSnapshot = Effect.fn("buildInitialJuniePro
   },
 );
 
-const runVersion = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
-  Effect.gen(function* () {
-    const command = settings.binaryPath || "junie";
-    const resolved = yield* resolveSpawnCommand(command, ["--version"], { env: environment });
-    return yield* spawnAndCollect(
-      command,
-      ChildProcess.make(resolved.command, resolved.args, {
-        env: environment,
-        shell: resolved.shell,
-      }),
-    );
-  });
+const runVersion = Effect.fn("JunieProvider.runVersion")(
+  (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
+    Effect.gen(function* () {
+      const command = settings.binaryPath || "junie";
+      const resolved = yield* resolveSpawnCommand(command, ["--version"], { env: environment });
+      return yield* spawnAndCollect(
+        command,
+        ChildProcess.make(resolved.command, resolved.args, {
+          env: environment,
+          shell: resolved.shell,
+        }),
+      );
+    }),
+);
 
-const discoverModels = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
-  Effect.gen(function* () {
-    const runtime = yield* makeJunieAcpRuntime({
-      junieSettings: settings,
-      environment,
-      cwd: process.cwd(),
-      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
-    });
-    const started = yield* runtime.start();
-    return junieModelsFromSessionSetup(
-      started.sessionSetupResult.configOptions,
-      started.modelConfigId,
-    );
-  }).pipe(Effect.scoped);
+const discoverModels = Effect.fn("JunieProvider.discoverModels")(
+  (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
+    Effect.gen(function* () {
+      const runtime = yield* makeJunieAcpRuntime({
+        junieSettings: settings,
+        environment,
+        cwd: process.cwd(),
+        clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+      });
+      const started = yield* runtime.start();
+      return junieModelsFromSessionSetup(
+        started.sessionSetupResult.configOptions,
+        started.modelConfigId,
+      );
+    }).pipe(Effect.scoped),
+);
 
 export const checkJunieProviderStatus = Effect.fn("checkJunieProviderStatus")(function* (
   settings: JunieSettings,
@@ -151,7 +155,7 @@ export const checkJunieProviderStatus = Effect.fn("checkJunieProviderStatus")(fu
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+  ChildProcessSpawner.ChildProcessSpawner | SecureRandom.SecureRandom
 > {
   if (!settings.enabled) return yield* buildInitialJunieProviderSnapshot(settings);
   const checkedAt = DateTime.formatIso(yield* DateTime.now);

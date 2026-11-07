@@ -11,8 +11,11 @@ import {
   ThreadId,
 } from "@d4research/contracts";
 import { makeThreadProjectionFixture } from "../test-fixtures";
-import { shouldOfferResumeCompaction } from "../components/chat/ContextWindowMeter.logic";
-import { deriveLatestContextWindowSnapshot, latestProviderTurnTokenUsage } from "./contextWindow";
+import {
+  deriveLatestContextWindowSnapshot,
+  latestProviderTurnTokenUsage,
+  shouldOfferResumeCompaction,
+} from "@d4research/client-runtime/state/context-window";
 
 const decodeTokenUsage = Schema.decodeSync(OrchestrationV2ProviderTurnTokenUsage);
 

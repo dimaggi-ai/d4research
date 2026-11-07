@@ -17,6 +17,7 @@ import {
   type AssetResource,
   type EditorId,
   type EnvironmentId,
+  type ProjectId,
   type ProjectCodeSearchMatch,
   type ProjectWorkspace,
   type ResolvedKeybindingsConfig,
@@ -153,12 +154,12 @@ import {
   filePreviewReadErrorMessage,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
-  setMarkdownTaskChecked,
   shouldShowFileExplorer,
   resolveSiblingLookupRoot,
   siblingWorktreeLabel,
   workspaceAssetResource,
 } from "./filePreviewMode";
+import { setMarkdownTaskChecked } from "@d4research/shared/markdownTaskList";
 import { changeFileSaveSession, useFileSaveSession } from "./fileSaveSessions";
 import { revisionedQuery } from "~/state/revisionedQuery";
 import {
@@ -181,6 +182,7 @@ interface FilePreviewPanelProps {
   projectRoot: string;
   cwd: string;
   projectName: string;
+  projectId?: ProjectId | undefined;
   relativePath: string | null;
   attachment?: ChatFileAttachment;
   threadRef: ScopedThreadRef;
@@ -763,6 +765,7 @@ function useEditableAfterHighlight(file: FileContents) {
 
 interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
+  projectId?: ProjectId | undefined;
   cwd: string;
   relativePath: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
@@ -782,6 +785,7 @@ interface FileSelectionOverride {
 
 const EditableFileSurface = memo(function EditableFileSurface({
   environmentId,
+  projectId,
   cwd,
   relativePath,
   composerDraftTarget,
@@ -1069,6 +1073,14 @@ const EditableFileSurface = memo(function EditableFileSurface({
                 {annotation.metadata.entries.map((entry) => (
                   <DiffCommentAnnotation
                     key={entry.id}
+                    environmentId={environmentId}
+                    projectId={projectId}
+                    ownerKey={JSON.stringify([
+                      environmentId,
+                      composerDraftTarget,
+                      relativePath,
+                      entry.id,
+                    ])}
                     kind={entry.kind}
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
                     text={entry.text}
@@ -1379,6 +1391,7 @@ export default function FilePreviewPanel({
   projectRoot,
   cwd,
   projectName,
+  projectId,
   relativePath: requestedPath,
   attachment,
   threadRef,
@@ -2082,6 +2095,7 @@ export default function FilePreviewPanel({
         ) : (
           <DiffWorkerPoolProvider>
             <EditableFileSurface
+                  projectId={projectId}
               key={`${environmentId}:${activeCwd}:${relativePath}:${resolvedTheme}`}
               environmentId={environmentId}
               cwd={activeCwd}

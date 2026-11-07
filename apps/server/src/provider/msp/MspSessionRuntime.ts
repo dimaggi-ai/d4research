@@ -1,7 +1,8 @@
+import * as SecureRandom from "effect/crypto/SecureRandom";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { Crypto, Effect, FileSystem, Queue, Schema, Stream } from "effect";
+import { Effect, FileSystem, Queue, Schema, Stream } from "effect";
 import { ChildProcess, type ChildProcessSpawner } from "effect/process";
 import type { MuseSettings, RuntimeMode } from "@d4research/contracts";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
@@ -37,7 +38,7 @@ export interface MuseMspRuntimeOptions {
 export const makeMuseMspRuntime = Effect.fn("makeMuseMspRuntime")(function* (
   options: MuseMspRuntimeOptions,
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const fs = yield* FileSystem.FileSystem;
   const stdin = yield* Queue.unbounded<Uint8Array>();
   const temp = NodePath.join(NodeOS.tmpdir(), "t3-muse");
@@ -103,7 +104,7 @@ export const makeMuseMspRuntime = Effect.fn("makeMuseMspRuntime")(function* (
     method: Msp.MspMethod,
     params: object,
   ) {
-    return yield* request(method, { ...params, commandId: yield* crypto.randomUUIDv7() });
+    return yield* request(method, { ...params, commandId: yield* crypto.uuidV7() });
   });
   const ceiling = (error: { readonly data?: Msp.ErrorData }) =>
     error.data?.kind === "commandRejected" && error.data.reason === "approval_mode_ceiling";

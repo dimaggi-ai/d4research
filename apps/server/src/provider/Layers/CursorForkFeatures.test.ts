@@ -1,10 +1,12 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as CursorKeychain from "@d4research/provider-cursor/server/CursorKeychain";
 import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import type * as Crypto from "effect/Crypto";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@d4research/shared/HostProcess";
@@ -24,7 +26,7 @@ const withNodeServices = <A, E>(
     A,
     E,
     | ChildProcessSpawner.ChildProcessSpawner
-    | Crypto.Crypto
+    | SecureRandom.SecureRandom
     | FileSystem.FileSystem
     | Path.Path
     | CursorKeychain.CursorKeychain
@@ -34,7 +36,7 @@ const withNodeServices = <A, E>(
     Effect.provideService(CursorKeychain.CursorKeychain, {
       accessToken: Effect.die("must not read Keychain before opt-in"),
     }),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 describe("Cursor skills", () => {
@@ -463,11 +465,35 @@ describe("Cursor usage limits", () => {
         readCursorUsageLimits({ apiEndpoint: "" }, { CURSOR_API_KEY: "different-account" }).pipe(
           Effect.provideService(
             HttpClient.HttpClient,
-            HttpClient.make(() => Effect.die("must not request usage")),
+            HttpClient.make((request) => {
+              const exchange = request.url.endsWith("/auth/exchange_user_api_key");
+              expect(request.headers.authorization).toBe(
+                exchange ? "Bearer different-account" : "Bearer exchanged-account",
+              );
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  Response.json(
+                    exchange
+                      ? { accessToken: "exchanged-account" }
+                      : { planUsage: { totalPercentUsed: 21 } },
+                  ),
+                ),
+              );
+            }),
           ),
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.makeNoop({
+              readFileString: () => Effect.die("must not read a stored login for an API key"),
+            }),
+          ),
+          Effect.provideService(CursorKeychain.CursorKeychain, {
+            accessToken: Effect.die("must not read Keychain for an API key"),
+          }),
         ),
       );
-      expect(limits.unavailable?.reason).toBe("unsupported");
+      expect(limits.windows[0]?.usedPercent).toBe(21);
     }),
   );
 });

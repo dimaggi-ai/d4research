@@ -24,7 +24,7 @@ import {
   formatAssistantCitationForComposer,
   isCollapsedCursorAdjacentToInlineToken,
   parseStandaloneComposerSlashCommand,
-  parseSideChatCommand,
+  isPathSuggestionCurrent,
   replaceTextRange,
   shouldSubmitComposerOnEnter,
 } from "./composer-logic";
@@ -315,6 +315,28 @@ describe("formatAssistantCitationForComposer", () => {
   });
 });
 describe("detectComposerTrigger", () => {
+  it.each([
+    "It costs $5",
+    "budget $9.99",
+    "only $.99",
+    "about €20",
+    "raise $10k",
+    "raise $10k.",
+    "is it $5?",
+  ])("does not detect a skill trigger for the amount in %j", (text) => {
+    expect(detectComposerTrigger(text, text.length)).toBeNull();
+  });
+
+
+  it.each([
+    ["Run /tmp/build.sh", "Run /tmp/build.sh".length],
+    ["/etc/hosts", "/etc/hosts".length],
+    ["Use /etc/hosts now", "Use /et".length],
+  ])("keeps the path in %j out of the slash menu", (text, cursor) => {
+    expect(detectComposerTrigger(text, cursor)).toBeNull();
+  });
+
+
   it.each(["Use ", "Use\t", "Use\n  "])("detects inline slash skills after %j", (prefix) => {
     const text = `${prefix}/skill:review later`;
     const cursor = `${prefix}/skill:review`.length;
@@ -993,20 +1015,9 @@ describe("extendReplacementRangeForTrailingSpace", () => {
   });
 });
 
-describe("parseSideChatCommand", () => {
-  it("reads an optional prompt after /side or /btw", () => {
-    expect(parseSideChatCommand("/side")).toEqual({ prompt: "" });
-    expect(parseSideChatCommand("  /SIDE  why does this fail?\nline two ")).toEqual({
-      prompt: "why does this fail?\nline two",
-    });
-    expect(parseSideChatCommand("/btw check @src/a.ts")).toEqual({ prompt: "check @src/a.ts" });
-  });
-
-  it("ignores other commands and inline mentions, which the menu does not offer", () => {
-    expect(parseSideChatCommand("/sidebar")).toBeNull();
-    expect(parseSideChatCommand("/btwx")).toBeNull();
-    expect(parseSideChatCommand("ask /side later")).toBeNull();
-    const items = (["side", "btw", "plan"] as const).map((command) => ({
+describe("side chat slash commands", () => {
+  it("are not offered after the start of a message", () => {
+    const items = (["side", "btw", "clear", "plan"] as const).map((command) => ({
       id: `slash:${command}`,
       type: "slash-command" as const,
       command,
@@ -1016,5 +1027,41 @@ describe("parseSideChatCommand", () => {
     expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
       "slash:plan",
     ]);
+  });
+});
+
+
+describe("isPathSuggestionCurrent", () => {
+  const searchedTarget = {
+    environmentId: EnvironmentId.make("local"),
+    cwd: "/repo",
+    query: "alpha",
+  };
+
+  it("allows a file suggestion matching the live search", () => {
+    expect(
+      isPathSuggestionCurrent(
+        searchedTarget,
+        detectComposerTrigger("@alpha", 6),
+        searchedTarget.environmentId,
+        searchedTarget.cwd,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["query", { ...searchedTarget, query: "beta" }],
+    ["cwd", { ...searchedTarget, cwd: "/other-repo" }],
+    ["environment", { ...searchedTarget, environmentId: EnvironmentId.make("remote") }],
+  ] as const)("rejects a visible file suggestion after the live %s changes", (_change, current) => {
+    const prompt = `@${current.query}`;
+    expect(
+      isPathSuggestionCurrent(
+        searchedTarget,
+        detectComposerTrigger(prompt, prompt.length),
+        current.environmentId,
+        current.cwd,
+      ),
+    ).toBe(false);
   });
 });

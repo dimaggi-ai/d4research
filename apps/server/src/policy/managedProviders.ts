@@ -19,6 +19,7 @@ import { acpRegistryClient } from "@d4research/provider-acp-registry/client";
 import { cursorClient } from "@d4research/provider-cursor/client";
 import { fxClient } from "@d4research/provider-fx/client";
 import { grokClient } from "@d4research/provider-grok/client";
+import { kiroClient } from "@d4research/provider-kiro/client";
 import { museClient } from "@d4research/provider-muse/client";
 import { openCodeClient } from "@d4research/provider-opencode/client";
 import { piClient } from "@d4research/provider-pi/client";
@@ -45,6 +46,7 @@ const PACKAGED_CLIENTS: ReadonlyArray<ProviderClientDefinition> = [
   cursorClient,
   grokClient,
   fxClient,
+  kiroClient,
   museClient,
   openCodeClient,
   piClient,
@@ -74,6 +76,10 @@ const KNOWN_DRIVERS: ReadonlyMap<ProviderDriverKind, KnownDriver> = new Map([
     known(client.driverKind, client.label, client.settingsSchema, client.hasDefaultInstance),
   ),
 ]);
+
+/** Each driver a policy may name, with the label users see. */
+export const knownDriverLabels = () =>
+  Array.from(KNOWN_DRIVERS, ([driver, { label }]) => ({ driver, label }));
 
 const PINNED_CONFIG_FIELDS = ["binaryPath", "launchArgs"] as const;
 type PinnedConfigField = (typeof PINNED_CONFIG_FIELDS)[number];
@@ -200,7 +206,8 @@ const sameVariable = (
   left === right ||
   (left !== undefined &&
     right !== undefined &&
-    left.value === right.value &&
+    // A secret reference is an object, and a decoded copy is never the stored one.
+    sameValue(left.value, right.value) &&
     left.sensitive === right.sensitive);
 
 const pinnedFields = (pin: ManagedProviderInstance): ReadonlyArray<PinnedConfigField> =>

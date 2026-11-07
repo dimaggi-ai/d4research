@@ -17,9 +17,9 @@ import {
   setComposerDraftText,
   waitForComposerDraftsLoaded,
 } from "../../state/use-composer-drafts";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
-const CLI_COMMAND = "npx t3 triage";
+const CLI_COMMAND = "npx d4research triage";
 
 /**
  * In-app `t3 triage`, as on web: the server writes the session files and

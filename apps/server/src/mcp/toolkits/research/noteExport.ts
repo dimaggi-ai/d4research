@@ -4,7 +4,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePath from "node:path";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
-import { publishArtifact, safeDirectory } from "./artifactFiles.ts";
+import { publishArtifact, safeDirectory, tryArtifactIo } from "./artifactFiles.ts";
 const quote = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 const key = (id: string) => NodeCrypto.createHash("sha256").update(id).digest("hex");
 
@@ -17,7 +17,7 @@ export const exportResearchNote = (input: {
   text: string;
 }) =>
   Effect.flatMap(HostProcess.Platform, (platform) =>
-    Effect.tryPromise(async () => {
+    tryArtifactIo(async () => {
       if (!input.folder) return;
       const root = await safeDirectory(input.folder, false, platform); // never create a mistyped vault root
       const directory = NodePath.join(

@@ -1,7 +1,7 @@
 # Claude
 
 This guide is for people who want to use more than one Claude setup in d4research. For Codex, see
-[Codex](./providers-codex.md). For first-time setup, see [Install T3 Code](./install.md).
+[Codex](./providers-codex.md). For first-time setup, see [Install d4research](./install.md).
 
 Common reasons:
 
@@ -27,6 +27,9 @@ Display name: Claude
 Binary path: claude
 CLAUDE_CONFIG_DIR path: empty
 ```
+
+On mobile, tap **Add Claude account** in **Settings > Providers** and enter a name and the
+config folder. The login itself still happens on the environment's machine.
 
 An empty `CLAUDE_CONFIG_DIR path` means d4research uses Claude Code's normal config directory.
 
@@ -55,7 +58,8 @@ When you return to a large thread after Claude's prompt cache expires, a
 **Compact** chip with the thread's token count shows
 next to the send button. While it is on, Enter summarizes the history first, then
 sends your message. Click the chip to switch it to **Keep** and keep the full
-history for that message. The cache lasts about an hour on a Claude
+history for that message. The mobile app shows no chip: an eligible message sent
+from it summarizes first. The cache lasts about an hour on a Claude
 subscription and 5 minutes with an API key, Bedrock, or Vertex. See [commands and skills](./composer.md#commands-and-skills) for using
 composer commands.
 

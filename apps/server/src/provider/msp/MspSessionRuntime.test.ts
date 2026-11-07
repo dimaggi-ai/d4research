@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, assert } from "@effect/vitest";
 import { Effect } from "effect";
@@ -5,7 +7,7 @@ import { ChildProcessSpawner } from "effect/process";
 import { makeMuseMspRuntime } from "./MspSessionRuntime.ts";
 import { makeMockMuse } from "./mspTestUtils.ts";
 
-it.layer(NodeServices.layer)("Muse MSP runtime", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Muse MSP runtime", (it) => {
   it.effect("rejects UUIDv4 commands at the mock protocol boundary", () =>
     Effect.gen(function* () {
       const mock = yield* makeMockMuse();

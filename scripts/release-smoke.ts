@@ -36,6 +36,7 @@ const workspaceFiles = [
   "packages/provider-fx/package.json",
   "packages/provider-grok/package.json",
   "packages/provider-deepseek/package.json",
+  "packages/provider-kiro/package.json",
   "packages/provider-muse/package.json",
   "packages/provider-opencode/package.json",
   "packages/secret-provider-core/package.json",
@@ -243,15 +244,20 @@ try {
     "vars.RELEASE_PUBLISH_ENABLED == 'true'",
     "Release publication must remain explicitly opt-in.",
   );
-  assertNotContains(
+  assertContains(
     releaseWorkflow,
-    "ref: main",
-    "Release finalization must not target the fork's nonexistent main branch.",
+    "ref: ${{ github.event.repository.default_branch }}",
+    "Release finalization must check out the repository's default branch.",
   );
   assertContains(
     releaseWorkflow,
-    "git push origin HEAD:master",
-    "Release finalization must update the fork's master branch.",
+    "RELEASE_BRANCH: ${{ github.event.repository.default_branch }}",
+    "Release finalization must select the repository's default branch for publication.",
+  );
+  assertContains(
+    releaseWorkflow,
+    'git push origin HEAD:"$RELEASE_BRANCH"',
+    "Release finalization must update the selected release branch.",
   );
 
   copyWorkspaceManifestFixture(tempRoot);

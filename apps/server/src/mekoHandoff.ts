@@ -8,7 +8,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import * as Schema from "effect/Schema";
-import type { HandoffSettings, MekoReceipt } from "@d4research/contracts/settings";
+import { type HandoffSettings, MekoReceipt } from "@d4research/contracts/settings";
 
 type Config = HandoffSettings["meko"];
 const hash = (text: string | Uint8Array) =>
@@ -29,11 +29,12 @@ const decodeArtifact = Schema.decodeUnknownSync(Artifact);
 const decodePacket = Schema.decodeUnknownSync(Packet);
 const validators = new WeakMap<Tool, ReturnType<AjvJsonSchemaValidator["getValidator"]>>();
 
-class MekoError extends Error {
-  readonly status: MekoReceipt["status"];
-  constructor(status: MekoReceipt["status"], message: string) {
-    super(message);
-    this.status = status;
+class MekoError extends Schema.TaggedError<MekoError>()("MekoError", {
+  status: MekoReceipt.fields.status,
+  message: Schema.String,
+}) {
+  static new(status: MekoReceipt["status"], message: string) {
+    return new MekoError({ message, status });
   }
 }
 
@@ -43,7 +44,7 @@ export function resolveMekoConnection(config: Config, env: NodeJS.ProcessEnv = p
   try {
     url = new URL(config.url);
   } catch {
-    throw new MekoError("ERROR_CONFIGURATION", "Set a Meko MCP URL.");
+    throw MekoError.new("ERROR_CONFIGURATION", "Set a Meko MCP URL.");
   }
   if (
     (url.protocol !== "https:" &&
@@ -53,21 +54,21 @@ export function resolveMekoConnection(config: Config, env: NodeJS.ProcessEnv = p
     url.search ||
     url.hash
   ) {
-    throw new MekoError(
+    throw MekoError.new(
       "ERROR_CONFIGURATION",
       "Use HTTPS, or HTTP on loopback, without URL credentials or query parameters.",
     );
   }
   if (!config.agentId || !config.datapackId)
-    throw new MekoError("ERROR_CONFIGURATION", "Set the Meko agent and datapack IDs.");
+    throw MekoError.new("ERROR_CONFIGURATION", "Set the Meko agent and datapack IDs.");
   if (config.tokenEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.tokenEnv))
-    throw new MekoError(
+    throw MekoError.new(
       "ERROR_CONFIGURATION",
       "Enter an environment variable name, not an API key.",
     );
   const token = config.tokenEnv ? env[config.tokenEnv] : undefined;
   if (config.tokenEnv && !token)
-    throw new MekoError(
+    throw MekoError.new(
       "ERROR_CONFIGURATION",
       "The configured credential variable is missing from the server environment.",
     );
@@ -84,7 +85,7 @@ export function mapMekoArguments(tool: Tool, values: Record<string, unknown>) {
   const mapped = Object.fromEntries(Object.entries(values).filter(([key]) => key in properties));
   for (const key of tool.inputSchema.required ?? []) {
     if (!(key in mapped))
-      throw new MekoError("ERROR_CONFIGURATION", "Meko requires an unsupported argument.");
+      throw MekoError.new("ERROR_CONFIGURATION", "Meko requires an unsupported argument.");
   }
   let validate = validators.get(tool);
   if (!validate) {
@@ -93,7 +94,7 @@ export function mapMekoArguments(tool: Tool, values: Record<string, unknown>) {
   }
   const validation = validate(mapped);
   if (!validation.valid)
-    throw new MekoError(
+    throw MekoError.new(
       "ERROR_CONFIGURATION",
       "Meko arguments do not match its advertised schema.",
     );
@@ -162,7 +163,7 @@ export class MekoHandoffClient {
           signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]),
         });
         if (response.status === 401 || response.status === 403)
-          throw new MekoError(
+          throw MekoError.new(
             "ERROR_AUTH_RESTRICTED",
             "Meko denied access. Check the configured credential and datapack.",
           );
@@ -172,7 +173,7 @@ export class MekoHandoffClient {
             transform(chunk: Uint8Array, controller) {
               bytes += chunk.byteLength;
               if (bytes > 1_048_576)
-                throw new MekoError("ERROR_TOOL_FAILURE", "Meko response exceeded the size limit.");
+                throw MekoError.new("ERROR_TOOL_FAILURE", "Meko response exceeded the size limit.");
               controller.enqueue(chunk);
             },
           }),
@@ -202,7 +203,7 @@ export class MekoHandoffClient {
           if (!cursor) break;
         }
         if (cursor || tools.length > 256)
-          throw new MekoError("ERROR_TOOL_FAILURE", "Meko tool catalog exceeded the limit.");
+          throw MekoError.new("ERROR_TOOL_FAILURE", "Meko tool catalog exceeded the limit.");
         for (const [name, args] of Object.entries({
           conversation_create: ["agent_id", "datapack_id", "session_id"],
           artifact_put: [
@@ -217,14 +218,14 @@ export class MekoHandoffClient {
         })) {
           const tool = tools.find((tool) => tool.name === name);
           if (!tool || args.some((arg) => !(arg in (tool.inputSchema.properties ?? {})))) {
-            throw new MekoError(
+            throw MekoError.new(
               "ERROR_CONFIGURATION",
               `Meko must advertise a compatible ${name} tool.`,
             );
           }
           for (const required of tool.inputSchema.required ?? []) {
             if (!args.includes(required))
-              throw new MekoError("ERROR_CONFIGURATION", "Meko requires an unsupported argument.");
+              throw MekoError.new("ERROR_CONFIGURATION", "Meko requires an unsupported argument.");
           }
         }
         catalog = { expires: Date.now() + 300_000, tools };
@@ -234,7 +235,7 @@ export class MekoHandoffClient {
       const tools = catalog.tools;
       return await run(async (name, args) => {
         const tool = tools.find((tool) => tool.name === name);
-        if (!tool) throw new MekoError("ERROR_CONFIGURATION", "Meko tool is unavailable.");
+        if (!tool) throw MekoError.new("ERROR_CONFIGURATION", "Meko tool is unavailable.");
         const result = await client.callTool(
           {
             name,
@@ -247,7 +248,7 @@ export class MekoHandoffClient {
           undefined,
           { signal, timeout: 10_000 },
         );
-        if (result.isError) throw new MekoError("ERROR_TOOL_FAILURE", `Meko ${name} failed.`);
+        if (result.isError) throw MekoError.new("ERROR_TOOL_FAILURE", `Meko ${name} failed.`);
         const content =
           result.structuredContent ??
           (Array.isArray(result.content)
@@ -263,7 +264,7 @@ export class MekoHandoffClient {
           const restricted =
             typeof decoded.error === "string" &&
             /auth|forbidden|permission|agent_id_mismatch|access_denied/i.test(decoded.error);
-          throw new MekoError(
+          throw MekoError.new(
             restricted ? "ERROR_AUTH_RESTRICTED" : "ERROR_TOOL_FAILURE",
             `Meko ${name} rejected the request.`,
           );
@@ -289,7 +290,7 @@ export class MekoHandoffClient {
     let receipt: MekoReceipt;
     try {
       if (this.active >= 2)
-        throw new MekoError("ERROR_BUSY", "Meko is busy. The thread keeps its attached context.");
+        throw MekoError.new("ERROR_BUSY", "Meko is busy. The thread keeps its attached context.");
       this.active++;
       try {
         receipt = { ...(await run(controller.signal)), timestamp: new Date().toISOString() };
@@ -302,13 +303,12 @@ export class MekoHandoffClient {
           controller.signal.aborted ||
           (error instanceof McpError && error.code === ErrorCode.RequestTimeout)
             ? "ERROR_TIMEOUT"
-            : error instanceof MekoError
+            : Schema.is(MekoError)(error)
               ? error.status
               : "ERROR_TOOL_FAILURE",
-        message:
-          error instanceof MekoError
-            ? error.message
-            : "Meko did not complete the operation. The attached context is unchanged.",
+        message: Schema.is(MekoError)(error)
+          ? error.message
+          : "Meko did not complete the operation. The attached context is unchanged.",
         timestamp: new Date().toISOString(),
       };
     } finally {
@@ -356,7 +356,7 @@ export class MekoHandoffClient {
       (signal) =>
         this.session(config, signal, async (call) => {
           if (!input.text.trim() || input.text.length > 60_000 || !input.threadId || !input.project)
-            throw new MekoError(
+            throw MekoError.new(
               "ERROR_CONFIGURATION",
               "Handoff context requires a project, thread, and non-empty text of at most 60,000 characters.",
             );
@@ -374,7 +374,7 @@ export class MekoHandoffClient {
             content_base64: Buffer.from(packet).toString("base64"),
           });
           if (written.content_hash !== contentHash)
-            throw new MekoError("ERROR_TOOL_FAILURE", "Meko returned a different content hash.");
+            throw MekoError.new("ERROR_TOOL_FAILURE", "Meko returned a different content hash.");
           const readback = decodeArtifact(
             await call("artifact_get", { ...args, content_hash: contentHash }),
           );
@@ -382,7 +382,7 @@ export class MekoHandoffClient {
             readback.content_hash !== contentHash ||
             !Buffer.from(readback.content_base64, "base64").equals(Buffer.from(packet))
           )
-            throw new MekoError(
+            throw MekoError.new(
               "ERROR_TOOL_FAILURE",
               "Meko handoff readback did not match. The save is unverified.",
             );
@@ -427,15 +427,15 @@ export class MekoHandoffClient {
           const bytes = Buffer.from(artifact.content_base64, "base64");
           const raw = bytes.toString("utf8");
           if (hash(bytes) !== input.contentHash || artifact.content_hash !== input.contentHash)
-            throw new MekoError("ERROR_TOOL_FAILURE", "Meko handoff content hash did not match.");
+            throw MekoError.new("ERROR_TOOL_FAILURE", "Meko handoff content hash did not match.");
           const packet = decodePacket(JSON.parse(raw));
           if (packet.project !== input.project || packet.threadId !== input.threadId)
-            throw new MekoError(
+            throw MekoError.new(
               "ERROR_AUTH_RESTRICTED",
               "Meko handoff belongs to a different project or thread.",
             );
           if (packet.text.length > 60_000)
-            throw new MekoError("ERROR_TOOL_FAILURE", "Meko handoff exceeded the context limit.");
+            throw MekoError.new("ERROR_TOOL_FAILURE", "Meko handoff exceeded the context limit.");
           signal.throwIfAborted();
           text = packet.text;
           return {

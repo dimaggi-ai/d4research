@@ -79,7 +79,11 @@ async function exportD4Icons() {
           ? 32
           : path.includes("180")
             ? 180
-            : 1024;
+            : path.includes("192x192")
+              ? 192
+              : path.includes("512x512")
+                ? 512
+                : 1024;
       await save(path, render(source, size));
     }
   }

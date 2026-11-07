@@ -31,6 +31,7 @@ cd "$REPO_ROOT"
 # Branch-name test fixtures ("t3/newer", "t3/live", ...) legitimately keep the
 # t3/ prefix; every other quoted "t3/..." is an Effect service tag we renamed.
 BRANCH_FIXTURE_FILE="apps/web/src/components/BranchToolbar.logic.test.ts"
+VCS_BRANCH_FIXTURE_FILE="apps/server/src/vcs/GitVcsDriverCore.test.ts"
 
 # pingdotgg/t3code is renamed ONLY at these sites. Everywhere else (README
 # attribution, GitManager/PR/sourceControl test fixtures, thread-transfer
@@ -81,7 +82,7 @@ apply_rename_map() { # args: files (text, tracked)
   local f
   for f in "$@"; do
     case "$f" in
-      "$BRANCH_FIXTURE_FILE"|*/"$BRANCH_FIXTURE_FILE") ;;
+      "$BRANCH_FIXTURE_FILE"|*/"$BRANCH_FIXTURE_FILE"|"$VCS_BRANCH_FIXTURE_FILE"|*/"$VCS_BRANCH_FIXTURE_FILE") ;;
       *) tagfiles+=("$f") ;;
     esac
   done
@@ -194,7 +195,7 @@ leak_grep() { # args: pattern, extra git-grep args...; returns 0 if leaks found
     ':(exclude).repos' ':(exclude)pnpm-lock.yaml' ':(exclude)patches' \
     ':(exclude).plans' ':(exclude)release-ops/merge-upstream.sh' \
     ':(exclude)docs/operations/upstream-merge.md' \
-    ":(exclude)$BRANCH_FIXTURE_FILE" \
+    ":(exclude)$BRANCH_FIXTURE_FILE" ":(exclude)$VCS_BRANCH_FIXTURE_FILE" \
     "${KNOWN_GAP_EXCLUDES[@]}" || status=$?
   if [ "$status" -gt 1 ]; then
     echo "git grep failed while checking pattern '$pat' (status $status)" >&2
@@ -252,7 +253,7 @@ cmd_preview() {
     fi
     leaks+="$(printf '%s' "$matches" | sed "s/^$tree://")"$'\n'
   done <<< "$LEAK_PATTERNS"
-  printf '%s' "$leaks" | grep -vE 'pnpm-lock|\.repos/|\.plans/|BranchToolbar\.logic\.test' \
+  printf '%s' "$leaks" | grep -vE 'pnpm-lock|\.repos/|\.plans/|BranchToolbar\.logic\.test|GitVcsDriverCore\.test' \
     | grep -vE 'docs/(internals/server-updates|operations/release|user/background-service)\.md' \
     | sort -u | grep . || echo "none"
   rm -f "$out" "$out.grep-error"

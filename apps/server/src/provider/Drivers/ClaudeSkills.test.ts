@@ -131,13 +131,13 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         path.join(workspace, ".claude", "settings.json"),
         '{"enabledPlugins":{"plugin@shop":false,"local@shop":true,"other@shop":["^1.0.0"]}}',
       );
-      const projectSettings = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const projectSettings = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
       assert.deepEqual(
         projectSettings.map((skill) => [skill.name, skill.scope, skill.path]),
         [["local:review", "project", path.join(localInstall, "skills", "review", "SKILL.md")]],
       );
       assert.deepEqual(
-        (yield* discoverClaudeSkills({ homePath: configDir }, nestedWorkspace)).map((skill) => [
+        (yield* discoverClaudeSkills({ homePath: "", configDir }, nestedWorkspace)).map((skill) => [
           skill.name,
           skill.scope,
           skill.path,
@@ -149,14 +149,14 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{"enabledPlugins":{"plugin@shop":true,"local@shop":false},"skillOverrides":{"invalid":"bogus"}}',
       );
       assert.deepEqual(
-        yield* discoverClaudeSkills({ homePath: configDir }, workspace),
+        yield* discoverClaudeSkills({ homePath: "", configDir }, workspace),
         projectSettings,
       );
       yield* fs.writeFileString(
         path.join(workspace, ".claude", "settings.local.json"),
         '{"enabledPlugins":{"plugin@shop":true,"local@shop":true}}',
       );
-      const localSettings = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const localSettings = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
       assert.deepEqual(
         localSettings.map((skill) => [skill.name, skill.scope, skill.path]),
         [
@@ -165,18 +165,18 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         ],
       );
       assert.deepEqual(
-        yield* discoverClaudeSkills({ homePath: configDir }, nestedWorkspace),
+        yield* discoverClaudeSkills({ homePath: "", configDir }, nestedWorkspace),
         localSettings,
       );
       assert.deepEqual(
-        yield* discoverClaudeSkills({ homePath: configDir }, aliasedWorkspace),
+        yield* discoverClaudeSkills({ homePath: "", configDir }, aliasedWorkspace),
         localSettings,
       );
       yield* fs.writeFileString(
         path.join(workspace, ".claude", "settings.local.json"),
         '{"enabledPlugins":{"local@shop":["^1.0.0"]}}',
       );
-      assert.deepEqual(yield* discoverClaudeSkills({ homePath: configDir }, workspace), []);
+      assert.deepEqual(yield* discoverClaudeSkills({ homePath: "", configDir }, workspace), []);
       yield* fs.writeFileString(
         path.join(configDir, "settings.json"),
         '{"enabledPlugins":{"plugin@shop":true,"local@shop":true}}',
@@ -184,7 +184,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       const separateRepository = path.join(workspace, "separate");
       yield* fs.makeDirectory(path.join(separateRepository, ".git"), { recursive: true });
       for (const cwd of [undefined, path.join(tempDir, "elsewhere"), separateRepository]) {
-        const elsewhere = yield* discoverClaudeSkills({ homePath: configDir }, cwd);
+        const elsewhere = yield* discoverClaudeSkills({ homePath: "", configDir }, cwd);
         assert.deepEqual(
           elsewhere.map((skill) => [skill.name, skill.scope, skill.path]),
           [
@@ -204,14 +204,79 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         path.join(worktree, ".git"),
       );
       assert.deepEqual(
-        yield* discoverClaudeSkills({ homePath: configDir }, worktree),
+        yield* discoverClaudeSkills({ homePath: "", configDir }, worktree),
         localSettings,
       );
       const linkedWorktree = path.join(tempDir, "linked-worktree");
       yield* fs.symlink(worktree, linkedWorktree);
       assert.deepEqual(
-        yield* discoverClaudeSkills({ homePath: configDir }, linkedWorktree),
+        yield* discoverClaudeSkills({ homePath: "", configDir }, linkedWorktree),
         localSettings,
+      );
+    }),
+  );
+
+  it.effect("resolves each install record's project repository once per discovery", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      // Real path: macOS temp dirs sit behind a /var -> /private/var symlink.
+      const tempDir = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" }),
+      );
+      const configDir = path.join(tempDir, "claude-home");
+      const workspace = path.join(tempDir, "workspace");
+      const otherProject = path.join(tempDir, "other", "packages", "app");
+      const sameRepoProject = path.join(workspace, "packages", "app");
+      yield* fs.makeDirectory(path.join(workspace, ".git"), { recursive: true });
+      yield* fs.makeDirectory(path.join(tempDir, "other", ".git"), { recursive: true });
+      yield* fs.makeDirectory(otherProject, { recursive: true });
+      yield* fs.makeDirectory(sameRepoProject, { recursive: true });
+      const elsewhereInstall = path.join(configDir, "plugins", "elsewhere");
+      const sameRepoInstall = path.join(configDir, "plugins", "same-repo");
+      yield* writeSkill(path.join(elsewhereInstall, "skills"), "elsewhere", "# Elsewhere");
+      yield* writeSkill(path.join(sameRepoInstall, "skills"), "same-repo", "# Same repo");
+      const records = Array.from({ length: 4 }, () => ({
+        scope: "project",
+        projectPath: otherProject,
+        installPath: elsewhereInstall,
+      }));
+      const plugins = ["a@shop", "b@shop", "c@shop"];
+      yield* fs.writeFileString(
+        path.join(configDir, "plugins", "installed_plugins.json"),
+        JSON.stringify({
+          plugins: {
+            ...Object.fromEntries(plugins.map((key) => [key, records])),
+            "d@shop": [
+              { scope: "project", projectPath: sameRepoProject, installPath: sameRepoInstall },
+            ],
+          },
+        }),
+      );
+      yield* fs.writeFileString(
+        path.join(configDir, "settings.json"),
+        JSON.stringify({
+          enabledPlugins: Object.fromEntries([...plugins, "d@shop"].map((key) => [key, true])),
+        }),
+      );
+
+      const probed: Array<string> = [];
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          exists: (target) => {
+            probed.push(target);
+            return fs.exists(target);
+          },
+        }),
+      );
+      assert.strictEqual(
+        probed.filter((target) => target === path.join(otherProject, ".git")).length,
+        1,
+      );
+      assert.deepEqual(
+        skills.map((skill) => skill.name),
+        ["d:same-repo"],
       );
     }),
   );
@@ -233,7 +298,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{"enabledPlugins":{"plugin@shop":true}}',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
       assert.deepEqual(
         planClaudeSkillDispatch(
           "$plugin:alias focus on auth",
@@ -272,7 +337,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       );
       const environment = { CLAUDE_CODE_PLUGIN_CACHE_DIR: "plugin-cache" };
       assert.deepEqual(
-        (yield* discoverClaudeSkills({ homePath: configDir }, workspace, environment)).map(
+        (yield* discoverClaudeSkills({ homePath: "", configDir }, workspace, environment)).map(
           (skill) => skill.name,
         ),
         ["plugin:root-alias"],
@@ -288,7 +353,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{"skills":["./custom","./escape","../../outside"]}',
       );
       assert.deepEqual(
-        (yield* discoverClaudeSkills({ homePath: configDir }, workspace, environment)).map(
+        (yield* discoverClaudeSkills({ homePath: "", configDir }, workspace, environment)).map(
           (skill) => skill.name,
         ),
         ["plugin:custom-review", "plugin:plain"],
@@ -324,7 +389,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         ["---", "name: deploy", "description: Deploy the app.", "---", "", "# Deploy"].join("\n"),
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
 
       assert.deepEqual(skills, [
         {
@@ -362,7 +427,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         ["---", "description: From an additional directory.", "---"].join("\n"),
       );
 
-      assert.deepEqual(yield* discoverClaudeSkills({ homePath: configDir }, workspace), []);
+      assert.deepEqual(yield* discoverClaudeSkills({ homePath: "", configDir }, workspace), []);
       for (const launchArgs of [
         `--add-dir "${extraDir}"`,
         `--add-dir="${extraDir}"`,
@@ -372,7 +437,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         `--add-dir "${extraDir}" --add-dir missing`,
         `--add-dir missing "${extraDir}"`,
       ]) {
-        const settings = { homePath: configDir, launchArgs };
+        const settings = { homePath: "", configDir, launchArgs };
         const skills = yield* discoverClaudeSkills(settings, workspace);
         assert.deepEqual(skills, [
           {
@@ -384,7 +449,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
           },
         ]);
       }
-      const settings = { homePath: configDir, launchArgs: `--add-dir "${extraDir}"` };
+      const settings = { homePath: "", configDir, launchArgs: `--add-dir "${extraDir}"` };
       const skills = yield* discoverClaudeSkills(settings, workspace);
       assert.deepEqual(
         planClaudeSkillDispatch(
@@ -404,7 +469,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       const projectSkills = yield* discoverClaudeSkills(settings, workspace);
       assert.equal(projectSkills[0]?.description, "Project copy.");
       for (const launchArgs of ["--add-dir", '--add-dir=""', '--add-dir "extra skills"']) {
-        const settings = { homePath: configDir, launchArgs };
+        const settings = { homePath: "", configDir, launchArgs };
         assert.deepEqual(yield* discoverClaudeSkills(settings), []);
       }
     }),
@@ -436,7 +501,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         ["---", "name: deploy", "description: Claude deploy.", "---"].join("\n"),
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
 
       assert.deepEqual(skills, [
         {
@@ -477,7 +542,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
           ].join("\n"),
         );
 
-        const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined);
+        const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, undefined);
 
         assert.deepEqual(skills, [
           {
@@ -519,7 +584,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       yield* fs.makeDirectory(skillsDir, { recursive: true });
       yield* fs.writeFileString(path.join(skillsDir, "README.md"), "not a skill");
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined);
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, undefined);
 
       // Claude falls back to directory names without frontmatter, but skips malformed frontmatter.
       assert.deepEqual(
@@ -554,15 +619,41 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         ["env-skill"],
       );
 
+      const isolatedHome = path.join(tempDir, "isolated-home");
+      yield* writeSkill(
+        path.join(isolatedHome, ".claude", "skills"),
+        "home-skill",
+        "---\nname: home-skill\n---",
+      );
+      for (const [config, environment] of [
+        [{ homePath: isolatedHome }, {}],
+        [{ homePath: "" }, { HOME: isolatedHome }],
+      ] as const) {
+        assert.deepEqual(
+          (yield* discoverClaudeSkills(config, undefined, environment)).map((skill) => skill.name),
+          ["home-skill"],
+        );
+      }
+      assert.deepEqual(
+        (yield* discoverClaudeSkills({ homePath: isolatedHome }, undefined, {
+          CLAUDE_CONFIG_DIR: environmentConfigDir,
+        })).map((skill) => skill.name),
+        ["env-skill"],
+      );
+
       const explicitHome = path.join(tempDir, "explicit-home");
       yield* writeSkill(
         path.join(explicitHome, "skills"),
         "explicit-skill",
         ["---", "name: explicit-skill", "---"].join("\n"),
       );
-      const explicitSkills = yield* discoverClaudeSkills({ homePath: explicitHome }, undefined, {
-        CLAUDE_CONFIG_DIR: environmentConfigDir,
-      });
+      const explicitSkills = yield* discoverClaudeSkills(
+        { homePath: "", configDir: explicitHome },
+        undefined,
+        {
+          CLAUDE_CONFIG_DIR: environmentConfigDir,
+        },
+      );
       assert.deepEqual(
         explicitSkills.map((skill) => skill.name),
         ["explicit-skill"],
@@ -628,7 +719,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "off-by-project": "off" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -657,7 +748,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       );
       yield* fs.writeFileString(path.join(configDir, "settings.json"), "{ not json");
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -685,7 +776,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "ask-matt": "user-invocable-only" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled, skill.userInvocationOnly === true]),
@@ -716,7 +807,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "unknown-mode": "some-future-mode", "boolean-false": false, "sibling-off": "off" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -765,7 +856,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "root-off-cwd-on": "on", "cwd-off-root-on": "off" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -801,7 +892,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "kept": "off" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir }, workspace);
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -829,7 +920,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "probe-alias-frontmatter": "off" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -858,7 +949,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         '{ "skillOverrides": { "probe-alias": "off" } }',
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
 
       assert.deepEqual(
         skills.map((skill) => [skill.name, skill.enabled]),
@@ -893,7 +984,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         ["---", "disable-model-invocation: off", "---", "", "# Body"].join("\n"),
       );
 
-      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      const skills = yield* discoverClaudeSkills({ homePath: "", configDir });
 
       assert.deepEqual(
         skills.map((skill) => [

@@ -323,7 +323,7 @@ it.effect.each([
               store,
               ProjectionStore.layer.pipe(Layer.provide(database)),
               common,
-              Layer.succeed(DocumentText.DocumentText, { ensure: () => Effect.succeed(undefined) }),
+              Layer.succeed(DocumentText.DocumentText, { ensure: () => Effect.undefined }),
             ),
           ),
         );

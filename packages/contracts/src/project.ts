@@ -105,6 +105,7 @@ export const ProjectScript = Schema.Struct({
   workingDirectory: Schema.optional(ProjectScriptWorkingDirectory),
   /** Run in the thread's worktree each time the thread settles. */
   runOnSettle: Schema.optional(Schema.Boolean),
+  stopOnSettle: Schema.optional(Schema.Boolean),
   async: Schema.optional(Schema.Boolean),
   previewUrl: Schema.optional(TrimmedNonEmptyString),
   autoOpenPreview: Schema.optional(Schema.Boolean),

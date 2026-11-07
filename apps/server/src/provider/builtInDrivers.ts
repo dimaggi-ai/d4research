@@ -40,6 +40,7 @@ import type {
   AnyProviderDriver,
   ProviderUsageReaderEnv,
 } from "@d4research/provider-core/server/driver";
+import { KiroDriver, type KiroDriverEnv } from "@d4research/provider-kiro/server";
 
 export type BuiltInDriversEnv =
   | DeepSeekDriverEnv
@@ -53,6 +54,7 @@ export type BuiltInDriversEnv =
   | FxDriverEnv
   | GrokDriverEnv
   | JunieDriverEnv
+  | KiroDriverEnv
   | OpenCodeDriverEnv
   | PiDriverEnv;
 
@@ -68,6 +70,7 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   FxDriver,
   OpenCodeDriver,
   AntigravityDriver,
+  KiroDriver,
   PiDriver,
   AcpRegistryDriver,
 ];

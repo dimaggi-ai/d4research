@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import { McpServer, McpSchema } from "effect/ai";
 import { BrainToolkit } from "./tools.ts";
 import { BrainToolkitHandlersLive } from "./handlers.ts";
-import { toolkitRegistration } from "../../McpHttpServer.ts";
+import { layerInProcessMcpServer, toolkitRegistration } from "../../McpHttpServer.ts";
 import * as Invocation from "../../McpInvocationContext.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
@@ -59,7 +59,7 @@ function call(
   input?: Record<string, unknown>,
 ) {
   const registration = toolkitRegistration(BrainToolkit, BrainToolkitHandlersLive).pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(layerInProcessMcpServer),
     Layer.provide(
       Layer.mock(Capture.SecondBrainCapture)({
         capture: () => Effect.succeed(["capture-proposal"]),

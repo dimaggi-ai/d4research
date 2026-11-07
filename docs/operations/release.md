@@ -8,7 +8,7 @@ This document covers the unified release workflow for stable and nightly desktop
 
 The d4research release line stays isolated from upstream's distribution channels and publishes
 under the `d4research` CLI package name. Every outward-facing job (npm publish, GitHub Release
-publication, the version-alignment commit to `main`, and the Discord announcement) is gated behind
+publication, the version-alignment commit to the repository's default branch, and the Discord announcement) is gated behind
 the repository variable `RELEASE_PUBLISH_ENABLED`.
 
 While that variable is unset, pushing a `v*.*.*` tag still runs the quality gates and builds every
@@ -20,14 +20,14 @@ the repository to enable publication, and review the CLI package name first.
 - Workflow: `.github/workflows/release.yml`
 - Triggers:
   - manual `workflow_dispatch` with `channel=stable`, the normal way to ship stable. Stable
-    and nightly dispatches must select `main`; preview may select any branch. The channel defaults
+    and nightly dispatches should select the repository's default branch; preview may select any branch. The channel defaults
     to preview so an omitted selection cannot publish a stable release.
   - push tag matching `v*.*.*` for a stable release of an explicit commit
   - scheduled nightly check every 30 minutes
   - manual `workflow_dispatch` with `channel=nightly`
   - manual `workflow_dispatch` with `channel=preview`, the maintainers' test train. It exercises the whole release flow (build, sign, notarize, smoke, publish) for a commit that end users must never receive, which is how an unmerged branch or a risky change gets a real release run before it lands. It builds the triggering commit with nightly's versioning under the `preview` prerelease identifier (`0.0.41-preview.<date>.<run>`) and publishes a GitHub prerelease plus the npm packages under the `preview` dist-tag. Preview is not on the schedule, no default npm dist-tag points at it, its desktop builds carry no update feed, and no updater manifest (`latest*.yml`, `nightly*.yml`, blockmaps) is attached, so a stable or nightly install cannot be offered one. The only ways onto it are downloading the release by hand, `npx d4research@preview`, `T3CODE_CHANNEL=preview` for the install scripts, or `d4research update --channel preview` from a terminal; each prints a warning, and the CLI asks for confirmation when the running build is not itself a preview. The release itself is named as a maintainer test build and its body is a warning rather than generated notes: a changelog of unmerged branch history is not a changelog, and nightly and stable notes are unaffected because each series resolves its previous tag within its own channel. Discord announcements are skipped. Keep it; it costs nothing when idle.
-- A manual stable release builds the commit of the latest published nightly, not `main` HEAD.
-  Nightly is the release candidate: verify the nightly, then promote it. Merges to `main` keep
+- A manual stable release builds the commit of the latest published nightly, rather than the default branch's current HEAD.
+  Nightly is the release candidate: verify the nightly, then promote it. Merges to the default branch keep
   landing while you verify and never leak into the stable build.
   - The version defaults to the one the nightly previewed (`0.0.39-nightly.*` ships as `0.0.39`).
     Pass the `version` input to override it, for example for a minor bump.
@@ -48,11 +48,11 @@ the repository to enable publication, and review the CLI package name first.
   - Automatically generated release notes are pinned to the previous tag in the same channel, so stable compares to the previous stable tag and nightly compares to the previous nightly tag.
   - The release job's **Write release notes** step (`scripts/generate-release-notes.ts`) builds the body: a computed header line, a short summary from `gpt-6.1-terra`, and GitHub's generated list folded under `<details>`. It needs the `OPENAI_API_KEY` secret. The desktop update popover shows up to seven highlights and the number of other fixes and performance improvements. Mobile-only commits count toward release totals but cannot be highlights. The offered release's age comes from the update feed's `releaseDate`. The nightly Discord post shows the part above `<details>`. If summary generation fails, the release uses GitHub's generated notes.
 - Includes Electron auto-update metadata (for example `latest*.yml`, `nightly*.yml`, and `*.blockmap`) in release assets.
-- Builds a self-contained CLI archive per platform (`d4research-<version>-<platform>-<arch>.tar.gz`, `.zip` on Windows) in the same job as that target's desktop artifact and attaches them to the GitHub Release with a `SHA256SUMS` file, on every channel, for five targets: macOS arm64, Linux x64 and arm64, Windows x64 and arm64. Every archive is built, signed, and smoke-tested on hardware of its own architecture. The CLI launcher supports those five targets. The macOS x64 desktop app uses Electron.
+- Builds a self-contained CLI archive per platform (`d4research-<version>-<platform>-<arch>.tar.gz`, `.zip` on Windows) in the same job as that target's desktop artifact and attaches them to the GitHub Release with a `SHA256SUMS` file, on every channel, for five targets: macOS arm64, Linux x64 and arm64, Windows x64 and arm64. Every archive is smoke-tested on hardware of its own architecture. Windows archives are built and signed on Linux. The CLI launcher supports these five targets; the macOS x64 desktop app uses Electron.
   - The archive holds the server as a Node single-executable (`scripts/build-cli-archive.ts`), so unpacking it needs neither Node, npm, nor a compiler. It is the only form in which d4research manages a runtime: the desktop's SSH environments, the boot service, `d4research update`, and the install scripts all download and verify this archive against `SHA256SUMS`. The `d4research` npm package exists for people who run `npx d4research` or `npm install -g d4research` themselves, and it downloads this same archive too; nothing in the product installs from npm. The source installers are `scripts/install.sh` and `scripts/install.ps1`.
-  - The executable is built with a Node that supports `--build-sea` (`VP_NODE_VERSION=26.8.2`, kept in step with `SEA_NODE_VERSION` in `apps/server/vite.config.ts`), while the repo stays on `engines.node`.
+  - The root `package.json` pins `engines.node` to the exact Node version used by development, CI and standalone executables. Keep it exact: cross-target builds download that version, and native executable builds reject a different host Node version. TEMPORARY: Linux arm64 executables build only on a Linux arm64 host and are injected with postject, because Node's `--build-sea` output cannot load on 16 or 64 KiB page kernels. Revert when [nodejs/node#67048](https://github.com/nodejs/node/issues/67048) is fixed. Runtime changes need a new d4research release version because installed runtimes are cached by that version.
   - macOS archives are signed with the Developer ID certificate and notarized when the Apple secrets are present (ad hoc otherwise, which still runs from `curl`/`tar` installs). Windows executables use the same Azure Trusted Signing setup as the installer. Every native addon in the macOS archive is signed too, since the hardened runtime refuses unsigned libraries.
-  - Each archive is extracted and executed on its build runner (`scripts/smoke-cli-archive.ts`) before it is uploaded.
+  - Each archive is extracted and executed on a matching platform and architecture (`scripts/smoke-cli-archive.ts`). macOS submits CLI notarization while desktop packaging continues, then waits for acceptance before uploading the CLI archive.
 - After the GitHub Release is published, publishes the `d4research` npm package with OIDC trusted publishing from the same workflow file. It is only a launcher (`scripts/npm-launcher/d4research.mjs`): on first run it downloads its exact version's CLI archive from the GitHub Release, verifies it against `SHA256SUMS`, and unpacks it into `<T3 home>/runtime/versions/<version>`, the layout the install scripts and `d4research update` share. The npm package contains the launcher; executable archives are release assets. Because the launcher reads from the release, `publish_cli` runs after `release`, never before.
   - stable releases publish npm dist-tag `latest`
   - nightly releases publish npm dist-tag `nightly`
@@ -68,7 +68,7 @@ credentials documented below:
 - `RELEASE_APP_ID`
 - `RELEASE_APP_PRIVATE_KEY`
 
-The finalize job uses them to commit and push aligned package versions to `main` as the Release App.
+The finalize job uses them to commit and push aligned package versions to the repository's default branch as the Release App.
 GitHub Release publication uses the repository-scoped workflow token so it has a rate-limit quota
 independent from the shared Release App installation.
 
@@ -76,7 +76,7 @@ independent from the shared Release App installation.
 
 - Workflow: `.github/workflows/release.yml`
 - Triggers:
-  - scheduled check every three hours
+  - scheduled check every 30 minutes
   - manual `workflow_dispatch` with `channel=nightly`
 - Runs the same desktop quality gates and artifact matrix as the tagged release flow.
 - Publishes a GitHub prerelease only:
@@ -87,7 +87,7 @@ independent from the shared Release App installation.
 - Uses the next stable patch version as the nightly base. For example, `0.0.17` produces nightlies on `0.0.18-nightly.*`.
 - Publishes Electron auto-update metadata to the dedicated `nightly` updater channel, so desktop users can opt into that track independently from stable.
 - Publishes the `d4research` npm launcher to the `nightly` npm dist-tag using the same nightly version.
-- Does not commit version bumps back to `main`.
+- Does not commit version bumps back to the default branch.
 
 ## Server self-update release invariant
 
@@ -98,7 +98,11 @@ release archives, and then its npm launcher, available before users can receive 
 
 The workflow enforces this ordering:
 
-1. `release` publishes the GitHub Release with the CLI archives and `SHA256SUMS`.
+1. `release` publishes the GitHub Release with the CLI archives and `SHA256SUMS`. Every channel
+   uploads to a draft and publishes only after all assets are attached, so a new version in the
+   desktop update feed already has its archives. **Update everything** relies on this to update
+   background-service hosts before npm has the version. Rerunning `release` after publication
+   replaces assets in a public release, so service updates can fail until the upload finishes.
 2. `publish_cli` publishes the `d4research@<version>` launcher, which downloads from that release, on every
    channel.
 
@@ -185,9 +189,11 @@ blockmaps, with a 60 MB maximum for a representative sidecar-to-sidecar update.
 
 ## 0) npm OIDC trusted publishing setup (CLI)
 
-After the GitHub Release is published, the workflow runs `node scripts/build-npm-launcher.ts`, then
-`node apps/server/scripts/cli.ts publish --packages-dir npm-packages`, which runs `npm publish` on
-`d4research.tgz`. That is the only package published per release.
+`build_bundle` builds the version-matched `d4research.tgz` with `node scripts/build-npm-launcher.ts` and
+uploads it as the `npm-launcher` artifact. After the GitHub Release is published, `publish_cli`
+checks out only what it needs to set up the project's Node.js, downloads that exact upload by the
+artifact ID `build_bundle` outputs (never by name), rejects a digest mismatch, checks the tarball version, and runs
+`npm publish --provenance` on it. That is the only package published per release.
 
 Checklist:
 
@@ -206,7 +212,7 @@ Checklist:
 
 With `RELEASE_PUBLISH_ENABLED=true`, there is no dry-run tag path. Pushing any accepted non-nightly tag, including
 `v0.0.0-test.1`, classifies the run as the stable channel. It publishes `d4research` with npm dist-tag
-`latest`, creates a real GitHub Release, and can commit a version bump to `main` in the finalize
+`latest`, creates a real GitHub Release, and can commit a version bump to the default branch in the finalize
 job. Do not push a test tag
 to validate the workflow.
 
@@ -215,7 +221,7 @@ has no per-run non-publishing `workflow_dispatch` mode. Use normal CI or local q
 validate checks and builds without shipping. To exercise the complete release graph at lower stable
 risk, manually dispatch `channel=nightly`; this still publishes a real nightly npm package, GitHub
 prerelease, and desktop updater release, but it does not update the stable channel or commit a
-version bump to `main`. Only run it when a real nightly release is acceptable.
+version bump to the default branch. Only run it when a real nightly release is acceptable.
 
 With publication enabled, manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
 secrets only makes platform artifacts unsigned; it does not prevent publication.
@@ -305,8 +311,9 @@ Checklist:
 4. Push tag.
 5. Verify workflow steps:
    - preflight passes
-   - all matrix builds pass
-   - `publish_cli` publishes the exact release version before the release job
+   - release quality checks pass
+   - `build_bundle` and all platform builds pass
+   - `publish_cli` publishes the exact release version after the release job
    - release job uploads expected files
 6. Smoke test downloaded artifacts.
 

@@ -56,6 +56,19 @@ describe("mobile file tree helpers", () => {
     ).toEqual(["src", "src/components", "src/components/App.tsx"]);
   });
 
+  it("uses server search paths and retains their ancestors without cached siblings", () => {
+    const tree = buildFileTree(entries);
+    for (const paths of [new Set(["src/components/App.tsx"]), new Set<string>()]) {
+      expect(
+        flattenFileTree({
+          nodes: tree,
+          expanded: new Set(["src"]),
+          searchResultPaths: paths,
+        }).map((item) => item.node.path),
+      ).toEqual(paths.size ? ["src", "src/components", "src/components/App.tsx"] : []);
+    }
+  });
+
   it("supports fuzzy, whitespace-separated path queries", () => {
     const tree = buildFileTree([
       {

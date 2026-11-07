@@ -94,6 +94,7 @@ vi.mock("@d4research/client-runtime/state/server", async (importOriginal) => {
 });
 vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: () => "shell" },
+  useEnvironmentThread: vi.fn(),
 }));
 vi.mock("../../lib/attachmentUploadQueue", () => ({
   useAttachmentUploadStore: (selector: (store: { uploadsByImageId: object }) => unknown) =>
@@ -123,8 +124,12 @@ vi.mock("../../assets/assetUrls", () => ({
     `/${environmentId}/attachments/${asset.attachmentId}`,
 }));
 vi.mock("../../hooks/useSettings", () => ({
+  updateClientSettings: vi.fn(async () => undefined),
   getClientSettings: vi.fn(),
   ensureClientSettingsHydrated: vi.fn(),
+  isClientSettingsHydrated: () => true,
+  useClientSettingsHydrated: () => true,
+  useEnvironmentSettings: () => ({ ...DEFAULT_CLIENT_SETTINGS, ...DEFAULT_SERVER_SETTINGS }),
   useEnvironmentIdentificationMode: () => "none",
   useMergedSettings: (settings: object) => ({ ...DEFAULT_CLIENT_SETTINGS, ...settings }),
   useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
@@ -133,7 +138,6 @@ vi.mock("../../hooks/useSettings", () => ({
   useEnvironmentModelPreferences: () => ({ favorites: [], hiddenModels: [] }),
   useToggleEnvironmentModelFavorite: () => vi.fn(),
 }));
-vi.mock("../../rpc/atomRegistry", () => ({ appAtomRegistry: {} }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
@@ -161,7 +165,8 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
         : null
       : mocks.allowed,
 }));
-vi.mock("../../state/server", () => ({
+vi.mock("../../state/server", async () => ({
+  primaryServerEnvironmentThemesAtom: (await import("effect/reactivity")).Atom.make([]),
   environmentServerConfigsAtom: vi.fn(),
   EMPTY_SERVER_PROVIDERS: [],
   primaryServerKeybindingsAtom: "keybindings",
@@ -223,6 +228,7 @@ vi.mock("../../state/entities", () => ({
   useEnvironmentSupportsServerBrowser: vi.fn(),
   readEnvironmentSupportsServerBrowser: vi.fn(),
   useEnvironmentThreadRefs: () => [],
+  useAnyEnvironmentHiding: () => false,
   useThreadRefs: () => [],
   useQuietThreadShell: () => null,
   useThreadShell: () =>
@@ -233,6 +239,12 @@ vi.mock("../../state/entities", () => ({
           runtime: mocks.running ? { status: "running" } : null,
         },
   useProjects: () => mocks.projects,
+  readProjects: () => mocks.projects,
+  readThreadShell: (ref: { threadId: string }) =>
+    mocks.threads.find((thread) => thread.id === ref.threadId) ?? null,
+  readThreadShells: () => mocks.threads,
+  readProject: (ref: { projectId: string } | null) =>
+    mocks.projects.find((project) => project.id === ref?.projectId) ?? null,
   useProject: (ref: { projectId: string } | null) =>
     mocks.projects.find((project) => project.id === ref?.projectId) ?? null,
   useThreadShells: () => {
@@ -325,13 +337,17 @@ vi.mock("../../state/shell", () => ({
 }));
 vi.mock("../../state/environments", () => ({
   usePrimaryEnvironmentId: vi.fn(),
+  readPrimaryEnvironmentId: () => environmentId,
+  useEnvironmentIdentities: () => [],
+  usePrimaryEnvironment: () => null,
   useEnvironmentProviders: () => new Map([[environmentId, mocks.providers]]),
   useEnvironment: () => ({ connection: { phase: mocks.connectionPhase } }),
   useEnvironments: () => ({
     environments: [{ environmentId: "test-environment", label: "Local" }],
   }),
 }));
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   Link: ({
     children,
     params,

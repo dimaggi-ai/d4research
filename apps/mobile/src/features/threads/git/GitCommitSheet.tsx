@@ -5,10 +5,8 @@ import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "reac
 import { formatDiffCount } from "@d4research/client-runtime/diff-count";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AndroidSheetHeader } from "../../../components/ui/AndroidScreenHeader";
-import { SymbolView } from "../../../components/ui/AppSymbol";
 import { ScreenContent } from "../../../components/ui/ScreenContent";
-import { NativeStackScreenOptions } from "../../../native/StackHeader";
+import { SymbolView } from "../../../components/ui/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../../components/ui/AppText";
 import { cn } from "../../../lib/cn";
 import { useEnvironmentQuery } from "../../../state/query";
@@ -84,7 +82,6 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
   const android = Platform.OS === "android";
   const header = (
     <SheetHeader
-      presentation={android ? "inline" : "native"}
       title="Commit changes"
       subtitle={gitStatus.data?.refName ?? "(detached HEAD)"}
       onCancel={() => navigation.goBack()}
@@ -100,25 +97,12 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
       className="bg-sheet ios:flex-1 android:flex-col-reverse"
       style={android ? { maxHeight: windowHeight * 0.92 } : undefined}
     >
-      {android ? (
-        <NativeStackScreenOptions
-          options={{
-            sheetCornerRadius: 28,
-            sheetAllowedDetents: "fitToContents",
-          }}
-        />
-      ) : null}
-      {Platform.OS === "android" ? (
-        <AndroidSheetHeader
-          title="Commit changes"
-          onBack={() => navigation.goBack()}
-          hideBottomBorder
-        />
-      ) : null}
-      {android ? null : header}
       <ScreenContent fitToContents>
         <ScrollView
           nestedScrollEnabled
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
           className="android:shrink android:grow-0 ios:flex-1"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -156,13 +140,13 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                 </Text>
               </View>
               <View className="flex-row items-center gap-2">
-                {!allSelected && isEditingFiles ? (
+                {allFiles.length > 0 && isEditingFiles ? (
                   <Pressable
                     className="rounded-full px-3 android:min-h-12 android:justify-center android:active:bg-subtle ios:bg-subtle ios:py-2"
-                    onPress={() => setExcludedFiles(new Set())}
+                    onPress={() => setExcludedFiles(allSelected ? new Set(allFiles.map((file) => file.path)) : new Set())}
                   >
                     <Text className="android:text-primary-text android:text-sm android:font-t3-medium ios:text-foreground ios:text-2xs ios:font-t3-bold ios:uppercase">
-                      Reset
+                      {allSelected ? "Deselect all" : "Select all"}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -302,7 +286,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
               <SheetActionButton
                 icon="arrow.branch"
                 label="Commit on new branch"
-                disabled={!canChangeThreadBranch || noneSelected || busy}
+                disabled={!canWriteSourceControl || !canChangeThreadBranch || noneSelected || busy}
                 onPress={() => void runCommitAction(true)}
               />
             </View>
@@ -318,7 +302,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
           </View>
         </ScrollView>
       </ScreenContent>
-      {android ? header : null}
+      {header}
     </View>
   );
 }

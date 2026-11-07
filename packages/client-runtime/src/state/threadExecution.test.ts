@@ -14,6 +14,7 @@ import {
   type OrchestrationV2RunStatus,
 } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
+import { createModelCapabilities, createModelSelection } from "@d4research/shared/model";
 import { usageLimitBlockedRun } from "@d4research/shared/orchestrationV2ThreadError";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -22,10 +23,12 @@ import {
   deriveReportedModelSelection,
   deriveLatestThreadRun,
   deriveProviderSubagentStatus,
+  deriveProviderExtensionStatuses,
   deriveResumableRunId,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveThreadRuntime,
+  formatModelSelectionEffort,
   isBackgroundWorkStopPending,
   presentPendingBackgroundWork,
   presentProviderGoal,
@@ -57,6 +60,77 @@ function run(id: string, ordinal: number, status: OrchestrationV2RunStatus) {
 }
 
 describe("thread execution presentation", () => {
+  it("shows extension statuses only from the selected provider's current live session", () => {
+    const instanceId = v2Projection.thread.modelSelection.instanceId;
+    const providerThreadId = ProviderThreadId.make("native-status-thread");
+    const sessionId = ProviderSessionId.make("native-status-session");
+    const statuses = [{ key: "watch", text: "Watching" }];
+    const projection = {
+      thread: { ...v2Projection.thread, activeProviderThreadId: providerThreadId },
+      providerThreads: [
+        { id: providerThreadId, providerSessionId: sessionId, providerInstanceId: instanceId },
+      ],
+      providerSessions: [
+        {
+          id: sessionId,
+          providerInstanceId: instanceId,
+          status: "ready" as const,
+          extensionStatuses: statuses,
+        },
+      ],
+    };
+    expect(deriveProviderExtensionStatuses(projection)).toEqual(statuses);
+    expect(
+      deriveProviderExtensionStatuses({
+        ...projection,
+        providerSessions: [
+          ...projection.providerSessions,
+          {
+            ...projection.providerSessions[0]!,
+            id: ProviderSessionId.make("unrelated"),
+            extensionStatuses: [{ key: "wrong", text: "Wrong session" }],
+          },
+        ],
+      }),
+    ).toEqual(statuses);
+    expect(
+      deriveProviderExtensionStatuses({
+        ...projection,
+        providerSessions: [{ ...projection.providerSessions[0]!, status: "stopped" }],
+      }),
+    ).toEqual([]);
+    expect(
+      deriveProviderExtensionStatuses({
+        ...projection,
+        providerSessions: [{ ...projection.providerSessions[0]!, status: "error" }],
+      }),
+    ).toEqual(statuses);
+    expect(
+      deriveProviderExtensionStatuses({
+        ...projection,
+        providerSessions: [
+          { ...projection.providerSessions[0]!, status: "error", extensionStatuses: [] },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      deriveProviderExtensionStatuses({
+        ...projection,
+        providerSessions: [{ ...projection.providerSessions[0]!, extensionStatuses: undefined }],
+      }),
+    ).toEqual([]);
+    expect(
+      deriveProviderExtensionStatuses({
+        ...projection,
+        thread: {
+          ...projection.thread,
+          modelSelection: { instanceId: ProviderInstanceId.make("other"), model: "default" },
+        },
+      }),
+    ).toEqual([]);
+    expect(deriveProviderExtensionStatuses(null)).toEqual([]);
+  });
+
   it("derives the current root failure without inheriting errors from children or previous runs", () => {
     const failed = { ...run("limited", 1, "failed"), rootNodeId: NodeId.make("root") };
     const item = {
@@ -513,42 +587,36 @@ describe("resolveThreadWorkPhase", () => {
   });
 });
 
-describe("resolveThreadWorkPhase", () => {
-  const tasks = [{ taskId: "verification", kind: "command" as const }];
-  it.each(["preparing", "queued", "starting", "running"] as const)(
-    "keeps a foreground %s turn Working even if an older background roster remains",
-    (status) => {
-      expect(resolveThreadWorkPhase({ runtime: { status }, pendingBackgroundTasks: tasks })).toBe(
-        "working",
-      );
-    },
-  );
-  it.each(["idle", "completed", "waiting", "interrupted", "cancelled"] as const)(
-    "shows Monitoring after the model responds with status %s and only background work remains",
-    (status) => {
-      expect(resolveThreadWorkPhase({ runtime: { status }, pendingBackgroundTasks: tasks })).toBe(
-        "waiting",
-      );
-    },
-  );
-  it("retains runless watches and returns to Ready after the background roster clears", () => {
-    expect(resolveThreadWorkPhase({ runtime: null, pendingBackgroundTasks: tasks })).toBe(
-      "waiting",
+describe("formatModelSelectionEffort", () => {
+  it("labels an old Ultracode effort by the effort it runs at", () => {
+    const models = [
+      {
+        slug: "claude-opus-5-5",
+        name: "Claude Opus 5.5",
+        isCustom: false,
+        capabilities: createModelCapabilities({
+          optionDescriptors: [
+            {
+              id: "effort",
+              label: "Reasoning",
+              type: "select",
+              options: [
+                { id: "high", label: "High", isDefault: true },
+                { id: "xhigh", label: "Extra High" },
+              ],
+            },
+            { id: "ultracode", label: "Ultracode", type: "boolean" },
+          ],
+        }),
+      },
+    ];
+    const selection = createModelSelection(
+      ProviderInstanceId.make("claudeAgent"),
+      "claude-opus-5-5",
+      [{ id: "effort", value: "ultracode" }],
     );
-    expect(
-      resolveThreadWorkPhase({ runtime: { status: "completed" }, pendingBackgroundTasks: [] }),
-    ).toBeNull();
-    expect(resolveThreadWorkPhase({ runtime: { status: "idle" } })).toBeNull();
-  });
-  it("does not claim Monitoring for failed or limited turns with a lingering roster", () => {
-    expect(
-      resolveThreadWorkPhase({ runtime: { status: "failed" }, pendingBackgroundTasks: tasks }),
-    ).toBeNull();
-  });
-  it("keeps checkpoint-only waiting separate from background monitoring", () => {
-    expect(
-      resolveThreadWorkPhase({ runtime: { status: "waiting" }, pendingBackgroundTasks: [] }),
-    ).toBe("working");
+
+    expect(formatModelSelectionEffort(selection, models)).toBe("Extra High");
   });
 });
 

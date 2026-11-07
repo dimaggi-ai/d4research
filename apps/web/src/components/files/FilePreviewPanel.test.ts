@@ -14,7 +14,6 @@ import {
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
   resolveSiblingLookupRoot,
-  setMarkdownTaskChecked,
   shouldShowFileExplorer,
   siblingWorktreeLabel,
   shouldRenderMarkdownPreview,
@@ -79,21 +78,6 @@ describe("isMarkdownPreviewFile", () => {
     expect(isMarkdownPreviewFile("docs/guide.MARKDOWN")).toBe(true);
     expect(isMarkdownPreviewFile("docs/guide.mdown")).toBe(true);
     expect(isMarkdownPreviewFile("docs/guide.mkd")).toBe(true);
-  });
-});
-
-describe("setMarkdownTaskChecked", () => {
-  const markdown = "- [ ] First\n- [x] Second\n";
-
-  it("checks and unchecks the task marker at the supplied offset", () => {
-    expect(setMarkdownTaskChecked(markdown, 2, true)).toBe("- [x] First\n- [x] Second\n");
-    expect(setMarkdownTaskChecked(markdown, 14, false)).toBe("- [ ] First\n- [ ] Second\n");
-    expect(setMarkdownTaskChecked("1. [X] Ordered\n", 3, false)).toBe("1. [ ] Ordered\n");
-  });
-
-  it("leaves the document unchanged for a stale or invalid marker offset", () => {
-    expect(setMarkdownTaskChecked(markdown, 0, true)).toBe(markdown);
-    expect(setMarkdownTaskChecked(markdown, 200, true)).toBe(markdown);
   });
 });
 

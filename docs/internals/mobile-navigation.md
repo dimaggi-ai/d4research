@@ -6,6 +6,8 @@ allows UIKit to animate the header between these routes. The iPad sidebar
 maintains a separate, single-screen stack, while Android uses its own in-flow
 headers.
 
+See [Mobile layout](./mobile-layout.md) for columns, sheets, and panes.
+
 Home and the iPad sidebar render their brand and connection status through
 `headerTitle`, keeping `Threads` as the route title. The editor-style native bar
 aligns that title on the leading side. Do not model the brand as a toolbar button:
@@ -24,6 +26,19 @@ native scroll-edge fade. The screens patch gives custom title subviews an empty,
 non-interactive native label matching their bounds. This supplies the fade's
 geometry without drawing anything or turning the title back into a toolbar item.
 Check the top scroll fade as well as push/pop when changing these title views.
+
+Opening a page has two intents:
+
+- **Select** shows a thread or pull request as the workspace's only page, the
+  way a list row does. Everything that selects (rows, the command palette,
+  compose, notifications, deep links) uses
+  [`selectWorkspaceDetail`](../../apps/mobile/src/features/layout/workspace/workspace-detail-selection.ts),
+  which the root stack's router handles. The resulting stack is the same on
+  phones, collapsed splits, and expanded splits. Only route keys differ: the
+  page already showing keeps its key, so the detail column updates in place
+  instead of pushing.
+- **Drill in** opens a page over the current one so Back returns, with
+  `StackActions.push`.
 
 The react-native-screens patch caches leading, trailing, and center item groups
 independently. A button can belong to only one group: constructing another group

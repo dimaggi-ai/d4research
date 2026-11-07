@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@d4research/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -236,7 +237,7 @@ export class MobileDatabase extends Context.Service<
       updatedAt: number,
     ) => Effect.Effect<void, MobileDatabaseError>;
   }
->()("@d4research/mobile/persistence/MobileDatabase") {}
+>()("@d4research/mobile/persistence/mobile-database/MobileDatabase") {}
 
 const makeAvailable = Effect.gen(function* () {
   const database = yield* Effect.acquireRelease(
@@ -289,8 +290,9 @@ const makeAvailable = Effect.gen(function* () {
   });
 
   return MobileDatabase.of({
-    loadCache: Effect.fn("MobileDatabase.loadCache")((environmentId, kind, cacheKey) =>
-      Effect.tryPromise({
+    loadCache: Effect.fn("MobileDatabase.loadCache")(function* (environmentId, kind, cacheKey) {
+      const now = yield* Clock.currentTimeMillis;
+      const row = yield* Effect.tryPromise({
         try: () =>
           database.getFirstAsync<{ readonly payload: string }>(
             `SELECT payload
@@ -300,11 +302,12 @@ const makeAvailable = Effect.gen(function* () {
             environmentId,
             kind,
             cacheKey,
-            Date.now() - 30 * 24 * 60 * 60_000,
+            now - 30 * 24 * 60 * 60_000,
           ),
         catch: databaseError("load-cache"),
-      }).pipe(Effect.map((row) => Option.fromNullishOr(row?.payload))),
-    ),
+      });
+      return Option.fromNullishOr(row?.payload);
+    }),
     listCache: Effect.fn("MobileDatabase.listCache")((kind) =>
       Effect.tryPromise({
         try: () =>
@@ -317,34 +320,36 @@ const makeAvailable = Effect.gen(function* () {
     ),
     saveCache: Effect.fn("MobileDatabase.saveCache")(
       (environmentId, kind, cacheKey, schemaVersion, payload) =>
-        Effect.tryPromise({
-          try: async () => {
-            // Diffs can be large. Keep the offline PR cache within 32 MiB and 256
-            // responses per environment, and don't let one huge diff evict it all.
-            if (
-              kind === "pull-request" &&
-              new TextEncoder().encode(payload).length > 4 * 1024 * 1024
-            )
-              return;
-            const save = async (transaction: SQLiteDatabase) => {
-              await transaction.runAsync(
-                `INSERT INTO client_cache
+        Clock.currentTimeMillis.pipe(
+          Effect.flatMap((now) =>
+            Effect.tryPromise({
+              try: async () => {
+                // Diffs can be large. Keep the offline PR cache within 32 MiB and 256
+                // responses per environment, and don't let one huge diff evict it all.
+                if (
+                  kind === "pull-request" &&
+                  new TextEncoder().encode(payload).length > 4 * 1024 * 1024
+                )
+                  return;
+                const save = async (transaction: SQLiteDatabase) => {
+                  await transaction.runAsync(
+                    `INSERT INTO client_cache
                   (environment_id, kind, cache_key, schema_version, payload, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT (environment_id, kind, cache_key) DO UPDATE SET
                    schema_version = excluded.schema_version,
                    payload = excluded.payload,
                    updated_at = excluded.updated_at`,
-                environmentId,
-                kind,
-                cacheKey,
-                schemaVersion,
-                payload,
-                Date.now(),
-              );
-              if (kind === "pull-request") {
-                await transaction.runAsync(
-                  `DELETE FROM client_cache WHERE environment_id = ? AND kind = 'pull-request'
+                    environmentId,
+                    kind,
+                    cacheKey,
+                    schemaVersion,
+                    payload,
+                    now,
+                  );
+                  if (kind === "pull-request") {
+                    await transaction.runAsync(
+                      `DELETE FROM client_cache WHERE environment_id = ? AND kind = 'pull-request'
                    AND cache_key IN (
                      SELECT cache_key FROM (
                        SELECT cache_key, updated_at,
@@ -355,16 +360,19 @@ const makeAvailable = Effect.gen(function* () {
                        FROM client_cache WHERE environment_id = ? AND kind = 'pull-request'
                      ) WHERE position > 256 OR total_bytes > 33554432 OR updated_at < ?
                    )`,
-                  environmentId,
-                  environmentId,
-                  Date.now() - 30 * 24 * 60 * 60_000,
-                );
-              }
-            };
-            await save(database);
-          },
-          catch: databaseError("save-cache"),
-        }).pipe(Effect.asVoid),
+                      environmentId,
+                      environmentId,
+                      now - 30 * 24 * 60 * 60_000,
+                    );
+                  }
+                };
+                await save(database);
+              },
+              catch: databaseError("save-cache"),
+            }),
+          ),
+          Effect.asVoid,
+        ),
     ),
     removeCache: Effect.fn("MobileDatabase.removeCache")((environmentId, kind, cacheKey) =>
       Effect.tryPromise({
@@ -456,16 +464,16 @@ const makeAvailable = Effect.gen(function* () {
 function makeUnavailable(error: MobileDatabaseError): MobileDatabase["Service"] {
   const fail = Effect.fail(error);
   return MobileDatabase.of({
-    loadCache: () => fail,
-    listCache: () => fail,
-    saveCache: () => fail,
-    removeCache: () => fail,
-    clearCacheKind: () => fail,
-    clearEnvironmentCache: () => fail,
+    loadCache: Effect.fn("MobileDatabase.loadCache")(() => fail),
+    listCache: Effect.fn("MobileDatabase.listCache")(() => fail),
+    saveCache: Effect.fn("MobileDatabase.saveCache")(() => fail),
+    removeCache: Effect.fn("MobileDatabase.removeCache")(() => fail),
+    clearCacheKind: Effect.fn("MobileDatabase.clearCacheKind")(() => fail),
+    clearEnvironmentCache: Effect.fn("MobileDatabase.clearEnvironmentCache")(() => fail),
     clearAllCaches: fail,
     inspectCaches: fail,
     loadPreferencesJson: fail,
-    savePreferencesJson: () => fail,
+    savePreferencesJson: Effect.fn("MobileDatabase.savePreferencesJson")(() => fail),
   });
 }
 

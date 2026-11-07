@@ -195,8 +195,8 @@ const make = Effect.gen(function* () {
     };
   };
   return SecondBrainIndex.of({
-    metadata: (vault) => run(() => metadata(vault)),
-    captureCounts: (vault) =>
+    metadata: Effect.fn("SecondBrainIndex.metadata")((vault) => run(() => metadata(vault))),
+    captureCounts: Effect.fn("SecondBrainIndex.captureCounts")((vault) =>
       run(() => {
         const rows = db
           .prepare(
@@ -208,7 +208,8 @@ const make = Effect.gen(function* () {
           failed: Number(rows.find((r) => r.state === "failed")?.count ?? 0),
         };
       }),
-    completedCaptureRun: (vault, thread) =>
+    ),
+    completedCaptureRun: Effect.fn("SecondBrainIndex.completedCaptureRun")((vault, thread) =>
       run(() =>
         Number(
           db
@@ -218,7 +219,8 @@ const make = Effect.gen(function* () {
             .get(vault, thread)?.ordinal ?? 0,
         ),
       ),
-    enqueueCapture: (job) =>
+    ),
+    enqueueCapture: Effect.fn("SecondBrainIndex.enqueueCapture")((job) =>
       run(() => {
         db.prepare("INSERT OR IGNORE INTO brain_capture_jobs VALUES(?,?,?)").run(
           job.id,
@@ -231,7 +233,8 @@ const make = Effect.gen(function* () {
           ),
         ) as CaptureJob;
       }),
-    saveCapture: (job) =>
+    ),
+    saveCapture: Effect.fn("SecondBrainIndex.saveCapture")((job) =>
       run(() => {
         db.prepare("UPDATE brain_capture_jobs SET state=?, document=? WHERE id=?").run(
           job.state,
@@ -239,7 +242,8 @@ const make = Effect.gen(function* () {
           job.id,
         );
       }),
-    pendingCaptures: () =>
+    ),
+    pendingCaptures: Effect.fn("SecondBrainIndex.pendingCaptures")(() =>
       run(() =>
         db
           .prepare(
@@ -248,32 +252,37 @@ const make = Effect.gen(function* () {
           .all()
           .map((r) => JSON.parse(String(r.document)) as CaptureJob),
       ),
-    captureCursor: () =>
+    ),
+    captureCursor: Effect.fn("SecondBrainIndex.captureCursor")(() =>
       run(() =>
         Number(
           db.prepare("SELECT sequence FROM brain_capture_cursor WHERE id=1").get()?.sequence ?? 0,
         ),
       ),
-    setCaptureCursor: (sequence) =>
+    ),
+    setCaptureCursor: Effect.fn("SecondBrainIndex.setCaptureCursor")((sequence) =>
       run(() => {
         db.prepare(
           "INSERT INTO brain_capture_cursor VALUES(1,?) ON CONFLICT(id) DO UPDATE SET sequence=max(sequence,excluded.sequence)",
         ).run(sequence);
       }),
-    deliveredGeneration: (vault, thread) =>
+    ),
+    deliveredGeneration: Effect.fn("SecondBrainIndex.deliveredGeneration")((vault, thread) =>
       run(() => {
         const row = db
           .prepare("SELECT generation FROM brain_deliveries WHERE vault=? AND thread=?")
           .get(vault, thread);
         return row ? Number(row.generation) : null;
       }),
-    markDelivered: (vault, thread, generation) =>
+    ),
+    markDelivered: Effect.fn("SecondBrainIndex.markDelivered")((vault, thread, generation) =>
       run(() => {
         db.prepare(
           "INSERT INTO brain_deliveries VALUES(?,?,?) ON CONFLICT(vault,thread) DO UPDATE SET generation=excluded.generation",
         ).run(vault, thread, generation);
       }),
-    snapshot: (vault) =>
+    ),
+    snapshot: Effect.fn("SecondBrainIndex.snapshot")((vault) =>
       run(() => {
         const meta = metadata(vault);
         const cached = snapshots.get(vault);
@@ -293,92 +302,95 @@ const make = Effect.gen(function* () {
         snapshots.set(vault, snapshot);
         return snapshot;
       }),
-    reconcile: (vault, notes, timestamp, truncated, rebuild = false) =>
-      run(() =>
-        transaction(() => {
-          const existing = new Map(
-            db
-              .prepare("SELECT path,hash FROM notes WHERE vault=?")
-              .all(vault)
-              .map((r) => [String(r.path), String(r.hash)]),
-          );
-          const changed =
-            notes.length !== existing.size ||
-            notes.some((n) => existing.get(n.document.path) !== n.document.hash);
-          const incoming = new Set(notes.map((n) => n.document.path));
-          const remove = (file: string) => {
-            db.prepare("DELETE FROM chunks WHERE vault=? AND path=?").run(vault, file);
-            db.prepare("DELETE FROM links WHERE vault=? AND source=?").run(vault, file);
-            db.prepare("DELETE FROM notes WHERE vault=? AND path=?").run(vault, file);
-          };
-          for (const file of existing.keys()) if (!incoming.has(file)) remove(file);
-          for (const { document: note, mtime, size } of notes) {
-            if (!rebuild && existing.get(note.path) === note.hash) {
-              db.prepare("UPDATE notes SET mtime=?,size=? WHERE vault=? AND path=?").run(
+    ),
+    reconcile: Effect.fn("SecondBrainIndex.reconcile")(
+      (vault, notes, timestamp, truncated, rebuild = false) =>
+        run(() =>
+          transaction(() => {
+            const existing = new Map(
+              db
+                .prepare("SELECT path,hash FROM notes WHERE vault=?")
+                .all(vault)
+                .map((r) => [String(r.path), String(r.hash)]),
+            );
+            const changed =
+              notes.length !== existing.size ||
+              notes.some((n) => existing.get(n.document.path) !== n.document.hash);
+            const incoming = new Set(notes.map((n) => n.document.path));
+            const remove = (file: string) => {
+              db.prepare("DELETE FROM chunks WHERE vault=? AND path=?").run(vault, file);
+              db.prepare("DELETE FROM links WHERE vault=? AND source=?").run(vault, file);
+              db.prepare("DELETE FROM notes WHERE vault=? AND path=?").run(vault, file);
+            };
+            for (const file of existing.keys()) if (!incoming.has(file)) remove(file);
+            for (const { document: note, mtime, size } of notes) {
+              if (!rebuild && existing.get(note.path) === note.hash) {
+                db.prepare("UPDATE notes SET mtime=?,size=? WHERE vault=? AND path=?").run(
+                  mtime,
+                  size,
+                  vault,
+                  note.path,
+                );
+                continue;
+              }
+              remove(note.path);
+              db.prepare("INSERT INTO notes VALUES(?,?,?,?,?,?)").run(
+                vault,
+                note.path,
+                note.hash,
+                JSON.stringify(note),
                 mtime,
                 size,
-                vault,
-                note.path,
               );
-              continue;
+              for (const [ordinal, chunk] of note.chunks.entries())
+                db.prepare(
+                  "INSERT INTO chunks(vault,path,ordinal,title,heading,tags,kind,start_line,end_line,hash,text) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                ).run(
+                  vault,
+                  note.path,
+                  ordinal,
+                  note.title,
+                  chunk.heading,
+                  JSON.stringify(note.metadata.tags ?? []),
+                  note.kind,
+                  chunk.startLine,
+                  chunk.endLine,
+                  note.hash,
+                  chunk.text,
+                );
+              for (const link of note.links)
+                db.prepare("INSERT INTO links VALUES(?,?,?,?,?,?)").run(
+                  vault,
+                  note.path,
+                  link.target,
+                  link.fragment,
+                  link.line,
+                  Number(link.relative),
+                );
             }
-            remove(note.path);
-            db.prepare("INSERT INTO notes VALUES(?,?,?,?,?,?)").run(
-              vault,
-              note.path,
-              note.hash,
-              JSON.stringify(note),
-              mtime,
-              size,
-            );
-            for (const [ordinal, chunk] of note.chunks.entries())
-              db.prepare(
-                "INSERT INTO chunks(vault,path,ordinal,title,heading,tags,kind,start_line,end_line,hash,text) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-              ).run(
-                vault,
-                note.path,
-                ordinal,
-                note.title,
-                chunk.heading,
-                JSON.stringify(note.metadata.tags ?? []),
-                note.kind,
-                chunk.startLine,
-                chunk.endLine,
-                note.hash,
-                chunk.text,
-              );
-            for (const link of note.links)
-              db.prepare("INSERT INTO links VALUES(?,?,?,?,?,?)").run(
-                vault,
-                note.path,
-                link.target,
-                link.fragment,
-                link.line,
-                Number(link.relative),
-              );
-          }
-          db.prepare(
-            "INSERT INTO vaults VALUES(?,1,?,?) ON CONFLICT(root) DO UPDATE SET generation=generation+?,indexed_at=excluded.indexed_at,truncated=excluded.truncated",
-          ).run(vault, timestamp, Number(truncated), Number(changed));
-        }),
-      ).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            const meta = metadata(vault);
-            const cached = snapshots.get(vault);
-            if (cached?.generation === meta.generation)
-              Object.assign(cached, meta, {
-                notes: [...notes].sort((a, b) => a.document.path.localeCompare(b.document.path)),
-              });
-            else
-              snapshots.set(vault, {
-                notes: [...notes].sort((a, b) => a.document.path.localeCompare(b.document.path)),
-                ...meta,
-              });
+            db.prepare(
+              "INSERT INTO vaults VALUES(?,1,?,?) ON CONFLICT(root) DO UPDATE SET generation=generation+?,indexed_at=excluded.indexed_at,truncated=excluded.truncated",
+            ).run(vault, timestamp, Number(truncated), Number(changed));
           }),
+        ).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              const meta = metadata(vault);
+              const cached = snapshots.get(vault);
+              if (cached?.generation === meta.generation)
+                Object.assign(cached, meta, {
+                  notes: [...notes].sort((a, b) => a.document.path.localeCompare(b.document.path)),
+                });
+              else
+                snapshots.set(vault, {
+                  notes: [...notes].sort((a, b) => a.document.path.localeCompare(b.document.path)),
+                  ...meta,
+                });
+            }),
+          ),
         ),
-      ),
-    search: (vault, input, approvedOnly = false) =>
+    ),
+    search: Effect.fn("SecondBrainIndex.search")((vault, input, approvedOnly = false) =>
       run(() => {
         const terms = input.query.match(/[\p{L}\p{N}_]+/gu)?.slice(0, 64) ?? [];
         if (!terms.length) return [];
@@ -411,7 +423,8 @@ const make = Effect.gen(function* () {
           },
         }));
       }),
-    saveProposal: (proposal) =>
+    ),
+    saveProposal: Effect.fn("SecondBrainIndex.saveProposal")((proposal) =>
       run(() => {
         db.prepare(
           "INSERT INTO proposals VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,document=excluded.document",
@@ -424,7 +437,8 @@ const make = Effect.gen(function* () {
           JSON.stringify(proposal),
         );
       }),
-    proposal: (vault, id) =>
+    ),
+    proposal: Effect.fn("SecondBrainIndex.proposal")((vault, id) =>
       run(() => {
         const row = db
           .prepare("SELECT document FROM proposals WHERE vault=? AND id=?")
@@ -432,7 +446,8 @@ const make = Effect.gen(function* () {
         if (!row) throw new SecondBrainError({ code: "not_found" });
         return decodeProposal(row);
       }),
-    proposals: (vault, query, actor) =>
+    ),
+    proposals: Effect.fn("SecondBrainIndex.proposals")((vault, query, actor) =>
       run(() =>
         db
           .prepare(
@@ -449,7 +464,8 @@ const make = Effect.gen(function* () {
           )
           .map(decodeProposal),
       ),
-    duplicate: (vault, fingerprint) =>
+    ),
+    duplicate: Effect.fn("SecondBrainIndex.duplicate")((vault, fingerprint) =>
       run(() => {
         const row = db
           .prepare(
@@ -458,19 +474,22 @@ const make = Effect.gen(function* () {
           .get(vault, fingerprint);
         return row ? decodeProposal(row) : null;
       }),
-    audit: (entry) =>
+    ),
+    audit: Effect.fn("SecondBrainIndex.audit")((entry) =>
       run(() => {
         db.prepare(
           "INSERT INTO audit VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,document=excluded.document",
         ).run(entry.id || NodeCrypto.randomUUID(), entry.vault, entry.state, JSON.stringify(entry));
       }),
-    pendingAudits: (vault) =>
+    ),
+    pendingAudits: Effect.fn("SecondBrainIndex.pendingAudits")((vault) =>
       run(() =>
         db
           .prepare("SELECT document FROM audit WHERE vault=? AND state='prepared'")
           .all(vault)
           .map((r) => JSON.parse(String(r.document)) as AuditEntry),
       ),
+    ),
   });
 });
 export const layer = Layer.effect(SecondBrainIndex, make);

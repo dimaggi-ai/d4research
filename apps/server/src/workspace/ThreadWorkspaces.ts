@@ -14,7 +14,7 @@ import {
   threadHasWorkspaceBoundWork,
 } from "@d4research/shared/threadWorkspaces";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -49,7 +49,7 @@ const make = Effect.gen(function* () {
   const git = yield* GitWorkflowService;
   const engine = yield* ThreadManagementService.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const path = yield* Path.Path;
   const mutations = yield* Semaphore.make(1);
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -139,9 +139,7 @@ const make = Effect.gen(function* () {
     if (!status.isRepo) return yield* fail("The selected checkout is not a repository.");
     yield* engine.dispatch({
       type: "thread.metadata.update",
-      commandId: CommandId.make(
-        `server:workspace:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`,
-      ),
+      commandId: CommandId.make(`server:workspace:${yield* crypto.uuidV4()}`),
       threadId: ctx.thread.id,
       ...(ctx.workspace.primary
         ? {

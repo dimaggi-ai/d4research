@@ -1,7 +1,7 @@
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -98,7 +98,7 @@ export class InlineDelegationRunner extends Context.Service<
     Effect.gen(function* () {
       const context = yield* Effect.context<
         | SecondBrainService.SecondBrainService
-        | Crypto.Crypto
+        | SecureRandom.SecureRandom
         | FileSystem.FileSystem
         | HttpClient.HttpClient
         | Path.Path
@@ -110,7 +110,9 @@ export class InlineDelegationRunner extends Context.Service<
         | ServerSettingsService
       >();
       return InlineDelegationRunner.of({
-        run: (input) => runBoundedDelegation(input).pipe(Effect.provideContext(context)),
+        run: Effect.fn("InlineDelegationRunner.run")((input) =>
+          runBoundedDelegation(input).pipe(Effect.provideContext(context)),
+        ),
       });
     }),
   );

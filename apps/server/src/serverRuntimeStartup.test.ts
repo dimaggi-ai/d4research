@@ -198,8 +198,7 @@ it.effect.each([
         }),
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({
           managed: false,
-          // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-          prepareTrial: Effect.succeed(undefined),
+          prepareTrial: Effect.undefined,
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         // No provider logins or Connect link, so startup records no owners.

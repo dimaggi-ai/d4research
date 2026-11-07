@@ -1,4 +1,5 @@
 {
+  "extends": "./tsconfig.effect.json",
   "compilerOptions": {
     "target": "ESNext",
     "module": "NodeNext",
@@ -21,31 +22,38 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "namespaceImportPackages": ["@effect/platform-node", "effect"],
-        "effectFn": ["span", "inferred-span", "suggested-span"],
+        "namespaceImportPackages": [
+          "@effect/platform-node",
+          "effect"
+        ],
+        "effectFn": [
+          "span",
+          "inferred-span",
+          "suggested-span"
+        ],
         "diagnosticSeverity": {
-          "abortControllerInEffect": "error",
-          "runEffectInsideEffect": "error",
-          "flatMapConditionalToFilterOrFail": "error",
-          "catchConditionalRefailToCatchIf": "error",
-          "tryCatchInEffectGen": "error",
+          "abortControllerInEffect": "off",
+          "runEffectInsideEffect": "off",
+          "flatMapConditionalToFilterOrFail": "off",
+          "catchConditionalRefailToCatchIf": "off",
+          "tryCatchInEffectGen": "off",
           "schemaStructWithTag": "error",
-          "preferTypedSchemaDecoder": "error",
-          "catchUnfailableEffect": "error",
-          "raceFirstWithSleepToTimeout": "error",
+          "preferTypedSchemaDecoder": "off",
+          "catchUnfailableEffect": "off",
+          "raceFirstWithSleepToTimeout": "off",
           "redundantMapError": "error",
-          "optionMatchToFromOption": "error",
-          "catchToIgnore": "error",
+          "optionMatchToFromOption": "off",
+          "catchToIgnore": "off",
           "unnecessaryEffectGen": "error",
-          "allOfMapToForEach": "error",
-          "catchToOrElseSucceed": "error",
-          "unnecessaryFailYieldableError": "error",
-          "preferSucceedSomeOrNone": "error",
-          "effectSucceedWithVoid": "error",
+          "allOfMapToForEach": "off",
+          "catchToOrElseSucceed": "off",
+          "unnecessaryFailYieldableError": "off",
+          "preferSucceedSomeOrNone": "off",
+          "effectSucceedWithVoid": "off",
           "provideLayerSucceedToProvideService": "error",
           "flatMapIgnoredParamToAndThen": "error",
-          "mapSomeToAsSome": "error",
-          "unnecessaryPipeChain": "error",
+          "mapSomeToAsSome": "off",
+          "unnecessaryPipeChain": "off",
           "returnEffectInGen": "off",
           "effectFnOpportunity": "error",
           "anyUnknownInErrorContext": "error",
@@ -53,8 +61,6 @@
           "instanceOfSchema": "error",
           "deterministicKeys": "error",
           "strictEffectProvide": "off",
-          // We use Effect's unstable modules (http, sql) on purpose. These rules
-          // also make effect-tsgo 0.47+ report false TS2790 errors on `delete`.
           "unstableApiUsage": "off",
           "experimentalApiUsage": "off",
           "missingEffectServiceDependency": "error",
@@ -64,7 +70,7 @@
           "unknownInEffectCatch": "error",
           "strictBooleanExpressions": "off",
           "lazyEffect": "off",
-          "preferSchemaOverJson": "error",
+          "globalJsonInEffect": "error",
           "schemaSyncInEffect": "error",
           "cryptoRandomUUID": "error",
           "cryptoRandomUUIDInEffect": "error",
@@ -79,33 +85,57 @@
           "globalTimersInEffect": "error",
           "globalFetch": "error",
           "globalFetchInEffect": "error",
-          "abortControllerInEffect": "off",
-          "allOfMapToForEach": "off",
-          "catchUnfailableEffect": "off",
-          "catchConditionalRefailToCatchIf": "off",
-          "catchToIgnore": "off",
-          "catchToOrElseSucceed": "off",
-          "effectSucceedWithVoid": "off",
-          "flatMapConditionalToFilterOrFail": "off",
-          "layerMergeAllWithDependencies": "off",
-          "mapSomeToAsSome": "off",
-          "optionMatchToFromOption": "off",
-          "preferTypedSchemaDecoder": "off",
-          "preferSucceedSomeOrNone": "off",
-          "raceFirstWithSleepToTimeout": "off",
-          "runEffectInsideEffect": "off",
-          "schemaNumber": "off",
+          "acquireReleaseDisposable": "error",
+          "catchAllTagDispatchToCatchTag": "error",
+          "catchAllToMapError": "error",
+          "catchChainToFirstSuccessOf": "error",
+          "catchDieToOrDie": "error",
+          "catchIfTagToCatchTag": "error",
+          "catchRefailToTapError": "error",
+          "catchTagToCatchReason": "error",
+          "effectMapFlatten": "error",
+          "effectMapVoid": "error",
+          "effectSleepZeroToYieldNow": "error",
+          "effectSucceedWithUndefined": "error",
+          "errorPayloadShadowsName": "error",
+          "failCauseToConstructor": "error",
+          "flatMapIdentityToFlatten": "error",
+          "flatMapToMap": "error",
+          "flatMapToTap": "error",
+          "manualMetricTapToTrack": "error",
+          "mapConstToAs": "error",
+          "mapSomeCatchNoSuchElement": "error",
+          "matchBooleanToIsSuccess": "error",
+          "matchEffectToMapBoth": "error",
+          "matchEffectToMatch": "error",
+          "matchToResultOrOption": "error",
+          "multipleCatchTag": "error",
+          "preferUnsafeConstructor": "error",
+          "redundantOrDie": "error",
+          "redundantSchemaTagIdentifier": "error",
+          "resultMatchToFromResult": "error",
+          "runOfExitToRunExit": "error",
+          "suspendFailToFailSync": "error",
           "syncToSucceed": "off",
-          "tryCatchInEffectGen": "off",
-          "unnecessaryFailYieldableError": "off",
-          "unnecessaryPipeChain": "off"
+          "timeoutCatchTagToTimeoutOrElse": "error",
+          "unnecessaryPipe": "error",
+          "unnecessaryTypeofType": "error",
+          "effectTryWithoutCatch": "error",
+          "processEnvInEffect": "error",
+          "preferSchemaTaggedError": "error",
+          "extendsNativeError": "error",
+          "schemaNumber": "off",
+          "layerMergeAllWithDependencies": "off"
         },
         "overrides": [
           {
-            "include": ["**/*.test.ts", "**/*.test.tsx"],
+            "include": [
+              "**/*.test.ts",
+              "**/*.test.tsx"
+            ],
             "options": {
               "diagnosticSeverity": {
-                "preferSchemaOverJson": "off",
+                "globalJsonInEffect": "off",
                 "effectFnOpportunity": "off"
               }
             }
@@ -116,10 +146,19 @@
               "**/*.spec.tsx",
               "**/*.testkit.ts",
               "**/*.testkit.tsx",
-              "**/{test,tests,testkit,testing,fixtures,integration}/**",
-              "packages/provider-testing/**"
+              "**/test/**/*",
+              "**/tests/**/*",
+              "**/testkit/**/*",
+              "**/testing/**/*",
+              "**/fixtures/**/*",
+              "**/integration/**/*",
+              "packages/provider-testing/**/*"
             ],
-            "options": { "diagnosticSeverity": { "effectFnOpportunity": "off" } }
+            "options": {
+              "diagnosticSeverity": {
+                "effectFnOpportunity": "off"
+              }
+            }
           }
         ]
       }

@@ -1,5 +1,6 @@
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import { describe, expect, it } from "vite-plus/test";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -590,6 +591,7 @@ describe("research delegate handler", () => {
         projectionLayer,
         ResearchDelegationBudgetLive,
         NodeServices.layer,
+        NodeCrypto.layer,
         FetchHttpClient.layer,
         configLayer,
       );
@@ -989,6 +991,7 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* (
     }),
     ResearchDelegationBudgetLive,
     NodeServices.layer,
+    NodeCrypto.layer,
     FetchHttpClient.layer,
     ServerConfig.layerTest(process.cwd(), configBaseDir).pipe(Layer.provide(NodeServices.layer)),
   );

@@ -21,6 +21,9 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 
+// Derived so the rebrand pass cannot rewrite the compatibility alias this test pins.
+const LOWERCASE_APP_ID = "com.t3tools.T3Code".toLowerCase();
+
 interface RecordedRegistration {
   readonly directories: string[];
   readonly files: Array<{ readonly path: string; readonly content: string }>;
@@ -384,7 +387,7 @@ describe("DesktopLinuxUrlHandler", () => {
               if (!ChildProcess.isStandardCommand(command)) {
                 return yield* Effect.die("expected a single registration command");
               }
-              recorded.commands.push({ command: command.command, args: command.args });
+              recorded.commands.push({ command: command.command, args: command.args.map(String) });
               if (command.command !== stalledHelper) return mockProcess(0);
               const child = yield* realSpawner.spawn(
                 ChildProcess.make(
@@ -586,17 +589,17 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       assert.deepEqual(
         [...names].sort(),
         fixture.caseSensitive
-          ? ["com.t3tools.T3Code.png", "com.t3tools.t3code.png"]
-          : ["com.t3tools.t3code.png"],
+          ? ["com.t3tools.T3Code.png", `${LOWERCASE_APP_ID}.png`]
+          : [`${LOWERCASE_APP_ID}.png`],
       );
-      for (const name of ["com.t3tools.t3code", "com.t3tools.T3Code"]) {
+      for (const name of [LOWERCASE_APP_ID, "com.t3tools.T3Code"]) {
         const target = path.join(fixture.appsDir, `${name}.png`);
         assert.deepEqual([...(yield* fileSystem.readFile(target))], [...icon]);
         yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
       }
 
       yield* registerWithRealFileSystem(run);
-      for (const name of ["com.t3tools.t3code", "com.t3tools.T3Code"]) {
+      for (const name of [LOWERCASE_APP_ID, "com.t3tools.T3Code"]) {
         const info = yield* fileSystem.stat(path.join(fixture.appsDir, `${name}.png`));
         assert.equal(Option.getOrThrow(info.mtime).getTime(), fixture.pastSeconds * 1000);
       }
@@ -611,7 +614,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       const path = yield* Path.Path;
       const fixture = yield* themeIconFixture(new Uint8Array([1, 2, 3]));
       yield* fixture.seedCache;
-      const lower = path.join(fixture.appsDir, "com.t3tools.t3code.png");
+      const lower = path.join(fixture.appsDir, `${LOWERCASE_APP_ID}.png`);
       const upper = path.join(fixture.appsDir, "com.t3tools.T3Code.png");
       yield* fileSystem.writeFile(lower, new Uint8Array([3, 2, 1]));
       yield* fileSystem.writeFile(upper, new Uint8Array([1, 2, 3]));

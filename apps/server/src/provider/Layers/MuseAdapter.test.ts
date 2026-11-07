@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, assert } from "@effect/vitest";
 import {
@@ -21,7 +22,7 @@ interface LoggedT3CodeMcpServer {
 }
 
 const layer = ServerConfig.layerTest(process.cwd(), { prefix: "muse-adapter-test-" }).pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(McpProviderSessions.layer),
 );
 const setup = Effect.fn("setup")(function* (

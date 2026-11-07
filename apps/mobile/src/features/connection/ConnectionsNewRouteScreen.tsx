@@ -136,7 +136,7 @@ export function ConnectionsNewRouteScreen({
     async (pairingUrl: string) => {
       setIsSubmitting(true);
       onChangeConnectionPairingUrl(pairingUrl);
-      try {
+      await (async () => {
         const result = await onConnectPress(pairingUrl, params.routeFor);
         void Haptics.notificationAsync(
           AsyncResult.isSuccess(result)
@@ -150,9 +150,9 @@ export function ConnectionsNewRouteScreen({
             navigation.dispatch(StackActions.replace("Home"));
           }
         }
-      } finally {
+      })().finally(() => {
         setIsSubmitting(false);
-      }
+      });
     },
     [navigation, onChangeConnectionPairingUrl, onConnectPress, params.routeFor],
   );

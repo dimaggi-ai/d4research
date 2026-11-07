@@ -2035,7 +2035,7 @@ export default function FilePreviewPanel({
             contents={file.data.contents}
             workspaceMutationId={workspaceMutationId}
             key={`${activeCwd}:${relativePath}`}
-            readOnly={isHostFile || !canWriteFiles}
+            readOnly={isHostFile || !canWriteFiles || file.data.truncated}
             onPendingChange={onPendingChange}
           />
         ) : tableDelimiter && renderTable ? (

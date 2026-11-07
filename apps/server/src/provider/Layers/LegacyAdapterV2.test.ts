@@ -14,6 +14,7 @@ import {
   RuntimeItemId,
   RuntimeRequestId,
   type ProviderRuntimeEvent,
+  type ProviderSessionStartInput,
 } from "@d4research/contracts";
 import { makeLegacyAdapterV2, makeLegacyTurnTranslator } from "./LegacyAdapterV2.ts";
 
@@ -98,6 +99,88 @@ describe("custom-provider V2 event bridge", () => {
         }),
       );
     },
+  );
+
+  effectIt.effect.each(["agy", "junie"])(
+    "starts a fresh %s conversation when recovery replaces a cached native thread",
+    (kind) =>
+      Effect.gen(function* () {
+        const provider = ProviderDriverKind.make(kind);
+        const instanceId = ProviderInstanceId.make(kind);
+        const starts: ProviderSessionStartInput[] = [];
+        const unsupported = () => Effect.die("Unexpected native operation");
+        const adapter = makeLegacyAdapterV2(
+          {
+            provider,
+            capabilities: { sessionModelSwitch: "unsupported" },
+            startSession: (input) => {
+              starts.push(input);
+              return Effect.succeed({
+                provider,
+                threadId,
+                status: "ready" as const,
+                runtimeMode: input.runtimeMode,
+                resumeCursor: input.resumeCursor ?? { sessionId: `fresh-${starts.length}` },
+                createdAt: at,
+                updatedAt: at,
+              });
+            },
+            sendTurn: unsupported,
+            interruptTurn: unsupported,
+            respondToRequest: unsupported,
+            respondToUserInput: unsupported,
+            stopSession: () => Effect.void,
+            listSessions: () => Effect.succeed([]),
+            hasSession: () => Effect.succeed(starts.length > 0),
+            readThread: unsupported,
+            rollbackThread: unsupported,
+            stopAll: () => Effect.void,
+            streamEvents: Stream.never,
+          },
+          instanceId,
+        );
+        const modelSelection = { instanceId, model: "model" };
+        const runtimePolicy = {
+          cwd: "/workspace",
+          runtimeMode: "approval-required" as const,
+          interactionMode: "default" as const,
+        };
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("session"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const existingProviderThread = {
+          ...context.providerThread,
+          driver: provider,
+          providerInstanceId: instanceId,
+          nativeThreadRef: {
+            driver: provider,
+            nativeId: JSON.stringify({ sessionId: "old-conversation" }),
+            strength: "weak" as const,
+          },
+          firstRunOrdinal: 1,
+          lastRunOrdinal: 4,
+        };
+        const input = { threadId, modelSelection, runtimePolicy, existingProviderThread };
+        const original = yield* runtime.ensureThread(input);
+        expect(yield* runtime.ensureThread(input)).toBe(original);
+        expect(starts).toHaveLength(1);
+        expect(starts[0]?.resumeCursor).toEqual({ sessionId: "old-conversation" });
+
+        const replacement = yield* runtime.ensureThread({ ...input, forceNewNativeThread: true });
+        expect(starts).toHaveLength(2);
+        expect(starts[1]?.resumeCursor).toBeUndefined();
+        expect(replacement.id).toBe(original.id);
+        expect(replacement.nativeThreadRef?.nativeId).toBe(
+          JSON.stringify({ sessionId: "fresh-2" }),
+        );
+        expect(replacement.firstRunOrdinal).toBeNull();
+        expect(replacement.lastRunOrdinal).toBeNull();
+        expect(yield* runtime.ensureThread(input)).toBe(replacement);
+        expect(starts).toHaveLength(2);
+      }).pipe(Effect.scoped),
   );
 
   it("persists streamed assistant text and closes it before the terminal receipt", () => {

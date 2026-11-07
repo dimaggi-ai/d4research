@@ -2596,6 +2596,15 @@ describe("OrchestratorMcpService provider resolution", () => {
                         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
                         Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
                         Layer.mock(GitVcsDriver.GitVcsDriver)({
+                          resolvePrimaryRemoteName: () =>
+                            Effect.fail(
+                              new GitCommandError({
+                                operation: "resolvePrimaryRemoteName",
+                                command: "git remote",
+                                cwd: "/home/user",
+                                detail: "No git remote is configured.",
+                              }),
+                            ),
                           resolveCommit: (input) =>
                             isGit
                               ? Effect.succeed({ commitSha: "abc123" } as never)
@@ -2850,7 +2859,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                     : Effect.succeed(remote),
                 resolveDefaultBranchName: () => Effect.succeed(remoteDefault),
                 resolveCommit: ({ cwd, revision }) =>
-                  refs.includes(revision)
+                  revision === "HEAD" || refs.includes(revision)
                     ? Effect.succeed({ commitSha: "abc123" })
                     : Effect.fail(gitFailure(cwd, "Needed a single revision")),
               },

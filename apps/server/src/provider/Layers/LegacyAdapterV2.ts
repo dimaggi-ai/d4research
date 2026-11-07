@@ -566,7 +566,7 @@ export function makeLegacyAdapterV2(
         yield* Effect.addFinalizer(() => adapter.stopSession(input.threadId).pipe(Effect.ignore));
         const ensureThread: V2.ProviderAdapterV2SessionRuntime["ensureThread"] = (args) =>
           Effect.gen(function* () {
-            if (thread) return thread;
+            if (thread && !args.forceNewNativeThread) return thread;
             if (
               ["agy", "muse", "junie"].includes(driver) &&
               Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }))(
@@ -579,7 +579,14 @@ export function makeLegacyAdapterV2(
                 cause: "This native adapter cannot enforce an advisory read-only sandbox.",
               });
             }
-            const resumeCursor = args.existingProviderThread?.nativeThreadRef?.nativeId;
+            const previous = args.existingProviderThread ?? thread;
+            const existing = args.forceNewNativeThread ? undefined : previous;
+            if (args.forceNewNativeThread) {
+              thread = undefined;
+              translator = undefined;
+              nativeTurnId = undefined;
+            }
+            const resumeCursor = existing?.nativeThreadRef?.nativeId;
             const cursor = resumeCursor
               ? yield* Effect.try({ try: () => decodeCursor(resumeCursor), catch: protocol })
               : undefined;
@@ -609,9 +616,7 @@ export function makeLegacyAdapterV2(
                 ),
               );
             thread = {
-              id:
-                args.existingProviderThread?.id ??
-                ProviderThreadId.make(`${instanceId}:${input.threadId}`),
+              id: previous?.id ?? ProviderThreadId.make(`${instanceId}:${input.threadId}`),
               driver,
               providerInstanceId: instanceId,
               providerSessionId: input.providerSessionId,
@@ -620,11 +625,11 @@ export function makeLegacyAdapterV2(
               nativeThreadRef: null,
               nativeConversationHeadRef: null,
               status: "idle",
-              firstRunOrdinal: args.existingProviderThread?.firstRunOrdinal ?? null,
-              lastRunOrdinal: args.existingProviderThread?.lastRunOrdinal ?? null,
-              handoffIds: args.existingProviderThread?.handoffIds ?? [],
-              forkedFrom: args.existingProviderThread?.forkedFrom ?? null,
-              createdAt: args.existingProviderThread?.createdAt ?? now,
+              firstRunOrdinal: existing?.firstRunOrdinal ?? null,
+              lastRunOrdinal: existing?.lastRunOrdinal ?? null,
+              handoffIds: existing?.handoffIds ?? [],
+              forkedFrom: existing?.forkedFrom ?? null,
+              createdAt: existing?.createdAt ?? now,
               updatedAt: yield* DateTime.now,
             };
             yield* updateCursor(native);

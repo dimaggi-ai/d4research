@@ -181,6 +181,63 @@ describe("local DeepSeek adapter", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("clears native history and context when recovery forces a fresh thread", () =>
+    Effect.gen(function* () {
+      const requests: string[] = [];
+      const client = HttpClient.make((request) => {
+        if (request.body._tag === "Uint8Array")
+          requests.push(new TextDecoder().decode(request.body.body));
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(JSON.stringify(completion("old answer"))),
+          ),
+        );
+      });
+      const test = yield* open(client);
+      yield* test.runtime.injectHistory!({
+        providerThread: test.providerThread,
+        context: "old context",
+        messages: [],
+      });
+      yield* test.start(1, "old prompt");
+      yield* test.takeTurn;
+      const existingProviderThread = {
+        ...test.providerThread,
+        firstRunOrdinal: 1,
+        lastRunOrdinal: 1,
+      };
+      const input = {
+        threadId,
+        modelSelection: selection,
+        runtimePolicy: policy,
+        existingProviderThread,
+      };
+      yield* test.runtime.ensureThread(input);
+      yield* test.start(2, "continued prompt");
+      yield* test.takeTurn;
+      assert.deepStrictEqual(JSON.parse(requests[1] ?? "{}").messages.slice(-3), [
+        { role: "user", content: "old prompt" },
+        { role: "assistant", content: "old answer" },
+        { role: "user", content: "continued prompt" },
+      ]);
+
+      const fresh = yield* test.runtime.ensureThread({ ...input, forceNewNativeThread: true });
+      assert.equal(fresh.id, test.providerThread.id);
+      const snapshot = yield* test.runtime.readThreadSnapshot({ providerThread: fresh });
+      assert.deepStrictEqual(snapshot.providerTurns, []);
+      assert.deepStrictEqual(snapshot.messages, []);
+      assert.equal(fresh.firstRunOrdinal, null);
+      assert.equal(fresh.lastRunOrdinal, null);
+      yield* test.start(3, "fresh prompt");
+      yield* test.takeTurn;
+      const sent = JSON.parse(requests[2] ?? "{}").messages;
+      assert.equal(sent.length, 2);
+      assert.deepStrictEqual(sent[1], { role: "user", content: "fresh prompt" });
+      assert.equal(JSON.stringify(sent).includes("old context"), false);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect.each([
     ["HTTP failure", {}, 503, "transport"],
     [

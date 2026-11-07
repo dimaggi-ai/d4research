@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { environmentContextRecord } from "~/lib/composerContextRecords";
 import { EnvironmentContextChip } from "../EnvironmentContextChip";
+import { ThreadRouteView } from "../ThreadRouteView";
 
 // Vite's `?worker` import evaluates the worker script itself under Node, which needs `self`.
 vi.mock("@pierre/diffs/worker/worker.js?worker", () => ({ default: vi.fn() }));
@@ -25,8 +26,8 @@ const context = {
 describe("user message context presentation", () => {
   // The registry asserts every composer context kind at module load, so a missing handler
   // throws while the chat route's chunk loads and the app never renders.
-  it("initializes the thread view the chat route renders", async () => {
-    await expect(import("../ThreadRouteView")).resolves.toHaveProperty("ThreadRouteView");
+  it("initializes the thread view the chat route renders", () => {
+    expect(ThreadRouteView).toBeTypeOf("function");
   });
 
   it("renders a sent machine mention as a machine chip", async () => {

@@ -49,7 +49,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const [rootHeight, setRootHeight] = useState<number | null>(null);
   const [overlay, setOverlay] = useState<OverlayFrame | null>(null);
   const windowHinge = use(WindowHingeContext);
-  const anchorRef = useRef<ViewInstance>(null);
+  const [anchorView, setAnchorView] = useState<ViewInstance | null>(null);
   const overlayRef = useRef<ViewInstance>(null);
 
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
@@ -62,10 +62,10 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   }, []);
 
   const open = useCallback(() => {
-    anchorRef.current?.measureInWindow((x, y, width, height) => {
+    anchorView?.measureInWindow((x, y, width, height) => {
       setAnchor({ x, y, width, height, keyboardWasVisible: keyboardVisible });
     });
-  }, [keyboardVisible]);
+  }, [anchorView, keyboardVisible]);
 
   const measureOverlay = useCallback(() => {
     overlayRef.current?.measureInWindow((x, y, width, height) => {
@@ -129,6 +129,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const maxHeight = Math.min(opensDown ? spaceBelow : spaceAbove, 480);
   const placeable = local !== null && rootHeight !== null;
 
+  const { onPressAction } = props;
   const onPressItem = useCallback(
     (action: MenuAction) => {
       if ((action.subactions?.length ?? 0) > 0) {
@@ -137,23 +138,28 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
       }
       close();
       if (action.id !== undefined) {
-        props.onPressAction?.({
+        onPressAction?.({
           nativeEvent: { event: action.id },
         } as Parameters<NonNullable<MenuComponentProps["onPressAction"]>>[0]);
       }
     },
-    [close, props.onPressAction],
+    [close, onPressAction],
   );
 
   return (
     <>
       {typeof props.children === "function" ? (
-        <View ref={anchorRef} collapsable={false} className={props.className} style={props.style}>
+        <View
+          ref={setAnchorView}
+          collapsable={false}
+          className={props.className}
+          style={props.style}
+        >
           {props.children(open)}
         </View>
       ) : (
         <Pressable
-          ref={anchorRef}
+          ref={setAnchorView}
           accessibilityRole="button"
           className={props.className}
           collapsable={false}

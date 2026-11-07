@@ -2,7 +2,7 @@ import { LegendList } from "@legendapp/list/react-native";
 import type { ProjectEntry } from "@d4research/contracts";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -135,7 +135,10 @@ export function FileTreeBrowser(props: {
   } = props;
   const controlledSelectedPathRef = useRef(controlledSelectedPath);
   const pendingSelectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  controlledSelectedPathRef.current = controlledSelectedPath;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- The pending-selection timer must compare against the latest committed navigation path.
+  useLayoutEffect(() => {
+    controlledSelectedPathRef.current = controlledSelectedPath;
+  }, [controlledSelectedPath]);
 
   const selectedPath =
     pendingSelection?.selectedPathAtPress === controlledSelectedPath

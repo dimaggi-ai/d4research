@@ -206,15 +206,6 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     setNativeViewer("open");
     setNativeOpen(true);
   }, [nativeViewer, uri]);
-  // The viewer mints its own fresh URL from the resource, so a link that expired while this
-  // screen sat in the background is never handed to Quick Look or ACTION_VIEW.
-  const nativeSource = useMemo<FilePreviewSource | null>(() => {
-    const kind = nativeKind ?? "document";
-    const base = { kind, name: params.name, mimeType: params.mimeType };
-    if (localAttachment) return { ...base, attachment: localAttachment };
-    if (environmentId) return { ...base, environmentId, resource };
-    return uri ? { ...base, uri } : null;
-  }, [environmentId, localAttachment, nativeKind, params.mimeType, params.name, resource, uri]);
   const handleNativeOpenError = useCallback((error: unknown) => {
     pendingNativeError.current = nativeViewerErrorMessage(error);
   }, []);
@@ -233,7 +224,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
       return;
     }
     handleBack();
-  }, [handleBack, nativeViewer]);
+  }, [handleBack, nativeViewer, setNativeOpen, setNativeViewer, setNativeError]);
   const removeFromDraft = useCallback(() => {
     if (!draftKey) return;
     removeComposerDraftAttachment(draftKey, params.attachmentId);
@@ -323,6 +314,8 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
       setRendered,
       share,
       sharing,
+      setNativeViewer,
+      setNativeOpen,
       uri,
     ],
   );
@@ -345,6 +338,16 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     [menuActions],
   );
   const subtitle = `${draftKey ? "Draft attachment" : "Attachment"}${sizeBytes > 0 ? ` · ${formatAttachmentSize(sizeBytes)}` : ""}`;
+
+  // The viewer mints its own fresh URL from the resource, so a link that expired while this
+  // screen sat in the background is never handed to Quick Look or ACTION_VIEW.
+  const nativeSource = useMemo<FilePreviewSource | null>(() => {
+    const kind = nativeKind ?? "document";
+    const base = { kind, name: params.name, mimeType: params.mimeType };
+    if (localAttachment) return { ...base, attachment: localAttachment };
+    if (environmentId) return { ...base, environmentId, resource };
+    return uri ? { ...base, uri } : null;
+  }, [nativeKind, params.name, params.mimeType, localAttachment, environmentId, resource, uri]);
 
   return (
     <View className="flex-1 bg-sheet">

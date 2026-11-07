@@ -2,7 +2,6 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
-import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -614,7 +613,7 @@ describe("DesktopObservability", () => {
     );
   });
 
-  it.effect("describes the Node runtime and the desktop mode under semantic or t3code keys", () => {
+  it.effect("persists traces locally when a collector is configured", () => {
     const requests: Array<ExportedRequest> = [];
     return Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -626,20 +625,25 @@ describe("DesktopObservability", () => {
         otlpLogsUrl: "https://settings.example.com/v1/logs",
       });
 
+      const tracePath = yield* Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        return environment.path.join(environment.logDir, "desktop.trace.ndjson");
+      }).pipe(Effect.provide(layerEnvironment));
+
       yield* Effect.scoped(
         Effect.logInfo("desktop resource under test").pipe(
+          Effect.withSpan("desktop-local-collector-test"),
           Effect.provide(DesktopObservability.layer.pipe(Layer.provideMerge(layerEnvironment))),
         ),
       );
 
-      const body = requests.map((request) => request.body).join("\n");
-      assert.include(body, '"key":"process.runtime.name","value":{"stringValue":"nodejs"}');
-      assert.include(
-        body,
-        `"key":"process.runtime.version","value":{"stringValue":"${process.versions.node}"}`,
-      );
-      assert.include(body, '"key":"t3code.desktop.mode","value":{"stringValue":"development"}');
-      assert.notInclude(body, "service.mode");
+      const records = (yield* fileSystem.readFileString(tracePath))
+        .trim()
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => decodeTraceRecordLine(line));
+      assert.isTrue(records.some((record) => record.name === "desktop-local-collector-test"));
+      assert.deepStrictEqual(requests, []);
     }).pipe(
       Effect.scoped,
       Effect.provide(Layer.mergeAll(NodeServices.layer, layerCollector(requests), layerEmptyEnv)),

@@ -1027,17 +1027,13 @@ describe("Usage shortcuts", () => {
         platform,
         context: { usagePageOpen: true, isDesktop: true },
       }),
-      platform === "MacIntel" ? "project.jump.2" : "project.assign.2",
+      "project.jump.2",
     );
     assert.isNotNull(
-      shortcutLabelForCommand(
-        DEFAULT_RESOLVED_KEYBINDINGS,
-        platform === "MacIntel" ? "project.jump.2" : "project.assign.2",
-        {
-          platform,
-          context: { usagePageOpen: true, isDesktop: true },
-        },
-      ),
+      shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "project.jump.2", {
+        platform,
+        context: { usagePageOpen: true, isDesktop: true },
+      }),
     );
   });
 

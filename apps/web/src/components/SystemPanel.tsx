@@ -139,7 +139,7 @@ export function SystemPanel() {
   const refresh = useStableCallback(async () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
-    try {
+    await (async () => {
       const bearerToken = await readDesktopPrimaryBearerToken();
       const requestOptions: RequestInit = {
         credentials: bearerToken ? "omit" : "include",
@@ -178,11 +178,13 @@ export function SystemPanel() {
         setError("System status is unavailable. Check the environment connection and try again.");
       }
       await toolGuardRequest;
-    } catch {
-      setError("System status is unavailable. Check the environment connection and try again.");
-    } finally {
-      refreshingRef.current = false;
-    }
+    })()
+      .catch(() => {
+        setError("System status is unavailable. Check the environment connection and try again.");
+      })
+      .finally(() => {
+        refreshingRef.current = false;
+      });
   });
 
   // Keep the system snapshot in step with the local monitor while this panel is mounted.

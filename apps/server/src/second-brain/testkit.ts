@@ -30,7 +30,10 @@ export function withBrain<A, E, R>(
   return Effect.scoped(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "d4-brain-test-" });
+      // Index fixtures must use the same canonical vault key as SecondBrainFiles.root.
+      const root = yield* fs
+        .makeTempDirectoryScoped({ prefix: "d4-brain-test-" })
+        .pipe(Effect.flatMap((path) => fs.realPath(path)));
       const dependencies = Layer.mergeAll(
         Files.layer,
         Index.layer,

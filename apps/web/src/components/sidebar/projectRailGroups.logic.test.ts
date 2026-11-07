@@ -137,6 +137,7 @@ describe("rail group helpers", () => {
     expect(railGroupShortLabel("Trading")).toBe("Trading");
     expect(railGroupShortLabel("Infrastructure")).toBe("Infra");
     expect(railGroupShortLabel("T3 Code")).toBe("T3");
+    expect(railGroupShortLabel("d4research")).toBe("d4res");
     expect(railGroupShortLabel("Home lab")).toBe("Home");
     expect(railGroupShortLabel("Machine learning ops")).toBe("MLO");
     expect(railGroupShortLabel("  ")).toBe("Group");

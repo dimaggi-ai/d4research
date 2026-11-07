@@ -259,28 +259,41 @@ it.effect.each([
     ),
 );
 
-it.effect("keeps a one-time run after a restart interrupts an earlier manual run", () =>
-  Effect.gen(function* () {
-    yield* TestClock.setTime(Date.parse("2026-11-01T07:59:00.000Z"));
-    const sql = yield* SqlClient.SqlClient;
-    const created = yield* Effect.gen(function* () {
-      const service = yield* ScheduledTaskService.ScheduledTaskService;
-      return yield* service.upsert(yield* decodeInput(onceInput));
-    }).pipe(Effect.provide(serviceLayer));
-    yield* sql`UPDATE scheduled_tasks SET last_run_status = 'running', last_run_at = '2026-11-01T07:59:00.000Z'`;
+it.effect.each([
+  { correlated: false, startedAt: "2026-11-01T07:59:00.000Z", next: "2026-11-01T08:00:00.000Z" },
+  { correlated: true, startedAt: "2026-11-01T07:59:00.000Z", next: "2026-11-01T08:00:00.000Z" },
+  { correlated: false, startedAt: "2026-11-01T08:00:00.000Z", next: null },
+  { correlated: true, startedAt: "2026-11-01T08:00:00.000Z", next: null },
+])(
+  "recovers a one-time run started at $startedAt (correlated: $correlated)",
+  ({ correlated, startedAt, next }) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-11-01T07:59:00.000Z"));
+      const sql = yield* SqlClient.SqlClient;
+      const created = yield* Effect.gen(function* () {
+        const service = yield* ScheduledTaskService.ScheduledTaskService;
+        return yield* service.upsert(yield* decodeInput(onceInput));
+      }).pipe(Effect.provide(serviceLayer));
+      const messageId = correlated ? "message:once-restart" : null;
+      yield* sql`UPDATE scheduled_tasks SET last_run_status = 'running', last_run_at = ${startedAt}, last_run_message_id = ${messageId}`;
+      if (correlated) {
+        yield* sql`INSERT INTO scheduled_task_runs
+        (message_id, task_id, task_created_at, project_id, title, started_at, status)
+        VALUES (${messageId}, ${created.task.id}, ${created.task.createdAt}, ${created.task.projectId}, ${created.task.title}, ${startedAt}, 'running')`;
+      }
 
-    yield* TestClock.setTime(Date.parse("2026-11-01T08:05:00.000Z"));
-    yield* Effect.gen(function* () {
-      const service = yield* ScheduledTaskService.ScheduledTaskService;
-      const [task] = (yield* service.list()).tasks;
-      expect(task?.id).toBe(created.task.id);
-      expect(task?.lastRunStatus).toBe("failed");
-      expect(task?.nextRunAt).toBe("2026-11-01T08:00:00.000Z");
-    }).pipe(Effect.provide(serviceLayer));
-  }).pipe(
-    Effect.provideService(ServerActivation, Effect.never),
-    Effect.provide(SqlitePersistence.layerMemory),
-  ),
+      yield* TestClock.setTime(Date.parse("2026-11-01T08:05:00.000Z"));
+      yield* Effect.gen(function* () {
+        const service = yield* ScheduledTaskService.ScheduledTaskService;
+        const [task] = (yield* service.list()).tasks;
+        expect(task?.id).toBe(created.task.id);
+        expect(task?.lastRunStatus).toBe("failed");
+        expect(task?.nextRunAt).toBe(next);
+      }).pipe(Effect.provide(serviceLayer));
+    }).pipe(
+      Effect.provideService(ServerActivation, Effect.never),
+      Effect.provide(SqlitePersistence.layerMemory),
+    ),
 );
 
 it.effect("reports the stored task when the row was replaced during the run", () =>

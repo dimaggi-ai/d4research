@@ -170,11 +170,9 @@ function useSourceFileRefresh(onRefresh: SourceFileSurfaceProps["onRefresh"]) {
       return;
     }
     setIsPullRefreshing(true);
-    try {
-      await onRefresh();
-    } finally {
-      setIsPullRefreshing(false);
-    }
+    await Promise.resolve()
+      .then(() => onRefresh?.())
+      .finally(() => setIsPullRefreshing(false));
   }, [onRefresh]);
   return { isPullRefreshing, handlePullToRefresh };
 }

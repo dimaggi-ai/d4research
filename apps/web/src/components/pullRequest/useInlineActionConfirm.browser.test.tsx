@@ -3,6 +3,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { useInlineActionConfirm } from "./useInlineActionConfirm";
+import { PullRequestPrimaryAction } from "./PullRequestDetailActions";
 
 function MergeButton({ scopeKey, onConfirm }: { scopeKey: string; onConfirm: () => void }) {
   const confirm = useInlineActionConfirm(scopeKey);
@@ -81,7 +82,6 @@ it.each(["merge", "enable-auto-merge"] as const)(
   "keeps a blocked %s action reachable without arming or performing it",
   async (primaryAction) => {
     const perform = vi.fn(async () => true);
-    const { PullRequestPrimaryAction } = await import("./PullRequestDetailActions");
     const control = (mergeBlockedReason: string | null) => (
       <PullRequestPrimaryAction
         pullRequestKey="owner/repo/7"

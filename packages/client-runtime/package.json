@@ -123,6 +123,10 @@
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"
     },
+    "./niaServers": {
+      "types": "./src/niaServers.ts",
+      "default": "./src/niaServers.ts"
+    },
     "./providerSkills": {
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"
@@ -470,18 +474,6 @@
     "./d4-agent-action-feedback": {
       "types": "./src/d4AgentActionFeedback.ts",
       "default": "./src/d4AgentActionFeedback.ts"
-    },
-    "./zip/bounded-zip": {
-      "types": "./src/zip/boundedZip.ts",
-      "default": "./src/zip/boundedZip.ts"
-    },
-    "./zip/directory": {
-      "types": "./src/zip/zipDirectory.ts",
-      "default": "./src/zip/zipDirectory.ts"
-    },
-    "./workspace-basename-lookup": {
-      "types": "./src/workspaceBasenameLookup.ts",
-      "default": "./src/workspaceBasenameLookup.ts"
     },
     "./link-request": {
       "types": "./src/linkRequest.ts",

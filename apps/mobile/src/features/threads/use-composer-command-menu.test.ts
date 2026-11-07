@@ -6,23 +6,35 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 import { act, createElement } from "react";
+import { RegistryContext } from "@effect/atom-react";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { createRoot, type Root } from "react-dom/client";
 
 const refreshProviders = vi.hoisted(() => vi.fn());
+const atoms = vi.hoisted(() => ({
+  providers: undefined as Atom.Writable<ReadonlyArray<ServerProvider> | null> | undefined,
+}));
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 
 vi.mock("../../state/queries", () => ({
   useComposerPathSearch: () => ({ entries: [], isPending: false }),
   useComposerPullRequestSearch: () => ({ entries: [], isPending: false, error: null }),
+  useThreadSearch: () => {},
 }));
 vi.mock("../../state/use-composer-drafts", () => ({
   getComposerDraftSnapshot: vi.fn(),
-  readComposerDraftSelection: vi.fn(),
+  useComposerDraftSelection: () => null,
   setComposerDraftContext: vi.fn(),
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "context-id" }));
 vi.mock("../../state/server", () => ({
-  serverEnvironment: { refreshProviders: Symbol("refreshProviders") },
+  serverEnvironment: {
+    providersValueAtom: () => atoms.providers,
+    refreshProviders: {
+      label: "refresh",
+      run: (_registry: unknown, input: unknown) => refreshProviders(input),
+    },
+  },
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => refreshProviders,
@@ -114,6 +126,7 @@ describe("mobile slash commands", () => {
 
 describe("workspace command discovery retry", () => {
   let root: Root;
+  let registry: AtomRegistry.AtomRegistry;
   const environmentId = EnvironmentId.make("test-environment");
   const instanceId = ProviderInstanceId.make("claude");
   const provider = {
@@ -153,8 +166,17 @@ describe("workspace command discovery retry", () => {
     return null;
   }
 
+  function renderProbe(props: { cwd: string; status?: ServerProvider }) {
+    registry.set(atoms.providers!, [props.status ?? provider]);
+    root.render(
+      createElement(RegistryContext.Provider, { value: registry }, createElement(Probe, props)),
+    );
+  }
+
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ now: Date.parse("2026-01-01T00:00:00.000Z") });
+    atoms.providers = Atom.make<ReadonlyArray<ServerProvider> | null>([provider]);
+    registry = AtomRegistry.make();
     refreshProviders.mockReset();
     refreshProviders.mockResolvedValue({ _tag: "Success", value: { providers: [provider] } });
     const document = { nodeType: 9, addEventListener() {}, removeEventListener() {} };
@@ -176,6 +198,7 @@ describe("workspace command discovery retry", () => {
     await act(async () => {
       root.unmount();
     });
+    registry.dispose();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -188,7 +211,7 @@ describe("workspace command discovery retry", () => {
     refreshProviders.mockResolvedValueOnce({ _tag: "Success", value: { providers: [provider] } });
     refreshProviders.mockResolvedValue({ _tag: "Success", value: { providers: [recovered] } });
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a" }));
+      renderProbe({ cwd: "/project-a" });
     });
     expect(refreshProviders).toHaveBeenCalledTimes(1);
     await act(() => vi.advanceTimersByTimeAsync(9_999));
@@ -213,7 +236,7 @@ describe("workspace command discovery retry", () => {
       };
       refreshProviders.mockResolvedValue({ _tag: "Success", value: { providers: [unsupported] } });
       await act(async () => {
-        root.render(createElement(Probe, { cwd: "/project-a", status: unsupported }));
+        renderProbe({ cwd: "/project-a", status: unsupported });
       });
       expect(refreshProviders).toHaveBeenCalledTimes(1);
       await act(() => vi.advanceTimersByTimeAsync(30_000));
@@ -234,13 +257,13 @@ describe("workspace command discovery retry", () => {
     refreshProviders.mockResolvedValueOnce({ _tag: "Success", value: { providers: [missing] } });
     refreshProviders.mockResolvedValue({ _tag: "Success", value: { providers: [recovered] } });
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a", status: missing }));
+      renderProbe({ cwd: "/project-a", status: missing });
     });
     await act(() => vi.advanceTimersByTimeAsync(5_000));
     expect(refreshProviders).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a", status: provider }));
+      renderProbe({ cwd: "/project-a", status: provider });
     });
     await act(() => vi.advanceTimersByTimeAsync(4_999));
     expect(refreshProviders).toHaveBeenCalledTimes(1);
@@ -261,11 +284,11 @@ describe("workspace command discovery retry", () => {
     };
     refreshProviders.mockResolvedValue({ _tag: "Success", value: { providers: [missing] } });
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a", status: missing }));
+      renderProbe({ cwd: "/project-a", status: missing });
     });
     await act(() => vi.advanceTimersByTimeAsync(5_000));
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a", status: recovered }));
+      renderProbe({ cwd: "/project-a", status: recovered });
     });
     await act(() => vi.advanceTimersByTimeAsync(30_000));
     expect(refreshProviders).toHaveBeenCalledTimes(1);
@@ -283,7 +306,7 @@ describe("workspace command discovery retry", () => {
     refreshProviders.mockRejectedValueOnce(new Error("Connection lost"));
     refreshProviders.mockResolvedValue({ _tag: "Success", value: { providers: [recovered] } });
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a" }));
+      renderProbe({ cwd: "/project-a" });
     });
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(refreshProviders).toHaveBeenCalledTimes(2);
@@ -293,11 +316,11 @@ describe("workspace command discovery retry", () => {
 
   it("cancels the old workspace retry and does not duplicate an in-flight request", async () => {
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a" }));
+      renderProbe({ cwd: "/project-a" });
     });
     refreshProviders.mockImplementationOnce(() => new Promise(() => {}));
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-b" }));
+      renderProbe({ cwd: "/project-b" });
     });
     expect(refreshProviders).toHaveBeenCalledTimes(2);
     await act(() => vi.advanceTimersByTimeAsync(20_000));
@@ -311,7 +334,7 @@ describe("workspace command discovery retry", () => {
 
   it("cancels a scheduled retry when the composer unmounts", async () => {
     await act(async () => {
-      root.render(createElement(Probe, { cwd: "/project-a" }));
+      renderProbe({ cwd: "/project-a" });
     });
     await act(async () => {
       root.unmount();

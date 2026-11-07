@@ -97,7 +97,7 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
   const maintain = async (action: "reindex" | "lint" | "regenerate") => {
     setBusy(true);
     setError(null);
-    try {
+    await (async () => {
       if (action === "lint") {
         const result = await lint({ environmentId, input: {} });
         if (result._tag === "Success") {
@@ -111,9 +111,9 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
         });
         if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
       }
-    } finally {
+    })().finally(() => {
       setBusy(false);
-    }
+    });
   };
   return (
     <SettingsPageContainer>
@@ -436,7 +436,7 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
     if (action === "accept" && !detail.data) return;
     setBusy(true);
     setError(null);
-    try {
+    await (async () => {
       const result =
         action === "accept"
           ? await accept({
@@ -452,9 +452,9 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
         setError(formatEnvironmentQueryError(result.cause));
         detail.refresh();
       } else setEdit(null);
-    } finally {
+    })().finally(() => {
       setBusy(false);
-    }
+    });
   };
   if (!detail.data)
     return (

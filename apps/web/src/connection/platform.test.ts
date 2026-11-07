@@ -201,6 +201,56 @@ describe("desktop SSH pairing", () => {
     }),
   );
 
+  it.effect("gives concurrent active provisions separate single-use credentials", () =>
+    Effect.gen(function* () {
+      const bridge = makeBridge([]);
+      const first = pendingSetup();
+      const second = pendingSetup();
+      const ensure = vi
+        .spyOn(bridge, "ensureSshEnvironment")
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise);
+      const usedTokens = new Set<string>();
+      const exchange = vi
+        .spyOn(bridge, "bootstrapSshBearerSession")
+        .mockImplementation(async (_url, token) => {
+          if (usedTokens.has(token)) throw new Error("Pairing credential already consumed");
+          usedTokens.add(token);
+          return {
+            access_token: `bearer-${token}`,
+            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+            token_type: "Bearer",
+            expires_in: 3_600,
+            scope: AuthStandardClientScopes.join(" "),
+          };
+        });
+      const firstProvision = yield* Effect.forkChild(
+        provisionDesktopSshEnvironment(bridge, TARGET),
+        {
+          startImmediately: true,
+        },
+      );
+      const secondProvision = yield* Effect.forkChild(
+        provisionDesktopSshEnvironment(bridge, TARGET),
+        {
+          startImmediately: true,
+        },
+      );
+      first.resolve({ ...SSH_BOOTSTRAP, pairingToken: "first" });
+      second.resolve({ ...SSH_BOOTSTRAP, pairingToken: "second" });
+
+      const results = yield* Effect.all([Fiber.join(firstProvision), Fiber.join(secondProvision)]);
+
+      expect(results.map((result) => result.bearerToken)).toEqual([
+        "bearer-first",
+        "bearer-second",
+      ]);
+      expect(ensure).toHaveBeenCalledTimes(2);
+      expect(exchange).toHaveBeenCalledTimes(2);
+      expect(usedTokens).toEqual(new Set(["first", "second"]));
+    }),
+  );
+
   it.effect("disconnect invalidates unfinished setup even before provision is interrupted", () =>
     Effect.gen(function* () {
       const calls: string[] = [];

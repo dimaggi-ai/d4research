@@ -702,7 +702,7 @@ const make = Effect.gen(function* () {
   });
 
   const writeSettingsAtomically = Effect.fnUntraced(
-    function* (settings: ServerSettings) {
+    function* (settings: ServerSettings, migrating = false) {
       const stripped =
         stripDefaultServerSettings(settings, {
           ...managed.defaults,
@@ -716,9 +716,13 @@ const make = Effect.gen(function* () {
             ),
       );
 
+      const contents = `${sparseSettingsJson}\n`;
+      // On load, an identical rewrite fires the file watcher, which reloads and writes again.
+      if (migrating && (yield* readConfigExists) && (yield* readRawConfig) === contents) return;
+
       return yield* writeFileStringAtomically({
         filePath: settingsPath,
-        contents: `${sparseSettingsJson}\n`,
+        contents,
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, pathService),
@@ -905,7 +909,7 @@ const make = Effect.gen(function* () {
       (settingsFileTrusted && legacyProviders !== undefined) ||
       hasLegacySourceControl
     ) {
-      yield* writeSettingsAtomically(migrated);
+      yield* writeSettingsAtomically(migrated, true);
       for (const move of sourceControlMigration.secretMoves) {
         yield* secretStore.remove(move.from).pipe(Effect.ignore);
       }

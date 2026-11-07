@@ -8,6 +8,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
+import * as Queue from "effect/Queue";
 import * as RcMap from "effect/RcMap";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -262,27 +264,35 @@ export const make = Effect.gen(function* () {
           },
           catch: (cause) => new WorkspaceEntriesWatchError({ cwd: normalizedCwd, cause }),
         });
-        const pullChanges = yield* Stream.toPull(
-          fileSystem.watch(watchedDirectory, { recursive: input.directoryPath === undefined }),
-        );
-        const changes = Stream.fromPull(Effect.succeed(pullChanges)).pipe(
-          Stream.filter((event) => {
-            const eventPath = path
-              .relative(normalizedCwd, path.resolve(watchedDirectory, event.path))
-              .replaceAll("\\", "/");
-            return eventPath !== ".git" && !eventPath.startsWith(".git/");
-          }),
-          Stream.debounce(Duration.millis(100)),
-          Stream.mapAccum(
-            () => 1,
-            (revision): readonly [number, ReadonlyArray<ProjectEntriesChangedEvent>] => [
-              revision + 1,
-              [{ revision }],
-            ],
-          ),
+        return Stream.callback<ProjectEntriesChangedEvent, PlatformError.PlatformError>((queue) =>
+          fileSystem
+            .watch(watchedDirectory, {
+              recursive: input.directoryPath === undefined,
+              // Stream construction is lazy; announce readiness only after native registration.
+              onReady: () => {
+                Queue.offerUnsafe(queue, { revision: 0 });
+              },
+            })
+            .pipe(
+              Stream.filter((event) => {
+                const eventPath = path
+                  .relative(normalizedCwd, path.resolve(watchedDirectory, event.path))
+                  .replaceAll("\\", "/");
+                return eventPath !== ".git" && !eventPath.startsWith(".git/");
+              }),
+              Stream.debounce(Duration.millis(100)),
+              Stream.mapAccum(
+                () => 1,
+                (revision): readonly [number, ReadonlyArray<ProjectEntriesChangedEvent>] => [
+                  revision + 1,
+                  [{ revision }],
+                ],
+              ),
+              Stream.runIntoQueue(queue),
+            ),
+        ).pipe(
           Stream.mapError((cause) => new WorkspaceEntriesWatchError({ cwd: normalizedCwd, cause })),
         );
-        return Stream.concat(Stream.succeed({ revision: 0 }), changes);
       }),
     );
 

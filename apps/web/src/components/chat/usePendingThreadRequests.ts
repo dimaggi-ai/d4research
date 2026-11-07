@@ -10,6 +10,8 @@ import {
 } from "@d4research/contracts";
 import {
   derivePendingThreadRequests,
+  onThreadRequestsResolved,
+  pruneResolvedUserInputDrafts,
   seedUserInputDraftAnswers,
 } from "@d4research/client-runtime/state/thread-requests";
 import {
@@ -17,6 +19,7 @@ import {
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
 import { useEffect, useRef, useState, type RefObject, type SetStateAction } from "react";
+import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -53,6 +56,58 @@ const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnsw
 const NO_PENDING_REQUESTS = { approvals: [], userInputs: [] } as const;
 const NO_PENDING_APPROVALS: ReturnType<typeof derivePendingApprovals> = [];
 const NO_PENDING_USER_INPUTS: ReturnType<typeof derivePendingUserInputs> = [];
+
+// Chat unmounts on navigation; pending answers must live until the request resolves.
+const usePendingAnswerDrafts = create<{
+  answers: Record<string, Record<string, PendingUserInputDraftAnswer>>;
+  questionIndexes: Record<string, number>;
+}>(() => ({ answers: {}, questionIndexes: {} }));
+
+function setPendingUserInputAnswersByRequestId(
+  update: SetStateAction<Record<string, Record<string, PendingUserInputDraftAnswer>>>,
+) {
+  usePendingAnswerDrafts.setState((state) => {
+    const answers = typeof update === "function" ? update(state.answers) : update;
+    return answers === state.answers ? state : { answers };
+  });
+}
+
+function setPendingUserInputQuestionIndexByRequestId(
+  update: SetStateAction<Record<string, number>>,
+) {
+  usePendingAnswerDrafts.setState((state) => {
+    const questionIndexes = typeof update === "function" ? update(state.questionIndexes) : update;
+    return questionIndexes === state.questionIndexes ? state : { questionIndexes };
+  });
+}
+
+function prunePendingAnswerDrafts(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  pendingRequestIds: ReadonlyArray<RuntimeRequestId>,
+) {
+  usePendingAnswerDrafts.setState((state) => {
+    const answers = pruneResolvedUserInputDrafts(
+      state.answers,
+      environmentId,
+      threadId,
+      pendingRequestIds,
+    );
+    const questionIndexes = pruneResolvedUserInputDrafts(
+      state.questionIndexes,
+      environmentId,
+      threadId,
+      pendingRequestIds,
+    );
+    return answers === state.answers && questionIndexes === state.questionIndexes
+      ? state
+      : { answers, questionIndexes };
+  });
+}
+
+onThreadRequestsResolved(({ environmentId, threadId, pendingRequestIds }) =>
+  prunePendingAnswerDrafts(environmentId, threadId, pendingRequestIds),
+);
 
 /** Writes the custom answer for a question of the pending user input the making render saw. */
 function makePendingCustomAnswerSetter(input: {
@@ -132,11 +187,10 @@ export function usePendingThreadRequests(input: {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     RuntimeRequestId[]
   >([]);
-  const [pendingUserInputAnswersByRequestId, setPendingUserInputAnswersByRequestId] = useState<
-    Record<string, Record<string, PendingUserInputDraftAnswer>>
-  >({});
-  const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
-    useState<Record<string, number>>({});
+  const pendingUserInputAnswersByRequestId = usePendingAnswerDrafts((state) => state.answers);
+  const pendingUserInputQuestionIndexByRequestId = usePendingAnswerDrafts(
+    (state) => state.questionIndexes,
+  );
   const pendingRequests =
     serverProjection === null ? NO_PENDING_REQUESTS : derivePendingThreadRequests(serverProjection);
   // The projection changes on every streamed event, so shared empties keep the
@@ -155,19 +209,14 @@ export function usePendingThreadRequests(input: {
     activeThreadId,
     activePendingUserInput?.requestId,
   ]);
-  const activePendingAnswerDrafts =
-    pendingUserInputAnswersByRequestId[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS;
-  if (
-    activePendingUserInput &&
-    seedUserInputDraftAnswers(activePendingUserInput.questions, activePendingAnswerDrafts) !==
-      activePendingAnswerDrafts
-  ) {
+  useEffect(() => {
+    if (!activePendingUserInput) return;
     setPendingUserInputAnswersByRequestId((existing) => {
       const drafts = existing[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS;
       const seeded = seedUserInputDraftAnswers(activePendingUserInput.questions, drafts);
       return seeded === drafts ? existing : { ...existing, [activePendingRequestKey]: seeded };
     });
-  }
+  }, [activePendingUserInput, activePendingRequestKey]);
   const pendingQuestionDraftKeys = activeThreadId
     ? pendingUserInputs.flatMap((request) =>
         request.questions.map((question) =>
@@ -205,7 +254,7 @@ export function usePendingThreadRequests(input: {
     ),
   );
   useEffect(() => {
-    if (!activeThread) return;
+    if (!activeThread || serverProjection === null) return;
     const questionThread = activeThread;
     const currentRequests = pendingUserInputs;
     const prefix = questionAttachmentDraftPrefix(environmentId, questionThread.id);
@@ -229,7 +278,7 @@ export function usePendingThreadRequests(input: {
       if (key.startsWith(prefix) && !retained.has(DraftId.make(key)))
         clearQuestionAttachmentDraft(DraftId.make(key));
     }
-  }, [environmentId, activeThread, pendingUserInputs]);
+  }, [environmentId, activeThread, pendingUserInputs, serverProjection]);
   const activePendingDraftAnswers =
     !activePendingUserInput || !activeThreadId
       ? EMPTY_PENDING_USER_INPUT_ANSWERS
@@ -485,7 +534,7 @@ export function usePendingThreadRequests(input: {
     if (
       !activePendingUserInput ||
       activePendingUserInput.responseCapability === "not_resumable" ||
-      !activePendingProgress
+      !activePendingProgress?.canAdvance
     ) {
       return;
     }

@@ -36,6 +36,7 @@ async function savedChange(
     watcher = NodeFS.watch(directory, () => {
       void check();
     });
+    // oxlint-disable-next-line t3code/no-real-time-wait-in-tests -- The filesystem watcher resolves on persistence; this timeout only rejects a stalled external browser/server check.
     timer = setTimeout(
       () =>
         reject(
@@ -66,6 +67,15 @@ const chooseEnvironment = (page) =>
 export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
+  const setup = page.locator('summary[aria-label="Threads and system Setup"]');
+  await setup.waitFor();
+  NodeAssert.equal(await setup.evaluate((element) => element.parentElement.open), false);
+  await setup.click();
+  NodeAssert.equal(await page.getByLabel("Session idle timeout", { exact: true }).count(), 0);
+  NodeAssert.equal(
+    await page.getByLabel("Session size budget percent", { exact: true }).count(),
+    0,
+  );
   const enabled = page.getByRole("switch", { name: "Monitor threads", exact: true });
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "false");
@@ -249,7 +259,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
   await agentEnabled.waitFor();
-  const probes = page.getByRole("switch", { name: "Agent system probes", exact: true });
+  const probes = page.getByRole("switch", { name: "Host access", exact: true });
   await savedChange(
     app,
     "enable system probes",
@@ -258,6 +268,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     "d4Agent",
   );
   console.log("PASS Nia enable and system probe persistence");
+  await setup.click();
   const notifications = page.getByRole("switch", {
     name: "Monitor attention notifications",
     exact: true,
@@ -269,6 +280,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     (value) => value.notificationsEnabled === true,
   );
   await page.reload({ waitUntil: "domcontentloaded" });
+  await setup.click();
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "true");
   NodeAssert.equal(await notifications.getAttribute("aria-checked"), "true");
@@ -316,6 +328,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     (value) => (value.enabled ?? false) === false,
   );
   await page.reload({ waitUntil: "domcontentloaded" });
+  await setup.click();
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await notifications.getAttribute("aria-checked"), "false");

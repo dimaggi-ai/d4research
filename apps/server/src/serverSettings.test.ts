@@ -1064,6 +1064,35 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("does not rewrite an unchanged file that keeps legacy providers", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        yield* encodeJson({ providers: { codex: { binaryPath: "/opt/codex" } } }),
+      );
+      yield* serverSettings.getSettings;
+      const before = yield* fileSystem.stat(serverConfig.settingsPath);
+
+      yield* ServerSettingsModule.ServerSettingsService.pipe(
+        Effect.flatMap((reloaded) => reloaded.getSettings),
+        Effect.provide(
+          Layer.fresh(
+            ServerSettingsModule.layer.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(ManagedPolicy.layerTest()),
+            ),
+          ),
+        ),
+      );
+
+      const after = yield* fileSystem.stat(serverConfig.settingsPath);
+      assert.deepEqual(after.ino, before.ino);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("migrates legacy providers from an invalid file without rewriting it", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;

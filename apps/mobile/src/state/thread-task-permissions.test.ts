@@ -106,7 +106,12 @@ vi.mock("./server", async () => {
 vi.mock("./threads", async () => {
   const { Atom } = await import("effect/reactivity");
   return {
-    environmentThreadDetails: { queueWorkflowAtom: () => Atom.make(null) },
+    environmentThreadDetails: {
+      queueWorkflowAtom: () => Atom.make(null),
+      sequenceAtom: () => Atom.make(0),
+      checkpointSummariesAtom: () => Atom.make([]),
+      pendingRequestsAtom: () => Atom.make(state.pendingRequests),
+    },
     threadEnvironment: {
       respondToApproval: state.approve,
       respondToUserInput: state.answer,
@@ -131,6 +136,7 @@ vi.mock("./use-composer-drafts", async () => {
   const { Atom } = await import("effect/reactivity");
   return {
     composerDraftsAtom: Atom.make({}),
+    questionAttachmentDraftsAtom: () => Atom.make({}),
     composerContextImportsAtom: Atom.make({}),
     getComposerDraftSnapshot: () => state.draft,
     clearComposerDraftContent: state.clearDraft,
@@ -146,6 +152,7 @@ vi.mock("./use-composer-drafts", async () => {
     mergeComposerDraftContent: vi.fn(),
     removeComposerDraftAttachment: vi.fn(),
     useComposerDraft: () => state.draft,
+    useComposerDraftSettings: () => ({}),
   };
 });
 vi.mock("../lib/composerImages", () => ({

@@ -11,25 +11,27 @@ it.each(["plain", "formatted"] as const)(
   async (kind) => {
     const link = (url: string) => (
       <div className="chat-markdown w-64">
-        <table>
-          <tbody>
-            <tr>
-              <td>
-                <a href={url}>
-                  <MarkdownExternalLinkContent
-                    host="github.com"
-                    plainText={kind === "plain" ? url : null}
-                  >
-                    <MarkdownLinkContext value>
-                      {url}
-                      {kind === "formatted" ? <strong> details</strong> : null}
-                    </MarkdownLinkContext>
-                  </MarkdownExternalLinkContent>
-                </a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="chat-markdown-table-container" data-expanded="true">
+          <table>
+            <tbody>
+              <tr>
+                <td>
+                  <a href={url}>
+                    <MarkdownExternalLinkContent
+                      host="github.com"
+                      plainText={kind === "plain" ? url : null}
+                    >
+                      <MarkdownLinkContext value>
+                        {url}
+                        {kind === "formatted" ? <strong> details</strong> : null}
+                      </MarkdownLinkContext>
+                    </MarkdownExternalLinkContent>
+                  </a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     );
     const url = (length: number) => `https://github.com/search?q=${"a".repeat(length)}`;

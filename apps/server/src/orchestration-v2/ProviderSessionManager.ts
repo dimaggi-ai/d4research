@@ -1915,14 +1915,15 @@ export const layerWithOptions = (
                         )
                         .join("\n\n");
                       const sql = projectMemorySql;
-                      const memory = Option.isSome(sql)
-                        ? ProjectMemory.memoryInstructions(
-                            yield* ProjectMemory.list(input.appThread.projectId).pipe(
-                              Effect.provideService(SqlClient.SqlClient, sql.value),
-                              Effect.orElseSucceed(() => []),
-                            ),
-                          )
-                        : "";
+                      const memory =
+                        options.configureMcp !== false && Option.isSome(sql)
+                          ? ProjectMemory.memoryInstructions(
+                              yield* ProjectMemory.list(input.appThread.projectId).pipe(
+                                Effect.provideService(SqlClient.SqlClient, sql.value),
+                                Effect.orElseSucceed(() => []),
+                              ),
+                            )
+                          : "";
                       return yield* runtime
                         .startTurn({
                           ...input,

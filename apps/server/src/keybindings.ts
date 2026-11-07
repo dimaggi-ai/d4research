@@ -222,6 +222,11 @@ export function migrateKeybindingsToProjectSlots(
       changed = true;
       return { ...rule, command: projectJump } satisfies KeybindingRule;
     }
+    if (rule.command === "structure.open" && rule.key.toLowerCase() === "mod+1") {
+      changed = true;
+      const { when: _dropped, ...rest } = rule;
+      return { ...rest, key: "mod+shift+1" } satisfies KeybindingRule;
+    }
     return rule;
   });
   return changed ? migrated : null;

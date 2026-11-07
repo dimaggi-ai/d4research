@@ -53,7 +53,7 @@ export const resolveCodexHomeLayout = Effect.fn("resolveCodexHomeLayout")(functi
   const path = yield* Path.Path;
   const home = yield* HostProcess.HomeDirectory;
   const configuredHome = config.homePath.trim();
-  const inheritedHome = environment?.CODEX_HOME?.trim() ?? "";
+  const inheritedHome = environment?.CODEX_HOME?.trim() ? environment.CODEX_HOME : "";
   // Environment values have already been expanded at the instance boundary.
   const sharedHomePath = configuredHome
     ? resolveHomePath(path, home, configuredHome)

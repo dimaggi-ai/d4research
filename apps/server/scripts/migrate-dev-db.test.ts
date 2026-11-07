@@ -243,17 +243,17 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       const stateDir = path.join(sourceDir, "userdata");
       const source = path.join(stateDir, "statev2.sqlite");
       yield* fs.makeDirectory(stateDir, { recursive: true });
-      yield* withDatabase(source, runMigrations({ toMigrationInclusive: 58 }));
+      yield* withDatabase(source, runMigrations({ toMigrationInclusive: 61 }));
 
       const result = yield* runMigrateDevDb(
         { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
         { sharedHome: sourceDir },
       );
-      assert.include(result.executedMigrations, "59_OrchestrationV2");
+      assert.include(result.executedMigrations, "62_OrchestrationV2");
     }),
   );
 
-  it.effect("seeds from a source that recorded another migration below V2", () =>
+  it.effect("refuses a source that recorded an unknown migration below V2", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-local-" });
@@ -268,22 +268,23 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         }),
       );
 
-      const result = yield* runMigrateDevDb(
+      const destination = yield* createFixtureSource(destDir);
+      const sourceBefore = yield* fs.readFile(source);
+      const destinationBefore = yield* fs.readFile(destination);
+      const error = yield* runMigrateDevDb(
         { baseDir: destDir, source, projects: 5, threadsPerProject: 2 },
         { sharedHome: sourceDir },
-      );
-      const threads = yield* withDatabase(
-        result.databasePath,
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return yield* sql<{ thread_id: string }>`
-            SELECT thread_id FROM orchestration_v2_projection_threads ORDER BY thread_id`;
-        }),
-      );
-      assert.deepStrictEqual(
-        threads.map((row) => row.thread_id),
-        ["fork-thread", "settled-thread", "stopped-thread"],
-      );
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "MigrateDevDbPhaseError");
+      if (error._tag === "MigrateDevDbPhaseError") {
+        assert.equal(error.phase, "migrate");
+        assert.include(
+          String(error.cause),
+          "Migration slot 51 is recorded as SiteLocalMigration, but this build expects ProjectionProjectsAutoPull",
+        );
+      }
+      assert.deepStrictEqual(yield* fs.readFile(source), sourceBefore);
+      assert.deepStrictEqual(yield* fs.readFile(destination), destinationBefore);
     }),
   );
 
@@ -298,7 +299,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`UPDATE effect_sql_migrations SET name = 'OtherBuildMigration'
-            WHERE migration_id = 60`;
+            WHERE migration_id = 67`;
         }),
       );
 
@@ -313,7 +314,10 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.equal(error._tag, "MigrateDevDbPhaseError");
       if (error._tag === "MigrateDevDbPhaseError") {
         assert.equal(error.phase, "migrate");
-        assert.include(String(error.cause), "60_ThreadSnapshotWindowIndexes");
+        assert.include(
+          String(error.cause),
+          "Migration slot 67 is recorded as OtherBuildMigration, but this build expects ThreadSnapshotWindowIndexes",
+        );
       }
       assert.deepStrictEqual(yield* fs.readFile(source), sourceBefore);
       assert.deepStrictEqual(yield* fs.readFile(destination), destinationBefore);

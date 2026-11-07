@@ -170,19 +170,21 @@ export function useAttachmentDocument(input: {
       attachment: { name: input.name, mimeType: input.mimeType },
       signal: controller.signal,
     };
-    try {
+    await (async () => {
       if (isLocalUri(uri)) await shareLocalAttachment({ ...request, uri });
       else await downloadAndShareAttachment({ ...request, url: (await refresh()) ?? uri });
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      Dialog.alert(
-        "Could not share file",
-        cause instanceof Error ? cause.message : "Please try again.",
-      );
-    } finally {
-      if (shareController.current === controller) shareController.current = null;
-      if (!controller.signal.aborted) setSharing(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        Dialog.alert(
+          "Could not share file",
+          cause instanceof Error ? cause.message : "Please try again.",
+        );
+      })
+      .finally(() => {
+        if (shareController.current === controller) shareController.current = null;
+        if (!controller.signal.aborted) setSharing(false);
+      });
   };
   return {
     kind,

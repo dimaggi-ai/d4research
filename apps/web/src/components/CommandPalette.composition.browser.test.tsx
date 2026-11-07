@@ -51,7 +51,7 @@ vi.mock("../state/environments", async (original) => ({
         environmentId: "local",
         label: "Local",
         connection: { phase: "connected" },
-        entry: { target: { _tag: "PrimaryConnectionTarget" } },
+        entry: { target: { _tag: "PrimaryConnectionTarget", httpBaseUrl: "http://localhost" } },
         serverConfig: {
           environment: { platform: { os: "linux" }, capabilities: { projectCloneTracking: true } },
           settings: { addProjectBaseDirectory: "/workspace/" },

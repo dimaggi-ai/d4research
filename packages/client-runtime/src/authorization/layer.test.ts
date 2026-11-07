@@ -2,7 +2,6 @@ import { EnvironmentId } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as TestClock from "effect/testing/TestClock";
 import { layerRemoteHttpClient as remoteHttpClientLayer } from "../rpc/http.ts";
 import * as RemoteEnvironmentAuthorization from "./service.ts";
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
@@ -57,12 +56,13 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   };
 });
 describe("RemoteEnvironmentAuthorization", () => {
-  it.effect("reuses a validated bearer descriptor while issuing fresh websocket tickets", () =>
+  it.effect("revalidates the bearer descriptor while issuing fresh websocket tickets", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         responses: [
           Response.json(DESCRIPTOR),
           websocketTicket("first-ticket"),
+          Response.json({ ...DESCRIPTOR, label: "Updated remote environment" }),
           websocketTicket("second-ticket"),
         ],
       });
@@ -80,18 +80,22 @@ describe("RemoteEnvironmentAuthorization", () => {
         return [yield* authorize(), yield* authorize()] as const;
       }).pipe(Effect.provide(harness.layer));
 
+      expect(first.label).toBe("Remote environment");
+      expect(second.label).toBe("Updated remote environment");
       expect(first.socketUrl).toContain("wsTicket=first-ticket");
       expect(second.socketUrl).toContain("wsTicket=second-ticket");
       expect(
         harness.fetch.calls.filter(([url]) => String(url).endsWith("/.well-known/t3/environment")),
-      ).toHaveLength(1);
+      ).toHaveLength(2);
       expect(
-        harness.fetch.calls.filter(([url]) => String(url).endsWith("/api/auth/websocket-ticket")),
+        harness.fetch.calls.filter(([url]) =>
+          String(url).endsWith("/api/auth/websocket-ticket/rpc"),
+        ),
       ).toHaveLength(2);
     }),
   );
 
-  it.effect("revalidates a bearer descriptor after the cache expires", () =>
+  it.effect("rejects a reassigned endpoint on the next connection", () =>
     Effect.gen(function* () {
       const reassignedEnvironmentId = EnvironmentId.make("environment-2");
       const harness = yield* makeHarness({
@@ -117,9 +121,8 @@ describe("RemoteEnvironmentAuthorization", () => {
           });
 
         yield* authorize();
-        yield* TestClock.adjust("10 seconds");
         return yield* authorize().pipe(Effect.flip);
-      }).pipe(Effect.provide(Layer.merge(harness.layer, TestClock.layer())));
+      }).pipe(Effect.provide(harness.layer));
 
       expect(failure).toEqual(
         expect.objectContaining({

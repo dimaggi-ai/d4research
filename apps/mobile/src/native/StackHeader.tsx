@@ -151,30 +151,27 @@ export function NativeStackScreenOptions(props: {
   const latestOptionFunctionsRef = useRef(new Map<string, (...args: unknown[]) => unknown>());
   const optionFunctionWrappersRef = useRef(new Map<string, (...args: unknown[]) => unknown>());
   const normalizedOptions = useMemo(() => normalizeScreenOptions(props.options), [props.options]);
-  const stableOptions = normalizedOptions
-    ? (stabilizeOptionFunctions(
-        normalizedOptions,
-        "options",
-        latestOptionFunctionsRef.current,
-        optionFunctionWrappersRef.current,
-      ) as NativeStackNavigationOptions)
-    : undefined;
-
   useLayoutEffect(() => {
     if (!tabActive) {
       lastAppliedOptionsSignatureRef.current = undefined;
       return;
     }
-    if (!navigation || !stableOptions) {
+    if (!navigation || !normalizedOptions) {
       return;
     }
+    const stableOptions = stabilizeOptionFunctions(
+      normalizedOptions,
+      "options",
+      latestOptionFunctionsRef.current,
+      optionFunctionWrappersRef.current,
+    ) as NativeStackNavigationOptions;
     const signature = optionsSignature([stableOptions, props.optionsVersion]);
     if (lastAppliedOptionsSignatureRef.current === signature) {
       return;
     }
     lastAppliedOptionsSignatureRef.current = signature;
     navigation.setOptions(stableOptions);
-  }, [navigation, props.optionsVersion, stableOptions, tabActive]);
+  }, [navigation, props.optionsVersion, normalizedOptions, tabActive]);
 
   useEffect(() => {
     if (!navigation || !props.listeners) {

@@ -210,7 +210,9 @@ overrides:
   mdast-util-to-hast: 13.2.1
   expo-audio: 58.0.9
   expo-network: 58.0.3
+  expo-notifications: 58.1.5
   expo-sharing: 58.0.19
+  expo-video: 58.0.11
   expo-widgets: 58.0.20
   "@ff-labs/fff-node": 0.11.0
   "@legendapp/list": 3.3.5

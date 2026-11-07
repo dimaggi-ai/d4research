@@ -100,34 +100,43 @@ export const DeepSeekAdapterV2Driver: ProviderAdapterDriver<
           canReuseContextUsage: (previous, next) => previous.model === next.model,
           ensureThread: Effect.fn("DeepSeekAdapter.ensureThread")(function* (input) {
             const time = yield* DateTime.now;
-            const thread: OrchestrationV2ProviderThread = input.existingProviderThread
-              ? {
-                  ...input.existingProviderThread,
-                  providerSessionId: sessionInput.providerSessionId,
-                  status: "idle",
-                  updatedAt: time,
-                }
-              : {
-                  id: ProviderThreadId.make(`deepseek:${instanceId}:${input.threadId}`),
-                  driver: DRIVER,
-                  providerInstanceId: instanceId,
-                  providerSessionId: sessionInput.providerSessionId,
-                  appThreadId: input.threadId,
-                  ownerNodeId: null,
-                  nativeThreadRef: null,
-                  nativeConversationHeadRef: null,
-                  status: "idle",
-                  firstRunOrdinal: null,
-                  lastRunOrdinal: null,
-                  handoffIds: [],
-                  forkedFrom: null,
-                  pendingBackgroundTasks: [],
-                  contextUsage: null,
-                  nativeMetadata: null,
-                  goal: null,
-                  createdAt: time,
-                  updatedAt: time,
-                };
+            const thread: OrchestrationV2ProviderThread =
+              input.existingProviderThread && !input.forceNewNativeThread
+                ? {
+                    ...input.existingProviderThread,
+                    providerSessionId: sessionInput.providerSessionId,
+                    status: "idle",
+                    updatedAt: time,
+                  }
+                : {
+                    id:
+                      input.existingProviderThread?.id ??
+                      ProviderThreadId.make(`deepseek:${instanceId}:${input.threadId}`),
+                    driver: DRIVER,
+                    providerInstanceId: instanceId,
+                    providerSessionId: sessionInput.providerSessionId,
+                    appThreadId: input.threadId,
+                    ownerNodeId: null,
+                    nativeThreadRef: null,
+                    nativeConversationHeadRef: null,
+                    status: "idle",
+                    firstRunOrdinal: null,
+                    lastRunOrdinal: null,
+                    handoffIds: [],
+                    forkedFrom: null,
+                    pendingBackgroundTasks: [],
+                    contextUsage: null,
+                    nativeMetadata: null,
+                    goal: null,
+                    createdAt: time,
+                    updatedAt: time,
+                  };
+            if (input.forceNewNativeThread) {
+              history.delete(thread.id);
+              contexts.delete(thread.id);
+              turns.delete(thread.id);
+              messages.delete(thread.id);
+            }
             threads.set(thread.id, thread);
             yield* emit({
               type: "provider_thread.updated",

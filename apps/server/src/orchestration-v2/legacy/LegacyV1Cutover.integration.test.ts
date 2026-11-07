@@ -28,14 +28,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../../persistence/Migrations.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
-import Migration0042 from "../../persistence/Migrations/042_ProjectionThreadLinkedPullRequest.ts";
-import Migration0043 from "../../persistence/Migrations/045_ProjectionThreadsUnsettledAt.ts";
-import Migration0044 from "../../persistence/Migrations/044_ClearAutomaticProjectModelDefaults.ts";
-import Migration0045 from "../../persistence/Migrations/045_ProjectionProjectsAutoPull.ts";
-import Migration0046 from "../../persistence/Migrations/046_RepairAutomaticSettlementTimestamps.ts";
-import Migration0047 from "../../persistence/Migrations/047_ProjectionProjectIcon.ts";
-import Migration0048 from "../../persistence/Migrations/048_ProjectionThreadBranchPullRequest.ts";
-import Migration0049 from "../../persistence/Migrations/049_ProjectionThreadsActiveOrderKey.ts";
 import { CodexProviderCapabilitiesV2 } from "../Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "../EffectWorker.ts";
 import * as EventSink from "../EventSink.ts";
@@ -80,7 +72,6 @@ const codexModelSelection = {
   model: "gpt-5.4",
 };
 
-/** Slot 41 models site-local migrations sharing production ids; the V2 runner applies only ids above the recorded maximum. */
 const seedV1Database = (fixturePath: string, workspace: string) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -893,9 +884,7 @@ describe("orchestration v2 legacy v1 cutover", () => {
             ),
           );
 
-          // This fork reserves migration 41 and repairs upstream auth columns via
-          // its additive compatibility migrations instead of reusing that id.
-          assert.equal(firstBoot.migration41Name, "ThreadSummaryTimeline");
+          assert.equal(firstBoot.migration41Name, "ProjectionThreadTurnUsage");
           assert.include(firstBoot.authSessionColumnNames, "client_surface");
           assert.include(firstBoot.authSessionColumnNames, "client_app_version");
 

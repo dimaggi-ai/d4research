@@ -304,8 +304,21 @@ describe("d4 Agent policies", () => {
     assert.isFalse(
       isAllowedAgentMcpRequest([{ method: "tools/call", params: { name: "d4_agent_action" } }]),
     );
-    for (const name of ["d4_agent_list", "d4_agent_environment", "d4_agent_read_host"])
+    for (const name of [
+      "d4_agent_list",
+      "d4_agent_environment",
+      "d4_agent_read_host",
+      "d4_agent_skill_read",
+    ])
       assert.isTrue(isAllowedAgentMcpRequest({ method: "tools/call", params: { name } }));
+  });
+  it("skill reads require a name rather than a path parameter", () => {
+    const decode = Schema.decodeUnknownExit(
+      D4AgentToolkit.tools.d4_agent_skill_read.parametersSchema,
+    );
+    assert.isTrue(Exit.isSuccess(decode({ name: "review" })));
+    assert.isTrue(Exit.isFailure(decode({ path: "/skills/review/SKILL.md" })));
+    assert.isTrue(Exit.isFailure(decode({ name: "" })));
   });
   it("memory and CTO reads accept a missing context and refuse an unknown one", () => {
     const tools = D4AgentToolkit.tools;

@@ -27,7 +27,7 @@ function dismiss() {
 function showStarPrompt() {
   const close = () => toastManager.close(id);
   const id = toastManager.add({
-    title: "Enjoying T3 Code?",
+    title: "Enjoying d4research?",
     description: "Give us a star on GitHub to let us know!",
     timeout: 0,
     onClose: dismiss,

@@ -55,16 +55,26 @@ export const makeMockMuse = Effect.fn("makeMockMuse")(function* (
   );
   const logPath = NodePath.join(directory, "requests.jsonl");
   const argvPath = NodePath.join(directory, "argv.log");
+  const encodedArgvPath = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.String))(
+    argvPath,
+  );
   const binaryPath = writeFakeCli({
     directory,
     name: "fake-muse",
     env: { ...env, T3_MSP_REQUEST_LOG_PATH: logPath },
-    source: execScriptSource({
-      scriptPath: NodeURL.fileURLToPath(
-        new URL("../../../scripts/msp-mock-host.ts", import.meta.url),
-      ),
-      ...(options.argvLog === true ? { argvLogPath: argvPath } : {}),
-    }),
+    source: [
+      ...(options.argvLog === true
+        ? [
+            'import { appendFileSync } from "node:fs";',
+            `appendFileSync(${encodedArgvPath}, process.argv.slice(2).join("\\t") + "\\n");`,
+          ]
+        : []),
+      execScriptSource({
+        scriptPath: NodeURL.fileURLToPath(
+          new URL("../../../scripts/msp-mock-host.ts", import.meta.url),
+        ),
+      }),
+    ].join("\n"),
   });
   const decodeRequest = Schema.decodeEffect(
     Schema.fromJsonString(

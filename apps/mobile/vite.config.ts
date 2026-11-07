@@ -39,7 +39,9 @@ const reactTests = [
   "src/features/terminal/useTerminalExitNavigation.test.tsx",
   "src/features/threads/use-thread-list-now.test.tsx",
   "src/features/threads/useThreadListV2.test.tsx",
+  "src/features/threads/useThreadHeaderOptions.test.tsx",
   "src/features/home/home-list-options.test.tsx",
+  "src/features/home/home-route-visibility.test.tsx",
   "src/features/workspace/useSearchScrollRestoration.test.tsx",
   "src/features/connection/ConnectionsNewRouteScreen.test.tsx",
 ];

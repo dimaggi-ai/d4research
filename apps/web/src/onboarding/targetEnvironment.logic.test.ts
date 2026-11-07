@@ -127,7 +127,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
     ).toBeNull();
   });
 
-  it("uses the newest connected remote when no exact machine was selected", () => {
+  it("uses the primary environment when relay setup is unavailable", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "connect",
@@ -135,10 +135,10 @@ describe("resolveOnboardingTargetEnvironment", () => {
         primaryEnvironment,
         pairedEnvironmentId: null,
       }),
-    ).toBe(newerRelay);
+    ).toBe(primaryEnvironment);
   });
 
-  it("ignores direct, SSH, and desktop-managed connections in Connect mode", () => {
+  it("does not substitute another route for the primary environment in Connect mode", () => {
     expect(
       resolveOnboardingTargetEnvironment({
         mode: "connect",
@@ -152,7 +152,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
         primaryEnvironment,
         pairedEnvironmentId: null,
       }),
-    ).toBe(olderRelay);
+    ).toBe(primaryEnvironment);
   });
 
   it("uses the primary computer when no relay connection exists", () => {

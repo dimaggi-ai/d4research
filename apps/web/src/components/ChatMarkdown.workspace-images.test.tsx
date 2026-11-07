@@ -21,7 +21,10 @@ vi.mock("../assets/assetUrls", () => ({
     };
   },
 }));
-vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
+vi.mock("../hooks/useTheme", () => ({
+  useRenderedAppearance: () => "dark",
+  useTheme: () => ({ resolvedTheme: "dark" }),
+}));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/session", async (importOriginal) => ({
@@ -121,7 +124,7 @@ describe("ChatMarkdown workspace images", () => {
     ]);
   });
 
-  it("loads every Windows workspace path form through a signed asset URL", () => {
+  it("loads local Windows workspace paths and blocks another network share", () => {
     const imagePath = "C:/Users/shawn/project/.t3/workspace-image.svg";
     const html = render(
       [
@@ -140,17 +143,12 @@ describe("ChatMarkdown workspace images", () => {
       },
       { _tag: "media-file", threadId: threadRef.threadId, path: imagePath },
       { _tag: "media-file", threadId: threadRef.threadId, path: imagePath },
-      {
-        _tag: "media-file",
-        threadId: threadRef.threadId,
-        path: "\\\\server\\share\\workspace-image.svg",
-      },
     ]);
     expect(html.match(/<img[^>]*src="https:\/\/signed\.test\/workspace-image\.svg"/g)).toHaveLength(
-      4,
+      3,
     );
-    expect(html.match(/max-w-\[min\(100%,30rem\)\]/g)).toHaveLength(4);
-    expect(html).not.toContain("Image unavailable");
+    expect(html.match(/max-w-\[min\(100%,30rem\)\]/g)).toHaveLength(3);
+    expect(html).toContain("Image unavailable");
   });
 
   it("loads a POSIX absolute path and file URI through a signed asset URL", () => {
@@ -207,13 +205,9 @@ describe("ChatMarkdown workspace images", () => {
         threadId: threadRef.threadId,
         path: "C:/Users/shawn/.t3/workspace-image.svg",
       },
-      {
-        _tag: "media-file",
-        threadId: threadRef.threadId,
-        path: String.raw`\\wsl.localhost\Ubuntu\.t3\workspace-image.svg`,
-      },
     ]);
     expect(html).toContain('href="C:/Users/shawn/.claude/settings.json"');
+    expect(html).toContain("Image unavailable");
   });
 
   it("still decodes character references in Windows image paths", () => {
@@ -408,7 +402,7 @@ describe("ChatMarkdown workspace images", () => {
     expect(failure).toContain("Image unavailable");
     // The bytes are requested inside the frame but never paint at an unknown size.
     expect(loadingBytes).toMatch(/<img[^>]*src="https:\/\/signed[^>]*class="invisible/);
-    expect(loadingBytes).not.toContain('loading="lazy"');
+    expect(loadingBytes).toContain('loading="lazy"');
   });
 
   it("gives a standalone remote image the same frame instead of a bare tag", () => {

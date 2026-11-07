@@ -941,6 +941,8 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
         const worktreeCwd = path.join(configBaseDir, "worktrees", "t3code", "wt-3");
         yield* fileSystem.makeDirectory(worktreeCwd, { recursive: true });
+        const configAlias = path.join(linkParent, "config");
+        yield* fileSystem.symlink(configBaseDir, configAlias);
         const symlinkCwd = path.join(linkParent, "innocent-project");
         yield* fileSystem.symlink(worktreeCwd, symlinkCwd);
         yield* writeTranscript({
@@ -949,7 +951,11 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
         });
 
-        const result = yield* runScan({ claudeHomePath, codexHomePath, configBaseDir });
+        const result = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          configBaseDir: configAlias,
+        });
 
         expect(result.candidates).toEqual([]);
       }),

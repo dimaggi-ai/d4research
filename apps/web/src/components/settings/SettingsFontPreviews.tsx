@@ -22,8 +22,8 @@ const PREVIEW_SKILLS: ReadonlyArray<ServerProviderSkill> = [
 
 const PROMPT_PREVIEW_TEXT =
   "Use $frontend-design to fix the flaky test in " +
-  "[surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) and align the header with " +
-  "[SettingsPanels.tsx](apps/web/src/components/settings/SettingsPanels.tsx) before shipping.";
+  "surface.test.ts and align the header with " +
+  "SettingsPanels.tsx before shipping.";
 
 function noop() {}
 

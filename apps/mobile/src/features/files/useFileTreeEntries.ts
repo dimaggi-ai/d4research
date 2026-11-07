@@ -98,7 +98,7 @@ export function useFileTreeEntries(input: {
         render();
       });
     },
-    [cwd, directories, environmentId],
+    [cwd, directories, environmentId, render, entriesChanged],
   );
   const { refresh: refreshRoot, data: rootData } = root;
   const { refresh: refreshSearch, data: searchData } = search;
@@ -174,6 +174,8 @@ export function useFileTreeEntries(input: {
     refreshSearch,
     searching,
     snapshot.reachableDirectories,
+    render,
+    setRefreshingDirectories,
   ]);
 
   return {

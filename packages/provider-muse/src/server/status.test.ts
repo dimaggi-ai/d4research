@@ -98,7 +98,7 @@ it.layer(NodeServices.layer)("Muse status", (it) => {
         ]);
         expect(snapshot.models.map((model) => model.name)).toEqual([
           "Muse Wonder 1.0",
-          "muse-custom",
+          "Muse Custom",
         ]);
         const descriptor = snapshot.models[0]?.capabilities?.optionDescriptors?.[0];
         expect(

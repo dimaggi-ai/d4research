@@ -15,6 +15,8 @@ function setExpoViewConfigAvailable() {
 vi.mock("expo", () => ({
   requireNativeView: expoMocks.requireNativeView,
 }));
+vi.mock("react-native", () => ({ View: "div" }));
+vi.mock("../../components/ui/EmptyState", () => ({ EmptyState: () => null }));
 
 describe("resolveNativeReviewDiffView", () => {
   beforeEach(() => {

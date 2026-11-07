@@ -47,7 +47,7 @@ export function UsageLimitRecoveryCard({
     }
     setPending(true);
     setError(null);
-    try {
+    await (async () => {
       const result = await updateMetadata({
         environmentId,
         input: {
@@ -60,11 +60,13 @@ export function UsageLimitRecoveryCard({
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
-    } finally {
-      setPending(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
+      })
+      .finally(() => {
+        setPending(false);
+      });
   }
   return (
     <View className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-screen p-3">

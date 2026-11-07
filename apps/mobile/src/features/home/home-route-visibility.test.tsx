@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { RegistryContext } from "@effect/atom-react";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { act, useEffect } from "react";
@@ -35,7 +34,13 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => harness.navigation,
 }));
 
-import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
+import {
+  recordHomeFocus,
+  recordHomeTransitionEnd,
+  recordHomeTransitionStart,
+  useAtomValueWhileVisible,
+  useHomeRouteVisible,
+} from "./home-route-visibility";
 
 const shellsAtom = Atom.make(0).pipe(Atom.keepAlive);
 let registry: AtomRegistry.AtomRegistry;
@@ -70,8 +75,8 @@ function stream(count: number) {
 }
 
 function pushThread() {
-  act(() => harness.emit("transitionStart", { closing: true }));
-  act(() => harness.emit("transitionEnd", { closing: true }));
+  act(() => recordHomeTransitionStart(true));
+  act(() => recordHomeTransitionEnd(true));
 }
 
 beforeEach(() => {
@@ -97,7 +102,7 @@ describe("Home route visibility", () => {
 
   it("stays live until the covering Thread finishes its push animation", () => {
     mount();
-    act(() => harness.emit("transitionStart", { closing: true }));
+    act(() => recordHomeTransitionStart(true));
     stream(3);
     expect(renders.at(-1)).toEqual({ visible: true, value: 3 });
   });
@@ -116,7 +121,7 @@ describe("Home route visibility", () => {
     mount();
     pushThread();
     stream(50);
-    act(() => harness.emit("transitionStart", { closing: false }));
+    act(() => recordHomeTransitionStart(false));
     expect(renders.at(-1)).toEqual({ visible: true, value: 50 });
     stream(1);
     expect(renders.at(-1)).toEqual({ visible: true, value: 51 });
@@ -126,7 +131,7 @@ describe("Home route visibility", () => {
     mount();
     pushThread();
     stream(5);
-    act(() => harness.emit("focus"));
+    act(() => recordHomeFocus());
     expect(renders.at(-1)).toEqual({ visible: true, value: 5 });
   });
 
@@ -136,7 +141,7 @@ describe("Home route visibility", () => {
     mount();
     stream(10);
     expect(renders).toEqual([{ visible: false, value: 7 }]);
-    act(() => harness.emit("transitionStart", { closing: false }));
+    act(() => recordHomeTransitionStart(false));
     expect(renders.at(-1)).toEqual({ visible: true, value: 17 });
   });
 });

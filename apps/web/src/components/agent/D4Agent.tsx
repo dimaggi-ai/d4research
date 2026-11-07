@@ -6,6 +6,7 @@ import { environmentThreadShells } from "../../state/threads";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
+  agentOpenFailureMessage,
   agentUnavailableMessage,
   actionFullText,
   actionTargetThread,
@@ -43,11 +44,15 @@ import {
   useSidebarVisibility,
 } from "../ui/sidebar";
 
+// The route resolves Nia from server state, so a late shell only delays opening.
+const AGENT_SHELL_WAIT_MS = 3_000;
+
 function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
   return Effect.runPromise(
     waitForD4AgentThreadShell(
       appAtomRegistry,
       environmentThreadShells.threadShellAtom({ environmentId, threadId }),
+      AGENT_SHELL_WAIT_MS,
     ),
   );
 }
@@ -87,7 +92,7 @@ export function D4AgentEntry({
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
   const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const agentShell = useThreadShell(
     state.data?.threadId ? { environmentId, threadId: state.data.threadId } : null,
   );
@@ -120,10 +125,7 @@ export function D4AgentEntry({
         onClick={async () => {
           if (!config) return;
           if (state.data?.threadId && !allowed) {
-            if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
-              setError(true);
-              return;
-            }
+            await waitForAgentThread(environmentId, state.data.threadId);
             await navigate({
               to: "/$environmentId/$threadId",
               params: { environmentId, threadId: state.data.threadId },
@@ -131,20 +133,20 @@ export function D4AgentEntry({
             return;
           }
           setOpening(true);
-          setError(false);
+          setError(null);
           await ensure({ environmentId, input: {} })
             .then(async (result) => {
-              if (
-                result._tag === "Success" &&
-                (await waitForAgentThread(environmentId, result.value.threadId))
-              )
-                await navigate({
-                  to: "/$environmentId/$threadId",
-                  params: { environmentId, threadId: result.value.threadId },
-                });
-              else setError(true);
+              if (result._tag !== "Success") {
+                setError(agentOpenFailureMessage(squashAtomCommandFailure(result)));
+                return;
+              }
+              await waitForAgentThread(environmentId, result.value.threadId);
+              await navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: result.value.threadId },
+              });
             })
-            .catch(() => setError(true))
+            .catch((failure: unknown) => setError(agentOpenFailureMessage(failure)))
             .finally(() => setOpening(false));
         }}
       >
@@ -153,7 +155,7 @@ export function D4AgentEntry({
       </SidebarMenuButton>
       {error ? (
         <p role="alert" className="px-2 text-xs text-destructive">
-          Could not open Nia. Check that it is enabled with an available model in Settings.
+          {error}
         </p>
       ) : null}
     </SidebarMenuItem>
@@ -385,7 +387,7 @@ function D4AgentPanelContent({
                   message: decision === "approve" ? "Approving…" : "Denying…",
                   error: false,
                 });
-                try {
+                await (async () => {
                   const result = await resolve({
                     environmentId,
                     input: { actionId: record.id, decision, ...options },
@@ -399,17 +401,19 @@ function D4AgentPanelContent({
                         }
                       : null,
                   );
-                } catch {
-                  setDecisionState({
-                    id: record.id,
-                    message: d4ActionFailureMessage(null),
-                    error: true,
+                })()
+                  .catch(() => {
+                    setDecisionState({
+                      id: record.id,
+                      message: d4ActionFailureMessage(null),
+                      error: true,
+                    });
+                  })
+                  .finally(() => {
+                    resolving.current = false;
+                    setBusy(null);
+                    query.refresh();
                   });
-                } finally {
-                  resolving.current = false;
-                  setBusy(null);
-                  query.refresh();
-                }
               }}
             />
           ))}

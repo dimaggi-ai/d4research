@@ -6,6 +6,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { expect, it } from "@effect/vitest";
 import {
+  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   EnvironmentId,
   EnvironmentHttpApi,
@@ -159,7 +160,7 @@ it.layer(NodeServices.layer)("shared environment browser gateway", (it) => {
         const hostAuth = Context.get(hostContext, EnvironmentAuth.EnvironmentAuth);
         const sessions = Context.get(hostContext, SessionStore.SessionStore);
         const shared = Context.get(hostContext, Shared.SharedEnvironments);
-        const owner = yield* hostAuth.issueSession({ scopes: AuthStandardClientScopes });
+        const owner = yield* hostAuth.issueSession({ scopes: AuthAdministrativeScopes });
         yield* sessions.markConnected(owner.sessionId);
         const phoneScopes = ["orchestration:read", "relay:read", "filesystem:read"] as const;
         const pairing = yield* hostAuth.issuePairingCredential({ scopes: [...phoneScopes].sort() });
@@ -180,6 +181,12 @@ it.layer(NodeServices.layer)("shared environment browser gateway", (it) => {
           httpBaseUrl: remoteUrl + "/",
           bearerToken: remoteOwner.token,
         };
+        const standardClient = yield* hostAuth.issueSession({ scopes: AuthStandardClientScopes });
+        expect(
+          (yield* shared
+            .publish(standardClient, { environments: [registration] })
+            .pipe(Effect.flip)).reason,
+        ).toBe("forbidden");
         yield* shared.publish(owner, { environments: [registration] });
         const hostRoutes = Layer.mergeAll(
           HttpApiBuilder.layer(HostApi).pipe(

@@ -1,4 +1,3 @@
-import { memoryInstructions } from "../../project/ProjectMemory.ts";
 import * as NodeOS from "node:os";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Path from "effect/Path";
@@ -3072,12 +3071,9 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           const fs = yield* FileSystem.FileSystem;
           const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-capacity-retry-" });
           const localTranscript = yield* decodeReplayTranscriptJson(
-            (yield* encodeReplayTranscriptJson(makeCodexReplayTranscript({ scenario, entries })))
-              .replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd))
-              .replaceAll(
-                yield* encodeStringJson(prompt),
-                yield* encodeStringJson(`${memoryInstructions([])}\n\n${prompt}`),
-              ),
+            (yield* encodeReplayTranscriptJson(
+              makeCodexReplayTranscript({ scenario, entries }),
+            )).replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd)),
           );
           const driver = yield* CodexReplay.makeReplayDriver(localTranscript);
           yield* Effect.gen(function* () {
@@ -4236,12 +4232,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         const fs = yield* FileSystem.FileSystem;
         const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-bg-stop-workspace-" });
         const localTranscript = yield* decodeReplayTranscriptJson(
-          (yield* encodeReplayTranscriptJson(transcript))
-            .replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd))
-            .replaceAll(
-              yield* encodeStringJson(BG_PROMPT),
-              yield* encodeStringJson(`${memoryInstructions([])}\n\n${BG_PROMPT}`),
-            ),
+          (yield* encodeReplayTranscriptJson(transcript)).replaceAll(
+            yield* encodeStringJson("/workspace"),
+            yield* encodeStringJson(cwd),
+          ),
         );
         const replayDriver = yield* CodexReplay.makeReplayDriver(localTranscript);
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -4372,12 +4366,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           ],
         });
         const localTranscript = yield* decodeReplayTranscriptJson(
-          (yield* encodeReplayTranscriptJson(staleTranscript))
-            .replaceAll(yield* encodeStringJson("/workspace"), yield* encodeStringJson(cwd))
-            .replaceAll(
-              yield* encodeStringJson(BG_PROMPT),
-              yield* encodeStringJson(`${memoryInstructions([])}\n\n${BG_PROMPT}`),
-            ),
+          (yield* encodeReplayTranscriptJson(staleTranscript)).replaceAll(
+            yield* encodeStringJson("/workspace"),
+            yield* encodeStringJson(cwd),
+          ),
         );
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         for (const args of [
@@ -8695,6 +8687,7 @@ it("d4 Agent exposes exactly the bounded tools and keeps native capabilities dis
     "d4_agent_system_health",
     "d4_agent_tasks",
     "d4_agent_action",
+    "d4_agent_skill_read",
     "d4_agent_memory_search",
     "d4_agent_memory_read",
     "d4_agent_memory_propose",

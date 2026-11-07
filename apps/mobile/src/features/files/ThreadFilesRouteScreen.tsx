@@ -819,6 +819,9 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   );
   useRegisterWorkspaceInspector(fileInspector.supported ? renderWorkspaceInspector : undefined);
 
+  const fileContents = fileData?.contents;
+  const fileTruncated = fileData?.truncated;
+  const { refresh: refreshAssetPreview } = assetPreview;
   const fileMenuActions = useMemo(() => {
     if (relativePath === null) return [];
     const canToggleMode = canPreview && !isImageFile && !isVideoFile && !isAudioFile;
@@ -870,13 +873,13 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
               onPress: () => copyTextWithHaptic(relativePath),
             } as const,
           ]),
-      fileData?.contents != null
+      fileContents != null
         ? ({
             id: "copy-contents",
-            title: fileData.truncated ? "Copy preview" : "Copy contents",
+            title: fileTruncated ? "Copy preview" : "Copy contents",
             icon: "doc.on.doc",
             inline: false,
-            onPress: () => copyTextWithHaptic(fileData.contents),
+            onPress: () => copyTextWithHaptic(fileContents),
           } as const)
         : null,
       isPdfFile({ name: relativePath }) && previewUri !== null
@@ -910,7 +913,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             icon: "arrow.clockwise",
             inline: false,
             onPress: async () => {
-              if (isVideoFile || isAudioFile) await assetPreview.refresh();
+              if (isVideoFile || isAudioFile) await refreshAssetPreview();
               setPreviewRevision((current) => current + 1);
             },
           } as const)
@@ -920,7 +923,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     appearance.codeWordBreak,
     setCodeWordBreak,
     assetPreviewUri,
-    assetPreview.refresh,
+    refreshAssetPreview,
     previewUri,
     canPreview,
     isAudioFile,
@@ -931,8 +934,11 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     resolvedActiveMode,
     mediaSource,
     mediaActions.actions,
-    fileData?.contents,
-    fileData?.truncated,
+    fileContents,
+    fileTruncated,
+    setModeOverride,
+    setFullScreenPreview,
+    setPreviewRevision,
   ]);
 
   const handleReturnToThread = useCallback(() => {

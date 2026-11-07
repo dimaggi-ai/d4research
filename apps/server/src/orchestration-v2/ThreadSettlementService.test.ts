@@ -819,7 +819,11 @@ describe("ThreadSettlementServiceV2 worker", () => {
         );
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot(threads),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 3 },
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleMode: "inactivity",
+            sidebarAutoSettleAfterDays: 3,
+          },
         });
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;

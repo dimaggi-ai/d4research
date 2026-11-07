@@ -1,4 +1,7 @@
-import { type EnvironmentContextRecord, resolveEnvironmentMachineKind } from "@d4research/contracts";
+import {
+  type EnvironmentContextRecord,
+  resolveEnvironmentMachineKind,
+} from "@d4research/contracts";
 
 import { useEnvironment } from "~/state/environments";
 import { ContextChip, ContextChipLabel } from "./ContextChip";
@@ -33,7 +36,7 @@ export function EnvironmentContextChip(props: {
         }
       />
       <TooltipPopup side="top">
-        {environment ? "T3 Code environment" : "Machine not in this app"}
+        {environment ? "d4research environment" : "Machine not in this app"}
       </TooltipPopup>
     </Tooltip>
   );

@@ -109,6 +109,7 @@ export async function notesFlows({ page, context, app, screenshotDir }) {
   const openNotes = async (id) => {
     await page.goto(route(id), { waitUntil: "domcontentloaded" });
     const button = page.getByRole("button", { name: "Open thread notes", exact: true });
+    await button.waitFor();
     try {
       await button.click({ timeout: 1500 });
     } catch (error) {

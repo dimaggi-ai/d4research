@@ -5,7 +5,8 @@ import * as NodePath from "node:path";
 import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { isValidElement, type ReactNode } from "react";
+import { act, createElement, isValidElement, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
@@ -24,6 +25,9 @@ vi.mock("react", async (importOriginal) => ({
   useRef: (current: unknown) => ({ current }),
   useEffect: () => {},
 }));
+vi.mock("../workspace/useSelectWorkspaceDetail", () => ({
+  useSelectWorkspaceDetail: () => () => {},
+}));
 vi.mock("../../components/ui/NavigationRow", () => ({ NavigationRow: "NavigationRow" }));
 vi.mock("../../components/ui/Button", () => ({ Button: "Button" }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: "ScrollView" }));
@@ -38,7 +42,7 @@ vi.mock("react-native", () => ({
   View: "View",
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ dispatch: () => {} }),
+  useNavigation: () => ({ dispatch: () => {}, getState: () => undefined }),
   CommonActions: { reset: (input: unknown) => input },
   StackActions: {},
 }));
@@ -61,6 +65,7 @@ vi.mock("../../state/session", () => ({
 }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => [],
+  waitForProject: async () => null,
   useServerConfigs: () =>
     new Map([
       [
@@ -141,23 +146,43 @@ function findAction(node: ReactNode, label: string): (() => unknown) | null {
   return findAction(node.props.children, label);
 }
 
+let root: Root | null = null;
+
+function screenAction(renderScreen: () => ReactNode, label: string) {
+  const captured: { action: (() => unknown) | null } = { action: null };
+  function CaptureAction() {
+    captured.action = findAction(renderScreen(), label);
+    return null;
+  }
+  root ??= createRoot(document.createElement("div"));
+  act(() => root!.render(createElement(CaptureAction)));
+  if (!captured.action) throw new Error(`${label} action missing`);
+  return captured.action;
+}
+
+beforeEach(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterEach(() => {
+  act(() => root?.unmount());
+  root = null;
+});
+
 function cloneAction() {
-  const action = findAction(
-    AddProjectDestinationScreen({
-      environmentId: "environment",
-      remoteUrl: "https://example.com/repo.git",
-      repositoryName: "repo",
-    }),
+  return screenAction(
+    () =>
+      AddProjectDestinationScreen({
+        environmentId: "environment",
+        remoteUrl: "https://example.com/repo.git",
+        repositoryName: "repo",
+      }),
     "Clone project",
   );
-  if (!action) throw new Error("Clone action missing");
-  return action;
 }
 
 function localProjectAction(environmentId = "environment") {
-  const action = findAction(AddProjectLocalFolderScreen({ environmentId }), "Add project");
-  if (!action) throw new Error("Add project action missing");
-  return action;
+  return screenAction(() => AddProjectLocalFolderScreen({ environmentId }), "Add project");
 }
 
 describe("clone project permissions", () => {

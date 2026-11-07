@@ -35,9 +35,9 @@ describe("resolveMarkdownMediaPreview", () => {
   });
 
   it.each([
-    ["/tmp/frame%23one.png:12", "/tmp/frame#one.png"],
-    ["/tmp/frame%3Fone.png:12:3", "/tmp/frame?one.png"],
-    ["/tmp/frame%2523one.png:12", "/tmp/frame%23one.png"],
+    ["/tmp/frame%23one.png", "/tmp/frame#one.png"],
+    ["/tmp/frame%3Fone.png", "/tmp/frame?one.png"],
+    ["/tmp/frame%2523one.png", "/tmp/frame%23one.png"],
   ])("keeps encoded filename semantics for %s", (href, path) => {
     expect(resolveMarkdownMediaPreview(href, input)).toMatchObject({
       kind: "image",
@@ -46,6 +46,15 @@ describe("resolveMarkdownMediaPreview", () => {
         actionsSource: { reference: { kind: "file", path } },
       },
     });
+  });
+
+  it.each([
+    "/tmp/frame%23one.png:12",
+    "/tmp/frame%3Fone.png:12:3",
+    "/tmp/frame%2523one.png:12",
+    "/tmp/report%23one.pdf:12#page=2",
+  ])("leaves positioned file link %s to source navigation", (href) => {
+    expect(resolveMarkdownMediaPreview(href, input)).toBeNull();
   });
 
   it.each(["file://server/share/frame.png", "\\\\server\\share\\frame.png"])(
@@ -115,7 +124,7 @@ describe("resolveMarkdownMediaPreview", () => {
   });
 
   it("opens encoded host PDFs without interpreting literal filename characters twice", () => {
-    expect(resolveMarkdownMediaPreview("/tmp/report%23one.pdf:12#page=2", input)).toMatchObject({
+    expect(resolveMarkdownMediaPreview("/tmp/report%23one.pdf#page=2", input)).toMatchObject({
       kind: "pdf",
       source: { resource: { path: "/tmp/report#one.pdf" }, srcFragment: "#page=2" },
     });

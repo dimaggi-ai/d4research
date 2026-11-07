@@ -76,7 +76,7 @@ function NativeVideoPreview(props: {
           ? await loadLocalAttachmentPreview(localAttachment, controller.signal)
           : null;
       if (localAttachment !== null && !file) return;
-      try {
+      await (async () => {
         if (controller.signal.aborted) return;
         ready = true;
         await NativeControls.presentVideo(
@@ -86,10 +86,10 @@ function NativeVideoPreview(props: {
           identifier,
         );
         if (!controller.signal.aborted) onRequestClose();
-      } finally {
+      })().finally(() => {
         // Native completion follows dismissal, so local playback keeps its file lease.
         file?.dispose();
-      }
+      });
     })().catch((error: unknown) => {
       if (controller.signal.aborted) return;
       // AVKit gives no retry, so re-mint now; the cached URL may simply have expired.

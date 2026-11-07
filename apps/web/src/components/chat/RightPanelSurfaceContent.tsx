@@ -133,8 +133,12 @@ export function RightPanelSurfaceContent(props: {
         <PullRequestDetailPanel
           getShortcutContext={props.getShortcutContext}
           shortcutsEnabled={visible && props.activeSurfaceId === surface.id}
-          key={`${surface.host ?? ""}:${surface.repository}#${surface.number}`}
+          key={`${scopedThreadKey(threadRef)}:${surface.projectId}:${surface.host ?? ""}:${surface.repository}#${surface.number}`}
           environmentId={props.environmentId}
+          initialTab={surface.detailTab ?? "summary"}
+          onTabChange={(tab) =>
+            useRightPanelStore.getState().setPullRequestDetailTab(threadRef, surface.id, tab)
+          }
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {
               projectId: reference.projectId,

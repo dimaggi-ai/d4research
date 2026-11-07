@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import type { VcsStatusResult } from "@d4research/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -31,6 +30,12 @@ vi.mock("@react-navigation/native", () => {
     useNavigation: () => navigation,
   };
 });
+vi.mock("../../components/ui/ScreenHeaderButton", () => ({
+  ScreenHeaderButton: "ScreenHeaderButton",
+}));
+vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
+  useWorkspaceBackNavigation: () => () => {},
+}));
 vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: () => () => {} }));
 
 vi.mock("../../state/session", () => ({ useEnvironmentScope: () => true }));

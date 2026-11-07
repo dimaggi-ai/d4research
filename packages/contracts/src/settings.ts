@@ -1610,6 +1610,7 @@ const EnabledSkillsByThread = Schema.Record(ThreadId, EnabledSkillNames).check(
 );
 
 export const SkillsSettings = Schema.Struct({
+  enabledForNia: EnabledSkillNames.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /** Skill names resolved against the live environment inventory on every turn. */
   enabledByDefault: EnabledSkillNames.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /** Additional names active only in one durable chat (draft thread ids are preallocated). */
@@ -2768,6 +2769,7 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       // Whole-list replacement: names are ordered, unique in the UI, and tiny.
       enabledByDefault: Schema.optionalKey(EnabledSkillNames),
+      enabledForNia: Schema.optionalKey(EnabledSkillNames),
       // Whole-map replacement keeps deletion of a chat-level selection unambiguous.
       enabledByThread: Schema.optionalKey(EnabledSkillsByThread),
       /** Atomic idempotent update used by multi-client global controls. */

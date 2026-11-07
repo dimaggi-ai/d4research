@@ -2854,11 +2854,14 @@ const makeWsHandlers = Effect.fn("ws.makeHandlers")(function* (
     [WS_METHODS.projectsReadFile]: (input) =>
       workspaceFileSystem.readFile(input).pipe(
         Effect.tapError((cause) =>
-          Effect.logWarning("Workspace file read failed.", {
-            cwd: input.cwd,
-            relativePath: input.relativePath,
-            cause,
-          }),
+          // Clients probe optional files such as t3.json, so a missing file is not a fault.
+          cause._tag === "WorkspacePathNotFoundError"
+            ? Effect.void
+            : Effect.logWarning("Workspace file read failed.", {
+                cwd: input.cwd,
+                relativePath: input.relativePath,
+                cause,
+              }),
         ),
         Effect.mapError(
           (cause) =>

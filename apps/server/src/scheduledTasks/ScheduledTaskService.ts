@@ -916,7 +916,7 @@ export const layer = Layer.effect(
               yield* sql`
             UPDATE scheduled_tasks
             SET last_run_status = ${status}, last_run_error = ${message},
-                next_run_at = ${Result.isSuccess(task) && task.success !== null ? nextRunAt(task.success, now) : null},
+                next_run_at = ${Result.isSuccess(task) && task.success !== null ? nextRunAfterRun({ ...task.success, lastRunAt: row.started_at }, now) : null},
                 updated_at = ${row.completed_at ?? iso(now)}
             WHERE task_id = ${row.task_id} AND created_at = ${row.task_created_at}
               AND last_run_status = 'running' AND last_run_message_id = ${row.message_id}
@@ -933,7 +933,7 @@ export const layer = Layer.effect(
             const task = yield* Effect.result(decodeRow(row));
             yield* sql`UPDATE scheduled_tasks SET last_run_status = 'failed',
             last_run_error = 'Run was interrupted by a server restart.',
-            next_run_at = ${Result.isSuccess(task) ? nextRunAt(task.success, now) : null},
+            next_run_at = ${Result.isSuccess(task) ? nextRunAfterRun(task.success, now) : null},
             updated_at = ${iso(now)}, run_count = run_count + 1
             WHERE task_id IS ${row.task_id} AND last_run_status = 'running' AND last_run_message_id IS NULL`;
           }

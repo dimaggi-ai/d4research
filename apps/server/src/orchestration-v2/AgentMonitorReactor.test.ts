@@ -405,8 +405,9 @@ it.effect("does not infer a wedged provider from a long expired unrenewed effect
       const monitor = yield* AgentMonitor.make;
       yield* monitor.sweep;
       const report = (yield* read(fixture.threadId)).agentMonitor;
-      assert.equal(report?.classification, "suspected_stuck");
-      assert.isTrue(report!.attentionRequired);
+      assert.equal(report?.classification, "slow");
+      assert.equal(report?.reason, "progress_stale");
+      assert.isFalse(report!.attentionRequired);
       assert.isFalse(report!.notificationEligible);
     }),
   ),
@@ -930,7 +931,7 @@ it.effect(
     ),
 );
 
-it.effect("requires repeated stale-progress observations before notification eligibility", () =>
+it.effect("requires repeated provider-error observations before notification eligibility", () =>
   isolated(
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(at));
@@ -940,9 +941,13 @@ it.effect("requires repeated stale-progress observations before notification eli
       const fixture = yield* seed("stale-progress");
       yield* monitor.sweep;
       yield* TestClock.adjust("10 minutes");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_provider_sessions SET status = 'error'
+        WHERE provider_session_id = ${`session:${fixture.threadId}`}`;
       yield* monitor.sweep;
       const first = (yield* read(fixture.threadId)).agentMonitor!;
-      assert.equal(first.classification, "suspected_stuck");
+      assert.equal(first.classification, "wedged");
+      assert.equal(first.reason, "provider_error");
       assert.isTrue(first.attentionRequired);
       assert.isFalse(first.notificationEligible);
       yield* TestClock.adjust("15 seconds");
@@ -1265,7 +1270,7 @@ it.effect(
     ),
 );
 
-it.effect("new progress permits a second stale episode in the same attempt", () =>
+it.effect("provider recovery permits a second attention episode in the same attempt", () =>
   isolated(
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(at));
@@ -1275,6 +1280,11 @@ it.effect("new progress permits a second stale episode in the same attempt", () 
       const fixture = yield* seed("stale-twice");
       yield* monitor.sweep;
       yield* TestClock.adjust("10 minutes");
+      const sql = yield* SqlClient.SqlClient;
+      const setStatus = (status: string) =>
+        sql`UPDATE orchestration_v2_projection_provider_sessions SET status = ${status}
+          WHERE provider_session_id = ${`session:${fixture.threadId}`}`;
+      yield* setStatus("error");
       yield* monitor.sweep;
       yield* TestClock.adjust("30 seconds");
       yield* monitor.sweep;
@@ -1286,6 +1296,7 @@ it.effect("new progress permits a second stale episode in the same attempt", () 
           clientId,
         })).claimed,
       );
+      yield* setStatus("running");
       const sink = yield* EventSink.EventSinkV2;
       yield* sink.write({
         events: [
@@ -1318,11 +1329,13 @@ it.effect("new progress permits a second stale episode in the same attempt", () 
       yield* monitor.sweep;
       assert.equal((yield* read(fixture.threadId)).agentMonitor!.classification, "working");
       yield* TestClock.adjust("10 minutes");
+      yield* setStatus("error");
       yield* monitor.sweep;
       yield* TestClock.adjust("30 seconds");
       yield* monitor.sweep;
       const second = (yield* read(fixture.threadId)).agentMonitor!;
-      assert.equal(second.classification, "suspected_stuck");
+      assert.equal(second.classification, "wedged");
+      assert.equal(second.reason, "provider_error");
       assert.equal(second.attemptId, first.attemptId);
       assert.notEqual(second.reportKey, first.reportKey);
       assert.isTrue(

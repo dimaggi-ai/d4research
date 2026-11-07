@@ -1,8 +1,9 @@
-import { ProjectId, type D4AgentSystemCheck } from "@d4research/contracts";
+import { D4AgentError, ProjectId, type D4AgentSystemCheck } from "@d4research/contracts";
 import { expect, it } from "vite-plus/test";
 import {
   systemCheckLabel,
   systemCheckStatus,
+  agentOpenFailureMessage,
   agentUnavailableMessage,
   projectBelongsToAgentContext,
   brainIndexStatus,
@@ -225,4 +226,16 @@ it("preserves OS update and doctor details alongside attention and healthy statu
     expect(systemCheckStatus(check)).toBe("Needs attention · Probe details");
     expect(systemCheckStatus({ ...check, status: "ok" })).toBe("Healthy · Probe details");
   }
+});
+
+it("shows why Nia could not open", () => {
+  expect(agentOpenFailureMessage(new D4AgentError({ reason: "provider-unavailable" }))).toBe(
+    agentUnavailableMessage("provider-unavailable"),
+  );
+  expect(agentOpenFailureMessage(new D4AgentError({ reason: "thread" }))).toBe(
+    "Could not open Nia. Try again.",
+  );
+  expect(agentOpenFailureMessage(new Error("socket closed"))).toBe(
+    "Could not open Nia. Try again.",
+  );
 });

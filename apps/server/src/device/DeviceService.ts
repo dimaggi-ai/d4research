@@ -426,6 +426,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           setHostStatus(host.id, { status, detail }).pipe(Effect.asVoid),
         )
         .pipe(
+          Effect.onInterrupt(() => setHostStatus(host.id, { status: "failed" })),
           Effect.tapError((error) =>
             setHostStatus(host.id, {
               status: "failed",
@@ -489,6 +490,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           setHostStatus(host.id, { status: phase, detail }).pipe(Effect.asVoid),
         )
         .pipe(
+          Effect.onInterrupt(() => setHostStatus(host.id, { status: "failed" })),
           Effect.tapError((error) =>
             setHostStatus(host.id, {
               status: "failed",

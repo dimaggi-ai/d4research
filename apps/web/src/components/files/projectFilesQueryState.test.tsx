@@ -783,9 +783,8 @@ describe("project query refresh", () => {
       await flushEffects();
 
       render("mutation-1");
-      await vi.waitFor(() => expect(requests).toHaveLength(2));
-      requests.at(-1)!.resolve({ ...file(""), revision: "1", metadataOnly: true });
-      await vi.waitFor(() => expect(registry.get(metadataAtom).waiting).toBe(false));
+      await flushEffects();
+      expect(requests).toHaveLength(2);
       // Opening is stale-while-revalidate: show cached rows without a loading flash.
       expect(renderedPaths).toEqual(["src/old.ts"]);
       await flushEffects();

@@ -34,6 +34,7 @@ it.effect(
         yield* write(path.join(homeDir, ".claude", "skills", "session"), "session");
         const threadId = ThreadId.make("thread");
         const skills = {
+          enabledForNia: [],
           enabledByDefault: ["global", "missing"],
           enabledByThread: { [threadId]: ["global", "session"] },
         };
@@ -77,7 +78,7 @@ it.effect(
               threadId,
               cwd,
               homeDir,
-              skills: { enabledByDefault: [], enabledByThread: {} },
+              skills: { enabledForNia: [], enabledByDefault: [], enabledByThread: {} },
             }),
             text,
           );

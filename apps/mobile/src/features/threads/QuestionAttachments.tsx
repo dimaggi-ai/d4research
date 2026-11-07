@@ -134,7 +134,7 @@ export function QuestionAttachments(props: {
   const pick = async (kind: "media" | "files") => {
     const scope = pickerScope.current;
     changeQuestionAttachmentPreparation(key, 1);
-    try {
+    await (async () => {
       const existingCount = appAtomRegistry.get(composerDraftsAtom)[key]?.attachments.length ?? 0;
       const result =
         kind === "files"
@@ -158,11 +158,16 @@ export function QuestionAttachments(props: {
       const rejected = append(key, picked);
       if (result.error || rejected > 0)
         Dialog.alert("Could not attach file", result.error ?? "Too many attachments.");
-    } catch (error) {
-      Dialog.alert("Could not attach file", error instanceof Error ? error.message : "Try again.");
-    } finally {
-      changeQuestionAttachmentPreparation(key, -1);
-    }
+    })()
+      .catch((error: unknown) => {
+        Dialog.alert(
+          "Could not attach file",
+          error instanceof Error ? error.message : "Try again.",
+        );
+      })
+      .finally(() => {
+        changeQuestionAttachmentPreparation(key, -1);
+      });
   };
   return (
     <View className="gap-2">

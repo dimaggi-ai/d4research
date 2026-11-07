@@ -118,7 +118,7 @@ function NiaRoutinesContent({
           setBusy(true);
           setError(null);
           setSent(false);
-          try {
+          await (async () => {
             const result = await send({
               environmentId,
               input: {
@@ -143,12 +143,14 @@ function NiaRoutinesContent({
               setTaskModelOverride(null);
               setSent(true);
             }
-          } catch {
-            setError("Could not send this message. Your brief is preserved.");
-          } finally {
-            lock.current = false;
-            setBusy(false);
-          }
+          })()
+            .catch(() => {
+              setError("Could not send this message. Your brief is preserved.");
+            })
+            .finally(() => {
+              lock.current = false;
+              setBusy(false);
+            });
         }}
       >
         <SettingsSection title="New job">
@@ -353,18 +355,20 @@ function RoutineRow({
             lock.current = true;
             setBusy(true);
             setError(false);
-            try {
+            await (async () => {
               const result = await toggle({
                 environmentId,
                 input: { id: task.id, enabled: !task.enabled },
               });
               if (result._tag === "Failure") setError(true);
-            } catch {
-              setError(true);
-            } finally {
-              lock.current = false;
-              setBusy(false);
-            }
+            })()
+              .catch(() => {
+                setError(true);
+              })
+              .finally(() => {
+                lock.current = false;
+                setBusy(false);
+              });
           }}
         >
           {busy ? "Saving…" : task.enabled ? "Disable" : "Enable"}

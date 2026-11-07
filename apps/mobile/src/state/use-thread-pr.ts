@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@d4research/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import {
@@ -9,7 +9,6 @@ import { Atom } from "effect/reactivity";
 import { use, useCallback, useEffect, useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
-import { appAtomRegistry } from "./atom-registry";
 import { serverEnvironment } from "./server";
 import { useEnvironmentQuery } from "./query";
 import { ThreadPrDemandContext } from "./thread-pr-demand";
@@ -41,6 +40,7 @@ export {
 } from "./thread-pr-presentation";
 
 export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentation | null {
+  const registry = use(RegistryContext);
   const demand = use(ThreadPrDemandContext);
   const supportsLinks = useAtomValue(
     serverEnvironment.configValueAtom(thread.environmentId),
@@ -96,7 +96,7 @@ export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentatio
 
   useEffect(() => {
     if (live === undefined) return;
-    appAtomRegistry.modify(threadPrSnapshotsAtom, (current) => {
+    registry.modify(threadPrSnapshotsAtom, (current) => {
       const existing = current.get(threadKey);
       if (live === null) {
         if (existing === undefined) return [false, current];
@@ -117,7 +117,7 @@ export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentatio
       }
       return [true, next];
     });
-  }, [live, snapshotIdentity, threadKey]);
+  }, [registry, live, snapshotIdentity, threadKey]);
 
   return linkedPresentation ?? (live === undefined ? snapshot : live);
 }

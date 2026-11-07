@@ -290,6 +290,7 @@ export const D4_AGENT_TOOLS = [
   "d4_agent_system_health",
   "d4_agent_tasks",
   "d4_agent_action",
+  "d4_agent_skill_read",
   "d4_agent_memory_search",
   "d4_agent_memory_read",
   "d4_agent_memory_propose",

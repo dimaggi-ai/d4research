@@ -74,7 +74,8 @@ const mocks = vi.hoisted(() => ({
     deletedAt: null;
     source: { agentMonitor: { attentionRequired: boolean; classification: string } };
   }>,
-  navigate: vi.fn(async () => undefined),
+  navigate: vi.fn(async (_path?: string) => undefined),
+  threadTitles: {} as Record<string, string>,
   state: null as D4AgentState | null,
 }));
 vi.mock("@d4research/client-runtime/state/server", async () => {
@@ -185,29 +186,40 @@ vi.mock("../../state/query", () => ({
     error: null,
   }),
 }));
-vi.mock("../../state/entities", () => ({
-  useThreadShell: () => (mocks.routeShellMissing ? null : { projectId: mocks.state?.projectId }),
-  useProjects: () => mocks.projects,
-  useProject: (ref: { projectId: string } | null) =>
-    mocks.projects.find((project) => project.id === ref?.projectId) ?? null,
-  useThreadShells: () => mocks.threads,
-  useEnvironmentServerConfig: () => ({
-    settings: {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+vi.mock("../../state/entities", async () => {
+  const { relabelThreadLinks } = await import("@d4research/shared/threadLinks");
+  return {
+    useLiveThreadLinkLabels: (markdown: string, environment: EnvironmentId) =>
+      relabelThreadLinks(markdown, environment, (ref) => mocks.threadTitles[ref.threadId]),
+    useThreadChipIcons: () => new Map(),
+    resolveThreadLink: (
+      _read: unknown,
+      link: { environmentId: EnvironmentId | null; threadId: ThreadId },
+      messageEnvironmentId: EnvironmentId,
+    ) => ({ environmentId: link.environmentId ?? messageEnvironmentId, threadId: link.threadId }),
+    useThreadShell: () => (mocks.routeShellMissing ? null : { projectId: mocks.state?.projectId }),
+    useProjects: () => mocks.projects,
+    useProject: (ref: { projectId: string } | null) =>
+      mocks.projects.find((project) => project.id === ref?.projectId) ?? null,
+    useThreadShells: () => mocks.threads,
+    useEnvironmentServerConfig: () => ({
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+        },
+        d4Agent: {
+          ...DEFAULT_SERVER_SETTINGS.d4Agent,
+          enabled: mocks.enabled,
+          projectContexts: mocks.projectContexts,
+          taskModelSelection: mocks.taskModelSelection,
+        },
+        agentMonitor: { enabled: mocks.monitorEnabled },
       },
-      d4Agent: {
-        ...DEFAULT_SERVER_SETTINGS.d4Agent,
-        enabled: mocks.enabled,
-        projectContexts: mocks.projectContexts,
-        taskModelSelection: mocks.taskModelSelection,
-      },
-      agentMonitor: { enabled: mocks.monitorEnabled },
-    },
-    providers: mocks.providers,
-  }),
-}));
+      providers: mocks.providers,
+    }),
+  };
+});
 vi.mock("./useD4AgentState", () => ({
   useD4AgentState: (_environmentId: EnvironmentId, enabled = true) => ({
     data: enabled && !mocks.statePending && !mocks.stateUnavailable ? mocks.state : null,
@@ -1917,4 +1929,41 @@ it("opens web Markdown links without treating unvalidated internal or command li
       (button) => button.textContent === "Unvalidated",
     ),
   ).toBe(false);
+});
+
+it("shows Nia's thread links as titled links that open the thread, however they were written", async () => {
+  mocks.navigate.mockClear();
+  mocks.threadTitles = { t1: "Fix the build", t2: "Plan the release", t3: "Audit logs" };
+  const url = (id: string) => `t3-thread://v2/${environmentId}/${id}`;
+  mocks.state = {
+    ...mocks.state!,
+    transcript: [
+      {
+        id: "thread-links",
+        role: "assistant",
+        context: "Global",
+        text: `See ${url("t1")}. Also <${url("t2")}> and [${url("t3")}](${url("t3")}).`,
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
+      },
+    ],
+  };
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  // The Markdown mock prints its source; a link is only rendered once it is `[title](href)`.
+  expect(container.textContent!.replace(/\]\([^)]*\)/g, "]")).not.toContain("t3-thread://");
+  for (const label of ["Fix the build", "Plan the release", "Audit logs"]) {
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === label)!
+        .click(),
+    );
+  }
+  expect(mocks.navigate.mock.calls.map(([path]) => path)).toEqual(
+    ["t1", "t2", "t3"].map((id) => `/threads/${environmentId}/${id}`),
+  );
+  mocks.threadTitles = {};
 });

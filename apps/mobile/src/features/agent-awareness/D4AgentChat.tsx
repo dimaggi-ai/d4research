@@ -21,7 +21,14 @@ import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runti
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
-import { useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ComponentRef,
+  type ReactNode,
+} from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
@@ -33,11 +40,21 @@ import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "../../components/ui/AppText";
 import {
+  resolveThreadLink,
   useEnvironmentServerConfig,
+  useLiveThreadLinkLabels,
   useProjects,
+  useThreadChipIcons,
   useThreadShells,
   useThreadShell,
 } from "../../state/entities";
+import { appAtomRegistry } from "../../state/atom-registry";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { parseThreadLinkHref } from "@d4research/shared/threadLinks";
+import {
+  enrichedThreadLinkCustomization,
+  withChipIcon,
+} from "../../native/useEnrichedLinkVariants";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { D4AgentPanel } from "./D4Agent";
@@ -203,6 +220,41 @@ export function D4AgentRoute({
   );
 }
 
+/** Thread links in Nia's replies show the thread's title as a chip and open that thread. */
+function NiaMarkdown(props: {
+  readonly environmentId: EnvironmentId;
+  readonly text: string;
+  readonly textStyle: ComponentProps<typeof SelectableMarkdownText>["textStyle"];
+  readonly preserveSoftBreaks: boolean;
+  readonly openThread: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+}) {
+  const markdown = useLiveThreadLinkLabels(props.text, props.environmentId);
+  const threadIcons = useThreadChipIcons(props.environmentId, markdown);
+  return (
+    <SelectableMarkdownText
+      markdown={markdown}
+      textStyle={props.textStyle}
+      preserveSoftBreaks={props.preserveSoftBreaks}
+      linkCustomization={(href) =>
+        withChipIcon(enrichedThreadLinkCustomization(href), threadIcons.get(href))
+      }
+      onLinkPress={(href) => {
+        const link = parseThreadLinkHref(href);
+        if (link) {
+          const target =
+            resolveThreadLink((atom) => appAtomRegistry.get(atom), link, props.environmentId) ??
+            (link.environmentId === null
+              ? scopeThreadRef(props.environmentId, link.threadId)
+              : null);
+          if (target) props.openThread(target.environmentId, target.threadId);
+        } else if (/^https?:\/\//i.test(href)) {
+          void tryOpenExternalUrl(href, "markdown-link");
+        }
+      }}
+    />
+  );
+}
+
 export function D4AgentChat({
   environmentId,
   state,
@@ -320,8 +372,9 @@ export function D4AgentChat({
           const inline = new Set(
             segments?.flatMap((segment) => (segment.kind === "thread" ? [segment.threadId] : [])),
           );
-          const openThread = (threadId: ThreadId) =>
-            linkTo(`/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`);
+          const openScopedThread = (target: EnvironmentId, threadId: ThreadId) =>
+            linkTo(`/threads/${encodeURIComponent(target)}/${encodeURIComponent(threadId)}`);
+          const openThread = (threadId: ThreadId) => openScopedThread(environmentId, threadId);
           return (
             <View
               key={entry.id}
@@ -369,13 +422,12 @@ export function D4AgentChat({
                   )}
                 </Text>
               ) : (
-                <SelectableMarkdownText
-                  markdown={entry.text}
+                <NiaMarkdown
+                  environmentId={environmentId}
+                  text={entry.text}
                   textStyle={markdownStyles[entry.role]}
                   preserveSoftBreaks={entry.role === "user"}
-                  onLinkPress={(href) => {
-                    if (/^https?:\/\//i.test(href)) void tryOpenExternalUrl(href, "markdown-link");
-                  }}
+                  openThread={openScopedThread}
                 />
               )}
               {entry.links

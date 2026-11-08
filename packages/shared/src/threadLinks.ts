@@ -12,9 +12,13 @@ const HOSTED_SEGMENT = "[A-Za-z0-9_%-]+";
 const HOSTED_LINK = `${HOSTED_PREFIX.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}${HOSTED_SEGMENT}/${HOSTED_SEGMENT}`;
 // Code comes first in the alternation so a link written inside a code span or fence is skipped.
 const THREAD_LINK_OUTSIDE_CODE = new RegExp(
-  String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(\`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?<href>t3-thread:\/\/v[12]\/[^\s)]+|${HOSTED_LINK})\)|<(?<autolink>t3-thread:\/\/v[12]\/[^\s<>]+|${HOSTED_LINK})>|(?<bare>${HOSTED_LINK})(?![\w%/?#-])`,
+  String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(\`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?<href>t3-thread:\/\/v[12]\/[^\s)]+|${HOSTED_LINK})\)|<(?<autolink>t3-thread:\/\/v[12]\/[^\s<>]+|${HOSTED_LINK})>|(?<bare>${HOSTED_LINK})(?![\w%/?#-])|(?<![\w/<])(?<protocolBare>t3-thread:\/\/v[12]\/[^\s<>()[\]]+)`,
   "g",
 );
+// A bare URL ends a sentence too; the closing punctuation is not part of the thread id.
+const TRAILING_PUNCTUATION = /[.,;:!?'"]+$/;
+// A label that is the URL itself says nothing, so it counts as no label.
+const URL_LABEL = /^<?t3-thread:\/\//;
 
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
 const decodeEnvironmentId = Schema.decodeUnknownOption(EnvironmentId);
@@ -152,7 +156,11 @@ export function threadLinkRefs(
   // Hermes' matchAll yields matches without `groups`; exec keeps them.
   const pattern = new RegExp(THREAD_LINK_OUTSIDE_CODE);
   for (let match = pattern.exec(markdown); match !== null; match = pattern.exec(markdown)) {
-    const href = match.groups?.href ?? match.groups?.autolink ?? match.groups?.bare;
+    const href =
+      match.groups?.href ??
+      match.groups?.autolink ??
+      match.groups?.bare ??
+      match.groups?.protocolBare?.replace(TRAILING_PUNCTUATION, "");
     const link = href === undefined ? null : parseThreadLinkHref(href);
     if (link === null) continue;
     for (const ref of threadLinkCandidates(link, messageEnvironmentId)) {
@@ -178,10 +186,16 @@ export function replaceThreadLinks(
 ): string {
   if (!hasThreadLinks(markdown)) return markdown;
   return markdown.replace(THREAD_LINK_OUTSIDE_CODE, (source, ...args) => {
-    const groups = args.at(-1) as Partial<Record<"href" | "autolink" | "bare" | "label", string>>;
-    const href = groups.href ?? groups.autolink ?? groups.bare;
+    const groups = args.at(-1) as Partial<
+      Record<"href" | "autolink" | "bare" | "protocolBare" | "label", string>
+    >;
+    const protocolBare = groups.protocolBare?.replace(TRAILING_PUNCTUATION, "");
+    const href = groups.href ?? groups.autolink ?? groups.bare ?? protocolBare;
     const link = href === undefined ? null : parseThreadLinkHref(href);
-    return (link && replace(link, groups.label)) ?? source;
+    const label = groups.label && URL_LABEL.test(groups.label.trim()) ? undefined : groups.label;
+    const replacement = link && replace(link, label);
+    if (replacement === null || replacement === undefined) return source;
+    return replacement + (groups.protocolBare?.slice(protocolBare?.length) ?? "");
   });
 }
 

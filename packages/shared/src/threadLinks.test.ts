@@ -117,21 +117,51 @@ describe("thread links", () => {
     );
   });
 
+  it("links a bare URL in plain text, leaving sentence punctuation outside the link", () => {
+    const title = titlesIn({ local: { t1: "Here" }, there: { t1: "There" } });
+    expect(
+      relabelThreadLinks(
+        "See t3-thread://v2/there/t1, then t3-thread://v1/t1. Done (t3-thread://v2/local/t1)",
+        local,
+        title,
+      ),
+    ).toBe(
+      "See [There](t3-thread://v2/there/t1), then [Here](t3-thread://v1/t1). Done ([Here](t3-thread://v2/local/t1))",
+    );
+    expect(relabelThreadLinks("see t3-thread://v2/there/t1.", local, () => undefined)).toBe(
+      "see Thread on another machine.",
+    );
+    expect(threadLinkRefs("see t3-thread://v2/there/t1.", local)).toEqual([ref("there", "t1")]);
+  });
+
+  it("does not treat a URL label as a label", () => {
+    const url = "t3-thread://v2/there/t1";
+    expect(relabelThreadLinks(`[${url}](${url})`, local, () => undefined)).toBe(
+      "Thread on another machine",
+    );
+    expect(
+      relabelThreadLinks("[t3-thread://v1/t1](t3-thread://v1/t1)", local, () => undefined),
+    ).toBe("Thread no longer available");
+    expect(relabelThreadLinks(`[${url}](${url})`, local, () => "")).toBe(
+      "[t1](t3-thread://v2/there/t1)",
+    );
+  });
+
   it("leaves links inside code spans and fences as written", () => {
     const markdown = [
       "Live [old](t3-thread://v1/t1), literal `[old](t3-thread://v1/t1)`.",
       "```md",
-      "<t3-thread://v2/local/t1>",
+      "<t3-thread://v2/local/t1> t3-thread://v2/local/t1",
       "```",
-      "After <t3-thread://v2/local/t1>",
+      "`t3-thread://v2/local/t1` After <t3-thread://v2/local/t1>",
     ].join("\n");
     expect(relabelThreadLinks(markdown, local, () => "New")).toBe(
       [
         "Live [New](t3-thread://v1/t1), literal `[old](t3-thread://v1/t1)`.",
         "```md",
-        "<t3-thread://v2/local/t1>",
+        "<t3-thread://v2/local/t1> t3-thread://v2/local/t1",
         "```",
-        "After [New](t3-thread://v2/local/t1)",
+        "`t3-thread://v2/local/t1` After [New](t3-thread://v2/local/t1)",
       ].join("\n"),
     );
   });

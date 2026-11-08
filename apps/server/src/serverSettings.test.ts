@@ -1376,6 +1376,76 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("keeps Nia MCP env values and headers secret from clients across saves", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const store = yield* ServerSecretStore.ServerSecretStore;
+      const d4Agent = (yield* service.getSettings).d4Agent;
+      const saved = yield* service.updateSettings({
+        d4Agent: {
+          ...d4Agent,
+          mcpServers: [
+            {
+              name: "docs",
+              enabled: true,
+              transport: {
+                type: "stdio",
+                command: "npx",
+                args: ["docs-mcp"],
+                env: [{ name: "DOCS_TOKEN", value: "mcp-env-secret" }],
+              },
+            },
+            {
+              name: "tracker",
+              enabled: true,
+              transport: {
+                type: "http",
+                url: "https://tracker.example/mcp",
+                headers: [{ name: "Authorization", value: "Bearer mcp-header-secret" }],
+              },
+            },
+          ],
+        },
+      });
+      const client = ServerSettingsModule.redactServerSettingsForClient(saved);
+      const disk = yield* fs.readFileString(config.settingsPath);
+      for (const value of ["mcp-env-secret", "Bearer mcp-header-secret"]) {
+        assert.include(yield* encodeJson(saved), value);
+        assert.notInclude(yield* encodeJson(client), value);
+        assert.notInclude(disk, value);
+      }
+      assert.deepEqual(client.d4Agent.mcpServers[0]?.transport, {
+        type: "stdio",
+        command: "npx",
+        args: ["docs-mcp"],
+        env: [{ name: "DOCS_TOKEN", value: "", valueRedacted: true }],
+      });
+
+      // A client saving its redacted copy, for example after switching a server off, keeps them.
+      const echoed = yield* service.updateSettings({
+        d4Agent: {
+          ...d4Agent,
+          mcpServers: client.d4Agent.mcpServers.map((server, index) =>
+            index === 0 ? { ...server, enabled: false } : server,
+          ),
+        },
+      });
+      assert.equal(echoed.d4Agent.mcpServers[0]?.enabled, false);
+      assert.include(yield* encodeJson(echoed), "mcp-env-secret");
+      assert.include(yield* encodeJson(echoed), "Bearer mcp-header-secret");
+
+      // Removing a server removes its stored values.
+      const secretName = "d4-mcp-dHJhY2tlcg-header-QXV0aG9yaXphdGlvbg";
+      assert.isTrue(Option.isSome(yield* store.get(secretName)));
+      yield* service.updateSettings({
+        d4Agent: { ...d4Agent, mcpServers: client.d4Agent.mcpServers.slice(0, 1) },
+      });
+      assert.isTrue(Option.isNone(yield* store.get(secretName)));
+    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
   it.effect(
     "uses the same secret lifecycle for provider config, environment, host tokens, and quota keys",
     () =>

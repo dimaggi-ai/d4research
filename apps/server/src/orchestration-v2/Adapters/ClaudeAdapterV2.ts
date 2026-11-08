@@ -110,6 +110,7 @@ import {
   type ThreadId,
   resolveIdleCompaction,
   type D4AgentMcpServer,
+  d4AgentMcpPairRecord,
 } from "@d4research/contracts";
 
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
@@ -1780,12 +1781,12 @@ export function claudeMcpQueryOverrides(input: {
                 type: "stdio" as const,
                 command: server.transport.command,
                 args: [...server.transport.args],
-                env: { ...server.transport.env },
+                env: d4AgentMcpPairRecord(server.transport.env),
               }
             : {
                 type: "http" as const,
                 url: server.transport.url,
-                headers: { ...server.transport.headers },
+                headers: d4AgentMcpPairRecord(server.transport.headers),
               },
         ]),
       ),

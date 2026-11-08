@@ -39,6 +39,7 @@ import {
   ProviderDriverKind,
   ProviderSetupError,
   type ServerProviderCompatibilityAdvisory,
+  d4AgentMcpPairRecord,
 } from "@d4research/contracts";
 import { SKILL_MENTION_PATTERN } from "@d4research/shared/composerInlineTokens";
 import { AgentScope } from "@d4research/shared/AgentScope";
@@ -1338,6 +1339,12 @@ export const CODEX_THREAD_CONFIG = {
 // T3 waits can block for an hour; keep Codex's MCP timeout above that.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
+/** Identifies the Nia MCP servers a thread loads with, or undefined outside Nia. */
+const niaMcpServersKey = (runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+  runtimePolicy?.toolPolicy === "d4-agent"
+    ? JSON.stringify(runtimePolicy.d4AgentMcpServers ?? [])
+    : undefined;
+
 export function codexThreadRuntimeParams(input: {
   readonly disabledMcpServers?: ReadonlyArray<string>;
   readonly threadId: ThreadId | null;
@@ -1424,9 +1431,12 @@ export function codexThreadRuntimeParams(input: {
                     ? {
                         command: server.transport.command,
                         args: [...server.transport.args],
-                        env: { ...server.transport.env },
+                        env: d4AgentMcpPairRecord(server.transport.env),
                       }
-                    : { url: server.transport.url, http_headers: { ...server.transport.headers } }),
+                    : {
+                        url: server.transport.url,
+                        http_headers: d4AgentMcpPairRecord(server.transport.headers),
+                      }),
                 },
               ]),
             ),
@@ -1940,6 +1950,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         const pendingRuntimeRequests = yield* Ref.make(
           new Map<string, PendingCodexRuntimeRequest>(),
         );
+        /** The Nia MCP servers each loaded native thread started with. */
+        const loadedNiaMcpServers = new Map<string, string>();
+        const rememberNiaMcpServers = (
+          nativeThreadId: string,
+          runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+        ) => {
+          const key = niaMcpServersKey(runtimePolicy);
+          if (key === undefined) loadedNiaMcpServers.delete(nativeThreadId);
+          else loadedNiaMcpServers.set(nativeThreadId, key);
+        };
         /** Codex acceptForSession covers only the exact command or patch, not future commands. */
         const sessionApprovals = new Map<
           string,
@@ -7090,6 +7110,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   }),
                 ),
               ),
+              Effect.tap((response) =>
+                Effect.sync(() =>
+                  rememberNiaMcpServers(response.thread.id, threadInput.runtimePolicy),
+                ),
+              ),
               Effect.map((response): OrchestrationV2ProviderThread =>
                 providerThreadFromCodexThread({
                   appThreadId: threadInput.threadId,
@@ -7113,6 +7138,19 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
               const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
+              // Codex ignores resume config for a loaded thread this connection subscribes to.
+              // Unsubscribing first lets it rebuild the idle thread with the new Nia MCP servers.
+              const loadedServers = loadedNiaMcpServers.get(nativeThreadId);
+              if (
+                loadedServers !== undefined &&
+                loadedServers !== niaMcpServersKey(threadInput.runtimePolicy)
+              ) {
+                yield* ensureInitialized.pipe(
+                  Effect.andThen(
+                    client.raw.request("thread/unsubscribe", { threadId: nativeThreadId }),
+                  ),
+                );
+              }
               const resume = client.raw.request("thread/resume", {
                 threadId: nativeThreadId,
                 excludeTurns: true,
@@ -7151,6 +7189,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 ),
                 Effect.flatMap(decodeCodexResumeMetadata),
               );
+              rememberNiaMcpServers(response.thread.id, threadInput.runtimePolicy);
               return {
                 ...threadInput.providerThread,
                 providerSessionId: input.providerSessionId,
@@ -7312,6 +7351,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (unloadInput) {
               const nativeThreadId = yield* getNativeThreadId(unloadInput.providerThread);
               sessionApprovals.delete(nativeThreadId);
+              loadedNiaMcpServers.delete(nativeThreadId);
               yield* client.request("thread/unsubscribe", { threadId: nativeThreadId });
             },
             (effect, unloadInput) =>

@@ -62,6 +62,7 @@ export function NiaMcpServerList({
     const result = niaMcpServerFromDraft(
       draft,
       servers.filter((_, index) => index !== editing),
+      typeof editing === "number" ? servers[editing] : undefined,
     );
     if ("error" in result) {
       setError(result.error);
@@ -133,7 +134,7 @@ export function NiaMcpServerList({
         onChange={(pairs) => setDraft({ ...draft, pairs })}
       />
       <Text className="text-sm text-foreground-muted">
-        Values are stored in this environment's settings and are visible to its paired clients.
+        Saved values stay on this environment and show here as ••••••. Leave •••••• to keep a value.
       </Text>
       {error ? (
         <Text accessibilityRole="alert" className="text-sm text-destructive">

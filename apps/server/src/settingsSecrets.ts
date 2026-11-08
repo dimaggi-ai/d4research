@@ -2,6 +2,7 @@ import {
   AntigravitySettings,
   ClaudeSettings,
   CodexSettings,
+  type D4AgentMcpSecretPair,
   EasDeviceHostConfig,
   type ServerSettings,
   SimlockDeviceHostConfig,
@@ -173,8 +174,42 @@ export function mapSettingsSecrets(
       ) as SimlockDeviceHostConfig,
   );
 
+  // Nia MCP env values and headers usually carry tokens. The server name keys the secret, so
+  // clients must re-enter redacted values when they rename a server.
+  const mcpPairs = (
+    server: string,
+    part: "env" | "header",
+    pairs: ReadonlyArray<D4AgentMcpSecretPair>,
+  ) =>
+    pairs.map((pair) => {
+      const { valueRedacted: _omit, ...rest } = pair;
+      const result = map({
+        secretName: `d4-mcp-${encode(server)}-${part}-${encode(pair.name)}`,
+        kind: "environment",
+        value: pair.value,
+        redacted: pair.valueRedacted === true,
+        sensitive: true,
+        environmentVariable: pair.name,
+      });
+      return { ...rest, value: result.value, ...(result.redacted ? { valueRedacted: true } : {}) };
+    });
+  const d4Agent = {
+    ...settings.d4Agent,
+    mcpServers: settings.d4Agent.mcpServers.map((server) => ({
+      ...server,
+      transport:
+        server.transport.type === "stdio"
+          ? { ...server.transport, env: mcpPairs(server.name, "env", server.transport.env) }
+          : {
+              ...server.transport,
+              headers: mcpPairs(server.name, "header", server.transport.headers),
+            },
+    })),
+  };
+
   return {
     ...settings,
+    d4Agent,
     providerInstances,
     sourceControlHosts,
     usageLimitSources,

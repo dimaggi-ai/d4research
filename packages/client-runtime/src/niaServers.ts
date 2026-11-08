@@ -1,4 +1,8 @@
-import { type D4AgentMcpServer, D4AgentMcpServerName } from "@d4research/contracts";
+import {
+  type D4AgentMcpSecretPair,
+  type D4AgentMcpServer,
+  D4AgentMcpServerName,
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 /** Nia's built-in toolkits. They are part of d4research, so users can switch them but not remove them. */
@@ -63,9 +67,12 @@ export const EMPTY_NIA_MCP_SERVER_DRAFT: NiaMcpServerDraft = {
   url: "",
 };
 
-const joinPairs = (pairs: Readonly<Record<string, string>>, separator: string) =>
-  Object.entries(pairs)
-    .map(([key, value]) => key + separator + value)
+/** Stands in for a value the server keeps secret. Leaving it unchanged keeps the stored value. */
+export const NIA_MCP_HIDDEN_VALUE = "\u2022\u2022\u2022\u2022\u2022\u2022";
+
+const joinPairs = (pairs: ReadonlyArray<D4AgentMcpSecretPair>, separator: string) =>
+  pairs
+    .map((pair) => pair.name + separator + (pair.valueRedacted ? NIA_MCP_HIDDEN_VALUE : pair.value))
     .join("\n");
 
 export function niaMcpServerDraft(server: D4AgentMcpServer): NiaMcpServerDraft {
@@ -91,26 +98,52 @@ const lines = (text: string) =>
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-function parsePairs(text: string, separator: "=" | ":"): Record<string, string> | string {
-  const pairs: Record<string, string> = {};
+function parsePairs(
+  text: string,
+  separator: "=" | ":",
+  hidden: ReadonlySet<string>,
+): Array<D4AgentMcpSecretPair> | string {
+  const pairs = new Map<string, D4AgentMcpSecretPair>();
   for (const line of lines(text)) {
     const at = line.indexOf(separator);
-    const key = at > 0 ? line.slice(0, at).trim() : "";
-    if (key.length === 0)
+    const name = at > 0 ? line.slice(0, at).trim() : "";
+    // Only the line itself is shown, never its value, because it may hold a token.
+    if (name.length === 0)
       return separator === "="
-        ? `"${line}" is not KEY=value.`
-        : `"${line}" is not Header-Name: value.`;
-    pairs[key] = line.slice(at + 1).trim();
+        ? "Each line needs KEY=value."
+        : "Each line needs Header-Name: value.";
+    const value = line.slice(at + 1).trim();
+    if (value === NIA_MCP_HIDDEN_VALUE && !hidden.has(name)) return `Enter a value for ${name}.`;
+    pairs.set(
+      name,
+      value === NIA_MCP_HIDDEN_VALUE ? { name, value: "", valueRedacted: true } : { name, value },
+    );
   }
-  return pairs;
+  return [...pairs.values()];
 }
+
+const hiddenNames = (server: D4AgentMcpServer | undefined) =>
+  new Set(
+    (server === undefined
+      ? []
+      : server.transport.type === "stdio"
+        ? server.transport.env
+        : server.transport.headers
+    )
+      .filter((pair) => pair.valueRedacted === true)
+      .map((pair) => pair.name),
+  );
 
 const isServerName = Schema.is(D4AgentMcpServerName);
 
-/** A server ready to save, or the first problem to show. `others` are the remaining servers. */
+/**
+ * A server ready to save, or the first problem to show. `others` are the remaining servers and
+ * `original` is the server being edited, whose hidden values may be kept.
+ */
 export function niaMcpServerFromDraft(
   draft: NiaMcpServerDraft,
   others: ReadonlyArray<D4AgentMcpServer>,
+  original?: D4AgentMcpServer,
 ): { readonly server: D4AgentMcpServer } | { readonly error: string } {
   const name = draft.name.trim();
   if (!isServerName(name))
@@ -122,10 +155,16 @@ export function niaMcpServerFromDraft(
     };
   if (others.some((server) => server.name === name))
     return { error: `A server named ${name} already exists.` };
+  // The server keeps hidden values under the server name and transport, so a renamed or switched
+  // server cannot keep them.
+  const hidden =
+    original?.name === name && original.transport.type === draft.type
+      ? hiddenNames(original)
+      : new Set<string>();
   if (draft.type === "stdio") {
     const command = draft.command.trim();
     if (command.length === 0) return { error: "Enter the command that starts the server." };
-    const env = parsePairs(draft.pairs, "=");
+    const env = parsePairs(draft.pairs, "=", hidden);
     if (typeof env === "string") return { error: env };
     return {
       server: {
@@ -137,7 +176,7 @@ export function niaMcpServerFromDraft(
   }
   const url = draft.url.trim();
   if (!/^https?:\/\/\S+$/.test(url)) return { error: "Enter an http:// or https:// URL." };
-  const headers = parsePairs(draft.pairs, ":");
+  const headers = parsePairs(draft.pairs, ":", hidden);
   if (typeof headers === "string") return { error: headers };
   return { server: { name, enabled: draft.enabled, transport: { type: "http", url, headers } } };
 }

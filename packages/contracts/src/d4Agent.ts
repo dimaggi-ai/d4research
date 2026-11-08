@@ -68,10 +68,25 @@ export const D4AgentMcpServerName = Schema.String.check(
   Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,47}$/),
   Schema.makeFilter((name: string) => name !== "t3-code" || "t3-code is the built-in server"),
 );
-const D4AgentMcpStringMap = Schema.Record(
-  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
-  Schema.String.check(Schema.isMaxLength(4096)),
+// Env values and headers often carry tokens, so each value is a settings secret: clients see an
+// empty value with valueRedacted, and the server keeps the real one in its secret store.
+export const D4AgentMcpSecretPair = Schema.Struct({
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  value: Schema.String.check(Schema.isMaxLength(4096)),
+  valueRedacted: Schema.optionalKey(Schema.Boolean),
+});
+export type D4AgentMcpSecretPair = typeof D4AgentMcpSecretPair.Type;
+const D4AgentMcpSecretPairs = Schema.Array(D4AgentMcpSecretPair).check(
+  Schema.isMaxLength(64),
+  Schema.makeFilter(
+    (pairs: ReadonlyArray<D4AgentMcpSecretPair>) =>
+      new Set(pairs.map((pair) => pair.name)).size === pairs.length || "Names must be unique",
+  ),
 );
+/** The plain name-to-value map a provider receives, after the server has filled in secrets. */
+export const d4AgentMcpPairRecord = (
+  pairs: ReadonlyArray<D4AgentMcpSecretPair>,
+): Record<string, string> => Object.fromEntries(pairs.map((pair) => [pair.name, pair.value]));
 export const D4AgentMcpServer = Schema.Struct({
   name: D4AgentMcpServerName,
   enabled: Schema.Boolean,
@@ -80,12 +95,12 @@ export const D4AgentMcpServer = Schema.Struct({
       type: Schema.Literal("stdio"),
       command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
       args: Schema.Array(Schema.String.check(Schema.isMaxLength(4096))),
-      env: D4AgentMcpStringMap,
+      env: D4AgentMcpSecretPairs,
     }),
     Schema.Struct({
       type: Schema.Literal("http"),
       url: Schema.String.check(Schema.isPattern(/^https?:\/\/\S+$/), Schema.isMaxLength(2048)),
-      headers: D4AgentMcpStringMap,
+      headers: D4AgentMcpSecretPairs,
     }),
   ]),
 });

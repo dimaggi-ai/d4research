@@ -1227,7 +1227,7 @@ describe("Nia MCP servers", () => {
   const server = (name: string) => ({
     name,
     enabled: true,
-    transport: { type: "http", url: "https://example.test/mcp", headers: {} },
+    transport: { type: "http", url: "https://example.test/mcp", headers: [] },
   });
   const decode = (mcpServers: unknown) =>
     decodeServerSettings({ d4Agent: { mcpServers } }).d4Agent.mcpServers;

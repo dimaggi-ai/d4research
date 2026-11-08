@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import type { D4AgentMcpServer } from "@d4research/contracts";
+
 import {
   EMPTY_NIA_MCP_SERVER_DRAFT,
+  NIA_MCP_HIDDEN_VALUE,
   niaMcpServerDraft,
   niaMcpServerFromDraft,
 } from "./niaServers.ts";
@@ -26,7 +29,7 @@ describe("Nia MCP server drafts", () => {
           type: "stdio",
           command: "npx",
           args: ["-y", "docs mcp"],
-          env: { TOKEN: "a=b" },
+          env: [{ name: "TOKEN", value: "a=b" }],
         },
       },
     });
@@ -52,7 +55,7 @@ describe("Nia MCP server drafts", () => {
         transport: {
           type: "http",
           url: "https://tracker.example/mcp",
-          headers: { Authorization: "Bearer x:y" },
+          headers: [{ name: "Authorization", value: "Bearer x:y" }],
         },
       },
     });
@@ -74,5 +77,33 @@ describe("Nia MCP server drafts", () => {
       expect(niaMcpServerFromDraft(draft, [existing.server])).toEqual({
         error: "A server named docs already exists.",
       });
+  });
+
+  it("keeps hidden values only when the user leaves them in place on the same server", () => {
+    const saved: D4AgentMcpServer = {
+      name: "docs",
+      enabled: true,
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: [],
+        env: [
+          { name: "TOKEN", value: "", valueRedacted: true },
+          { name: "MODE", value: "fast" },
+        ],
+      },
+    };
+    const draft = niaMcpServerDraft(saved);
+    expect(draft.pairs).toBe(`TOKEN=${NIA_MCP_HIDDEN_VALUE}\nMODE=fast`);
+    expect(niaMcpServerFromDraft(draft, [], saved)).toEqual({ server: saved });
+    expect(
+      niaMcpServerFromDraft({ ...draft, pairs: "TOKEN=new\nMODE=fast" }, [], saved),
+    ).toMatchObject({
+      server: { transport: { env: [{ name: "TOKEN", value: "new" }, { name: "MODE" }] } },
+    });
+    expect(niaMcpServerFromDraft({ ...draft, name: "docs2" }, [], saved)).toEqual({
+      error: "Enter a value for TOKEN.",
+    });
+    expect(niaMcpServerFromDraft(draft, [])).toEqual({ error: "Enter a value for TOKEN." });
   });
 });

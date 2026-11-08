@@ -137,12 +137,12 @@ const userServers: ReadonlyArray<D4AgentMcpServer> = [
   {
     name: "docs",
     enabled: true,
-    transport: { type: "stdio", command: "npx", args: ["docs-mcp"], env: { DOCS_TOKEN: "t" } },
+    transport: { type: "stdio", command: "npx", args: ["docs-mcp"], env: [{ name: "DOCS_TOKEN", value: "t" }] },
   },
   {
     name: "tracker",
     enabled: true,
-    transport: { type: "http", url: "https://tracker.example/mcp", headers: { "X-Key": "k" } },
+    transport: { type: "http", url: "https://tracker.example/mcp", headers: [{ name: "X-Key", value: "k" }] },
   },
 ];
 

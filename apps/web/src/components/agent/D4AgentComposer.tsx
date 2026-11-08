@@ -3,6 +3,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  resolveD4AgentTaskModelSelection,
   supportsD4AgentDriver,
   type D4AgentState,
   type EnvironmentId,
@@ -93,10 +94,10 @@ export function D4AgentComposer({
   const projects = useProjects();
   const threads = useThreadShells();
   const [text, setText] = useState("");
-  // undefined follows the saved default; null explicitly means manager-only conversation.
-  const [taskSelectionOverride, setTaskSelectionOverride] = useState<
-    ModelSelection | null | undefined
-  >(undefined);
+  // undefined follows the saved task model; a task model is always selected.
+  const [taskSelectionOverride, setTaskSelectionOverride] = useState<ModelSelection | undefined>(
+    undefined,
+  );
   const [cursor, setCursor] = useState(0);
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const focusAfterMention = useRef(false);
@@ -128,11 +129,9 @@ export function D4AgentComposer({
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS);
   const fallbackSelection = settings ? resolveAppModelSelectionState(settings, providers) : null;
   const selection = settings ? (settings.d4Agent.modelSelection ?? fallbackSelection) : null;
+  // Never fall back to Nia's picker default: the task model has its own default.
   const taskSelection =
-    taskSelectionOverride === undefined
-      ? (settings?.d4Agent.taskModelSelection ?? null)
-      : taskSelectionOverride;
-  const taskPickerSelection = taskSelection ?? fallbackSelection;
+    taskSelectionOverride ?? (settings ? resolveD4AgentTaskModelSelection(settings.d4Agent) : null);
   const allEntries = settings ? providerInstanceEntriesFor(providers, settings, null) : [];
   const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const entry = entries.find((candidate) => candidate.instanceId === selection?.instanceId);
@@ -141,12 +140,12 @@ export function D4AgentComposer({
       ? getCustomModelOptionsByInstance(settings, providers, selection.instanceId, selection.model)
       : new Map();
   const taskModelOptions =
-    settings && taskPickerSelection
+    settings && taskSelection
       ? getCustomModelOptionsByInstance(
           settings,
           providers,
-          taskPickerSelection.instanceId,
-          taskPickerSelection.model,
+          taskSelection.instanceId,
+          taskSelection.model,
         )
       : new Map();
   const capability = {
@@ -617,37 +616,22 @@ export function D4AgentComposer({
                     disabled={!canConfigure || saving || sending}
                   />
                 ) : null}
-                {taskPickerSelection ? (
+                {taskSelection ? (
                   <ProviderModelPicker
                     environmentId={environmentId}
-                    activeInstanceId={taskPickerSelection.instanceId}
-                    model={taskPickerSelection.model}
+                    activeInstanceId={taskSelection.instanceId}
+                    model={taskSelection.model}
                     lockedProvider={null}
                     instanceEntries={allEntries}
                     modelOptionsByInstance={taskModelOptions}
                     triggerAriaLabel="Nia task model"
                     triggerClassName="min-w-32 shrink-0"
-                    {...(taskSelection ? {} : { triggerLabel: "Choose task model" })}
                     disabled={sending}
                     onInstanceModelChange={(instanceId, model) => {
                       setTaskSelectionOverride(createModelSelection(instanceId, model));
                       bindDraft();
                     }}
                   />
-                ) : null}
-                {taskSelection ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={sending}
-                    onClick={() => {
-                      setTaskSelectionOverride(null);
-                      bindDraft();
-                    }}
-                  >
-                    No task model
-                  </Button>
                 ) : null}
               </ComposerFooter.Controls>
               <ComposerFooter.Actions>

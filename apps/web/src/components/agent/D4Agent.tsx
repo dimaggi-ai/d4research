@@ -25,6 +25,8 @@ import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import {
   ProjectId,
   type D4AgentActionSummary,
+  type D4AgentScopeReview,
+  type D4AgentScopeReviewer,
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
@@ -438,6 +440,99 @@ function D4AgentPanelContent({
   );
 }
 
+/**
+ * The optional design-reduction step. Fable or Astra runs only when the user asks here; ordinary
+ * task creation never calls them.
+ */
+function ScopeReviewPanel({
+  environmentId,
+  actionId,
+  review,
+  pending,
+  onReviewed,
+}: {
+  environmentId: EnvironmentId;
+  actionId: string;
+  review: D4AgentScopeReview | undefined;
+  pending: boolean;
+  onReviewed: () => void;
+}) {
+  const reviewScope = useAtomCommand(serverEnvironment.reviewD4AgentActionScope);
+  const allowed = useAtomValue(
+    serverEnvironment.reviewD4AgentActionScope.permissionAtom(environmentId),
+  );
+  const [running, setRunning] = useState<D4AgentScopeReviewer | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (reviewer: D4AgentScopeReviewer) => {
+    setRunning(reviewer);
+    setError(null);
+    try {
+      const result = await reviewScope({ environmentId, input: { actionId, reviewer } });
+      if (result._tag === "Failure")
+        setError(d4ActionFailureMessage(squashAtomCommandFailure(result)));
+      else onReviewed();
+    } catch {
+      setError("The scope review failed.");
+    }
+    setRunning(null);
+  };
+  return (
+    <div className="space-y-1">
+      {pending && allowed ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Review scope</span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={running !== null}
+            onClick={() => void run("fable")}
+          >
+            {running === "fable" ? "Asking Fable…" : "Fable"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={running !== null}
+            onClick={() => void run("astra")}
+          >
+            {running === "astra" ? "Asking Astra…" : "Astra"}
+          </Button>
+        </div>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+      {review ? (
+        <div className="space-y-1 rounded border p-2">
+          <p className="text-xs text-muted-foreground">
+            Scope review · {review.modelSelection.model}
+          </p>
+          {review.questions.length > 0 ? (
+            <ul className="list-disc pl-4">
+              {review.questions.map((question) => (
+                <li key={question}>{question}</li>
+              ))}
+            </ul>
+          ) : null}
+          {review.cuts.length > 0 ? (
+            <>
+              <p className="text-xs text-muted-foreground">Suggested cuts</p>
+              <ul className="list-disc pl-4">
+                {review.cuts.map((cut) => (
+                  <li key={cut}>{cut}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <p className="text-xs text-muted-foreground">Reduced brief</p>
+          <p className="whitespace-pre-wrap break-words">{review.reducedBrief}</p>
+          <p className="text-xs text-muted-foreground">
+            To use it, ask Nia to redraft the card with the reduced brief.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AgentActionRecord({
   environmentId,
   record,
@@ -669,6 +764,20 @@ function AgentActionRecord({
               </p>
               <p className="text-xs text-muted-foreground">Exact prompt</p>
               <p className="whitespace-pre-wrap break-words">{detail.data.launch.prompt}</p>
+              {detail.data.plan?.notes.map((note) => (
+                <p key={note} className="text-xs text-muted-foreground">
+                  Planning · {note}
+                </p>
+              ))}
+              {launchAction.type === "start" ? (
+                <ScopeReviewPanel
+                  environmentId={environmentId}
+                  actionId={record.id}
+                  review={detail.data.scopeReview}
+                  pending={pending}
+                  onReviewed={refreshDetail}
+                />
+              ) : null}
             </>
           ) : (
             <>

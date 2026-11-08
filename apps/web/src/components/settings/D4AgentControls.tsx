@@ -138,6 +138,27 @@ export function D4AgentControls({
               }
             />
           ))}
+        <SettingsRow
+          title="Permission level"
+          description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context. Sending, starting threads, interrupting, answering, commands and schedules always require your approval. Provider permission approvals remain manual."
+          control={
+            <select
+              aria-label="Agent permission level"
+              className={selectClass}
+              disabled={disabled}
+              value={agent.permissionMode}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "read-only" || value === "ask" || value === "act")
+                  void writeAgent({ permissionMode: value });
+              }}
+            >
+              <option value="read-only">Read-only</option>
+              <option value="ask">Ask</option>
+              <option value="act">Act</option>
+            </select>
+          }
+        />
         {taskControls}
       </SettingsSection>
       <SettingsSection title="MCP servers">
@@ -178,27 +199,6 @@ export function D4AgentControls({
               <div className="pl-3">
                 {server.id === "threads" ? (
                   <>
-                    <SettingsRow
-                      title="Permission level"
-                      description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context. Sending, starting threads, interrupting, answering, commands and schedules always require your approval. Provider permission approvals remain manual."
-                      control={
-                        <select
-                          aria-label="Agent permission level"
-                          className={selectClass}
-                          disabled={disabled}
-                          value={agent.permissionMode}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            if (value === "read-only" || value === "ask" || value === "act")
-                              void writeAgent({ permissionMode: value });
-                          }}
-                        >
-                          <option value="read-only">Read-only</option>
-                          <option value="ask">Ask</option>
-                          <option value="act">Act</option>
-                        </select>
-                      }
-                    />
                     {projects.map((project) => (
                       <SettingsRow
                         key={project.id}

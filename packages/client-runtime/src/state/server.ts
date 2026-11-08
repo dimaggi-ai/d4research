@@ -1235,6 +1235,14 @@ export function createServerEnvironmentAtoms<R, E>(
       staleTimeMs: 0,
       idleTtlMs: 0,
     }),
+    reviewD4AgentActionScope: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:review-d4-agent-action-scope",
+      tag: WS_METHODS.d4AgentReviewActionScope,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.actionId}`,
+      },
+    }),
     claimD4AgentSystemAttention: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:claim-d4-agent-system-attention",
       tag: WS_METHODS.d4AgentClaimSystemAttention,

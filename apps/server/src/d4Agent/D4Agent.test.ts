@@ -15,6 +15,7 @@ import * as SkillsInventory from "../skillsInventory.ts";
 import {
   ChatAttachmentId,
   DEFAULT_D4_AGENT_SETTINGS,
+  DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
   MessageId,
   NodeId,
   ProviderThreadId,
@@ -30,6 +31,7 @@ import {
   type AgentMonitorUpdate,
   type D4AgentGuardVerdict,
   type D4AgentSettings,
+  type D4AgentTaskPlan,
   type D4HostRoutinesState,
   type D4AgentSystemCheck,
   type ModelSelection,
@@ -62,6 +64,8 @@ import * as Inbox from "./OverviewInbox.ts";
 import * as OverviewThreads from "./OverviewThreads.ts";
 import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
+import * as Planner from "./TaskPlanner.ts";
+import * as ScopeReview from "./ScopeReviewer.ts";
 import * as Pc from "./PcCommand.ts";
 import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import * as Settings from "../serverSettings.ts";
@@ -191,6 +195,11 @@ const fixture = (
       reason: null,
     });
     const guardCalls = yield* Ref.make<ReadonlyArray<ToolGuard.ToolGuardEnvelope>>([]);
+    const planCalls = yield* Ref.make<ReadonlyArray<Planner.TaskPlanInput>>([]);
+    const planResult = yield* Ref.make<D4AgentTaskPlan | null>(null);
+    const scopeReviews = yield* Ref.make<
+      ReadonlyArray<Parameters<ScopeReview.ScopeReviewer["Service"]["review"]>[0]>
+    >([]);
     const agentShell = yield* Ref.make<OrchestrationV2ThreadShell | null>(null);
     const shells = yield* Ref.make<ReadonlyArray<OrchestrationV2ThreadShell>>([target]);
     const sends = yield* Ref.make<
@@ -521,6 +530,29 @@ const fixture = (
                 Effect.andThen(Ref.get(guardVerdict)),
               ),
           }),
+          Layer.succeed(Planner.TaskPlanner, {
+            plan: (input) =>
+              Ref.update(planCalls, (all) => [...all, input]).pipe(
+                Effect.andThen(Ref.get(planResult)),
+              ),
+          }),
+          // Records every Fable/Astra request; the reply mirrors a real reduction.
+          Layer.succeed(ScopeReview.ScopeReviewer, {
+            review: (input) =>
+              Ref.update(scopeReviews, (all) => [...all, input]).pipe(
+                Effect.as({
+                  modelSelection: {
+                    instanceId: ProviderInstanceId.make("claudeAgent"),
+                    model: ScopeReview.SCOPE_REVIEWERS[input.reviewer].model,
+                  },
+                  result: {
+                    questions: ["Is the CI-only failure in scope?"],
+                    cuts: ["Drop the retry refactor."],
+                    reducedBrief: "Fix only the flaky login assertion.",
+                  },
+                }),
+              ),
+          }),
         ),
       ),
       Layer.provide(Layer.succeed(Config.ServerConfig, attachmentConfig)),
@@ -585,6 +617,9 @@ const fixture = (
       monitorUpdates,
       guardVerdict,
       guardCalls,
+      planCalls,
+      planResult,
+      scopeReviews,
       sendLimits,
     };
   });
@@ -1648,7 +1683,7 @@ it.effect(
         ],
       );
       assert.deepEqual(global.d4Agent, {
-        modelSelection,
+        niaModelSelection: modelSelection,
         taskModelSelection: modelSelection,
         defaultTaskModelSelection: modelSelection,
         permissionMode: "ask",
@@ -3193,6 +3228,7 @@ it.effect.each(["create", "send"] as const)(
       yield* f.service.ensureThread();
       const card = yield* f.service.requestAction({
         type: "start",
+        doneWhen: "The check passes.",
         projectId: target.projectId,
         text: "Task",
         modelSelection,
@@ -3388,6 +3424,7 @@ it.effect(
       yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: tasks }));
       const card = yield* f.service.requestAction({
         type: "start",
+        doneWhen: "The check passes.",
         projectId: target.projectId,
         modelSelection,
         text: "One more task",
@@ -3420,6 +3457,7 @@ it.effect("settled tasks do not count toward active task capacity", () =>
     yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: tasks }));
     const card = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       modelSelection,
       text: "One more task",
@@ -3802,7 +3840,7 @@ it.effect("send original keeps the pending user text after a size rotation", () 
   }),
 );
 
-it.effect("rotation preserves an explicit null task snapshot across a later default change", () =>
+it.effect("rotation keeps the resolved task snapshot across a later default change", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");
     yield* f.service.ensureThread();
@@ -3816,15 +3854,16 @@ it.effect("rotation preserves an explicit null task snapshot across a later defa
     }));
     yield* f.send({ text: "Explain without creating work", taskModelSelection: null });
     const before = (yield* Ref.get(f.state)).rotation!;
-    assert.isTrue(Object.hasOwn(before, "pendingTaskModelSelection"));
-    assert.isNull(before.pendingTaskModelSelection);
+    // A null worker means the task default at send time, frozen into the snapshot.
+    const snapshot = before.pendingTaskModelSelection;
+    assert.isNotNull(snapshot);
     yield* f.settings.updateSettings({
       d4Agent: {
         ...(yield* f.settings.getSettings).d4Agent,
         taskModelSelection: modelSelection,
       },
     });
-    assert.isNull((yield* Ref.get(f.state)).rotation?.pendingTaskModelSelection);
+    assert.deepEqual((yield* Ref.get(f.state)).rotation?.pendingTaskModelSelection, snapshot);
   }),
 );
 
@@ -4071,6 +4110,7 @@ it.effect("an approved start links the thread it created", () =>
     const f = yield* guardedFixture();
     const record = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Fix the flaky login test\nIt fails on CI only.",
       modelSelection,
@@ -4091,6 +4131,7 @@ it.effect("a guarded start gets a short title and auto mode, judged by Tool Guar
     const f = yield* guardedFixture();
     const record = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Task: reduce approval friction in Nia's action cards (d4research).\nDetails.",
       modelSelection,
@@ -4110,6 +4151,7 @@ it.effect("an unguarded start keeps per-step approval", () =>
     yield* f.service.ensureThread();
     const record = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Task",
       modelSelection,
@@ -4127,6 +4169,7 @@ it.effect("a start for a project with a base ref launches in a fresh worktree", 
     yield* f.service.ensureThread();
     const record = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Fix the card",
       modelSelection,
@@ -4144,7 +4187,9 @@ it.effect("a start for a project with a base ref launches in a fresh worktree", 
       workspaceStrategy: { type: "worktree", baseRef: "release", startFromOrigin: false },
     });
     // The task receives the approved composed prompt: the request plus the single-task protocol.
-    assert.isTrue(launch?.initialMessage?.text.startsWith("Fix the card\n\n---\nSingle task."));
+    assert.isTrue(launch?.initialMessage?.text.startsWith("Fix the card\n\n---\nBrief\n"));
+    assert.include(launch?.initialMessage?.text, "Target directory: a fresh worktree");
+    assert.include(launch?.initialMessage?.text, "Done when: The check passes.");
     assert.equal(
       (yield* Ref.get(f.state)).agentThreads?.[0]?.threadId,
       ThreadId.make(`d4-action:${record.id}`),
@@ -5280,6 +5325,7 @@ it.effect("a request-local worker survives default changes before proposal and a
     assert.equal(activePipelines.defaultModelSelection?.model, "later-default");
     const card = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Create the task",
       modelSelection,
@@ -5301,44 +5347,22 @@ it.effect("a request-local worker survives default changes before proposal and a
   }),
 );
 
-it.effect("an explicit null request never adopts a later task default", () =>
+it.effect("a null task model resolves to the task default, never Nia's model", () =>
   Effect.gen(function* () {
     const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
       modelSelection: managerSelection,
       taskModelSelection: null,
     });
-    yield* Ref.set(f.catalog, [managerProvider, provider]);
-    const identity = yield* f.send({ text: "Explain only", taskModelSelection: null });
-    const accepted = (yield* Ref.get(f.sends)).at(-1)!;
-    yield* Ref.set(f.agentShell, {
-      ...target,
-      id: identity.threadId,
-      projectId: identity.projectId,
-      activeRunId: RunId.make("null-worker-run"),
-    });
-    yield* Ref.update(f.projection, (projection) => ({
-      ...projection,
-      runs: [
-        { id: RunId.make("null-worker-run"), userMessageId: String(accepted.messageId) },
-      ] as unknown as typeof projection.runs,
-      messages: [
-        { id: accepted.messageId, text: "Explain only", createdBy: "user" },
-      ] as unknown as typeof projection.messages,
-    }));
-    yield* f.settings.updateSettings({
-      d4Agent: { ...(yield* f.settings.getSettings).d4Agent, taskModelSelection: modelSelection },
-    });
-    assert.isNull((yield* f.service.environment()).d4Agent.taskModelSelection);
-    assert.isNull((yield* f.service.listPipelines()).modelSelection);
-    const proposal = yield* Effect.result(
-      f.service.requestAction({
-        type: "start",
-        projectId: target.projectId,
-        text: "Must not start",
-        modelSelection,
-      }),
+    yield* Ref.set(f.catalog, [managerProvider, provider, defaultTaskProvider]);
+    yield* f.send({ text: "Explain only", taskModelSelection: null });
+    const environment = (yield* f.service.environment()).d4Agent;
+    assert.deepEqual(environment.niaModelSelection, managerSelection);
+    assert.deepEqual(environment.taskModelSelection, DEFAULT_D4_AGENT_TASK_MODEL_SELECTION);
+    assert.deepEqual(environment.defaultTaskModelSelection, DEFAULT_D4_AGENT_TASK_MODEL_SELECTION);
+    assert.deepEqual(
+      (yield* f.service.listPipelines()).modelSelection,
+      DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
     );
-    assert.equal(proposal._tag, "Failure");
   }),
 );
 
@@ -5369,6 +5393,7 @@ it.effect("a request without a worker snapshot uses the saved default worker", (
     const proposal = yield* Effect.result(
       f.service.requestAction({
         type: "start",
+        doneWhen: "The check passes.",
         projectId: target.projectId,
         text: "Start with the default worker",
         modelSelection,
@@ -5446,6 +5471,7 @@ it.effect(
       assert.deepEqual((yield* f.service.listPipelines()).modelSelection, steeredSelection);
       const card = yield* f.service.requestAction({
         type: "start",
+        doneWhen: "The check passes.",
         projectId: target.projectId,
         text: "Create the steered task",
         modelSelection: steeredSelection,
@@ -5453,13 +5479,30 @@ it.effect(
       assert.equal(card.action.type, "start");
       if (card.action.type === "start")
         assert.deepEqual(card.action.modelSelection, steeredSelection);
-      assert.deepEqual((yield* f.service.environment()).d4Agent.modelSelection, managerSelection);
+      assert.deepEqual(
+        (yield* f.service.environment()).d4Agent.niaModelSelection,
+        managerSelection,
+      );
     }),
 );
 
 const managerSelection = {
   instanceId: ProviderInstanceId.make("local-manager"),
   model: "qwen3.8-flash-next-iq3_s",
+};
+const defaultTaskProvider: ServerProvider = {
+  ...provider,
+  instanceId: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId,
+  driver: ProviderDriverKind.make("claudeAgent"),
+  displayName: "Claude",
+  models: [
+    {
+      slug: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model,
+      name: "Claude Sonnet 5.5",
+      isCustom: false,
+      capabilities: null,
+    },
+  ],
 };
 const managerProvider: ServerProvider = {
   ...provider,
@@ -5515,6 +5558,7 @@ it.effect("an unavailable default worker does not block the independent manager 
     const proposal = yield* Effect.result(
       f.service.requestAction({
         type: "start",
+        doneWhen: "The check passes.",
         projectId: target.projectId,
         text: "Must remain blocked",
         modelSelection,
@@ -5535,20 +5579,21 @@ it.effect("generic start dispatches the exact worker while Nia keeps its distinc
     yield* Ref.set(f.catalog, [managerProvider, provider]);
     yield* f.service.ensureThread();
     const environment = yield* f.service.environment();
-    assert.deepEqual(environment.d4Agent.modelSelection, managerSelection);
+    assert.deepEqual(environment.d4Agent.niaModelSelection, managerSelection);
     assert.deepEqual(environment.d4Agent.taskModelSelection, modelSelection);
     const listed = yield* f.service.listPipelines();
     assert.deepEqual(listed.modelSelection, modelSelection);
     assert.deepEqual(listed.defaultModelSelection, modelSelection);
     const card = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Use the worker",
       modelSelection,
     });
     yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
     assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection, modelSelection]);
-    assert.deepEqual((yield* f.service.environment()).d4Agent.modelSelection, managerSelection);
+    assert.deepEqual((yield* f.service.environment()).d4Agent.niaModelSelection, managerSelection);
   }),
 );
 
@@ -5575,7 +5620,7 @@ it.effect("routine preparation creates its visible thread with the exact worker"
   }),
 );
 
-it.effect("mismatched and newly unavailable workers never fall back to the manager", () =>
+it.effect("a draft carrying Nia's own model is bound to the task model", () =>
   Effect.gen(function* () {
     const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
       modelSelection: managerSelection,
@@ -5583,18 +5628,24 @@ it.effect("mismatched and newly unavailable workers never fall back to the manag
     });
     yield* Ref.set(f.catalog, [managerProvider, provider]);
     yield* f.service.ensureThread();
-    const mismatch = yield* Effect.result(
-      f.service.requestAction({
-        type: "start",
-        projectId: target.projectId,
-        text: "Wrong worker",
-        modelSelection: managerSelection,
-      }),
-    );
-    assert.equal(mismatch._tag, "Failure");
+    // Regression: Nia used to copy its own model into start cards. The server now binds the
+    // worker to the task model, so the leak cannot reach the launch.
+    const leaked = yield* f.service.requestAction({
+      type: "start",
+      doneWhen: "The check passes.",
+      projectId: target.projectId,
+      text: "Wrong worker",
+      modelSelection: managerSelection,
+    });
+    assert.equal(leaked.action.type, "start");
+    if (leaked.action.type === "start")
+      assert.deepEqual(leaked.action.modelSelection, modelSelection);
+    assert.deepEqual(leaked.launch?.modelSelection, modelSelection);
+    yield* f.service.resolveAction({ actionId: leaked.id, decision: "deny" });
     assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection]);
     const card = yield* f.service.requestAction({
       type: "start",
+      doneWhen: "The check passes.",
       projectId: target.projectId,
       text: "Exact worker",
       modelSelection,
@@ -6455,5 +6506,91 @@ it.effect("Overview delivery does not ask the model for unsolicited acknowledgme
     );
     yield* f.send({ text: "Please acknowledge this explicitly." });
     assert.lengthOf(yield* Ref.get(f.sends), 1);
+  }),
+);
+
+const scopeModels = Object.values(ScopeReview.SCOPE_REVIEWERS).map((entry) => entry.model);
+
+it.effect("default task creation plans with Jev and never calls Fable or Astra", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const record = yield* f.service.requestAction({
+      type: "start",
+      doneWhen: "pnpm test login passes.",
+      projectId: target.projectId,
+      text: "Fix the flaky login test",
+      modelSelection,
+    });
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.lengthOf(yield* Ref.get(f.planCalls), 1);
+    assert.deepEqual(yield* Ref.get(f.scopeReviews), []);
+    const createModels = yield* Ref.get(f.createModels);
+    assert.deepInclude(createModels, modelSelection);
+    const used = JSON.stringify([yield* Ref.get(f.launches), createModels]);
+    for (const model of scopeModels) assert.notInclude(used, model);
+  }),
+);
+
+it.effect("a confident Jev no refuses the draft with a redraft instruction", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    yield* Ref.set(f.planResult, {
+      model: "jev-test",
+      selfContained: 0.05,
+      doneWhenVerifiable: 0.9,
+      suggestedMode: "single",
+      suggestedModeProbability: 0.9,
+      scopeSize: 0.4,
+      notes: [],
+    });
+    const result = yield* Effect.result(
+      f.service.requestAction({
+        type: "start",
+        doneWhen: "It works.",
+        projectId: target.projectId,
+        text: "Apply the same fix as before",
+        modelSelection,
+      }),
+    );
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.include(result.failure.detail, "context the task thread");
+    assert.deepEqual((yield* Ref.get(f.state)).actions, []);
+  }),
+);
+
+it.effect("scope review runs only on request and stores the reduction on the card", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const notes = ["Jev rates this scope as large. Consider a scope review before approving."];
+    yield* Ref.set(f.planResult, {
+      model: "jev-test",
+      selfContained: 0.9,
+      doneWhenVerifiable: 0.9,
+      suggestedMode: "single",
+      suggestedModeProbability: 0.8,
+      scopeSize: 2.4,
+      notes,
+    });
+    const record = yield* f.service.requestAction({
+      type: "start",
+      doneWhen: "pnpm test passes.",
+      projectId: target.projectId,
+      text: "Rework login, billing and the settings page",
+      modelSelection,
+    });
+    assert.deepEqual(record.plan?.notes, notes);
+    assert.deepEqual(yield* Ref.get(f.scopeReviews), []);
+    const reviewed = yield* f.service.reviewActionScope({ actionId: record.id, reviewer: "fable" });
+    const [call] = yield* Ref.get(f.scopeReviews);
+    assert.equal(call?.reviewer, "fable");
+    assert.equal(call?.brief, record.launch?.prompt);
+    assert.equal(reviewed.scopeReview?.reviewer, "fable");
+    assert.equal(reviewed.scopeReview?.modelSelection.model, "claude-fable-5-1");
+    assert.equal(reviewed.scopeReview?.reducedBrief, "Fix only the flaky login assertion.");
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.lengthOf(yield* Ref.get(f.scopeReviews), 1);
   }),
 );

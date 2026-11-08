@@ -3,11 +3,12 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import tailwindColors from "tailwindcss/colors";
-import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@d4research/shared/themePalettes";
 
 import {
   getMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
+  MOBILE_PALETTE_THEME_IDS,
+  type MobilePaletteThemeId,
   type MobileThemeAppearance,
 } from "../src/lib/mobileTheme.ts";
 
@@ -151,7 +152,7 @@ const ADAPTIVE_COLORS: Readonly<Record<string, readonly [light: string, dark: st
   "--color-adaptive-zinc-600-300": [color("zinc", 600), color("zinc", 300)],
 };
 
-export const customThemeNames = BUILT_IN_THEME_IDS.flatMap((themeId) =>
+export const customThemeNames = MOBILE_PALETTE_THEME_IDS.flatMap((themeId) =>
   APPEARANCES.map((appearance) => `${themeId}-${appearance}`),
 );
 
@@ -163,7 +164,7 @@ const adaptiveVariablesFor = (appearance: MobileThemeAppearance) =>
     ]),
   );
 
-const variablesFor = (themeId: BuiltInThemeId, appearance: MobileThemeAppearance) => ({
+const variablesFor = (themeId: MobilePaletteThemeId, appearance: MobileThemeAppearance) => ({
   ...getMobileThemeVariables(themeId, appearance),
   ...adaptiveVariablesFor(appearance),
 });
@@ -183,7 +184,7 @@ export const renderUniwindThemesCSS = () => {
         ...adaptiveVariablesFor(appearance),
       }),
     ),
-    ...BUILT_IN_THEME_IDS.flatMap((themeId) =>
+    ...MOBILE_PALETTE_THEME_IDS.flatMap((themeId) =>
       APPEARANCES.map((appearance) =>
         renderVariant(`${themeId}-${appearance}`, variablesFor(themeId, appearance)),
       ),

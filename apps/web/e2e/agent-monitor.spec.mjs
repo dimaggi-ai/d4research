@@ -193,9 +193,11 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     NodeAssert.ok(taskPickerBounds.width >= 128);
     NodeAssert.ok((await taskPicker.innerText()).trim().length > 0);
     if (width === 390) {
-      NodeAssert.equal((await taskPicker.innerText()).trim(), "Choose task model");
+      // A task model is always selected: there is no empty "Choose task model" state.
+      NodeAssert.notEqual((await taskPicker.innerText()).trim(), "Choose task model");
+      NodeAssert.equal(await chat.getByRole("button", { name: "No task model" }).count(), 0);
       await page.screenshot({
-        path: NodePath.join(screenshotDir, "nia-composer-390-null-task.png"),
+        path: NodePath.join(screenshotDir, "nia-composer-390-default-task.png"),
       });
     }
     await taskPicker.click();

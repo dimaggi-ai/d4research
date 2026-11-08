@@ -1,7 +1,8 @@
 import { resolveTextScaleVariables } from "./appearancePreferences";
-import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@d4research/shared/themePalettes";
 import {
   DEFAULT_MOBILE_THEME_ID,
+  MOBILE_PALETTE_THEME_IDS,
+  type MobilePaletteThemeId,
   type MobileThemeAppearance,
   type MobileThemeId,
   type MobileThemeMode,
@@ -9,7 +10,7 @@ import {
 
 export type MobileUniwindThemeName =
   | MobileThemeAppearance
-  | `${BuiltInThemeId}-${MobileThemeAppearance}`;
+  | `${MobilePaletteThemeId}-${MobileThemeAppearance}`;
 
 export interface MobileThemeRuntimeState {
   readonly baseFontSize: number;
@@ -32,7 +33,7 @@ export type MobileThemeRuntimeOperation =
 const UNIWIND_THEME_NAMES: ReadonlyArray<"light" | "dark" | MobileUniwindThemeName> = [
   "light",
   "dark",
-  ...BUILT_IN_THEME_IDS.flatMap((themeId) => [
+  ...MOBILE_PALETTE_THEME_IDS.flatMap((themeId) => [
     `${themeId}-light` as const,
     `${themeId}-dark` as const,
   ]),

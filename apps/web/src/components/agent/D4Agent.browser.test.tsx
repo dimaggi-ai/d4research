@@ -14,6 +14,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ThreadId,
+  DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
   ProjectId,
   ProviderInstanceId,
   ProviderDriverKind,
@@ -1201,6 +1202,11 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
   );
   await act(async () => writeNiaDraft("Research the question"));
   expect(mocks.send).not.toHaveBeenCalled();
+  // With no saved task model, the picker shows the task default and there is no way to clear it.
+  expect(container.textContent).not.toContain("No task model");
+  expect(container.querySelector('button[aria-label="Nia task model"]')?.textContent).not.toContain(
+    "Choose task model",
+  );
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find(
@@ -1214,7 +1220,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
     input: {
       attachments: [],
       followUpBehavior: "queue",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       text: "Research the question",
       expectedContext: mocks.state!.brainContext,
       expectedThreadId: mocks.state!.threadId,
@@ -1686,7 +1692,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
     input: {
       attachments: [],
       followUpBehavior: "queue",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       text: "[[thread:stable-target]]",
       expectedContext: "YB",
       expectedThreadId: mocks.state!.threadId,
@@ -1719,7 +1725,7 @@ it("keeps the draft and says why when another client changed Nia's context first
     input: {
       attachments: [],
       followUpBehavior: "queue",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       text: "Global-only draft",
       expectedContext: "Global",
       expectedThreadId: threadId,
@@ -1761,7 +1767,7 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
     input: {
       attachments: [],
       followUpBehavior: "queue",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       text: "Global-only draft",
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
@@ -1895,7 +1901,7 @@ it("keeps an attachment-only draft bound to its context and sends it only after 
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
       followUpBehavior: "queue",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       attachments: [
         {
           type: "file",
@@ -1928,7 +1934,7 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
       expectedContext: "Global",
       expectedThreadId: threadId,
       followUpBehavior: "queue",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
     },
   });
   await write("Steer this");
@@ -1945,7 +1951,7 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
       expectedContext: "Global",
       expectedThreadId: threadId,
       followUpBehavior: "steer",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
     },
   });
   const upload = container.querySelector<HTMLInputElement>('input[type="file"]')!;

@@ -97,6 +97,19 @@ export type ReviewGuideGenerationResult = Omit<
   "headSha" | "generatedAt" | "modelSelection"
 >;
 
+export interface ScopeReviewGenerationInput {
+  cwd: string;
+  /** The drafted task brief to question and cut, exactly as the task thread would receive it. */
+  brief: string;
+  modelSelection: ModelSelection;
+}
+
+export interface ScopeReviewGenerationResult {
+  readonly questions: ReadonlyArray<string>;
+  readonly cuts: ReadonlyArray<string>;
+  readonly reducedBrief: string;
+}
+
 export interface ProviderTextGeneration {
   readonly generateCommitMessage: (
     input: CommitMessageGenerationInput,
@@ -117,4 +130,9 @@ export interface ProviderTextGeneration {
   readonly generateReviewGuide: (
     input: ReviewGuideGenerationInput,
   ) => Effect.Effect<ReviewGuideGenerationResult, TextGenerationError>;
+
+  /** Optional: only drivers that can run a reasoning model as a one-shot reviewer offer it. */
+  readonly generateScopeReview?: (
+    input: ScopeReviewGenerationInput,
+  ) => Effect.Effect<ScopeReviewGenerationResult, TextGenerationError>;
 }

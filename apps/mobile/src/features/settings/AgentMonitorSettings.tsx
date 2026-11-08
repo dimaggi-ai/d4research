@@ -10,6 +10,7 @@ import { D4AgentControls } from "./D4AgentControls";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+  resolveD4AgentTaskModelSelection,
   supportsD4AgentDriver,
   type EnvironmentId,
   type ServerSettings,
@@ -130,6 +131,7 @@ function EnvironmentMonitorSettings({
   const monitor = target.serverConfig.settings.agentMonitor;
   if (!monitor) return null;
   const agent = target.serverConfig.settings.d4Agent;
+  const taskSelection = resolveD4AgentTaskModelSelection(agent);
   // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
   const groups = groupByProvider(
     buildModelOptions(config, agent.modelSelection, undefined, null).filter((option) =>
@@ -137,7 +139,7 @@ function EnvironmentMonitorSettings({
     ),
   );
   const taskGroups = groupByProvider(
-    buildModelOptions(config, agent.taskModelSelection, undefined, null),
+    buildModelOptions(config, taskSelection, undefined, null),
   );
   const monitored = threads.filter(
     (thread) =>
@@ -270,22 +272,10 @@ function EnvironmentMonitorSettings({
         <SettingsRow
           icon="hammer"
           label="Task model"
-          value={
-            agent.taskModelSelection
-              ? `${agent.taskModelSelection.instanceId} · ${agent.taskModelSelection.model}`
-              : "Choose model"
-          }
+          value={`${taskSelection.instanceId} · ${taskSelection.model}`}
           disabled={!allowed || saving}
           onPress={() => setPicker("task")}
         />
-        {agent.taskModelSelection ? (
-          <SettingsRow
-            icon="xmark"
-            label="Clear task model"
-            disabled={!allowed || saving}
-            onPress={() => void writeAgent({ taskModelSelection: null })}
-          />
-        ) : null}
       </SettingsSection>
       <SettingsSection title="MCP servers">
         {NIA_SERVERS.map((server) => (
@@ -514,11 +504,11 @@ function EnvironmentMonitorSettings({
                     selected={
                       option.selection.instanceId ===
                         (picker === "task"
-                          ? agent.taskModelSelection?.instanceId
+                          ? taskSelection.instanceId
                           : agent.modelSelection?.instanceId) &&
                       option.selection.model ===
                         (picker === "task"
-                          ? agent.taskModelSelection?.model
+                          ? taskSelection.model
                           : agent.modelSelection?.model)
                     }
                     onPress={() => {

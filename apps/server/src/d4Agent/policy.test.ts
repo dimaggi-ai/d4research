@@ -119,7 +119,9 @@ describe("d4 Agent policies", () => {
     );
     assert.equal(
       taskModelAvailability({ ...settings, taskModelSelection: null }, [provider], 0),
-      "model-not-selected",
+      // A missing task model resolves to the default Claude worker, which this codex-only
+      // catalog lacks; it is never Nia's own (available) codex model.
+      "provider-unavailable",
     );
     assert.equal(
       taskModelAvailability(settings, [{ ...provider, auth: { status: "unauthenticated" } }], 0),

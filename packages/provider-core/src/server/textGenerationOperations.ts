@@ -15,6 +15,7 @@ import {
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildReviewGuidePrompt,
+  buildScopeReviewPrompt,
   buildThreadTitlePrompt,
 } from "./textGenerationPrompts.ts";
 import {
@@ -24,6 +25,7 @@ import {
 } from "./textGenerationUtils.ts";
 
 export type Operation = keyof ProviderTextGeneration;
+const SCOPE_REVIEW_ITEM_LIMIT = 8;
 
 export interface Request<S extends Schema.Top> {
   readonly operation: Operation;
@@ -171,11 +173,33 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     });
   });
 
+  const generateScopeReview: NonNullable<ProviderTextGeneration["generateScopeReview"]> = Effect.fn(
+    `${name}.generateScopeReview`,
+  )(function* (input) {
+    const generated = yield* run({
+      operation: "generateScopeReview",
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      ...buildScopeReviewPrompt({ brief: input.brief }),
+    });
+    const items = (values: ReadonlyArray<string>) =>
+      values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .slice(0, SCOPE_REVIEW_ITEM_LIMIT);
+    return {
+      questions: items(generated.questions),
+      cuts: items(generated.cuts),
+      reducedBrief: generated.reducedBrief.trim(),
+    };
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateReviewGuide,
+    generateScopeReview,
   } satisfies ProviderTextGeneration;
 }

@@ -18,6 +18,7 @@ import {
   createMobileThemeSelectionPatch,
   createMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
+  INITIAL_MOBILE_THEME_ID,
   flattenThemeColor,
   getMobileThemeVariables,
   resolveMobileThemeIds,
@@ -202,6 +203,12 @@ describe("mobile themes", () => {
     }
   });
 
+  it("starts a fresh install on the DIMAGGI palette", () => {
+    expect(resolveMobileThemeIds({})).toEqual({ light: "dimaggi", dark: "dimaggi" });
+    expect(getMobileThemeVariables("dimaggi", "light")["--color-primary"]).toBe("#1a7c93");
+    expect(getMobileThemeVariables("dimaggi", "dark")["--color-screen"]).toBe("#252528");
+  });
+
   it("migrates one theme choice to both appearances and preserves independent choices", () => {
     expect(resolveMobileThemeIds({ themeId: "grove" })).toEqual({
       light: "grove",
@@ -211,7 +218,7 @@ describe("mobile themes", () => {
       resolveMobileThemeIds({ themeId: "grove", lightThemeId: "iris", darkThemeId: "ocean" }),
     ).toEqual({ light: "iris", dark: "ocean" });
     expect(resolveMobileThemeIds({ themeId: "grove", lightThemeId: "missing" })).toEqual({
-      light: DEFAULT_MOBILE_THEME_ID,
+      light: INITIAL_MOBILE_THEME_ID,
       dark: "grove",
     });
   });

@@ -24,6 +24,15 @@ const DEFAULT_D4_AGENT_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make("claudeAgent"),
   model: "claude-sonnet-5-5",
 } satisfies ModelSelection;
+// New Nia-created work runs on its own task model. A null or missing stored value means this
+// default, never Nia's own chat model.
+export const DEFAULT_D4_AGENT_TASK_MODEL_SELECTION = {
+  instanceId: ProviderInstanceId.make("claudeAgent"),
+  model: "claude-sonnet-5-5",
+} satisfies ModelSelection;
+export const resolveD4AgentTaskModelSelection = (
+  settings: Pick<D4AgentSettings, "taskModelSelection">,
+): ModelSelection => settings.taskModelSelection ?? DEFAULT_D4_AGENT_TASK_MODEL_SELECTION;
 export const supportsD4AgentDriver = (driver: string): boolean =>
   D4_AGENT_PROVIDER_DRIVERS.includes(driver);
 export const D4AgentSwitchContextInput = Schema.Struct({ context: D4BrainContext });
@@ -98,10 +107,10 @@ export const D4AgentSettings = Schema.Struct({
   modelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_D4_AGENT_MODEL_SELECTION)),
   ),
-  // The exact provider instance and model used for new Nia-created work.
-  // Null is intentional: the manager model must never become an implicit worker fallback.
+  // The exact provider instance and model used for new Nia-created work. Read it through
+  // resolveD4AgentTaskModelSelection: legacy null means the task default, never Nia's model.
   taskModelSelection: Schema.NullOr(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_D4_AGENT_TASK_MODEL_SELECTION)),
   ),
   permissionMode: D4AgentPermissionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("read-only")),
@@ -139,7 +148,7 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   ctoBaseUrl: "http://127.0.0.1:9093",
   enabled: false,
   modelSelection: DEFAULT_D4_AGENT_MODEL_SELECTION,
-  taskModelSelection: null,
+  taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
   permissionMode: "read-only",
   heartbeatMinutes: null,
   quietHours: null,
@@ -284,6 +293,13 @@ export const D4AgentAction = Schema.Union([
       Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
     ),
     maxIterations: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+    // The task thread never sees Nia's chat, so the brief carries its own limits and stop check.
+    constraints: Schema.optionalKey(
+      Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
+    ),
+    doneWhen: Schema.optionalKey(
+      Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
+    ),
   }),
   // One shell command on the host's desktop session; Tool Guard sees it as text.
   Schema.Struct({
@@ -339,6 +355,38 @@ export const D4AgentActionNote = Schema.Struct({
   effect: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(300)),
 });
 export type D4AgentActionNote = typeof D4AgentActionNote.Type;
+// Jev's typed judgments about a drafted start card. Code turns them into refusals or notes;
+// the probabilities are kept so a threshold change needs no new inference.
+export const D4AgentTaskPlan = Schema.Struct({
+  model: Schema.String.check(Schema.isMaxLength(128)),
+  selfContained: Schema.Number,
+  doneWhenVerifiable: Schema.Number,
+  suggestedMode: D4AgentTaskMode,
+  suggestedModeProbability: Schema.Number,
+  // 0 small, 1 medium, 2 large, 3 several independent tasks.
+  scopeSize: Schema.Number,
+  notes: Schema.Array(Schema.String.check(Schema.isMaxLength(300))).check(Schema.isMaxLength(8)),
+});
+export type D4AgentTaskPlan = typeof D4AgentTaskPlan.Type;
+export const D4AgentScopeReviewer = Schema.Literals(["fable", "astra"]);
+export type D4AgentScopeReviewer = typeof D4AgentScopeReviewer.Type;
+// The optional design-reduction pass a user can run on a pending start card.
+export const D4AgentScopeReview = Schema.Struct({
+  reviewer: D4AgentScopeReviewer,
+  modelSelection: ModelSelection,
+  questions: Schema.Array(Schema.String.check(Schema.isMaxLength(2000))).check(
+    Schema.isMaxLength(8),
+  ),
+  cuts: Schema.Array(Schema.String.check(Schema.isMaxLength(2000))).check(Schema.isMaxLength(8)),
+  reducedBrief: Schema.String.check(Schema.isMaxLength(16000)),
+  reviewedAt: IsoDateTime,
+});
+export type D4AgentScopeReview = typeof D4AgentScopeReview.Type;
+export const D4AgentReviewActionScopeInput = Schema.Struct({
+  actionId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  reviewer: D4AgentScopeReviewer,
+});
+export type D4AgentReviewActionScopeInput = typeof D4AgentReviewActionScopeInput.Type;
 export const D4AgentActionRecord = Schema.Struct({
   context: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
   sessionId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -352,6 +400,8 @@ export const D4AgentActionRecord = Schema.Struct({
   // Set when Nia replaced this pending card with a newer one for the same target.
   supersededBy: Schema.optionalKey(Schema.String),
   launch: Schema.optionalKey(D4AgentLaunchPreview),
+  plan: Schema.optionalKey(D4AgentTaskPlan),
+  scopeReview: Schema.optionalKey(D4AgentScopeReview),
   // expired: the card can no longer run as drafted (its context changed or it waited too long);
   // the user did not deny it. interrupted: the server stopped while it ran, so whether it took
   // effect is unknown and it is not retried automatically.

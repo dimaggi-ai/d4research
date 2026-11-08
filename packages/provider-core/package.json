@@ -1,6 +1,7 @@
 {
   "name": "@d4research/provider-core",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./client": {

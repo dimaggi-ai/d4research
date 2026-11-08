@@ -1,6 +1,7 @@
 {
   "name": "@d4research/client-runtime",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./state/agent-monitor": {

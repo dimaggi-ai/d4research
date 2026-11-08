@@ -1,3 +1,4 @@
+# NOTE: upstream T3 Code packaging (pingdotgg/t3code), not a d4research artifact.
 # Maintainer: maria-rcks <maria at kuuro dot net>
 
 pkgname=t3code-bin

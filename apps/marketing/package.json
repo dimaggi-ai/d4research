@@ -2,6 +2,7 @@
   "name": "@d4research/marketing",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "stage:install-scripts": "node scripts/stage-install-scripts.mjs",

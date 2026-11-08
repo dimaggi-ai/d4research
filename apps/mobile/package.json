@@ -2,6 +2,7 @@
   "name": "@d4research/mobile",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "main": "index.ts",
   "scripts": {
     "dev": "expo start",

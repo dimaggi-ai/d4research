@@ -2,6 +2,7 @@
   "name": "@d4research/desktop",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "dist-electron/boot.cjs",
   "scripts": {

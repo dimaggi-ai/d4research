@@ -408,7 +408,7 @@ output does not reset it, but a new parent reply does. Turn this option off to w
 to finish before starting the timeout. It can also be overridden per project.
 
 Active parent turns, queued messages, pending questions, other unfinished tools, and
-T3-managed delegated tasks still prevent compaction. Sessions without reported context usage,
+Delegated tasks still prevent compaction. Sessions without reported context usage,
 archived, settled, snoozed, failed, interrupted, and native child threads are skipped. Reading
 the conversation does not reset the timer. A compaction never triggers another compaction
 without a new conversation turn. The server must remain running; the client can be closed.

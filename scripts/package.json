@@ -1,6 +1,7 @@
 {
   "name": "@d4research/scripts",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "typecheck": "effect-tsgo tsrs --noEmit",

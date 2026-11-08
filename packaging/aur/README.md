@@ -1,5 +1,7 @@
 # AUR packaging
 
+> **Upstream packaging, not d4research.** The files here package the upstream [pingdotgg/t3code](https://github.com/pingdotgg/t3code) AppImage (T3 Code, MIT, Copyright (c) 2026 T3 Tools Inc.) under the AUR maintainer named in each PKGBUILD. They do not install d4research.
+
 This directory maintains the [`t3code-bin`](https://aur.archlinux.org/packages/t3code-bin) and
 [`t3code-nightly-bin`](https://aur.archlinux.org/packages/t3code-nightly-bin) packages, both
 of which repackage the official x86_64 AppImage from GitHub Releases.

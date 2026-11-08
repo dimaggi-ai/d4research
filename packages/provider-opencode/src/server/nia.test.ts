@@ -340,10 +340,14 @@ it.live(
             : yield* HttpClientRequest.post(`${baseUrl}${endpoint}`).pipe(
                 HttpClientRequest.bodyJson(payload),
               );
+        console.log("NIA_TIMING api-start " + endpoint);
         const response = yield* client.execute(request).pipe(Effect.timeout("20 seconds"));
         expect(response.status).toBeGreaterThanOrEqual(200);
         expect(response.status).toBeLessThan(300);
-        return yield* response.json;
+        console.log("NIA_TIMING api-headers " + endpoint);
+        const body = yield* response.json;
+        console.log("NIA_TIMING api-body " + endpoint);
+        return body;
       });
       const health = yield* api("/global/health").pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ version: Schema.String }))),

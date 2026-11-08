@@ -309,6 +309,7 @@ it.live(
       expect(yield* fs.readFileString(path.join(runtime.directory, "nia.mjs"))).toBe(
         niaPluginSource,
       );
+      console.log("NIA_TIMING start");
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const child = yield* spawner.spawn(
         ChildProcess.make(executable, ["serve", "--hostname=127.0.0.1", "--port=0"], {
@@ -330,6 +331,7 @@ it.live(
         ),
         Effect.timeout("25 seconds"),
       );
+      console.log("NIA_TIMING listening");
       const client = yield* HttpClient.HttpClient;
       const api = Effect.fn("NiaFixture.api")(function* (endpoint: string, payload?: object) {
         const request =
@@ -346,6 +348,7 @@ it.live(
       const health = yield* api("/global/health").pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ version: Schema.String }))),
       );
+      console.log("NIA_TIMING health");
       expect(health.version).toBe("1.19.3");
       const registration = {
         name: "t3-code",
@@ -368,10 +371,14 @@ it.live(
           parts: [{ type: "text", text }],
         });
       });
+      console.log("NIA_TIMING before-run1");
       expect(encodeJson(yield* run("ALLOWED manager test"))).toContain("WIRE_DONE");
+      console.log("NIA_TIMING after-run1");
       expect(mcpCalls).toEqual(["d4_agent_environment"]);
       expect(encodeJson(yield* run("FORGED native execution test"))).toContain("WIRE_DONE");
+      console.log("NIA_TIMING after-run2");
       expect(encodeJson(yield* run("FORGED_MCP non-manager tool test"))).toContain("WIRE_DONE");
+      console.log("NIA_TIMING after-run3");
       expect(mcpCalls).toEqual(["d4_agent_environment"]);
       expect(yield* fs.exists(path.join(runtime.directory, "forbidden-executed"))).toBe(false);
       expect(yield* fs.exists(hostileLoaded)).toBe(false);
@@ -411,6 +418,7 @@ it.live(
       yield* api("/mcp", registration);
       const revokedStatus = yield* api("/mcp");
       expect(() => requireNiaMcp(revokedStatus)).toThrow("NIA_MCP_UNAVAILABLE");
+      console.log("NIA_TIMING body-done");
     }).pipe(
       Effect.scoped,
       Effect.provide([NodeServices.layer, NodeHttpClient.layerUndici, Digest.layerWebCrypto]),

@@ -18,6 +18,7 @@ import { serverEnvironment } from "../../state/server";
 import { Switch } from "../ui/switch";
 import { Input } from "../ui/input";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { NiaMcpServerList } from "./NiaMcpServerList";
 
 type Agent = ServerSettings["d4Agent"];
 type Monitor = ServerSettings["agentMonitor"];
@@ -584,6 +585,12 @@ export function D4AgentControls({
             </details>
           </div>
         ))}
+        <NiaMcpServerList
+          servers={agent.mcpServers}
+          permissionMode={agent.permissionMode}
+          disabled={disabled}
+          save={(mcpServers) => writeAgent({ mcpServers })}
+        />
         {state.error ? (
           <p role="alert" className="text-sm text-destructive">
             {state.error}

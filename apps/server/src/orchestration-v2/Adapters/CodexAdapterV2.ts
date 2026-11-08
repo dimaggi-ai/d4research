@@ -1352,6 +1352,12 @@ export function codexThreadRuntimeParams(input: {
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
+  const niaServers = new Map(
+    (input.runtimePolicy?.toolPolicy === "d4-agent"
+      ? (input.runtimePolicy.d4AgentMcpServers ?? [])
+      : []
+    ).map((server) => [server.name, server]),
+  );
   return {
     ...(input.runtimePolicy?.toolPolicy === "d4-agent"
       ? { baseInstructions: D4_AGENT_PREFIX, developerInstructions: "" }
@@ -1397,14 +1403,32 @@ export function codexThreadRuntimeParams(input: {
       ...(mcpSession === undefined
         ? {}
         : {
-            // Nia's session keeps only the d4research server; other servers are switched off field by field.
+            // Nia's session keeps only the d4research server and the servers its user added; every
+            // other server is switched off field by field.
             ...Object.fromEntries(
               (input.runtimePolicy?.toolPolicy === "d4-agent"
                 ? (input.disabledMcpServers ?? [])
                 : []
               )
-                .filter((name) => name !== "t3-code")
+                .filter((name) => name !== "t3-code" && !niaServers.has(name))
                 .map((name) => [`mcp_servers.${name}.enabled`, false]),
+            ),
+            ...Object.fromEntries(
+              [...niaServers.values()].map((server) => [
+                `mcp_servers.${server.name}`,
+                {
+                  enabled: true,
+                  // Nia's turns run with approval "never"; the user opted in by adding the server at Act.
+                  default_tools_approval_mode: "approve",
+                  ...(server.transport.type === "stdio"
+                    ? {
+                        command: server.transport.command,
+                        args: [...server.transport.args],
+                        env: { ...server.transport.env },
+                      }
+                    : { url: server.transport.url, http_headers: { ...server.transport.headers } }),
+                },
+              ]),
             ),
             // Override only T3's server so launch-argument MCP servers survive.
             "mcp_servers.t3-code": {

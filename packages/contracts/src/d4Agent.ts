@@ -62,6 +62,39 @@ export const D4AgentQuietHours = Schema.Struct({
   // IANA zone; when present it wins over the fixed offset so quiet hours follow DST.
   timeZone: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
 });
+// A user-added MCP server for Nia's own session. Codex and Claude both key servers by name, and
+// "t3-code" is the built-in d4research server, so names are slugs and that one is reserved.
+export const D4AgentMcpServerName = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,47}$/),
+  Schema.makeFilter((name: string) => name !== "t3-code" || "t3-code is the built-in server"),
+);
+const D4AgentMcpStringMap = Schema.Record(
+  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  Schema.String.check(Schema.isMaxLength(4096)),
+);
+export const D4AgentMcpServer = Schema.Struct({
+  name: D4AgentMcpServerName,
+  enabled: Schema.Boolean,
+  transport: Schema.Union([
+    Schema.Struct({
+      type: Schema.Literal("stdio"),
+      command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
+      args: Schema.Array(Schema.String.check(Schema.isMaxLength(4096))),
+      env: D4AgentMcpStringMap,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("http"),
+      url: Schema.String.check(Schema.isPattern(/^https?:\/\/\S+$/), Schema.isMaxLength(2048)),
+      headers: D4AgentMcpStringMap,
+    }),
+  ]),
+});
+export type D4AgentMcpServer = typeof D4AgentMcpServer.Type;
+/** Servers Nia's session loads: enabled ones, and only at Act, since Nia cannot ask before each call. */
+export const activeD4AgentMcpServers = (
+  settings: Pick<D4AgentSettings, "mcpServers" | "permissionMode">,
+): ReadonlyArray<D4AgentMcpServer> =>
+  settings.permissionMode === "act" ? settings.mcpServers.filter((server) => server.enabled) : [];
 export const D4AgentSettings = Schema.Struct({
   sessionIdleMinutes: Schema.NullOr(Schema.Literals([30, 120, 480])).pipe(
     Schema.withDecodingDefault(Effect.succeed(120)),
@@ -129,6 +162,16 @@ export const D4AgentSettings = Schema.Struct({
   toolGuardUrl: Schema.NullOr(Schema.String.check(Schema.isMaxLength(2048))).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  mcpServers: Schema.Array(D4AgentMcpServer)
+    .check(
+      Schema.isMaxLength(32),
+      Schema.makeFilter(
+        (servers: ReadonlyArray<D4AgentMcpServer>) =>
+          new Set(servers.map((server) => server.name)).size === servers.length ||
+          "MCP server names must be unique",
+      ),
+    )
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
@@ -155,6 +198,7 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   systemProbeEnabled: false,
   diskWarningPercent: 90,
   toolGuardUrl: null,
+  mcpServers: [],
 };
 
 export const D4RoutineDraft = Schema.Struct({

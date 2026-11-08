@@ -1,6 +1,13 @@
 import * as Effect from "effect/Effect";
 import { assert, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@d4research/contracts";
+import {
+  activeD4AgentMcpServers,
+  DEFAULT_D4_AGENT_SETTINGS,
+  type D4AgentMcpServer,
+  EnvironmentId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@d4research/contracts";
 import {
   codexThreadRuntimeParams,
   buildCodexTurnStartParams,
@@ -124,4 +131,92 @@ it("a normal Codex thread does not inherit a restricted session's deny list", ()
   });
   assert.isFalse(Object.keys(params.config.mcp_servers ?? {}).includes("ordinary-server"));
   assert.isUndefined(params.config["features.apps"]);
+});
+
+const userServers: ReadonlyArray<D4AgentMcpServer> = [
+  {
+    name: "docs",
+    enabled: true,
+    transport: { type: "stdio", command: "npx", args: ["docs-mcp"], env: { DOCS_TOKEN: "t" } },
+  },
+  {
+    name: "tracker",
+    enabled: true,
+    transport: { type: "http", url: "https://tracker.example/mcp", headers: { "X-Key": "k" } },
+  },
+];
+
+it("user MCP servers load into Nia's Codex session and survive the inherited deny list", () => {
+  const params = codexThreadRuntimeParams({
+    threadId: null,
+    mcpSession: session,
+    runtimePolicy: { ...policy, d4AgentMcpServers: userServers },
+    disabledMcpServers: ["docs", "dangerous"],
+  });
+  assert.equal(params.config["mcp_servers.dangerous.enabled"], false);
+  assert.isUndefined(params.config["mcp_servers.docs.enabled"]);
+  assert.deepEqual(params.config["mcp_servers.docs"], {
+    enabled: true,
+    default_tools_approval_mode: "approve",
+    command: "npx",
+    args: ["docs-mcp"],
+    env: { DOCS_TOKEN: "t" },
+  });
+  assert.deepEqual(params.config["mcp_servers.tracker"], {
+    enabled: true,
+    default_tools_approval_mode: "approve",
+    url: "https://tracker.example/mcp",
+    http_headers: { "X-Key": "k" },
+  });
+});
+
+it("user MCP servers load into Nia's Claude session with their tools allowed", () => {
+  const mcp = claudeMcpQueryOverrides({
+    mcpSession: session,
+    readOnlySandbox: true,
+    d4AgentOnly: true,
+    d4AgentMcpServers: userServers,
+  });
+  assert.deepEqual(Object.keys(mcp.mcpServers ?? {}).toSorted(), ["docs", "t3-code", "tracker"]);
+  assert.deepEqual(mcp.mcpServers?.docs, {
+    type: "stdio",
+    command: "npx",
+    args: ["docs-mcp"],
+    env: { DOCS_TOKEN: "t" },
+  });
+  assert.include(mcp.allowedTools ?? [], "mcp__docs");
+  assert.include(mcp.allowedTools ?? [], "mcp__tracker");
+});
+
+it("user MCP servers never reach a normal thread", () => {
+  const normal = {
+    runtimeMode: "approval-required" as const,
+    interactionMode: "default" as const,
+    cwd: "/n",
+  };
+  const codex = codexThreadRuntimeParams({
+    threadId: null,
+    mcpSession: session,
+    runtimePolicy: { ...normal, d4AgentMcpServers: userServers },
+  });
+  assert.isUndefined(codex.config["mcp_servers.docs"]);
+  const claude = claudeMcpQueryOverrides({
+    mcpSession: session,
+    readOnlySandbox: false,
+    d4AgentMcpServers: userServers,
+  });
+  assert.deepEqual(Object.keys(claude.mcpServers ?? {}), ["t3-code"]);
+});
+
+it("Nia loads only enabled user servers, and only at the Act permission level", () => {
+  const servers = [...userServers, { ...userServers[0]!, name: "off", enabled: false }];
+  const at = (permissionMode: "read-only" | "ask" | "act") =>
+    activeD4AgentMcpServers({
+      ...DEFAULT_D4_AGENT_SETTINGS,
+      mcpServers: servers,
+      permissionMode,
+    }).map((server) => server.name);
+  assert.deepEqual(at("read-only"), []);
+  assert.deepEqual(at("ask"), []);
+  assert.deepEqual(at("act"), ["docs", "tracker"]);
 });

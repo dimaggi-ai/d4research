@@ -77,6 +77,14 @@ Provider permission approvals remain manual. Proposed actions and their outcomes
 appear above the Nia conversation. These permissions do not grant authority to
 publish, push, or run sudo.
 
+To give Nia more tools, open **Settings → General → MCP servers** and choose **Add MCP
+server**. Enter a command for a local server or a URL for a remote one. You can switch, edit, or
+remove each server you add; the built-in servers can only be switched. Nia loads your servers
+only at **Act**, and calls their tools without asking, so add only servers you trust. Environment
+values and headers are stored in the environment's settings, where paired clients can read them.
+Nia running on Claude picks up changes on its next message; Nia running on Codex picks them up
+when it starts a new session.
+
 Use an ID, an internal link, or a reference selected from the **@** picker to address a
 thread, project, or pipeline. Nia switches to the target's mapped context before
 processing your message. Typing a title as plain text keeps the current context. Archived

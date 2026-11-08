@@ -1222,3 +1222,24 @@ describe("research notes folder", () => {
     });
   });
 });
+
+describe("Nia MCP servers", () => {
+  const server = (name: string) => ({
+    name,
+    enabled: true,
+    transport: { type: "http", url: "https://example.test/mcp", headers: {} },
+  });
+  const decode = (mcpServers: unknown) =>
+    decodeServerSettings({ d4Agent: { mcpServers } }).d4Agent.mcpServers;
+
+  it("defaults to an empty list and keeps user servers", () => {
+    expect(decodeServerSettings({}).d4Agent.mcpServers).toEqual([]);
+    expect(decode([server("docs")]).map((entry) => entry.name)).toEqual(["docs"]);
+  });
+
+  it("rejects the built-in name, unsafe names, and duplicates", () => {
+    expect(() => decode([server("t3-code")])).toThrow();
+    expect(() => decode([server("Bad Name")])).toThrow();
+    expect(() => decode([server("docs"), server("docs")])).toThrow();
+  });
+});

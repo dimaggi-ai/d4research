@@ -3,6 +3,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import { describe, expect } from "vite-plus/test";
 import { it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Digest from "effect/crypto/Digest";
 import * as FileSystem from "effect/FileSystem";
@@ -322,26 +323,22 @@ it.live(
           },
         ),
       );
-      const baseUrl = yield* child.all.pipe(
-        Stream.decodeText(),
-        Stream.splitLines,
-        Stream.map((line) => /server listening on\s+(http:\/\/\S+)/.exec(line)?.[1]),
-        Stream.filter((url): url is string => url !== undefined),
-        Stream.runHead,
-        Effect.flatMap((url) =>
-          url._tag === "Some"
-            ? Effect.succeed(url.value)
-            : Effect.die("OpenCode exited before listening"),
-        ),
-        Effect.timeout("25 seconds"),
-      );
-      console.log("NIA_TIMING listening");
+      const listening = yield* Deferred.make<string>();
       yield* child.all.pipe(
         Stream.decodeText(),
         Stream.splitLines,
-        Stream.runForEach((line) => Effect.sync(() => console.log("NIA_OC " + line))),
+        Stream.runForEach((line) =>
+          Effect.sync(() => console.log("NIA_OC " + line)).pipe(
+            Effect.andThen(() => {
+              const url = /server listening on\s+(http:\/\/\S+)/.exec(line)?.[1];
+              return url === undefined ? Effect.void : Deferred.succeed(listening, url);
+            }),
+          ),
+        ),
         Effect.forkScoped,
       );
+      const baseUrl = yield* Deferred.await(listening).pipe(Effect.timeout("25 seconds"));
+      console.log("NIA_TIMING listening");
       const client = yield* HttpClient.HttpClient;
       const api = Effect.fn("NiaFixture.api")(function* (endpoint: string, payload?: object) {
         const request =

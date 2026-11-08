@@ -6,6 +6,9 @@ export async function composerSurfaceOcclusion({ page, app, screenshotDir }) {
   await openProject(page, app.baseDir);
   const form = page.locator('[data-chat-composer-form="true"]');
   await form.waitFor();
+  // A slow runner can still be syncing the thread. That status attaches a banner to the composer,
+  // which changes the surface and then the layout when it disappears.
+  await page.locator("[data-composer-sync-status]").waitFor({ state: "detached", timeout: 30000 });
   await page.addStyleTag({ content: "* { caret-color: transparent !important; }" });
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -36,6 +39,10 @@ export async function composerSurfaceOcclusion({ page, app, screenshotDir }) {
         await page.locator("[data-occlusion-probe]").evaluate((el, value) => {
           el.style.background = value;
         }, color);
+        // Two frames: a screenshot taken before the style change paints compares the old color.
+        await page.evaluate(
+          () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+        );
         return page.screenshot({ clip, animations: "disabled", timeout: 10000 });
       };
       const red = await capture("rgb(255,0,0)");

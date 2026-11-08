@@ -138,8 +138,9 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await agent.click();
   const chat = page.getByRole("region", { name: "Nia chat", exact: true });
   await chat.waitFor();
-  // The real agent-owned project has the same title as its dedicated entry.
-  NodeAssert.equal(await sidebar.getByText("Nia", { exact: true }).count(), 1);
+  // The real agent-owned project has the same title as its dedicated entry. Count the entry itself:
+  // once Nia has a thread, its row repeats the title as text, which is not a duplicate entry.
+  NodeAssert.equal(await agent.count(), 1);
   // The accessible name gains ": <project>" while a project filter is active.
   await sidebar.getByRole("combobox", { name: /^Filter threads by project/ }).click();
   const projectSearch = page.getByRole("combobox", { name: "Search projects", exact: true });
@@ -204,6 +205,12 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     await taskPicker.click();
     await page.locator("[data-model-picker-content]").waitFor();
     if (width === 390) {
+      // The task picker opens on the app default instance, which has no models where its CLI is
+      // missing (CI). The stubbed Claude instance is the fixture's ready provider.
+      await page
+        .locator("[data-model-picker-content]")
+        .getByRole("button", { name: "Claude", exact: true })
+        .click();
       await page
         .locator("[data-model-picker-content]")
         .getByRole("option")

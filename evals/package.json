@@ -1,6 +1,7 @@
 {
   "name": "@d4research/evals",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "mcp-tool-use": "node --env-file-if-exists=../.env mcp-tool-use/run.ts",

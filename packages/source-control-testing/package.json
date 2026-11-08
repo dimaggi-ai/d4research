@@ -1,6 +1,7 @@
 {
   "name": "@d4research/source-control-testing",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./fakeSourceControlDriver": {

@@ -1,6 +1,7 @@
 {
   "name": "effect-codex-app-server",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./client": {

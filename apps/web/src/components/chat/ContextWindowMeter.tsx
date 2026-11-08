@@ -192,7 +192,7 @@ export function ContextWindowMeter(props: {
           {(usage.totalCostUsd ?? 0) > 0 ? (
             <>
               <div className="my-1 h-px bg-border/50" />
-              <UsageRow label="T3 session cost" value={formatCost(usage.totalCostUsd!)} />
+              <UsageRow label="d4research session cost" value={formatCost(usage.totalCostUsd!)} />
             </>
           ) : null}
           {(usage.toolUses ?? 0) > 0 ? (

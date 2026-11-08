@@ -2,6 +2,7 @@
   "name": "@d4research/web",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build:ghostty-wasm": "bash scripts/build-libghostty-wasm.sh",

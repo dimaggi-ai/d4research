@@ -2,6 +2,8 @@
 
 A multi-provider coding agent workspace for structured research built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run Codex, Claude, Cursor, Grok, Junie, Muse, OpenCode, and Agy agents side by side. Hand off context between them mid-conversation without leaving the thread. Replay authored pipelines that delegate steps across models under server-enforced budgets. Layer optional tool-safety policies on top.
 
+Licensed under the MIT License (see [LICENSE](LICENSE)). d4research is a fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) (MIT, Copyright (c) 2026 T3 Tools Inc.); the fork's changes are listed in [FORK_CHANGES.md](FORK_CHANGES.md).
+
 ## Installation
 
 **Run this fork from source** — see [Setup](#setup) below. The `v0.1.0` GitHub release is

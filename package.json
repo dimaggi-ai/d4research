@@ -1,6 +1,7 @@
 {
   "name": "@d4research/monorepo",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "setup": "bash scripts/setup.sh",

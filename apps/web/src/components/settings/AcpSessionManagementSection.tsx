@@ -324,7 +324,7 @@ export function AcpSessionManagementSection(props: {
     <div className="grid gap-3">
       <SettingsRow
         title="Native sessions"
-        description="Resume agent-owned conversations as T3 threads."
+        description="Resume agent-owned conversations as d4research threads."
         status={
           canList && props.projects.length === 0
             ? "Add a project before importing sessions."

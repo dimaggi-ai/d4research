@@ -1,6 +1,7 @@
 {
   "name": "@d4research/provider-acp",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./server/AcpSessionRuntime": {

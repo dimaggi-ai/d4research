@@ -86,7 +86,7 @@ export function IdleCompactionSettings() {
         title="Allow background work to continue"
         serverScoped
         settingKeys={["idleCompactionAllowBackgroundWork"]}
-        description="Keep native monitors, background commands, and provider subagents running during compaction. Turn off to wait until all work finishes. T3-managed delegated tasks and other pending tools still wait."
+        description="Keep native monitors, background commands, and provider subagents running during compaction. Turn off to wait until all work finishes. Delegated tasks and other pending tools still wait."
         resetAction={
           !settings.idleCompactionAllowBackgroundWork ? (
             <SettingResetButton

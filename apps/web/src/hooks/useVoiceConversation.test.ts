@@ -41,12 +41,12 @@ describe("voiceConversationStatusCopy", () => {
         label: "Transcribing",
         detail: "Turning your voice into text locally",
       },
-      waiting: { label: "Thinking", detail: "Waiting for T3Code to reply" },
+      waiting: { label: "Thinking", detail: "Waiting for d4research to reply" },
       summarizing: {
         label: "Summarizing",
         detail: "Gemma is making the reply easier to listen to",
       },
-      speaking: { label: "Speaking", detail: "Playing T3Code's reply locally" },
+      speaking: { label: "Speaking", detail: "Playing d4research's reply locally" },
     });
   });
 });

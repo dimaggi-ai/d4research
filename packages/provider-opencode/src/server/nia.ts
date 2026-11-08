@@ -52,6 +52,9 @@ export const niaEnvironment = Effect.fn("Nia.environment")(function* (
     OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
     OPENCODE_DISABLE_MODELS_FETCH: "true",
     OPENCODE_DISABLE_AUTOUPDATE: "true",
+    // OpenCode installs @opencode-ai/plugin into the config dir on first use; Nia's plugin does not
+    // import it, and an unreachable registry otherwise stalls the first request in npm retry backoff.
+    npm_config_offline: "true",
     OPENCODE_CONFIG_CONTENT: encodeJson({
       ...settings.config,
       plugin: [plugin],

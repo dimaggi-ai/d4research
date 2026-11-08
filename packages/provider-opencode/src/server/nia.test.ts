@@ -116,6 +116,7 @@ describe("Nia OpenCode isolation", () => {
       expect(Object.keys(environment)).not.toContain("OPENCODE_SERVER_PASSWORD");
       expect(environment.HOME).toBe("/isolated");
       expect(environment.OPENCODE_DISABLE_PROJECT_CONFIG).toBe("true");
+      expect(environment.npm_config_offline).toBe("true");
       const config = yield* decodeEnvironmentConfig(
         decodeJson(environment.OPENCODE_CONFIG_CONTENT),
       );

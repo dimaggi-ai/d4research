@@ -312,11 +312,15 @@ it.live(
       console.log("NIA_TIMING start");
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const child = yield* spawner.spawn(
-        ChildProcess.make(executable, ["serve", "--hostname=127.0.0.1", "--port=0"], {
-          cwd: runtime.directory,
-          env: runtime.environment,
-          extendEnv: false,
-        }),
+        ChildProcess.make(
+          executable,
+          ["serve", "--hostname=127.0.0.1", "--port=0", "--print-logs", "--log-level=DEBUG"],
+          {
+            cwd: runtime.directory,
+            env: runtime.environment,
+            extendEnv: false,
+          },
+        ),
       );
       const baseUrl = yield* child.all.pipe(
         Stream.decodeText(),
@@ -332,6 +336,12 @@ it.live(
         Effect.timeout("25 seconds"),
       );
       console.log("NIA_TIMING listening");
+      yield* child.all.pipe(
+        Stream.decodeText(),
+        Stream.splitLines,
+        Stream.runForEach((line) => Effect.sync(() => console.log("NIA_OC " + line))),
+        Effect.forkScoped,
+      );
       const client = yield* HttpClient.HttpClient;
       const api = Effect.fn("NiaFixture.api")(function* (endpoint: string, payload?: object) {
         const request =

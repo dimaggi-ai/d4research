@@ -1,4 +1,5 @@
 import {
+  BUILT_IN_THEME_IDS,
   BUILT_IN_THEMES,
   T3_CHAT_THEME,
   T3_CODE_LIGHT_THEME_COLORS,
@@ -15,9 +16,21 @@ import {
   type ThemePreviewColors,
 } from "@d4research/shared/themePreview";
 
+/** The T3 Code palette, rendered by the plain uniwind `light` and `dark` variants. */
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
-export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
-export type MobileThemeId = SharedMobileThemeId | "material-you";
+export const DIMAGGI_MOBILE_THEME_ID = "dimaggi";
+/** The theme a fresh install, or an unknown stored theme id, starts with. */
+export const INITIAL_MOBILE_THEME_ID = DIMAGGI_MOBILE_THEME_ID;
+/** Themes rendered as named `${id}-light|dark` uniwind variants. */
+export const MOBILE_PALETTE_THEME_IDS = [...BUILT_IN_THEME_IDS, DIMAGGI_MOBILE_THEME_ID] as const;
+export type MobilePaletteThemeId = (typeof MOBILE_PALETTE_THEME_IDS)[number];
+export const MOBILE_THEME_IDS = [
+  ...SHARED_MOBILE_THEME_IDS,
+  "material-you",
+  DIMAGGI_MOBILE_THEME_ID,
+] as const;
+type MobileColorThemeId = SharedMobileThemeId | typeof DIMAGGI_MOBILE_THEME_ID;
+export type MobileThemeId = MobileColorThemeId | "material-you";
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -26,6 +39,7 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
   readonly id: MobileThemeId;
   readonly label: string;
 }> = [
+  { id: DIMAGGI_MOBILE_THEME_ID, label: "DIMAGGI" },
   { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },
   { id: "material-you", label: "Material You" },
   ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
@@ -37,7 +51,7 @@ export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>
 function normalizeMobileThemeId(value: unknown): MobileThemeId {
   return typeof value === "string" && (MOBILE_THEME_IDS as readonly string[]).includes(value)
     ? (value as MobileThemeId)
-    : DEFAULT_MOBILE_THEME_ID;
+    : INITIAL_MOBILE_THEME_ID;
 }
 
 export function normalizeMobileThemeMode(value: unknown): MobileThemeMode {
@@ -448,10 +462,126 @@ export function createMobileThemeVariables(
   };
 }
 
+// Tokens come from the DIMAGGI website's scientific theme
+// (dimaggi/website/frontend/src/scientific-theme.css). Roles the site does not
+// define, such as warnings, search highlights and ANSI terminal colors, keep the
+// T3 Code values.
+export const DIMAGGI_LIGHT_THEME_COLORS: ThemeColors = {
+  ...T3_CODE_LIGHT_THEME_COLORS,
+  canvas: "#ffffff",
+  chrome: "#ffffff",
+  toolbar: "#ffffff",
+  toolbarForeground: "#303036",
+  toolbarBorder: "#b9bec4",
+  toolbarControl: "#ffffff",
+  toolbarControlForeground: "#303036",
+  toolbarControlHover: "#f4f4f5",
+  surface: "#ffffff",
+  surfaceRaised: "#f4f4f5",
+  surfaceOverlay: "#ffffff",
+  text: "#303036",
+  textMuted: "#626268",
+  border: "#b9bec4",
+  input: "#b9bec4",
+  focus: "#1a7c93",
+  accent: "#1a7c93",
+  accentForeground: "#ffffff",
+  secondary: "#f4f4f5",
+  secondaryForeground: "#303036",
+  muted: "#f4f4f5",
+  mutedForeground: "#626268",
+  placeholder: "#626268",
+  secondaryLabel: "#626268",
+  iconMuted: "#626268",
+  error: "#a02038",
+  errorForeground: "#a02038",
+  update: "#1a7c93",
+  updateForeground: "#1a7c93",
+  updateSurface: "#e7e7e9",
+  accentSurface: "#f4f4f5",
+  accentSurfaceForeground: "#303036",
+  messageSurface: "#f4f4f5",
+  messageForeground: "#303036",
+  messageAction: "#1a7c93",
+  messageActionForeground: "#ffffff",
+  messageActionHover: "#155f71",
+  codeBackground: "#f4f4f5",
+  codeForeground: "#3a3a3e",
+  sidebar: "#f4f4f5",
+  sidebarForeground: "#303036",
+  sidebarMutedForeground: "#626268",
+  sidebarControlSurface: "#e7e7e9",
+  sidebarRowHover: "#e7e7e9",
+  sidebarRowActive: "#ffffff",
+  sidebarRowSelected: "#ffffff",
+  sidebarBorder: "#b9bec4",
+  terminalBackground: "#ffffff",
+  terminalForeground: "#303036",
+  terminalCursor: "#1a7c93",
+};
+
+export const DIMAGGI_DARK_THEME_COLORS: ThemeColors = {
+  ...T3_CODE_DARK_THEME_COLORS,
+  canvas: "#252528",
+  chrome: "#252528",
+  toolbar: "#252528",
+  toolbarForeground: "#ffffff",
+  toolbarBorder: "#626268",
+  toolbarControl: "#303036",
+  toolbarControlForeground: "#ffffff",
+  toolbarControlHover: "#3a3a3e",
+  surface: "#303036",
+  surfaceRaised: "#3a3a3e",
+  surfaceOverlay: "#303036",
+  text: "#ffffff",
+  textMuted: "#b9bec4",
+  border: "#626268",
+  input: "#626268",
+  focus: "#76b0be",
+  accent: "#76b0be",
+  accentForeground: "#0b0b0c",
+  secondary: "#303036",
+  secondaryForeground: "#ffffff",
+  muted: "#303036",
+  mutedForeground: "#b9bec4",
+  placeholder: "#b9bec4",
+  secondaryLabel: "#b9bec4",
+  iconMuted: "#b9bec4",
+  error: "#ffb5bc",
+  errorForeground: "#ffb5bc",
+  update: "#76b0be",
+  updateForeground: "#76b0be",
+  updateSurface: "#303036",
+  accentSurface: "#303036",
+  accentSurfaceForeground: "#ffffff",
+  messageSurface: "#303036",
+  messageForeground: "#e1e1e3",
+  // The site keeps its brand-blue button fill in dark mode and uses #76b0be for links.
+  messageAction: "#1a7c93",
+  messageActionForeground: "#ffffff",
+  messageActionHover: "#155f71",
+  codeBackground: "#303036",
+  codeForeground: "#e1e1e3",
+  sidebar: "#252528",
+  sidebarForeground: "#ffffff",
+  sidebarMutedForeground: "#b9bec4",
+  sidebarControlSurface: "#303036",
+  sidebarRowHover: "#303036",
+  sidebarRowActive: "#3a3a3e",
+  sidebarRowSelected: "#3a3a3e",
+  sidebarBorder: "#626268",
+  terminalBackground: "#252528",
+  terminalForeground: "#e1e1e3",
+  terminalCursor: "#76b0be",
+};
+
 export function getMobileThemeColors(
-  themeId: SharedMobileThemeId,
+  themeId: MobileColorThemeId,
   appearance: MobileThemeAppearance,
 ): ThemeColors {
+  if (themeId === DIMAGGI_MOBILE_THEME_ID) {
+    return appearance === "dark" ? DIMAGGI_DARK_THEME_COLORS : DIMAGGI_LIGHT_THEME_COLORS;
+  }
   if (themeId === DEFAULT_MOBILE_THEME_ID) {
     return appearance === "dark" ? T3_CODE_DARK_THEME_COLORS : T3_CODE_LIGHT_THEME_COLORS;
   }
@@ -460,7 +590,7 @@ export function getMobileThemeColors(
 }
 
 export function getMobileThemeVariables(
-  themeId: SharedMobileThemeId,
+  themeId: MobileColorThemeId,
   appearance: MobileThemeAppearance,
   overrides: Partial<MobileThemeVariables> | null = null,
 ): MobileThemeVariables {
@@ -508,8 +638,7 @@ export function getMobileThemePreviewColors(
 ): ThemePreviewColors {
   if (themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you")
     return STANDARD_THEME_PREVIEW_COLORS[appearance];
-  const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? T3_CHAT_THEME;
-  const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
+  const colors = getMobileThemeColors(themeId, appearance);
   return {
     canvas: themeColorToNativeColor(colors.canvas),
     accent: themeColorToNativeColor(colors.accent),

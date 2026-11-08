@@ -5,6 +5,7 @@ import * as D4AgentContext from "./d4Agent/D4AgentContext.ts";
 import * as D4AgentStore from "./d4Agent/D4AgentStore.ts";
 import * as D4AgentSystemProbe from "./d4Agent/SystemProbe.ts";
 import * as D4AgentPcCommand from "./d4Agent/PcCommand.ts";
+import * as D4AgentScopeReviewer from "./d4Agent/ScopeReviewer.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as HandoffMemory from "./handoffMemory.ts";
 import * as AlmanacService from "./almanac/AlmanacService.ts";
@@ -688,6 +689,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
         Layer.provide(D4OverviewInbox.layer),
         Layer.provide(D4OverviewThreads.layer),
         Layer.provide(D4AgentPcCommand.layer),
+        Layer.provide(D4AgentScopeReviewer.layer),
       ),
     ),
     Layer.provideMerge(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),

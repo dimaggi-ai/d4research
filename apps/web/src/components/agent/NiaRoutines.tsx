@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import {
   DEFAULT_SERVER_SETTINGS,
+  resolveD4AgentTaskModelSelection,
   type D4AgentState,
   type EnvironmentId,
   type ModelSelection,
@@ -20,10 +21,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { providerInstanceEntriesFor } from "../../providerInstances";
-import {
-  getCustomModelOptionsByInstance,
-  resolveAppModelSelectionState,
-} from "../../modelSelection";
+import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import { SheetHeader, SheetTitle, SheetDescription } from "../ui/sheet";
 import { RightPanelSheet } from "../RightPanelSheet";
 import { SettingsRow, SettingsSection } from "../settings/settingsLayout";
@@ -78,10 +76,10 @@ function NiaRoutinesContent({
   const providersByEnvironment = useEnvironmentProviders();
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS)!;
-  const configuredTaskModel = settings.d4Agent.taskModelSelection;
   const [taskModelOverride, setTaskModelOverride] = useState<ModelSelection | null>(null);
-  const taskModel = taskModelOverride ?? configuredTaskModel;
-  const taskPickerModel = taskModel ?? resolveAppModelSelectionState(settings, providers);
+  // The worker defaults to the task model, never to Nia's or the app's picker default.
+  const taskModel = taskModelOverride ?? resolveD4AgentTaskModelSelection(settings.d4Agent);
+  const taskPickerModel = taskModel;
   const taskEntries = providerInstanceEntriesFor(providers, settings, null);
   const taskModelOptions = getCustomModelOptionsByInstance(
     settings,
@@ -124,7 +122,7 @@ function NiaRoutinesContent({
               environmentId,
               input: {
                 text: `Prepare a new routine from this brief. Use prepare-routine to open a new visible setup thread, prepare prerequisites with bounded coding agents, and keep activation separate for review. Brief:\n${brief.trim()}`,
-                ...(taskModel === null ? {} : { taskModelSelection: taskModel }),
+                taskModelSelection: taskModel,
                 expectedContext: state.brainContext,
                 expectedThreadId: state.threadId,
                 followUpBehavior: "queue",
@@ -166,7 +164,6 @@ function NiaRoutinesContent({
                 instanceEntries={taskEntries}
                 modelOptionsByInstance={taskModelOptions}
                 triggerAriaLabel="Routine worker model"
-                {...(taskModel ? {} : { triggerLabel: "Choose model" })}
                 disabled={busy}
                 onInstanceModelChange={(instanceId, model) =>
                   setTaskModelOverride(createModelSelection(instanceId, model))
@@ -191,12 +188,7 @@ function NiaRoutinesContent({
                 type="submit"
                 size="sm"
                 disabled={
-                  !canSend ||
-                  !connected ||
-                  busy ||
-                  !brief.trim() ||
-                  state.threadId === null ||
-                  taskModel === null
+                  !canSend || !connected || busy || !brief.trim() || state.threadId === null
                 }
               >
                 {busy ? "Sending…" : "Prepare job"}

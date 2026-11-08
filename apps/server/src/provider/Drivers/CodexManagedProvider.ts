@@ -289,6 +289,12 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
         "generateTranscriptionPostProcessing",
         nativeGeneration.generateTranscriptionPostProcessing(value),
       ),
+    ...(nativeGeneration.generateScopeReview === undefined
+      ? {}
+      : {
+          generateScopeReview: (value) =>
+            protect("generateScopeReview", nativeGeneration.generateScopeReview!(value)),
+        }),
   };
   return {
     instanceId,

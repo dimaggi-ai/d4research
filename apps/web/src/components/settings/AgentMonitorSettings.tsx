@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+  resolveD4AgentTaskModelSelection,
   supportsD4AgentDriver,
   type ModelSelection,
   type ServerSettings,
@@ -74,7 +75,8 @@ function AgentMonitorForm() {
   const agent = settings.d4Agent;
   const fallbackSelection = resolveAppModelSelectionState(settings, providers);
   const selection = agent.modelSelection ?? fallbackSelection;
-  const taskSelection = agent.taskModelSelection ?? fallbackSelection;
+  // The task model has its own default; it never borrows Nia's model.
+  const taskSelection = resolveD4AgentTaskModelSelection(agent);
   // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
   const allEntries = providerInstanceEntriesFor(providers, settings, null);
   const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
@@ -149,7 +151,7 @@ function AgentMonitorForm() {
       .finally(() => setSaving(false));
   };
   const saveModel = (modelSelection: ModelSelection | null) => void writeAgent({ modelSelection });
-  const saveTaskModel = (taskModelSelection: ModelSelection | null) =>
+  const saveTaskModel = (taskModelSelection: ModelSelection) =>
     void writeAgent({ taskModelSelection });
   return (
     <>
@@ -292,7 +294,7 @@ function AgentMonitorForm() {
           <>
             <SettingsRow
               title="Task model"
-              description="Default provider and model for new tasks. Nia never substitutes its manager model."
+              description="Default provider and model for new tasks. It is separate from Nia's own model."
               control={
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <ProviderModelPicker
@@ -304,22 +306,11 @@ function AgentMonitorForm() {
                     modelOptionsByInstance={taskModelOptions}
                     triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                     triggerAriaLabel="Nia task model"
-                    {...(agent.taskModelSelection ? {} : { triggerLabel: "Choose model" })}
                     disabled={!allowed || saving}
                     onInstanceModelChange={(instanceId, model) =>
                       saveTaskModel(createModelSelection(instanceId, model))
                     }
                   />
-                  {agent.taskModelSelection ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={!allowed || saving}
-                      onClick={() => saveTaskModel(null)}
-                    >
-                      Clear
-                    </Button>
-                  ) : null}
                 </div>
               }
             />

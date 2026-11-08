@@ -113,6 +113,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.d4AgentNewSession]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentCloseSession]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentUndoArchive]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentReviewActionScope]: AuthOrchestrationOperateScope,
   [WS_METHODS.pipelineResumeRun]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentResolveMemoryProposal]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentSendMessage]: AuthOrchestrationOperateScope,

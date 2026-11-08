@@ -12,6 +12,7 @@ import { isSessionNotice, postTime } from "./d4AgentPresentation";
 import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
+  resolveD4AgentTaskModelSelection,
   type D4AgentState,
   type EnvironmentId,
   type ModelSelection,
@@ -63,7 +64,7 @@ import { formatModelSelectionLabel } from "@d4research/client-runtime/state/prov
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { ModelRow } from "../threads/ThreadSettingsRows";
 import { AppBar } from "../../components/ui/AppBar";
-import { ComposerEditor } from "../../components/ComposerEditor";
+import { ComposerEditor, type ComposerEditorSelection } from "../../components/ComposerEditor";
 import {
   ComposerActionButton,
   ComposerInlineControl,
@@ -72,6 +73,15 @@ import {
 } from "../../components/ComposerToolbar";
 import { ComposerSurface } from "../threads/ThreadComposer";
 import { useAssetUrl } from "../../state/assets";
+import {
+  ComposerDictationCancelAction,
+  ComposerDictationPrimaryAction,
+  ComposerDictationStartAction,
+  ComposerDictationStatus,
+  ComposerDictationToolbar,
+} from "../voice-input/ComposerDictationControl";
+import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 
 const isD4AgentError = Schema.is(D4AgentError);
 
@@ -101,11 +111,11 @@ function NiaFileLink({
 function taskFailureMessage(
   failure: unknown,
   providers: NonNullable<ReturnType<typeof useEnvironmentServerConfig>>["providers"],
-  selection: ModelSelection | null,
+  selection: ModelSelection,
 ) {
   if (!isD4AgentError(failure)) return "Could not send this message. Your draft is preserved.";
   if (failure.reason === "provider-unavailable") {
-    const provider = providers.find((entry) => entry.instanceId === selection?.instanceId);
+    const provider = providers.find((entry) => entry.instanceId === selection.instanceId);
     const quotaExhausted =
       provider?.usageLimits?.windows.some(
         (window) =>
@@ -274,11 +284,21 @@ export function D4AgentChat({
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const linkTo = useLinkTo();
-  const [text, setText] = useState("");
-  // undefined follows the saved default; null explicitly means manager-only conversation.
-  const [taskSelectionOverride, setTaskSelectionOverride] = useState<
-    ModelSelection | null | undefined
-  >(undefined);
+  const [text, setTextState] = useState("");
+  // Dictation reads and watches the draft outside render, so it mirrors the text in a ref.
+  const textRef = useRef("");
+  const textListeners = useRef(new Set<() => void>());
+  const setText = (next: string | ((current: string) => string)) => {
+    const value = typeof next === "function" ? next(textRef.current) : next;
+    textRef.current = value;
+    setTextState(value);
+    for (const listener of textListeners.current) listener();
+  };
+  const [selection, setSelection] = useState<ComposerEditorSelection>({ start: 0, end: 0 });
+  // undefined follows the saved default task model; there is always a concrete task model.
+  const [taskSelectionOverride, setTaskSelectionOverride] = useState<ModelSelection | undefined>(
+    undefined,
+  );
   const [taskPickerOpen, setTaskPickerOpen] = useState(false);
   const [origin, setOrigin] = useState<AgentDraftOrigin | null>(null);
   if (!text.trim() && origin !== null) setOrigin(null);
@@ -296,14 +316,37 @@ export function D4AgentChat({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const taskSelection =
-    taskSelectionOverride === undefined
-      ? (config?.settings.d4Agent.taskModelSelection ?? null)
-      : taskSelectionOverride;
+    taskSelectionOverride ??
+    resolveD4AgentTaskModelSelection(
+      config?.settings.d4Agent ?? { taskModelSelection: null },
+    );
+  const voiceInput = useVoiceInputController({
+    ownerKey: state.threadId === null ? "nia" : `nia:${state.threadId}`,
+    label: "Nia",
+    readDraftMessage: () => textRef.current,
+    subscribeToDraftChanges: (onChange) => {
+      textListeners.current.add(onChange);
+      return () => textListeners.current.delete(onChange);
+    },
+    selection,
+    disabled: !enabled || !allowed || sending,
+    onChangeDraftMessage: (value) => {
+      setText(value.slice(0, 16000));
+      if (value.trim()) bindDraft();
+    },
+    onChangeSelection: setSelection,
+  });
+  const voicePresentation = resolveVoiceComposerPresentation(
+    voiceInput.state,
+    voiceInput.elapsedSeconds,
+  );
+  const showsDictation = voicePresentation.statusLabel !== null;
   const taskGroups = groupByProvider(buildModelOptions(config, taskSelection, undefined, null));
   const conversation = useRef<ComponentRef<typeof ScrollView>>(null);
   const followConversation = useRef(true);
   const submit = async () => {
-    if (sending || !enabled || !allowed || !text.trim() || moved) return;
+    if (sending || !enabled || !allowed || !text.trim() || moved || voiceInput.blocksSubmission)
+      return;
     const submitted = text;
     const target = origin ?? agentDraftOrigin(state);
     setSending(true);
@@ -503,7 +546,10 @@ export function D4AgentChat({
               // The native iOS editor has no intrinsic height; unsized it collapses to zero and cannot be tapped.
               style={{ minHeight: 64 }}
               value={text}
+              selection={selection}
+              onSelectionChange={setSelection}
               editable={enabled && allowed && !sending}
+              readOnly={voiceInput.freezesEditor}
               onChangeText={(value) => {
                 const bounded = value.slice(0, 16000);
                 setText(bounded);
@@ -519,33 +565,59 @@ export function D4AgentChat({
                 disabled={sending}
                 emphasized
                 icon="brain"
-                label={
-                  taskSelection
-                    ? formatModelSelectionLabel(config?.providers, taskSelection)
-                    : "No task model"
-                }
+                label={formatModelSelectionLabel(config?.providers, taskSelection)}
                 onPress={() => setTaskPickerOpen(true)}
               />
-              {taskSelection ? (
-                <ComposerInlineControl
-                  disabled={sending}
-                  label="No task model"
-                  onPress={() => {
-                    setTaskSelectionOverride(null);
-                    bindDraft();
-                  }}
-                  showChevron={false}
-                />
-              ) : null}
             </ComposerToolbarScroller>
+            {showsDictation ? null : (
+              <ComposerDictationStartAction
+                state={voiceInput.state}
+                isAvailable={voiceInput.isAvailable}
+                disabled={!enabled || !allowed || sending}
+                onStart={voiceInput.start}
+                onCancel={voiceInput.cancel}
+              />
+            )}
             <ComposerActionButton
               accessibilityLabel={sending ? "Sending" : "Send"}
-              disabled={!enabled || !allowed || sending || !text.trim() || moved !== null}
+              disabled={
+                !enabled ||
+                !allowed ||
+                sending ||
+                !text.trim() ||
+                moved !== null ||
+                voiceInput.blocksSubmission
+              }
               icon="arrow.up"
               onPress={() => void submit()}
               variant="primary"
             />
           </ComposerToolbarRow>
+          {showsDictation ? (
+            <ComposerDictationToolbar showsDictation>
+              <View className="h-11 flex-row items-center px-2">
+                <ComposerDictationCancelAction
+                  presentation={voicePresentation}
+                  onCancel={voiceInput.cancel}
+                />
+                <ComposerDictationStatus
+                  audioLevels={voiceInput.audioLevels}
+                  elapsedSeconds={voiceInput.elapsedSeconds}
+                  phase={voiceInput.state.phase}
+                  presentation={voicePresentation}
+                />
+                <ComposerDictationPrimaryAction
+                  state={voiceInput.state}
+                  presentation={voicePresentation}
+                  isAvailable={voiceInput.isAvailable}
+                  disabled={!enabled || !allowed || sending}
+                  onStart={voiceInput.start}
+                  onConfirm={voiceInput.stop}
+                  onCancel={voiceInput.cancel}
+                />
+              </View>
+            </ComposerDictationToolbar>
+          ) : null}
         </ComposerSurface>
         {moved ? (
           <View className="gap-2">
@@ -588,17 +660,6 @@ export function D4AgentChat({
             </Pressable>
           </View>
           <ScrollView contentContainerClassName="gap-4 pb-10">
-            <Pressable
-              accessibilityRole="button"
-              className="px-5 py-3"
-              onPress={() => {
-                setTaskSelectionOverride(null);
-                setTaskPickerOpen(false);
-                bindDraft();
-              }}
-            >
-              <Text className="text-foreground">No task model</Text>
-            </Pressable>
             {taskGroups.map((group) => (
               <View key={group.providerKey} className="gap-2">
                 <Text className="px-5 text-sm text-foreground-muted">{group.providerLabel}</Text>
@@ -607,7 +668,7 @@ export function D4AgentChat({
                     key={option.key}
                     option={option}
                     selected={
-                      option.selection.instanceId === taskSelection?.instanceId &&
+                      option.selection.instanceId === taskSelection.instanceId &&
                       option.selection.model === taskSelection.model
                     }
                     onPress={() => {

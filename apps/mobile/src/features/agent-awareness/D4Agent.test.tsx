@@ -12,6 +12,7 @@ import { D4AgentSessions } from "./D4AgentSessions";
 import * as Cause from "effect/Cause";
 import {
   D4AgentError,
+  DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ThreadId,
@@ -64,6 +65,7 @@ const mocks = vi.hoisted(() => ({
   connectionPhase: "connected",
   monitorEnabled: true,
   taskModelSelection: null as ModelSelection | null,
+  dictatedText: "Dictated request",
   providers: [] as ServerProvider[],
   threads: [] as Array<{
     id: ThreadId;
@@ -319,6 +321,40 @@ vi.mock("../../components/ComposerToolbar", () => ({
       {accessibilityLabel}
     </button>
   ),
+}));
+vi.mock("../voice-input/useVoiceInputController", () => ({
+  useVoiceInputController: (input: { onChangeDraftMessage: (text: string) => void }) => ({
+    isAvailable: true,
+    state: { phase: "idle", error: null, errorAction: null },
+    audioLevels: [],
+    elapsedSeconds: 0,
+    isBusy: false,
+    freezesEditor: false,
+    blocksSubmission: false,
+    start: () => input.onChangeDraftMessage(mocks.dictatedText),
+    stop: () => undefined,
+    cancel: () => undefined,
+  }),
+}));
+vi.mock("../voice-input/ComposerDictationControl", () => ({
+  ComposerDictationStartAction: ({
+    isAvailable,
+    disabled,
+    onStart,
+  }: {
+    isAvailable: boolean;
+    disabled?: boolean;
+    onStart: () => void;
+  }) =>
+    isAvailable ? (
+      <button disabled={disabled} onClick={onStart}>
+        Start dictation
+      </button>
+    ) : null,
+  ComposerDictationToolbar: () => null,
+  ComposerDictationCancelAction: () => null,
+  ComposerDictationStatus: () => null,
+  ComposerDictationPrimaryAction: () => null,
 }));
 vi.mock("../threads/ThreadComposer", () => ({
   COMPOSER_COLLAPSED_CHROME: 0,
@@ -1019,7 +1055,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
     environmentId,
     input: {
       text: "Research the question",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       expectedContext: mocks.state!.brainContext,
       expectedThreadId: mocks.state!.threadId,
     },
@@ -1062,7 +1098,11 @@ it("sends the exact request-local worker selected in native chat", async () => {
   );
   const press = (label: string) =>
     [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
-  await act(async () => press("No task model").click());
+  await act(async () =>
+    press(
+      `${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId} · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model}`,
+    ).click(),
+  );
   expect(document.body.textContent).toContain("Alternate worker");
   const workerLabel = [...document.querySelectorAll<HTMLElement>("*")]
     .reverse()
@@ -1087,6 +1127,35 @@ it("sends the exact request-local worker selected in native chat", async () => {
       taskModelSelection: worker,
       expectedContext: "Global",
       expectedThreadId: threadId,
+    },
+  });
+});
+
+it("always shows a concrete task model and dictates into the Nia draft", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const press = (label: string) =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === label);
+  expect(container.textContent).not.toContain("No task model");
+  expect(
+    press(
+      `${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId} · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model}`,
+    ),
+  ).toBeDefined();
+  await act(async () => press("Start dictation")!.click());
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
+  expect(input.value).toBe("Dictated request");
+  await act(async () => press("Send")!.click());
+  expect(mocks.send).toHaveBeenLastCalledWith({
+    environmentId,
+    input: {
+      text: "Dictated request",
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
+      expectedContext: mocks.state!.brainContext,
+      expectedThreadId: mocks.state!.threadId,
     },
   });
 });
@@ -1590,7 +1659,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
     environmentId,
     input: {
       text: "[[thread:stable-target]]",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       expectedContext: "YB",
       expectedThreadId: mocks.state!.threadId,
     },
@@ -1624,7 +1693,7 @@ it("keeps the draft and says why when another client changed Nia's context first
     environmentId,
     input: {
       text: "Global-only draft",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       expectedContext: "Global",
       expectedThreadId: threadId,
     },
@@ -1727,7 +1796,7 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
     environmentId,
     input: {
       text: "Global-only draft",
-      taskModelSelection: null,
+      taskModelSelection: DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
     },

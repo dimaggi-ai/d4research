@@ -16,8 +16,10 @@ const start = (
   projectId: ProjectId.make("project"),
   text: "Fix the flaky login test.",
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
+  doneWhen: "pnpm test login passes 20 runs in a row.",
   ...overrides,
 });
+const root = { workspaceRoot: "/repo", workspace: "root" } as const;
 
 describe("start task modes", () => {
   it("treats a start card without a mode as a single task", () => {
@@ -26,11 +28,29 @@ describe("start task modes", () => {
   });
 
   it("asks a single task to verify and report its outcome before it settles", () => {
-    const prompt = composeStartPrompt(start());
-    assert.isTrue(prompt.startsWith("Fix the flaky login test.\n\n---\nSingle task."));
+    const prompt = composeStartPrompt(start(), root);
+    assert.isTrue(prompt.startsWith("Fix the flaky login test.\n\n---\nBrief\n"));
+    assert.include(prompt, "Single task.");
     assert.include(prompt, "Outcome: completed");
     assert.include(prompt, "a finished turn is not proof of success");
     assert.include(prompt, "settles automatically after a verified completion");
+  });
+
+  it("gives the task thread a self-contained brief with target, constraints and done-when", () => {
+    const prompt = composeStartPrompt(start({ constraints: "Do not touch CI config." }), root);
+    assert.include(prompt, "Target directory: /repo. Work only inside it.");
+    assert.include(prompt, "Constraints: Do not touch CI config.");
+    assert.include(prompt, "Done when: pnpm test login passes 20 runs in a row.");
+    assert.include(prompt, "you cannot see the conversation that produced it");
+    assert.include(
+      composeStartPrompt(start(), { workspaceRoot: "/repo", workspace: "worktree" }),
+      "a fresh worktree of /repo created for this task",
+    );
+  });
+
+  it("refuses a single task without a done-when check", () => {
+    const { doneWhen: _doneWhen, ...withoutCheck } = start();
+    assert.include(startActionProblem(withoutCheck) ?? "", "doneWhen");
   });
 
   it("refuses a loop without completion criteria", () => {
@@ -41,7 +61,9 @@ describe("start task modes", () => {
   it("runs a loop until its criteria hold, with no iteration cap, and keeps it open", () => {
     const prompt = composeStartPrompt(
       start({ mode: "loop", completionCriteria: "All login tests pass 20 times." }),
+      root,
     );
+    assert.notInclude(prompt, "Done when:");
     assert.include(prompt, "Loop task.");
     assert.include(prompt, "Keep going until every criterion holds.");
     assert.notInclude(prompt, "budget");
@@ -54,6 +76,7 @@ describe("start task modes", () => {
   it("stops a loop at a budget only when the user chose one", () => {
     const prompt = composeStartPrompt(
       start({ mode: "loop", completionCriteria: "Done.", maxIterations: 40 }),
+      root,
     );
     assert.include(prompt, "The user set a budget of 40 iterations");
     assert.include(prompt, "`Outcome: needs-input`");

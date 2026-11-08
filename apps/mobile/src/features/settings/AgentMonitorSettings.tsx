@@ -7,9 +7,11 @@ import * as Option from "effect/Option";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentSession, usePreparedConnection } from "../../state/session";
 import { D4AgentControls } from "./D4AgentControls";
+import { NiaMcpServerList } from "./NiaMcpServerList";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+  resolveD4AgentTaskModelSelection,
   supportsD4AgentDriver,
   type EnvironmentId,
   type ServerSettings,
@@ -131,15 +133,14 @@ function EnvironmentMonitorSettings({
   const monitor = target.serverConfig.settings.agentMonitor;
   if (!monitor) return null;
   const agent = target.serverConfig.settings.d4Agent;
+  const taskSelection = resolveD4AgentTaskModelSelection(agent);
   // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
   const groups = groupByProvider(
     buildModelOptions(config, agent.modelSelection, undefined, null).filter((option) =>
       supportsD4AgentDriver(option.providerDriver),
     ),
   );
-  const taskGroups = groupByProvider(
-    buildModelOptions(config, agent.taskModelSelection, undefined, null),
-  );
+  const taskGroups = groupByProvider(buildModelOptions(config, taskSelection, undefined, null));
   const monitored = threads.filter(
     (thread) =>
       thread.environmentId === target.environmentId &&
@@ -271,22 +272,10 @@ function EnvironmentMonitorSettings({
         <SettingsRow
           icon="hammer"
           label="Task model"
-          value={
-            agent.taskModelSelection
-              ? formatModelSelectionLabel(config?.providers, agent.taskModelSelection)
-              : "Choose model"
-          }
+          value={formatModelSelectionLabel(config?.providers, taskSelection)}
           disabled={!allowed || saving}
           onPress={() => setPicker("task")}
         />
-        {agent.taskModelSelection ? (
-          <SettingsRow
-            icon="xmark"
-            label="Clear task model"
-            disabled={!allowed || saving}
-            onPress={() => void writeAgent({ taskModelSelection: null })}
-          />
-        ) : null}
       </SettingsSection>
       <SettingsSection title="MCP servers">
         {NIA_SERVERS.map((server) => (
@@ -435,6 +424,12 @@ function EnvironmentMonitorSettings({
             ) : null}
           </View>
         ))}
+        <NiaMcpServerList
+          servers={agent.mcpServers}
+          permissionMode={agent.permissionMode}
+          disabled={!allowed || saving}
+          save={(mcpServers) => writeAgent({ mcpServers })}
+        />
       </SettingsSection>
       <SettingsSection title="Skills">
         <Text className="px-4 py-3 text-sm text-foreground-muted">{`Enable up to ${ENABLED_BY_DEFAULT_SKILL_MAX_COUNT} installed skills for Nia. Skills do not grant tool permissions.`}</Text>
@@ -515,12 +510,10 @@ function EnvironmentMonitorSettings({
                     selected={
                       option.selection.instanceId ===
                         (picker === "task"
-                          ? agent.taskModelSelection?.instanceId
+                          ? taskSelection.instanceId
                           : agent.modelSelection?.instanceId) &&
                       option.selection.model ===
-                        (picker === "task"
-                          ? agent.taskModelSelection?.model
-                          : agent.modelSelection?.model)
+                        (picker === "task" ? taskSelection.model : agent.modelSelection?.model)
                     }
                     onPress={() => {
                       void writeAgent(

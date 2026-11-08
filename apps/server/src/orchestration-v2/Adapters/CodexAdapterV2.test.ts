@@ -2644,6 +2644,102 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  it.effect("reloads a loaded Nia thread when its MCP servers change", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const scenario = "codex-nia-mcp-reload";
+        const nativeThreadId = `native-${scenario}-thread`;
+        const resumeResult = (id: number) => ({
+          type: "emit_inbound" as const,
+          label: `thread/resume-${id}`,
+          frame: { id, result: { thread: { id: nativeThreadId, updatedAt: 1782622450 } } },
+        });
+        const nia = (command: string) => ({
+          ...CODEX_TEST_RUNTIME_POLICY,
+          toolPolicy: "d4-agent" as const,
+          d4AgentMcpServers: [
+            {
+              name: "docs",
+              enabled: true,
+              transport: { type: "stdio" as const, command, args: [], env: [] },
+            },
+          ],
+        });
+        const resume = (id: number, command: string) => ({
+          type: "expect_outbound" as const,
+          label: `thread/resume-${id}`,
+          frame: {
+            id,
+            method: "thread/resume",
+            params: {
+              threadId: nativeThreadId,
+              excludeTurns: true,
+              ...CodexAdapterV2.codexThreadRuntimeParams({
+                threadId: null,
+                mcpSession: undefined,
+                runtimePolicy: nia(command),
+              }),
+            },
+          },
+        });
+        const transcript = makeCodexReplayTranscript({
+          scenario,
+          entries: [
+            ...codexReplayPreamble({
+              nativeThreadId,
+              nativeTurnId: "unused-turn",
+              prompt: "unused-prompt",
+            }).slice(0, 5),
+            resume(3, "docs-mcp"),
+            resumeResult(3),
+            resume(4, "docs-mcp"),
+            resumeResult(4),
+            {
+              type: "expect_outbound",
+              label: "thread/unsubscribe",
+              frame: { id: 5, method: "thread/unsubscribe", params: { threadId: nativeThreadId } },
+            },
+            {
+              type: "emit_inbound",
+              label: "thread/unsubscribe",
+              frame: { id: 5, result: { status: "unsubscribed" } },
+            },
+            resume(6, "docs-mcp-v2"),
+            resumeResult(6),
+          ],
+        });
+        const methods: Array<string> = [];
+        const harness = yield* makeCodexReplayHarness(
+          transcript,
+          () => Effect.void,
+          (method) => Effect.sync(() => methods.push(method)),
+        );
+        for (const runtimePolicy of [nia("docs-mcp"), nia("docs-mcp"), nia("docs-mcp-v2")]) {
+          yield* harness.runtime.resumeThread({
+            providerThread: harness.providerThread,
+            modelSelection: CODEX_TEST_MODEL_SELECTION,
+            runtimePolicy,
+          });
+        }
+        assert.deepEqual(methods.slice(-4), [
+          "thread/resume",
+          "thread/resume",
+          "thread/unsubscribe",
+          "thread/resume",
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect("resumes a provider thread without requesting or decoding its history", () =>
     Effect.scoped(
       Effect.gen(function* () {

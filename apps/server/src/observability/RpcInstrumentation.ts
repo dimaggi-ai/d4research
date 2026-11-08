@@ -112,6 +112,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.d4AgentNewSession]: "orchestration",
   [WS_METHODS.d4AgentCloseSession]: "orchestration",
   [WS_METHODS.d4AgentUndoArchive]: "orchestration",
+  [WS_METHODS.d4AgentReviewActionScope]: "orchestration",
   [WS_METHODS.pipelineResumeRun]: "orchestration",
   [WS_METHODS.notesList]: "notes",
   [WS_METHODS.notesRead]: "notes",

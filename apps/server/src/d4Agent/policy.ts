@@ -2,6 +2,7 @@ import { D4_AGENT_TOOLS } from "@d4research/provider-core/server/d4AgentPolicy";
 import * as DateTime from "effect/DateTime";
 import {
   canStartProviderTurn,
+  resolveD4AgentTaskModelSelection,
   supportsD4AgentDriver,
   type AgentMonitorUpdate,
   type D4AgentSettings,
@@ -53,8 +54,7 @@ export function taskModelAvailability(
   now: number,
   requireAgentDriver = true,
 ): D4AgentState["unavailableReason"] {
-  const selection = settings.taskModelSelection;
-  if (selection === null) return "model-not-selected";
+  const selection = resolveD4AgentTaskModelSelection(settings);
   const availability = modelAvailability(
     { ...settings, modelSelection: selection },
     providers,

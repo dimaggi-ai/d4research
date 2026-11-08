@@ -18,6 +18,7 @@ import { serverEnvironment } from "../../state/server";
 import { Switch } from "../ui/switch";
 import { Input } from "../ui/input";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { NiaMcpServerList } from "./NiaMcpServerList";
 
 type Agent = ServerSettings["d4Agent"];
 type Monitor = ServerSettings["agentMonitor"];
@@ -138,6 +139,32 @@ export function D4AgentControls({
               }
             />
           ))}
+        <SettingsRow
+          title="Permission level"
+          description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context."
+          control={
+            <select
+              aria-label="Agent permission level"
+              className={selectClass}
+              disabled={disabled}
+              value={agent.permissionMode}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "read-only" || value === "ask" || value === "act")
+                  void writeAgent({ permissionMode: value });
+              }}
+            >
+              <option value="read-only">Read-only</option>
+              <option value="ask">Ask</option>
+              <option value="act">Act</option>
+            </select>
+          }
+        >
+          <p className="pb-3 text-xs text-muted-foreground">
+            Sending, starting threads, interrupting, answering, commands and schedules always
+            require your approval. Provider permission approvals remain manual.
+          </p>
+        </SettingsRow>
         {taskControls}
       </SettingsSection>
       <SettingsSection title="MCP servers">
@@ -175,32 +202,6 @@ export function D4AgentControls({
               <div className="pl-3">
                 {server.id === "threads" ? (
                   <>
-                    <SettingsRow
-                      title="Permission level"
-                      description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context."
-                      control={
-                        <select
-                          aria-label="Agent permission level"
-                          className={selectClass}
-                          disabled={disabled}
-                          value={agent.permissionMode}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            if (value === "read-only" || value === "ask" || value === "act")
-                              void writeAgent({ permissionMode: value });
-                          }}
-                        >
-                          <option value="read-only">Read-only</option>
-                          <option value="ask">Ask</option>
-                          <option value="act">Act</option>
-                        </select>
-                      }
-                    >
-                      <p className="pb-3 text-xs text-muted-foreground">
-                        Sending, starting threads, interrupting, answering, commands and schedules
-                        always require your approval. Provider permission approvals remain manual.
-                      </p>
-                    </SettingsRow>
                     {projects.map((project) => (
                       <SettingsRow
                         key={project.id}
@@ -586,6 +587,12 @@ export function D4AgentControls({
             </details>
           </div>
         ))}
+        <NiaMcpServerList
+          servers={agent.mcpServers}
+          permissionMode={agent.permissionMode}
+          disabled={disabled}
+          save={(mcpServers) => writeAgent({ mcpServers })}
+        />
         {state.error ? (
           <p role="alert" className="text-sm text-destructive">
             {state.error}

@@ -1,4 +1,5 @@
 import {
+  activeD4AgentMcpServers,
   isCompactionCommandMessage,
   parseGoalCommand,
   type OrchestrationV2ContextHandoff,
@@ -981,6 +982,7 @@ export const layer: Layer.Layer<
               runtimeMode: "approval-required" as const,
               interactionMode: "default" as const,
               toolPolicy: "d4-agent" as const,
+              d4AgentMcpServers: activeD4AgentMcpServers(settings.d4Agent),
               approvalPolicy: "never",
               sandboxPolicy: { type: "readOnly", networkAccess: false },
             };

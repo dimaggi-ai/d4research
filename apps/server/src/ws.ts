@@ -2049,6 +2049,8 @@ const makeWsHandlers = Effect.fn("ws.makeHandlers")(function* (
       D4Agent.D4Agent.pipe(Effect.flatMap((agent) => agent.closeSession(input))),
     [WS_METHODS.d4AgentUndoArchive]: (input) =>
       D4Agent.D4Agent.pipe(Effect.flatMap((agent) => agent.undoArchive(input))),
+    [WS_METHODS.d4AgentReviewActionScope]: (input) =>
+      D4Agent.D4Agent.pipe(Effect.flatMap((agent) => agent.reviewActionScope(input))),
     [WS_METHODS.pipelineResumeRun]: (input) =>
       Effect.serviceOption(D4AgentStore.D4AgentStore).pipe(
         Effect.flatMap((store) =>

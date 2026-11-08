@@ -54,6 +54,9 @@ import {
   type D4AgentActionNote,
   type D4AgentActionRecord,
   type D4AgentLaunchPreview,
+  type D4AgentReviewActionScopeInput,
+  type D4AgentTaskPlan,
+  resolveD4AgentTaskModelSelection,
   type D4AgentResolveActionInput,
   type D4AgentSendInput,
   type D4AgentSettings,
@@ -83,6 +86,9 @@ import * as NodeOS from "node:os";
 import * as D4AgentStore from "./D4AgentStore.ts";
 import * as SystemProbe from "./SystemProbe.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
+import * as Planner from "./TaskPlanner.ts";
+import * as ScopeReview from "./ScopeReviewer.ts";
+import { planProblem } from "./TaskPlanner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { readSkillsInventory } from "../skillsInventory.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
@@ -130,6 +136,10 @@ export class D4Agent extends Context.Service<
     readonly undoArchive: (
       input: D4AgentGetActionInput,
     ) => Effect.Effect<D4AgentState, D4AgentError>;
+    /** The optional design-reduction pass on a pending start card; never part of drafting. */
+    readonly reviewActionScope: (
+      input: D4AgentReviewActionScopeInput,
+    ) => Effect.Effect<D4AgentActionRecord, D4AgentError>;
     readonly listPipelines: () => Effect.Effect<
       {
         readonly pipelines: ReadonlyArray<Pipelines.ScopedPipeline>;
@@ -276,9 +286,11 @@ export interface D4AgentEnvironment {
   }>;
   readonly providers: ReturnType<typeof providerDecisionContext>;
   readonly d4Agent: {
-    readonly modelSelection: ModelSelection | null;
-    readonly taskModelSelection: ModelSelection | null;
-    readonly defaultTaskModelSelection: ModelSelection | null;
+    /** Nia's own chat model. It never runs tasks. */
+    readonly niaModelSelection: ModelSelection | null;
+    /** The model every task Nia drafts for the current request runs on. */
+    readonly taskModelSelection: ModelSelection;
+    readonly defaultTaskModelSelection: ModelSelection;
     readonly permissionMode: D4AgentSettings["permissionMode"];
     readonly unavailableReason: D4AgentState["unavailableReason"];
   };
@@ -517,6 +529,11 @@ export const layer = Layer.effect(
       yield* Effect.serviceOption(ToolGuard.ToolGuardGate),
       () => ToolGuard.proxyGate,
     );
+    const planner = Option.getOrElse(
+      yield* Effect.serviceOption(Planner.TaskPlanner),
+      () => Planner.jevPlanner,
+    );
+    const scopeReviewer = yield* Effect.serviceOption(ScopeReview.ScopeReviewer);
     const lock = yield* Semaphore.make(1);
     const healthLock = yield* Semaphore.make(1);
     const usageLock = yield* Semaphore.make(1);
@@ -1213,10 +1230,10 @@ export const layer = Layer.effect(
       }
       const sendConfig = yield* settings;
       const taskModelSelection =
-        input.taskModelSelection === undefined
-          ? sendConfig.taskModelSelection
+        input.taskModelSelection == null
+          ? resolveD4AgentTaskModelSelection(sendConfig)
           : input.taskModelSelection;
-      if (!heartbeat && taskModelSelection !== null) {
+      if (!heartbeat) {
         const unavailable = taskModelAvailability(
           { ...sendConfig, taskModelSelection },
           yield* providers.getProviders,
@@ -1369,11 +1386,9 @@ export const layer = Layer.effect(
       const osRelease = yield* fileSystem.readFileString(yield* OsReleasePath).pipe(Effect.option);
       const activeMessage = yield* activeUserMessage(state);
       const activeTaskModelSelection =
-        activeMessage === undefined
-          ? config.taskModelSelection
-          : activeMessage.snapshotFound
-            ? (activeMessage.taskModelSelection ?? null)
-            : config.taskModelSelection;
+        activeMessage?.snapshotFound === true
+          ? (activeMessage.taskModelSelection ?? resolveD4AgentTaskModelSelection(config))
+          : resolveD4AgentTaskModelSelection(config);
       return {
         application: "d4research",
         boundContext: state.brainContext,
@@ -1394,9 +1409,9 @@ export const layer = Layer.effect(
         })),
         providers: providerDecisionContext(catalog, yield* Clock.currentTimeMillis),
         d4Agent: {
-          modelSelection: config.modelSelection,
+          niaModelSelection: config.modelSelection,
           taskModelSelection: activeTaskModelSelection,
-          defaultTaskModelSelection: config.taskModelSelection,
+          defaultTaskModelSelection: resolveD4AgentTaskModelSelection(config),
           permissionMode: config.permissionMode,
           unavailableReason: modelAvailability(config, catalog),
         },
@@ -2892,7 +2907,10 @@ export const layer = Layer.effect(
         ),
         modelSelection: action.modelSelection,
         mode: startTaskMode(action),
-        prompt: composeStartPrompt(action),
+        prompt: composeStartPrompt(action, {
+          workspaceRoot: project?.workspaceRoot ?? "",
+          workspace: workspace.type === "root" ? "root" : "worktree",
+        }),
       };
       return preview;
     });
@@ -2936,22 +2954,16 @@ export const layer = Layer.effect(
           ) {
             const requestMessage = yield* currentUserMessage;
             // A message typed in the plain thread composer carries no worker snapshot; it uses
-            // the saved default worker instead of refusing the draft.
+            // the saved default worker. A null snapshot or setting means the task default, never
+            // Nia's own model.
             const selectedWorker =
               requestMessage === undefined || !requestMessage.snapshotFound
-                ? config.taskModelSelection
-                : (requestMessage.taskModelSelection ?? null);
-            if (selectedWorker === null)
-              return yield* new D4AgentError({
-                reason: "model-not-selected",
-                detail: "Choose a task model before Nia drafts new work.",
-              });
+                ? resolveD4AgentTaskModelSelection(config)
+                : (requestMessage.taskModelSelection ?? resolveD4AgentTaskModelSelection(config));
+            // The worker is the user's choice for this request, so the server binds it rather
+            // than trusting the model Nia copied into the draft.
             if (!selectionsEqual(action.modelSelection, selectedWorker))
-              return yield* new D4AgentError({
-                reason: "action-unavailable",
-                detail:
-                  "The proposed worker does not match the model selected for this request. Keep the draft and ask Nia to create a new approval with the selected worker.",
-              });
+              action = { ...action, modelSelection: selectedWorker };
             const catalog = yield* providers.getProviders;
             const unavailable = taskModelAvailability(
               { ...config, taskModelSelection: selectedWorker },
@@ -3033,6 +3045,23 @@ export const layer = Layer.effect(
                   : undefined;
           if (state.actions.filter((entry) => entry.status === "pending").length >= 50)
             return yield* new D4AgentError({ reason: "busy" });
+          let plan: D4AgentTaskPlan | null = null;
+          if (action.type === "start") {
+            const target = yield* startLaunchPreview(action, config, false);
+            const projectTitle =
+              (yield* projects.listShells().pipe(Effect.mapError(threadError))).find(
+                (entry) => entry.id === target.projectId,
+              )?.title ?? "";
+            plan = yield* planner.plan({
+              action,
+              projectTitle,
+              workspaceRoot: target.workspaceRoot,
+              workspace: target.workspace,
+            });
+            const problem = plan === null ? null : planProblem(plan);
+            if (problem !== null)
+              return yield* new D4AgentError({ reason: "action-unavailable", detail: problem });
+          }
           const id = yield* randomUUID;
           const guarded = action;
           const guard =
@@ -3159,6 +3188,7 @@ export const layer = Layer.effect(
             ...(prepared === undefined ? {} : { result: prepared }),
             ...(guard === undefined ? {} : { guard }),
             ...(launch === undefined ? {} : { launch }),
+            ...(plan === null ? {} : { plan }),
             status: held ? "pending" : "approved",
             createdAt: DateTime.formatIso(yield* DateTime.now),
             resolvedAt: null,
@@ -4031,6 +4061,77 @@ export const layer = Layer.effect(
           adoptLegacySession.pipe(Effect.andThen(close(context)), Effect.andThen(getState())),
         ),
       ),
+      reviewActionScope: Effect.fn("D4Agent.reviewActionScope")(function* ({ actionId, reviewer }) {
+        // The reviewer can take minutes, so only the reads and the final write hold the lock.
+        const record = yield* lock.withPermits(1)(
+          Effect.gen(function* () {
+            const { state } = yield* bound();
+            return state.actions.find(
+              (entry) =>
+                entry.id === actionId &&
+                entry.context === state.brainContext &&
+                entry.status === "pending" &&
+                entry.action.type === "start" &&
+                entry.launch !== undefined,
+            );
+          }),
+        );
+        if (record?.launch === undefined)
+          return yield* new D4AgentError({
+            reason: "action-unavailable",
+            detail: "Only a pending start card can get a scope review.",
+          });
+        if (Option.isNone(scopeReviewer))
+          return yield* new D4AgentError({
+            reason: "action-unavailable",
+            detail: "Scope review is not available on this server.",
+          });
+        const target = ScopeReview.SCOPE_REVIEWERS[reviewer];
+        const reviewed = yield* scopeReviewer.value
+          .review({
+            reviewer,
+            brief: record.launch.prompt,
+            cwd: record.launch.workspaceRoot || store.workspace,
+            providers: yield* providers.getProviders,
+          })
+          .pipe(
+            Effect.mapError((failure) =>
+              failure === "reviewer-unavailable"
+                ? new D4AgentError({
+                    reason: "provider-unavailable",
+                    detail: `${target.model} is not available on a ready ${target.driver} provider. Choose the other reviewer or approve the card as drafted.`,
+                  })
+                : new D4AgentError({
+                    reason: "action-unavailable",
+                    detail: `${target.model} could not review this card. The card is unchanged.`,
+                  }),
+            ),
+          );
+        const reviewedAt = DateTime.formatIso(yield* DateTime.now);
+        return yield* lock.withPermits(1)(
+          Effect.gen(function* () {
+            const current = (yield* store.get).actions.find((entry) => entry.id === actionId);
+            if (current?.status !== "pending")
+              return yield* new D4AgentError({ reason: "action-unavailable" });
+            const updated: D4AgentActionRecord = {
+              ...current,
+              scopeReview: {
+                reviewer,
+                modelSelection: reviewed.modelSelection,
+                questions: reviewed.result.questions.map((entry) => entry.slice(0, 2000)),
+                cuts: reviewed.result.cuts.map((entry) => entry.slice(0, 2000)),
+                reducedBrief: reviewed.result.reducedBrief.slice(0, 16000),
+                reviewedAt,
+              },
+            };
+            yield* store.update((value) => ({
+              ...value,
+              actions: value.actions.map((entry) => (entry.id === actionId ? updated : entry)),
+            }));
+            return updated;
+          }),
+        );
+      }),
       undoArchive: Effect.fn("D4Agent.undoArchive")(({ actionId }) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
@@ -4101,11 +4202,9 @@ export const layer = Layer.effect(
             const { state, config } = yield* bound();
             const requestMessage = yield* activeUserMessage(state);
             const requestWorker =
-              requestMessage === undefined
-                ? config.taskModelSelection
-                : requestMessage.snapshotFound
-                  ? (requestMessage.taskModelSelection ?? null)
-                  : config.taskModelSelection;
+              requestMessage?.snapshotFound === true
+                ? (requestMessage.taskModelSelection ?? resolveD4AgentTaskModelSelection(config))
+                : resolveD4AgentTaskModelSelection(config);
             const availableProjects = yield* projects
               .listShells()
               .pipe(Effect.mapError(threadError));
@@ -4115,7 +4214,7 @@ export const layer = Layer.effect(
                 modelSelection: requestWorker,
               })),
               modelSelection: requestWorker,
-              defaultModelSelection: config.taskModelSelection,
+              defaultModelSelection: resolveD4AgentTaskModelSelection(config),
               projects: availableProjects
                 .filter(
                   (project) =>

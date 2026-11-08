@@ -18,6 +18,7 @@ import {
   OrchestrationV2RuntimeRequest,
   OrchestrationV2Subagent,
   OrchestrationV2TurnItem,
+  D4AgentMcpServer,
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ProviderDriverKind,
@@ -47,6 +48,8 @@ import type {
 
 export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   toolPolicy: Schema.optional(Schema.Literal("d4-agent")),
+  /** User-added servers for Nia's session; only read with the d4-agent tool policy. */
+  d4AgentMcpServers: Schema.optional(Schema.Array(D4AgentMcpServer)),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   cwd: Schema.NullOr(Schema.String),

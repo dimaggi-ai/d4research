@@ -130,6 +130,8 @@ import {
   type RunId,
   type ThreadId,
   resolveIdleCompaction,
+  type D4AgentMcpServer,
+  d4AgentMcpPairRecord,
 } from "@d4research/contracts";
 
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
@@ -2048,6 +2050,7 @@ export function claudeMcpQueryOverrides(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly readOnlySandbox: boolean;
   readonly d4AgentOnly?: boolean;
+  readonly d4AgentMcpServers?: ReadonlyArray<D4AgentMcpServer>;
   readonly allowedTools?: ReadonlyArray<string>;
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
@@ -2057,14 +2060,36 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
+  // Nia runs under dontAsk, so a user server's tools work only when its whole server is allowed.
+  const userServers = input.d4AgentOnly ? (input.d4AgentMcpServers ?? []) : [];
   const mcpAllowedTools = input.d4AgentOnly
-    ? D4_AGENT_TOOLS.map((name) => `mcp__t3-code__${name}`)
+    ? [
+        ...D4_AGENT_TOOLS.map((name) => `mcp__t3-code__${name}`),
+        ...userServers.map((server) => `mcp__${server.name}`),
+      ]
     : input.readOnlySandbox
       ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
       : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
+      ...Object.fromEntries(
+        userServers.map((server) => [
+          server.name,
+          server.transport.type === "stdio"
+            ? {
+                type: "stdio" as const,
+                command: server.transport.command,
+                args: [...server.transport.args],
+                env: d4AgentMcpPairRecord(server.transport.env),
+              }
+            : {
+                type: "http" as const,
+                url: server.transport.url,
+                headers: d4AgentMcpPairRecord(server.transport.headers),
+              },
+        ]),
+      ),
       "t3-code": {
         type: "http",
         url: session.endpoint,
@@ -10869,6 +10894,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
             d4AgentOnly: turnInput.runtimePolicy.toolPolicy === "d4-agent",
+            ...(turnInput.runtimePolicy.d4AgentMcpServers === undefined
+              ? {}
+              : { d4AgentMcpServers: turnInput.runtimePolicy.d4AgentMcpServers }),
             ...(queryPolicy.allowedTools === undefined
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),

@@ -22,11 +22,11 @@ const setup = Effect.gen(function* () {
   const executable = path.join(runtimeDir, "versions", VERSION, "t3");
   yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
   yield* fs.writeFileString(executable, "");
-  const npmPackage = path.join(root, ".npm/_npx/abc/node_modules/t3");
+  const npmPackage = path.join(root, ".npm/_npx/abc/node_modules/d4research");
   yield* fs.makeDirectory(path.join(npmPackage, "bin"), { recursive: true });
   yield* fs.writeFileString(
     path.join(npmPackage, "package.json"),
-    JSON.stringify({ name: "t3", version: VERSION }),
+    JSON.stringify({ name: "d4research", version: VERSION }),
   );
   const binDir = path.join(root, "bin");
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>, env: NodeJS.ProcessEnv = {}) =>
@@ -39,7 +39,7 @@ const setup = Effect.gen(function* () {
         PATH: "/usr/bin",
         SHELL: "/bin/zsh",
         T3CODE_INSTALL_BIN_DIR: binDir,
-        T3CODE_NPM_LAUNCHER_PATH: path.join(npmPackage, "bin/t3.mjs"),
+        T3CODE_NPM_LAUNCHER_PATH: path.join(npmPackage, "bin/d4research.mjs"),
         ...env,
       }),
     );
@@ -52,6 +52,12 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const { root, runtimeDir, executable, link, provide } = yield* setup;
+
+      const unsupported = yield* provide(
+        installCli().pipe(Effect.provideService(HostProcess.IsExecutable, false)),
+      ).pipe(Effect.flip);
+      assert.include(unsupported.message, "npx d4research");
+      assert.notInclude(unsupported.message, "t3.codes");
 
       const older = path.join(runtimeDir, "versions/0.0.1/t3");
       yield* fs.makeDirectory(path.dirname(link), { recursive: true });

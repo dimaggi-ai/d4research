@@ -1,5 +1,4 @@
 import {
-  type ManagedPolicySummary,
   ProjectId,
   resolveProviderInstanceEnabled,
   ProviderDriverKind,
@@ -15,7 +14,6 @@ import {
   codexNeedsSetup,
   groupWelcomeAgents,
   turnedOnInstance,
-  welcomeOffersPhone,
 } from "./welcomePage.logic";
 
 function provider(name: string, overrides: Partial<ServerProvider> = {}): ServerProvider {
@@ -235,31 +233,5 @@ describe("codexCardProvider", () => {
         settings: undefined,
       }),
     ).toBeNull();
-  });
-});
-
-describe("welcomeOffersPhone", () => {
-  it("offers the phone only through T3 Connect on the primary computer, and only when allowed", () => {
-    const policy = (limits: ManagedPolicySummary["limits"]): ManagedPolicySummary => ({
-      organization: "Acme",
-      lockedSettings: [],
-      ...(limits === undefined ? {} : { limits }),
-    });
-    const offers = (input: Partial<Parameters<typeof welcomeOffersPhone>[0]>) =>
-      welcomeOffersPhone({
-        isPrimary: true,
-        cloud: true,
-        canShare: true,
-        policy: undefined,
-        ...input,
-      });
-
-    expect(offers({})).toBe(true);
-    // There is no pairing-code fallback; without T3 Connect the page leaves the phone out.
-    expect(offers({ cloud: false })).toBe(false);
-    expect(offers({ canShare: false })).toBe(false);
-    expect(offers({ policy: policy({ connect: false }) })).toBe(false);
-    expect(offers({ policy: policy({ clients: ["desktop"] }) })).toBe(false);
-    expect(offers({ isPrimary: false })).toBe(false);
   });
 });

@@ -36,7 +36,7 @@ it("keeps product source and manifests free of tracking SDKs and external trace 
       if (/\.(test|spec)\./.test(file) || file.includes("/e2e/")) continue;
       const source = await NodeFSP.readFile(NodePath.join(repoRoot, root, file), "utf8");
       const tracking =
-        /(?:@sentry\/|posthog-js|posthog-node|@segment\/analytics|mixpanel-browser|@amplitude\/analytics|@vercel\/analytics|googletagmanager\.com|google-analytics\.com|api\.axiom\.co|navigator\.sendBeacon\s*\()/i;
+        /(?:@clerk\/|AnalyticsService|collects anonymous usage data|@sentry\/|posthog-js|posthog-node|@segment\/analytics|mixpanel-browser|@amplitude\/analytics|@vercel\/analytics|googletagmanager\.com|google-analytics\.com|api\.axiom\.co|navigator\.sendBeacon\s*\()/i;
       // The browser sends diagnostic spans only to its paired environment, never a vendor.
       const externalExporter = /Otlp(?:Tracer|Metrics|Logger)\.(?:make|layer)\s*\(/;
       if (

@@ -193,12 +193,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
         description: "Shows the current state of active d4research agents.",
         // Live Activity companion; there is no Android presentation for it.
         android: null,
-        ios: {
-          supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
-          // Embeds the layout so the gallery preview and a new widget render
-          // before the app has run once; the app replaces it on publish.
-          initialLayout: "./src/widgets/AgentActivityWidget.tsx",
-        },
+        ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
       },
     ],
   },

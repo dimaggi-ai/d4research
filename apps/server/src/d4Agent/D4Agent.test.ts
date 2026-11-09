@@ -6759,7 +6759,7 @@ it.effect("scope review runs only on request and stores the reduction on the car
     assert.equal(call?.reviewer, "fable");
     assert.equal(call?.brief, record.launch?.prompt);
     assert.equal(reviewed.scopeReview?.reviewer, "fable");
-    assert.equal(reviewed.scopeReview?.modelSelection.model, "claude-fable-5-1");
+    assert.equal(reviewed.scopeReview?.modelSelection.model, "claude-fable-5-2");
     assert.equal(reviewed.scopeReview?.reducedBrief, "Fix only the flaky login assertion.");
     yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
     assert.lengthOf(yield* Ref.get(f.scopeReviews), 1);

@@ -16,7 +16,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
  * the only Nia path that may use them: ordinary task creation runs on the task model.
  */
 export const SCOPE_REVIEWERS = {
-  fable: { driver: "claudeAgent", model: "claude-fable-5-1" },
+  fable: { driver: "claudeAgent", model: "claude-fable-5-2" },
   astra: { driver: "codex", model: "gpt-6-astra" },
 } as const satisfies Record<D4AgentScopeReviewer, { driver: string; model: string }>;
 

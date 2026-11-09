@@ -43,10 +43,21 @@ fi
 policy_dir="${T3RESEARCH_TOOL_GUARD_POLICY_DIR:-$default_policy_dir}"
 
 mkdir -p "$data_dir" 2>/dev/null || true
-exec "$guard_bin" hook \
-  -policy-dir "$policy_dir" \
-  -mode "$guard_mode" \
-  -agent-id "t3research-local" \
-  -audit-log "$data_dir/decisions.jsonl" \
-  -protect-self \
-  -fail-closed-tools bash,write,edit,notebookedit
+guard() {
+  "$guard_bin" hook \
+    -policy-dir "$policy_dir" \
+    -mode "$guard_mode" \
+    -agent-id "t3research-local" \
+    -audit-log "$data_dir/decisions.jsonl" \
+    -protect-self \
+    -fail-closed-tools bash,write,edit,notebookedit
+}
+# Codex accepts only "deny" from PreToolUse and runs an "ask" as allow, so for Codex a
+# review rule has to block, and an allow is silence rather than a reported hook error.
+if [ "${1:-}" = "--escalate-as-deny" ]; then
+  guard | sed -e '/"permissionDecision":"allow"/d' \
+    -e 's/"permissionDecision":"ask"/"permissionDecision":"deny"/' \
+    -e 's/"permissionDecisionReason":"/"permissionDecisionReason":"Tool Guard review required; ask the user to run it. /'
+  exit 0
+fi
+guard

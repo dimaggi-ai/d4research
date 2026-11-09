@@ -56,6 +56,9 @@ local audit log. Full access turns off the provider's own approval prompts, not 
 Guard is an additional layer over native provider permissions, not a replacement. To stop it,
 disable it in Settings.
 
+Codex cannot pause a command for review, so in Codex threads a review rule blocks the command
+instead, and the agent asks you to run it yourself.
+
 ## View and edit the policy
 
 **Settings → Tool Guard** shows the active policy as rule cards — each with its effect (Deny,

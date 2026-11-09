@@ -6,9 +6,11 @@ import * as Path from "effect/Path";
 import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ServerConfig from "./config.ts";
+import { withCodexAppServerClient } from "./provider/CodexProvider.ts";
 import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
 
 export const TOOL_GUARD_MANAGED_MARKER = "d4research-tool-guard-managed";
+const CODEX_HOOK_ARGS = "--escalate-as-deny";
 export const TOOL_GUARD_CORE_URL = "https://github.com/dimaggi-ai/tool-guard-core";
 
 export const ToolGuardLifecycleAction = [
@@ -60,10 +62,11 @@ export function managedToolGuardPaths(
   };
 }
 
-export function managedToolGuardCommand(hookPath: string, platform: NodeJS.Platform) {
-  if (platform !== "win32") return hookPath;
+export function managedToolGuardCommand(hookPath: string, platform: NodeJS.Platform, args = "") {
+  const suffix = args ? ` ${args}` : "";
+  if (platform !== "win32") return `${hookPath}${suffix}`;
   const escaped = hookPath.replaceAll('"', '\\"');
-  return `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${escaped}"`;
+  return `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${escaped}"${suffix}`;
 }
 
 function objectValue(value: unknown): JsonObject {
@@ -73,26 +76,25 @@ function objectValue(value: unknown): JsonObject {
 }
 
 export function addManagedHook(config: unknown, hookPath: string): JsonObject {
-  const root = { ...objectValue(config) };
+  // Replace rather than keep an existing entry, so enabling picks up a changed command.
+  const root = removeManagedHook(config);
   const hooks = { ...objectValue(root.hooks) };
   const existing = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
-  if (!existing.some((entry) => JSON.stringify(entry).includes(TOOL_GUARD_MANAGED_MARKER))) {
-    hooks.PreToolUse = [
-      ...existing,
-      {
-        matcher:
-          "Bash|Edit|Write|NotebookEdit|run_command|write_to_file|replace_file_content|multi_replace_file_content",
-        hooks: [
-          {
-            type: "command",
-            command: hookPath,
-            timeout: 30,
-            marker: TOOL_GUARD_MANAGED_MARKER,
-          },
-        ],
-      },
-    ];
-  }
+  hooks.PreToolUse = [
+    ...existing,
+    {
+      matcher:
+        "Bash|Edit|Write|NotebookEdit|run_command|write_to_file|replace_file_content|multi_replace_file_content",
+      hooks: [
+        {
+          type: "command",
+          command: hookPath,
+          timeout: 30,
+          marker: TOOL_GUARD_MANAGED_MARKER,
+        },
+      ],
+    },
+  ];
   root.hooks = hooks;
   return root;
 }
@@ -218,10 +220,11 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
       Effect.gen(function* () {
         if (!enabled && !(yield* fileSystem.exists(configPath))) return;
         const current = yield* readJson(configPath);
-        const providerHookPath = configPath.includes(`${path.sep}.gemini${path.sep}`)
-          ? agyHookPath
-          : hookPath;
-        const providerHookCommand = managedToolGuardCommand(providerHookPath, platform);
+        const providerHookCommand = configPath.includes(`${path.sep}.gemini${path.sep}`)
+          ? managedToolGuardCommand(agyHookPath, platform)
+          : configPath.includes(`${path.sep}.codex${path.sep}`)
+            ? managedToolGuardCommand(hookPath, platform, CODEX_HOOK_ARGS)
+            : managedToolGuardCommand(hookPath, platform);
         const next = enabled
           ? addManagedHook(current, providerHookCommand)
           : removeManagedHook(current);
@@ -230,6 +233,56 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
     { discard: true },
   );
 });
+
+/**
+ * Codex skips a user hook until its current hash is recorded as trusted in config.toml.
+ * Enabling the guard is the user's consent, so record it through Codex's own API, which
+ * owns the hash format. Returns a warning when Codex is set up but the hook stays untrusted.
+ */
+const trustManagedCodexHook = Effect.fn("trustManagedCodexHook")(function* (hookPath: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
+  const home = toolGuardHome(platform, environment);
+  if (!home || !(yield* fileSystem.exists(path.join(home, ".codex", "config.toml")))) return null;
+  const command = managedToolGuardCommand(hookPath, platform, CODEX_HOOK_ARGS);
+  return yield* Effect.gen(function* () {
+    const { client } = yield* withCodexAppServerClient({
+      binaryPath: "codex",
+      homePath: path.join(home, ".codex"),
+      cwd: home,
+    });
+    const listed = yield* client.request("hooks/list", { cwds: [home] });
+    const hook = listed.data
+      .flatMap((entry) => entry.hooks)
+      .find((candidate) => "command" in candidate && candidate.command === command);
+    if (!hook) return "Codex did not load the Tool Guard hook; Codex commands are not guarded.";
+    if (hook.trustStatus === "trusted") return null;
+    yield* client.request("config/batchWrite", {
+      edits: [
+        {
+          keyPath: "hooks.state",
+          value: { [hook.key]: { trusted_hash: hook.currentHash } },
+          mergeStrategy: "upsert",
+        },
+      ],
+      reloadUserConfig: true,
+    });
+    return null;
+  }).pipe(
+    Effect.scoped,
+    Effect.timeout("20 seconds"),
+    Effect.catchCause(() =>
+      Effect.succeed(
+        "Codex could not trust the Tool Guard hook; Codex commands are not guarded. Trust it with /hooks in Codex.",
+      ),
+    ),
+  );
+});
+
+const withWarning = (message: string, warning: string | null) =>
+  warning ? `${message} ${warning}` : message;
 
 const validateProviderHookConfigs = Effect.fn("validateProviderHookConfigs")(function* () {
   const path = yield* Path.Path;
@@ -397,7 +450,11 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       });
       yield* setManagedHooksEnabled(true, managed.hook, managed.agyHook);
       setToolGuardRuntimeEnabled(true);
-      return { ok: true, message: "d4research Tool Guard was installed and enabled." };
+      const codexWarning = yield* trustManagedCodexHook(managed.hook);
+      return {
+        ok: true,
+        message: withWarning("d4research Tool Guard was installed and enabled.", codexWarning),
+      };
     }
 
     if (!manifest) return { ok: false, message: "d4research Tool Guard is not installed." };
@@ -406,7 +463,11 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       yield* writeJson(managed.manifest, { ...manifest, version: 1, enabled: true });
       yield* setManagedHooksEnabled(true, managed.hook, managed.agyHook);
       setToolGuardRuntimeEnabled(true);
-      return { ok: true, message: "d4research Tool Guard is enabled." };
+      const codexWarning = yield* trustManagedCodexHook(managed.hook);
+      return {
+        ok: true,
+        message: withWarning("d4research Tool Guard is enabled.", codexWarning),
+      };
     }
 
     yield* setManagedHooksEnabled(false, managed.hook, managed.agyHook);

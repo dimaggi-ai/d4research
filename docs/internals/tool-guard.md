@@ -14,10 +14,17 @@ Providers call the guard through their native pre-tool-use hook mechanisms. The 
 `PreToolUse` hook entry (matcher:
 `Bash|Edit|Write|NotebookEdit|run_command|write_to_file|replace_file_content|multi_replace_file_content`)
 into the provider hook configs enumerated by `externalToolGuardHookPaths` in
-[`toolGuardLifecycle.ts`][lifecycle]: `~/.claude/settings.json` plus the Gemini/Agy configs
-(`~/.gemini/settings.json`, with hooks under `~/.gemini/config/hooks.json`). On Windows the hook
-command wraps the `.ps1` adapter in
+[`toolGuardLifecycle.ts`][lifecycle]: `~/.claude/settings.json`, `~/.codex/hooks.json`, plus the
+Gemini/Agy configs (`~/.gemini/settings.json`, with hooks under `~/.gemini/config/hooks.json`). On
+Windows the hook command wraps the `.ps1` adapter in
 `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "..."`.
+
+Codex needs two extra steps. It skips a user hook until that hook's hash is recorded as trusted in
+`~/.codex/config.toml`, so install and enable record it through the Codex app server
+(`hooks/list`, then `config/batchWrite`); Codex owns the hash format. Codex also accepts only
+`deny` from a `PreToolUse` hook and runs an `ask` as allow, so the Codex entry passes
+`--escalate-as-deny`: the wrapper turns a review rule into a block whose reason tells the agent to
+ask the user, and prints nothing on allow.
 
 The wrapper script exits immediately (allowing the tool) unless `T3RESEARCH_TOOL_GUARD_MODE` is
 set. The Claude, Codex, and Agy adapters set that variable per provider process through
@@ -25,7 +32,7 @@ set. The Claude, Codex, and Agy adapters set that variable per provider process 
 is enabled. This creates a double gate: a hook entry alone does nothing outside a session launched
 by an enabled d4research environment.
 
-When active, the wrapper execs `tg hook` with `-policy-dir`, `-mode`, an audit log at
+When active, the wrapper runs `tg hook` with `-policy-dir`, `-mode`, an audit log at
 `<data-dir>/decisions.jsonl`, `-protect-self`, and `-fail-closed-tools bash,write,edit,notebookedit`
 (those tools deny when the engine itself fails). `T3RESEARCH_TOOL_GUARD_BIN`,
 `T3RESEARCH_TOOL_GUARD_DATA_DIR`, and `T3RESEARCH_TOOL_GUARD_POLICY_DIR` override binary, audit

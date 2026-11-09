@@ -187,6 +187,16 @@ it.layer(NodeServices.layer)("Tool Guard lifecycle", (it) => {
           NodeFSP.readFile(NodePath.join(home, ".claude/settings.json"), "utf8"),
         ),
       ).toContain(TOOL_GUARD_MANAGED_MARKER);
+      // Codex runs a hook "ask" as allow, so its entry asks the wrapper to block instead.
+      const codexHooks = yield* Effect.promise(() =>
+        NodeFSP.readFile(NodePath.join(home, ".codex/hooks.json"), "utf8"),
+      );
+      expect(codexHooks).toContain(`${managed.hook} --escalate-as-deny`);
+      expect(
+        yield* Effect.promise(() =>
+          NodeFSP.readFile(NodePath.join(home, ".claude/settings.json"), "utf8"),
+        ),
+      ).not.toContain("--escalate-as-deny");
 
       expect((yield* manageToolGuard("disable")).ok).toBe(true);
       expect(

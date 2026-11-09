@@ -26,11 +26,23 @@ $guardBinary = if ($env:T3RESEARCH_TOOL_GUARD_BIN) {
 
 New-Item -ItemType Directory -Force -Path $dataDirectory | Out-Null
 $request = [Console]::In.ReadToEnd()
-$request | & $guardBinary hook `
+$decision = $request | & $guardBinary hook `
   -policy-dir $policyDirectory `
   -mode $guardMode `
   -agent-id "d4research-local" `
   -audit-log (Join-Path $dataDirectory "decisions.jsonl") `
   -protect-self `
   -fail-closed-tools "bash,write,edit,notebookedit"
-exit $LASTEXITCODE
+$guardExit = $LASTEXITCODE
+# Codex accepts only "deny" from PreToolUse and runs an "ask" as allow, so for Codex a
+# review rule has to block, and an allow is silence rather than a reported hook error.
+if ($args -contains "--escalate-as-deny") {
+  $decision = ($decision -join "`n")
+  if ($decision.Contains('"permissionDecision":"allow"')) { exit $guardExit }
+  $decision = $decision.Replace('"permissionDecision":"ask"', '"permissionDecision":"deny"').Replace(
+    '"permissionDecisionReason":"',
+    '"permissionDecisionReason":"Tool Guard review required; ask the user to run it. '
+  )
+}
+$decision
+exit $guardExit

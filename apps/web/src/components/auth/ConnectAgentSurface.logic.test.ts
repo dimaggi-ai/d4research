@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { AuthMcpClientAccess, RuntimeMode } from "@t3tools/contracts";
+import { AuthMcpClientAccess, RuntimeMode } from "@d4research/contracts";
 
 import { resolveApprovalDecision, resolveMcpAccess } from "./ConnectAgentSurface.logic";
 

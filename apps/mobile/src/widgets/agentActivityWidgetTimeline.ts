@@ -1,4 +1,4 @@
-import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityAggregateState } from "@d4research/contracts/relay";
 
 import type { AgentActivityProps } from "./AgentActivity";
 

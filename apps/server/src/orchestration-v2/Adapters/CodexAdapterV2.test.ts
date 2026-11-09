@@ -1,5 +1,5 @@
-import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
+import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 import {
   makeProviderTextDeltaCoalescer,
   type ProviderTextDeltaUpdate,
@@ -31,7 +31,7 @@ import {
   RunId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexReplay from "effect-codex-app-server/replay";
@@ -43,8 +43,8 @@ import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as FileSystem from "effect/FileSystem";
-import { MCP_APP_OUTPUT_KEY, readMcpAppReference } from "@t3tools/shared/mcpApp";
-import { toolOutputImages } from "@t3tools/shared/toolOutput";
+import { MCP_APP_OUTPUT_KEY, readMcpAppReference } from "@d4research/shared/mcpApp";
+import { toolOutputImages } from "@d4research/shared/toolOutput";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -62,14 +62,14 @@ import { TestClock } from "effect/testing";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import packageJson from "../../../package.json" with { type: "json" };
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as EffectWorker from "../EffectWorker.ts";
 import * as Orchestrator from "../Orchestrator.ts";
 import * as ProviderReplayHarness from "../testkit/ProviderReplayHarness.ts";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
+import type * as ProviderContinuationRequests from "@d4research/provider-core/server/ProviderContinuationRequests";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import { resolveProviderCompatibility } from "../../provider/providerCompatibility.ts";

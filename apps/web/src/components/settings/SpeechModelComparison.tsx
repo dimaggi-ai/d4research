@@ -1,4 +1,4 @@
-import type { EnvironmentSpeechModel, SpeechBenchmarkTier } from "@t3tools/contracts";
+import type { EnvironmentSpeechModel, SpeechBenchmarkTier } from "@d4research/contracts";
 import { CheckIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";

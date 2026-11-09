@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/source-control-cursor-origin",
+  "name": "@d4research/source-control-cursor-origin",
   "private": true,
   "type": "module",
   "exports": {
@@ -18,10 +18,10 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/source-control-core": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/provider-core": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@d4research/source-control-core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

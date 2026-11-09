@@ -1,5 +1,5 @@
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { pathSetupCommand } from "@t3tools/shared/shell";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { pathSetupCommand } from "@d4research/shared/shell";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -62,7 +62,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   // cmd.exe expands `%` and reads the shim in the OEM code page, so such a path would not run.
   if (windows && /[%\u0080-\uffff]/.test(executable)) {
     return yield* new CliInstallError({
-      reason: `A t3.cmd cannot run ${executable}, because the path has % or non-ASCII characters. Keep using npx t3.`,
+      reason: `A t3.cmd cannot run ${executable}, because the path has % or non-ASCII characters. Keep using npx d4research.`,
     });
   }
   // Absolute, so the PATH hint never adds a folder that changes with the working directory.
@@ -266,7 +266,7 @@ export const isForegroundPs = (output: string) => {
 };
 
 /**
- * A background job (`npx t3 serve &`) that reads the terminal is stopped by the shell, so only
+ * A background job (`npx d4research serve &`) that reads the terminal is stopped by the shell, so only
  * the terminal's foreground process group may prompt. Unknown counts as background.
  */
 export const inTerminalForeground = Effect.gen(function* () {

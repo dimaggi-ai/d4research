@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
 import * as Effect from "effect/Effect";
 
 import { indexEntryStat, parseIndex, restatIndex } from "./gitIndexStat.ts";

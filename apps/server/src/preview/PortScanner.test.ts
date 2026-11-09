@@ -7,9 +7,9 @@ import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
   type DiscoveredLocalServer,
-} from "@t3tools/contracts";
-import * as ProcessGroup from "@t3tools/provider-core/server/processGroup";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import * as ProcessGroup from "@d4research/provider-core/server/processGroup";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -25,7 +25,7 @@ import { FetchHttpClient } from "effect/http";
 import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "./PortScanner.ts";
 
-vi.mock("@t3tools/provider-core/server/processGroup", { spy: true });
+vi.mock("@d4research/provider-core/server/processGroup", { spy: true });
 
 const processProbeFailure: ProcessRunner.ProcessRunner["Service"]["run"] = (input) =>
   Effect.fail(

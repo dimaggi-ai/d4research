@@ -1,10 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off - plain local servers stand in for LAN services.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@d4research/contracts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

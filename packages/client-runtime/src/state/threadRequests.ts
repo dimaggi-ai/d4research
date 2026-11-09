@@ -10,7 +10,7 @@ import type {
   ProviderApprovalDecision,
   ProviderRequestKind,
   RuntimeRequestId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { getProjectionArrayReplacementIndex } from "./orchestrationV2Projection.ts";

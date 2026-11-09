@@ -1,4 +1,4 @@
-import type { EnvironmentId, RunId } from "@t3tools/contracts";
+import type { EnvironmentId, RunId } from "@d4research/contracts";
 import { useSyncExternalStore } from "react";
 
 import type { Thread } from "../../types";

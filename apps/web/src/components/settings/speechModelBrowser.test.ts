@@ -1,4 +1,4 @@
-import type { EnvironmentSpeechModel } from "@t3tools/contracts";
+import type { EnvironmentSpeechModel } from "@d4research/contracts";
 import { expect, it } from "vite-plus/test";
 
 import { filterSpeechModels } from "./speechModelBrowser";

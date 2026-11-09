@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ProjectId } from "@d4research/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vite-plus/test";
 

@@ -3,13 +3,13 @@ import {
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   type PreparedConnection,
-} from "@t3tools/client-runtime/connection";
+} from "@d4research/client-runtime/connection";
 import type * as Effect from "effect/Effect";
 import {
   EnvironmentId,
   type EnvironmentSpeechModel,
   type EnvironmentSpeechStatus,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
@@ -31,15 +31,15 @@ vi.mock(import("../../state/session"), { spy: true });
 // The real connection runtime authorizes relay requests with a signed-in cloud session.
 vi.mock("../../connection/runtime", async () => {
   const [{ ManagedRelay }, rpc, { Atom }, Context, Effect, Layer] = await Promise.all([
-    import("@t3tools/client-runtime/relay"),
-    import("@t3tools/client-runtime/rpc"),
+    import("@d4research/client-runtime/relay"),
+    import("@d4research/client-runtime/rpc"),
     import("effect/reactivity"),
     import("effect/Context"),
     import("effect/Effect"),
     import("effect/Layer"),
   ]);
   type AuthorizedHttp =
-    import("@t3tools/client-runtime/authorization").AuthorizedRemoteHttpEnvironment;
+    import("@d4research/client-runtime/authorization").AuthorizedRemoteHttpEnvironment;
   // Services resolve by key, and client-runtime does not export this one.
   class RemoteEnvironmentAuthorization extends Context.Service<
     RemoteEnvironmentAuthorization,
@@ -49,7 +49,7 @@ vi.mock("../../connection/runtime", async () => {
       }) => Effect.Effect<AuthorizedHttp>;
     }
     // @effect-diagnostics-next-line deterministicKeys:off
-  >()("@t3tools/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
+  >()("@d4research/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
   return {
     connectionAtomRuntime: Atom.runtime(
       Layer.mergeAll(

@@ -1,4 +1,4 @@
-import type { SourceControlIcon } from "@t3tools/source-control-core/shared/definition";
+import type { SourceControlIcon } from "@d4research/source-control-core/shared/definition";
 
 /** The Cursor mark, drawn in the text colour like GitHub's. */
 export const icon: SourceControlIcon = {

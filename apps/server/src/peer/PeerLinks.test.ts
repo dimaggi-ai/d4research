@@ -3,7 +3,7 @@ import * as NodeFS from "node:fs";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - A peer with a certificate this machine does not trust.
 import * as NodeHttps from "node:https";
 import { NodeHttpServer } from "@effect/platform-node";
-import { type ExecutionEnvironmentDescriptor, OrchestratorMcpFailure } from "@t3tools/contracts";
+import { type ExecutionEnvironmentDescriptor, OrchestratorMcpFailure } from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";

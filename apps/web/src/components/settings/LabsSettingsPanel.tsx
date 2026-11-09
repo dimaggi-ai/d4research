@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
-import { managedCapabilityDenial } from "@t3tools/contracts";
+import { managedCapabilityDenial } from "@d4research/contracts";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";

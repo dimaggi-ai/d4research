@@ -1,4 +1,4 @@
-import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
+import { isClearComposerCommand, parseSideChatCommand } from "@d4research/shared/composerTrigger";
 import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
 import {
   mergeDirectPreviewAnnotation,
@@ -15,7 +15,7 @@ import {
   withMessageContext,
   makeThreadErrorSetter,
 } from "../ChatView.logic";
-import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
+import { isUsageLimitsCommand } from "@d4research/shared/usageLimits";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
@@ -25,24 +25,24 @@ import {
   type ThreadId,
   ProviderInteractionMode,
   RuntimeMode,
-} from "@t3tools/contracts";
-import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
-import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+} from "@d4research/contracts";
+import { deriveThreadTitleSeed } from "@d4research/client-runtime/operations";
+import { wasBootstrapThreadDeleted } from "@d4research/client-runtime/errors";
 import {
   declinePendingApprovals,
   sendApprovalFeedback,
-} from "@t3tools/client-runtime/state/thread-requests";
+} from "@d4research/client-runtime/state/thread-requests";
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/threads";
 import {
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/client-runtime/environment";
+import { createModelSelection } from "@d4research/shared/model";
 import { type SetStateAction, useLayoutEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
@@ -51,7 +51,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   type ComposerSubmissionIntent,
   collapseExpandedComposerCursor,
@@ -96,7 +96,7 @@ import {
   referencedThreadContexts,
 } from "./composerSend.logic";
 import { useMultipleModelSend } from "./useMultipleModelSend";
-import { type ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
+import { type ComposerDispatchMode } from "@d4research/client-runtime/state/composer-dispatch";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
@@ -113,7 +113,7 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   threadContextsOutsideEnvironment,
-} from "@t3tools/shared/composerContextReferences";
+} from "@d4research/shared/composerContextReferences";
 import {
   draftSendState,
   type MultipleModelTarget,
@@ -124,7 +124,7 @@ import {
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@d4research/client-runtime/state/shell";
 import type { Dispatch } from "react";
 import type { ComposerThreadTarget } from "../../composerDraftStore";
 import type { ProviderInstanceEntry } from "../../providerInstances";

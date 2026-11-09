@@ -7,9 +7,9 @@ import {
   ServerProviderResetCredits,
   ServerProviderUsageWindow,
   UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
+import { normalizeProviderAccentColor } from "@d4research/client-runtime/state/provider-instance-display";
 import {
   formatDuration,
   formatResetsIn,
@@ -17,7 +17,7 @@ import {
   paceOf,
   paceRemainingPercent,
   remainingPercent,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, useLayoutEffect, useState } from "react";
 

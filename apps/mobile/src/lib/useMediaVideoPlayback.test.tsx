@@ -4,7 +4,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AppStateStatus } from "react-native";
 import { expect, it, vi } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 
 const mocks = vi.hoisted(() => ({
   focused: true,

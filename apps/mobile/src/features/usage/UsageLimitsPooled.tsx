@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId } from "@t3tools/contracts";
-import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
+import { EnvironmentId } from "@d4research/contracts";
+import { normalizeProviderAccentColor } from "@d4research/client-runtime/state/provider-instance-display";
 import {
   collectLimitAccounts,
   collectExternalUsageLinks,
@@ -14,7 +14,7 @@ import {
   remainingPercent,
   type LimitAccount,
   type LimitPoolWindow,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import { Fragment, type ReactNode, useId, useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";

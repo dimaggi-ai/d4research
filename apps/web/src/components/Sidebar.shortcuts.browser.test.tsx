@@ -1,6 +1,6 @@
 import { createMemoryHistory } from "@tanstack/react-router";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { DEFAULT_CLIENT_SETTINGS } from "@d4research/contracts/settings";
 import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -37,7 +37,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 vi.mock(import("~/state/server"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");
-  const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
+  const { compileResolvedKeybindingsConfig } = await import("@d4research/shared/keybindings");
   const keybindings = compileResolvedKeybindingsConfig([
     { key: "mod+shift+]", command: "thread.next", when: "!previewFocus && !previewOpen" },
     { key: "mod+1", command: "thread.jump.1", when: "!previewFocus" },

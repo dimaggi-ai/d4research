@@ -1,12 +1,12 @@
 import { useComposerAttachmentActions } from "./use-composer-attachment-actions";
 import * as Dialog from "../components/ui/Dialog";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope } from "@d4research/contracts";
 import { readEnvironmentScope } from "./session";
 import { useAtomValue } from "@effect/atom-react";
-import { shouldCompactBeforeSend } from "@t3tools/client-runtime/state/context-window";
-import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
-import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
+import { shouldCompactBeforeSend } from "@d4research/client-runtime/state/context-window";
+import { threadRuntimeIsActive } from "@d4research/client-runtime/state/shell";
+import type { ThreadCheckpointSummary } from "@d4research/client-runtime/state/thread-checkpoints";
+import { resolvePendingHandoff } from "@d4research/client-runtime/handoff";
 import {
   deriveProviderSubagentStatus,
   deriveProviderExtensionStatuses,
@@ -15,7 +15,7 @@ import {
   deriveThreadActivityRun,
   deriveThreadRuntime,
   threadRuntimeHasInterruptibleRun,
-} from "@t3tools/client-runtime/state/thread-execution";
+} from "@d4research/client-runtime/state/thread-execution";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -29,16 +29,16 @@ import {
   type RuntimeMode,
   type ScopedThreadRef,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
-import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
-import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
-import { restoreAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
+} from "@d4research/client-runtime/state/threads";
+import { resolveThreadWorkingStartedAt } from "@d4research/client-runtime/state/models";
+import { upgradeLegacyContextMessage } from "@d4research/shared/composerContextLegacy";
+import { restoreAttachmentOnlyBootstrapPrompt } from "@d4research/shared/composerContextReferences";
 import { composerContextSendBlockReason, reidentifyComposerContext } from "../lib/composerContext";
 import { uuidv4 } from "../lib/uuid";
 
@@ -82,14 +82,14 @@ import {
   useComposerDraft,
   useComposerDraftSettings,
 } from "./use-composer-drafts";
-import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
+import { isClearComposerCommand, parseSideChatCommand } from "@d4research/shared/composerTrigger";
 import {
   resolveComposerDispatchMode,
   type ActiveTurnComposerAction,
-} from "@t3tools/client-runtime/state/composer-dispatch";
+} from "@d4research/client-runtime/state/composer-dispatch";
 import { Atom } from "effect/reactivity";
 import { AsyncResult } from "effect/reactivity";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { prepareTurnAttachments } from "../lib/attachmentUpload";
 import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../lib/followUpBehavior";
 import { mobilePreferencesAtom } from "./preferences";

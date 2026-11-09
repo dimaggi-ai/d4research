@@ -13,7 +13,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
@@ -23,10 +23,10 @@ import {
   type QuitConfirmationMode,
   SidebarProjectSortOrder,
   ToolCallVisibility,
-} from "@t3tools/contracts/settings";
-import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
-import { createModelSelection } from "@t3tools/shared/model";
-import { resolvePastedPath } from "@t3tools/shared/path";
+} from "@d4research/contracts/settings";
+import { desktopUpdateChannelOf } from "@d4research/shared/cliRelease";
+import { createModelSelection } from "@d4research/shared/model";
+import { resolvePastedPath } from "@d4research/shared/path";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";

@@ -5,7 +5,7 @@ import {
   type UsageModelFilter,
   type UsageSummary,
   type UsageSummaryInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";

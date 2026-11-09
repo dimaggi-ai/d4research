@@ -1,16 +1,16 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
-import { resolveLatestMergeBackRun } from "@t3tools/client-runtime/state/thread-workflows";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { threadRuntimeIsActive } from "@d4research/client-runtime/state/shell";
+import { resolveLatestMergeBackRun } from "@d4research/client-runtime/state/thread-workflows";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   type ScopedThreadRef,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Trash2Icon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 

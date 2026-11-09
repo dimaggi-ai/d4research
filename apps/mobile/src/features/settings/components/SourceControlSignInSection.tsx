@@ -1,10 +1,10 @@
-import type { EnvironmentId, SourceControlSignInPrompt } from "@t3tools/contracts";
+import type { EnvironmentId, SourceControlSignInPrompt } from "@d4research/contracts";
 import {
   readHostCredentialSettings,
   sourceControlClients,
   type SourceControlAppSignIn,
   type SourceControlDefinition,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/client-runtime/source-control-clients";
 import * as Cause from "effect/Cause";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";

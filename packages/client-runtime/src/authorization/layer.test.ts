@@ -3,8 +3,8 @@ import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
   type ExecutionEnvironmentDescriptor,
-} from "@t3tools/contracts";
-import { type RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
+} from "@d4research/contracts";
+import { type RelayEnvironmentConnectResponse } from "@d4research/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

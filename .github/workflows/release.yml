@@ -253,7 +253,7 @@ jobs:
           task-cache-read-token: ${{ secrets.T3_TASK_CACHE_READ_TOKEN }}
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - name: Check
         run: vp check
@@ -285,7 +285,7 @@ jobs:
           task-cache-read-token: ${{ secrets.T3_TASK_CACHE_READ_TOKEN }}
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - uses: ./.github/actions/setup-apt-mirrors
 
@@ -295,7 +295,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config build-essential
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
+        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@d4research/monorepo' --filter '!@d4research/web' test
 
   # Web browser tests time out when they share a runner with the other package
   # suites: Chromium gets too little CPU and diff workers miss their 10s start budget.
@@ -344,12 +344,12 @@ jobs:
           fi
 
       - name: Test
-        run: vp run --filter @t3tools/web test
+        run: vp run --filter @d4research/web test
 
       # Browser tests run source modules; this boots the production chunk graph.
       - name: Boot the built web client
         run: |
-          vp run --filter @t3tools/web build
+          vp run --filter @d4research/web build
           node apps/web/scripts/verify-built-boot.ts
 
   # Server test files run one at a time, so more small runners beat fewer big ones.
@@ -380,12 +380,12 @@ jobs:
 
       # No Electron setup here: `t3` (apps/server) has no Electron dependency
       # and none of its tests touch the runtime. Only the non-server `test`
-      # job, which covers @t3tools/desktop, needs the download.
+      # job, which covers @d4research/desktop, needs the download.
       - name: Install Chromium for server browser integration tests
         run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
 
       - name: Test
-        run: vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: vp run --filter d4research test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
   relay_public_config:
     name: Resolve T3 Connect public config
@@ -548,7 +548,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+          install-args: --filter=d4research... --filter=@d4research/web... --filter=@d4research/desktop... --filter=@d4research/scripts...
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
 
@@ -584,7 +584,7 @@ jobs:
         if: steps.bundle_build.outputs.script == 'build:desktop'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
-      # Runs t3#build (which depends on @t3tools/web#build) and the desktop
+      # Runs t3#build (which depends on @d4research/web#build) and the desktop
       # bundle, so apps/server/dist holds the server bundle plus the web client
       # and apps/desktop/dist-electron the Electron main. build:desktop:bundle
       # skips the Linux browser secret helper, which this artifact does not
@@ -826,7 +826,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@t3tools/scripts...
+          install-args: --filter=@d4research/scripts...
 
       # Overlaps the artifact downloads. The wait below ends it before any
       # workspace script runs, so the Play key lives only in this process.
@@ -839,7 +839,7 @@ jobs:
         timeout-minutes: 5
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-          PACKAGE_NAME: com.t3tools.t3code
+          PACKAGE_NAME: ai.dimaggi.d4research
           APK_OUTPUT_DIR: ${{ runner.temp }}/android-apk
         run: |
           if [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
@@ -1094,7 +1094,7 @@ jobs:
         run: |
           built="$(tar -xzOf npm-packages/t3.tgz package/package.json | jq -r .version)"
           if [[ "$built" != "$RELEASE_VERSION" ]]; then
-            echo "::error::npm-launcher holds t3@$built, expected t3@$RELEASE_VERSION." >&2
+            echo "::error::npm-launcher holds d4research@$built, expected d4research@$RELEASE_VERSION." >&2
             exit 1
           fi
 
@@ -1155,7 +1155,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@t3tools/scripts... --filter=@t3tools/web...
+          install-args: --filter=@d4research/scripts... --filter=@d4research/web...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -1326,7 +1326,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@t3tools/marketing...
+          install-args: --filter=@d4research/marketing...
 
       - id: deploy
         name: Build staged deployment
@@ -1450,7 +1450,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@t3tools/scripts... --filter=@t3tools/oxlint-plugin-t3code...
+          install-args: --filter=@d4research/scripts... --filter=@d4research/oxlint-plugin-t3code...
 
       - id: update_versions
         name: Update version strings
@@ -1510,7 +1510,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@t3tools/scripts...
+          install-args: --filter=@d4research/scripts...
 
       - name: Read published release notes
         if: needs.preflight.outputs.is_prerelease == 'true'

@@ -29,13 +29,13 @@ import {
   type SecretReference,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   type CustomModelDefinition,
   readCustomModelEntries,
   toCustomModelSetting,
-} from "@t3tools/shared/model";
+} from "@d4research/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -49,13 +49,13 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { ManagedControl, ManagedNotice } from "../ManagedPolicy";
 import { managedInstanceLocks, useManagedPolicy } from "../../state/managedPolicy";
-import { disallowedProviderMessage, isManagedDriverAllowed } from "@t3tools/contracts";
+import { disallowedProviderMessage, isManagedDriverAllowed } from "@d4research/contracts";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type {
   ProviderClientDefinition,
   ProviderEnvironmentField,
-} from "@t3tools/provider-core/client";
+} from "@d4research/provider-core/client";
 import {
   deriveProviderSettingsFields,
   ProviderSettingsForm,

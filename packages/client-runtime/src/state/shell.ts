@@ -7,7 +7,7 @@ import {
   type ServerConfig,
   type ThreadId,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";

@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { formatAttachmentSize } from "@d4research/client-runtime/state/attachments";
 import { useAudioPlayerStatus } from "expo-audio";
 import { useContext, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, View } from "react-native";

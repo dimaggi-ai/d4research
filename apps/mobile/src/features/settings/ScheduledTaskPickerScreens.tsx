@@ -1,5 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
-import { isListedThreadLineage } from "@t3tools/contracts";
+import { isListedThreadLineage } from "@d4research/contracts";
 import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
 import { FlatList, Platform } from "react-native";

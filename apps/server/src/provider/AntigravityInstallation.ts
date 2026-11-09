@@ -1,9 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest or free-space query.
 import * as EffectNodeStream from "@effect/platform-node/NodeStream";
-import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@t3tools/shared/nodeRuntime";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+import { ProviderDriverKind, type ProviderInstallState } from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@d4research/shared/nodeRuntime";
+import { resolveCommandPath } from "@d4research/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";

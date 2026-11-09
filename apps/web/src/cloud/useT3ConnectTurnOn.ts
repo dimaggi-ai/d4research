@@ -3,7 +3,7 @@ import {
   AuthRelayWriteScope,
   type EnvironmentId,
   managedCapabilityDenial,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { isElectron } from "../env";
 import { useManagedPolicy } from "../state/managedPolicy";

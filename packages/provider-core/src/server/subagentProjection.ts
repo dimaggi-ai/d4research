@@ -17,12 +17,12 @@ import type {
   ProviderTurnId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
-import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
+} from "@d4research/contracts";
+import { backgroundWorkHoldsCompletion } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
+import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import { isOrchestrationV2WorkActive, latestProviderTurnForAttempt } from "@t3tools/contracts";
+import { isOrchestrationV2WorkActive, latestProviderTurnForAttempt } from "@d4research/contracts";
 
 function trimmed(value: string | null | undefined): string | undefined {
   const result = value?.trim();

@@ -14,14 +14,14 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
+import { collectUint8StreamText } from "@d4research/provider-core/server/collectStreamText";
+import { decodeJsonResult } from "@d4research/shared/schemaJson";
+import { parseGitRemoteHost } from "@d4research/source-control-core/shared/definition";
 import { CURSOR_ORIGIN_GIT_HOST } from "../shared/definition.ts";
-import { retryAtFromHeader } from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import type { SourceControlProviderContext } from "@t3tools/source-control-core/server/SourceControlProvider";
-import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
+import { retryAtFromHeader } from "@d4research/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
+import type { SourceControlProviderContext } from "@d4research/source-control-core/server/SourceControlProvider";
+import { repositoryPathFromRemoteUrl } from "@d4research/source-control-core/server/SourceControlProvider";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MISSING_TOKEN_TTL_MS = 10_000;
@@ -217,7 +217,7 @@ export class OriginCli extends Context.Service<
       readonly context?: SourceControlProviderContext;
     }) => Effect.Effect<string, OriginCliError>;
   }
->()("@t3tools/source-control-cursor-origin/server/OriginCli") {}
+>()("@d4research/source-control-cursor-origin/server/OriginCli") {}
 
 const make = Effect.gen(function* () {
   const host = yield* SourceControlHost.SourceControlHost;

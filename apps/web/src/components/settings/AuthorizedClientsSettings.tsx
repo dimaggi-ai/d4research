@@ -1,4 +1,4 @@
-import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@d4research/shared/authScopeOptions";
 import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
@@ -14,11 +14,11 @@ import {
   type AuthPairingCredentialResult,
   type AdvertisedEndpoint,
   type EnvironmentId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";

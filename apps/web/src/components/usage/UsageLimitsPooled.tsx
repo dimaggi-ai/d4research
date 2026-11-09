@@ -13,9 +13,9 @@ import {
   type LimitPoolWindow,
   paceRemainingPercent,
   remainingPercent,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
+import { normalizeProviderAccentColor } from "@d4research/client-runtime/state/provider-instance-display";
 import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
 import {
   createContext,

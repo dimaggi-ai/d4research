@@ -1,7 +1,7 @@
 import {
   resolveProviderSkillSourceKind,
   type ProviderSkillSourceKind,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@d4research/client-runtime/providerSkills";
 import type {
   EnvironmentId,
   EnvironmentMachineKind,
@@ -9,8 +9,8 @@ import type {
   ScopedThreadRef,
   ServerProviderSkill,
   ServerProviderSlashCommand,
-} from "@t3tools/contracts";
-import type { ComposerTriggerKind } from "@t3tools/shared/composerTrigger";
+} from "@d4research/contracts";
+import type { ComposerTriggerKind } from "@d4research/shared/composerTrigger";
 import { memo } from "react";
 import { Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 

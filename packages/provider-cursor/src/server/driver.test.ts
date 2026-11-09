@@ -12,7 +12,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -28,15 +28,15 @@ import * as Deferred from "effect/Deferred";
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
   handoffBudget,
-} from "@t3tools/provider-core/server/handoffBudget";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+} from "@d4research/provider-core/server/handoffBudget";
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
 import { CursorDriver } from "./driver.ts";
 import * as CursorAgentSdk from "./CursorAgentSdk.ts";
 import * as CursorSdk from "./CursorSdk.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import { loadCursorSdk } from "./sdk.ts";
 
 const { Cursor } = loadCursorSdk();

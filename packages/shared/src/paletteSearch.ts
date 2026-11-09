@@ -1,6 +1,6 @@
 /** Shared ranking keeps command palettes and MCP thread search consistent across surfaces. */
 
-import type { OrchestrationV2ThreadOpens } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadOpens } from "@d4research/contracts";
 
 import { WORKTREE_BRANCH_PREFIX } from "./git.ts";
 

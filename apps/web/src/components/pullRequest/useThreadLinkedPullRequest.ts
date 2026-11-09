@@ -4,12 +4,12 @@ import {
   type ScopedThreadRef,
   type ThreadLinkedPullRequest,
   type VcsStatusResult,
-} from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+} from "@d4research/contracts";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { useEffect, useRef } from "react";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import { threadEnvironment } from "../../state/threads";

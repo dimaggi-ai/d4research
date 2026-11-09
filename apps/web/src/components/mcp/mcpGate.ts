@@ -1,9 +1,9 @@
 import type {
   EnvironmentCloudLinkStateResult,
   EnvironmentConnectReachability,
-} from "@t3tools/contracts";
-import type { Discovery } from "@t3tools/client-runtime/relay";
-import type { RelayManagedEndpoint } from "@t3tools/contracts/relay";
+} from "@d4research/contracts";
+import type { Discovery } from "@d4research/client-runtime/relay";
+import type { RelayManagedEndpoint } from "@d4research/contracts/relay";
 
 import { isManagedTunnelActive, t3ConnectMcpUrl } from "~/cloud/t3ConnectState";
 

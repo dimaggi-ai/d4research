@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import {
   GitCommandError,
   ProjectId,
@@ -11,7 +11,7 @@ import {
   type PullRequestState,
   type RepositoryIdentity,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { reviewCommentContextLabel } from "~/lib/composerContextRecords";
 

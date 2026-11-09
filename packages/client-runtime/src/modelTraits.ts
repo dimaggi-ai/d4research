@@ -1,10 +1,10 @@
-import type { ModelSelection, ProviderOptionDescriptor } from "@t3tools/contracts";
+import type { ModelSelection, ProviderOptionDescriptor } from "@d4research/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentLabel,
   getProviderOptionCurrentValue,
   isClaudeUltrathinkPrompt,
-} from "@t3tools/shared/model";
+} from "@d4research/shared/model";
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 const REASONING_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([

@@ -41,7 +41,7 @@ Your agents run wherever T3 Code runs: your desktop, a server, a VPS. You connec
 
 ## How do I use T3 Code on my phone?
 
-Get the [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code) app, then connect it to your computer with T3 Connect or a pairing link. The phone is a remote. Your computer does the work and needs to stay on. [Mobile setup](./install.md#mobile-app) · [Remote access](./remote-access.md)
+Get the [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Android](https://play.google.com/store/apps/details?id=ai.dimaggi.d4research) app, then connect it to your computer with T3 Connect or a pairing link. The phone is a remote. Your computer does the work and needs to stay on. [Mobile setup](./install.md#mobile-app) · [Remote access](./remote-access.md)
 
 ## Why does T3 Connect keep disconnecting?
 

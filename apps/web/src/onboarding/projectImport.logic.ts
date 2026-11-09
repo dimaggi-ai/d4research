@@ -1,8 +1,8 @@
 import {
   findProjectByPath,
   normalizeProjectPathForComparison,
-} from "@t3tools/client-runtime/state/projects";
-import type { AgentSessionProjectCandidate, EnvironmentId, ProjectId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/projects";
+import type { AgentSessionProjectCandidate, EnvironmentId, ProjectId } from "@d4research/contracts";
 
 const RECENT_PROJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_SELECTION_MIN_THREADS = 3;

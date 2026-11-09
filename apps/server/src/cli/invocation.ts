@@ -4,9 +4,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import type { ServerInstallation } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+import type { ServerInstallation } from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { resolveCommandPath } from "@d4research/shared/shell";
 
 import packageJson from "../../package.json" with { type: "json" };
 
@@ -97,7 +97,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
 /** The original package spec is unavailable at startup; infer its channel from the version. */
 function suggestedPackageSpec(version: string): string {
   const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
-  return channel === undefined ? "t3" : `t3@${channel}`;
+  return channel === undefined ? "t3" : `d4research@${channel}`;
 }
 
 function formatCliCommand(input: {

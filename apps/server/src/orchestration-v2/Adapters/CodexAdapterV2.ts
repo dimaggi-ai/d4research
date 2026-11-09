@@ -1,7 +1,7 @@
 import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
-import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
+import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
   mcpToolPresentation,
@@ -14,7 +14,7 @@ import {
   completeCodexTurnTokenUsage,
   type CodexTurnTokenUsageState,
 } from "../../provider/CodexTurnTokenUsage.ts";
-import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
+import type { ManagedServerProvider } from "@d4research/provider-core/server/snapshot";
 import type { CodexEffectiveRuntime } from "../../provider/CodexManagedRuntime.ts";
 import { classifyCodexManagedError } from "../../provider/CodexManagedErrors.ts";
 import {
@@ -39,19 +39,19 @@ import {
   ProviderSetupError,
   type ServerProviderCompatibilityAdvisory,
   isDelegatedAppThread,
-} from "@t3tools/contracts";
-import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
-import { AgentScope } from "@t3tools/shared/AgentScope";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import { SKILL_MENTION_PATTERN } from "@d4research/shared/composerInlineTokens";
+import { AgentScope } from "@d4research/shared/AgentScope";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   COMPUTER_USE_TOOL_SOURCE,
   dynamicToolSurface,
   dynamicToolTitle,
-} from "@t3tools/shared/toolActivity";
-import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
-import { appendGeneratedImageEmbeds } from "@t3tools/shared/generatedImageMarkdown";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { mcpToolResultOutput } from "@t3tools/shared/toolOutput";
+} from "@d4research/shared/toolActivity";
+import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@d4research/shared/model";
+import { appendGeneratedImageEmbeds } from "@d4research/shared/generatedImageMarkdown";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
+import { mcpToolResultOutput } from "@d4research/shared/toolOutput";
 import type {
   ChatAttachment,
   OrchestrationV2AppThread,
@@ -78,7 +78,7 @@ import type {
   ProviderInstanceId,
   RuntimeMode,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexSchema from "effect-codex-app-server/schema";
@@ -106,7 +106,7 @@ import { resolveAttachmentPath, resolveAttachmentPathById } from "../../attachme
 import * as PortScanner from "../../preview/PortScanner.ts";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import { buildCodexAdditionalContext } from "../../provider/CodexDeveloperInstructions.ts";
 import {
   describeMcpElicitation,
@@ -120,41 +120,41 @@ import {
   boundProviderEventForLogging,
   shouldPersistProviderEvent,
 } from "../../provider/EventNdjsonLogger.ts";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { mergeProviderInstanceEnvironment } from "@d4research/provider-core/server/instanceEnvironment";
+import * as McpProviderSession from "@d4research/provider-core/server/mcpSession";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,
   MCP_APP_OUTPUT_KEY,
   MCP_APP_RESOURCE_SCHEME,
-} from "@t3tools/shared/mcpApp";
+} from "@d4research/shared/mcpApp";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriverCreateInput,
-} from "@t3tools/provider-core/server/adapterDriver";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { backgroundWorkNotification } from "@t3tools/provider-core/server/notification";
+} from "@d4research/provider-core/server/adapterDriver";
+import * as ProviderContinuationRequests from "@d4research/provider-core/server/ProviderContinuationRequests";
+import { backgroundWorkNotification } from "@d4research/provider-core/server/notification";
 import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
   makeProviderRetryTurnItem,
-} from "@t3tools/provider-core/server/failure";
-import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
+} from "@d4research/provider-core/server/failure";
+import { turnScopedSelectionTransition } from "@d4research/provider-core/server/selectionTransition";
 import {
   isProviderNativeImageAttachment,
   providerMessageTextWithAttachmentPaths,
-} from "@t3tools/provider-core/server/attachmentPrompt";
+} from "@d4research/provider-core/server/attachmentPrompt";
 import {
   makeSubagentChildThread,
   makeSubagentConversationArtifacts,
   subagentThreadTitle,
-} from "@t3tools/provider-core/server/subagentProjection";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@d4research/provider-core/server/subagentProjection";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 
 const CODEX_PROVIDER = ProviderDriverKind.make("codex");
 const CODEX_CAPACITY_MAX_RETRIES = 5;

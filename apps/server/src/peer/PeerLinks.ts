@@ -11,8 +11,8 @@ import {
   type PeerLinkCreateInput,
   PeerLinkError,
   type PeerLinkSummary,
-} from "@t3tools/contracts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+} from "@d4research/contracts";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -32,7 +32,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
-import { isLocalLoopbackHost, isTailnetHost } from "@t3tools/shared/hostClassification";
+import { isLocalLoopbackHost, isTailnetHost } from "@d4research/shared/hostClassification";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";

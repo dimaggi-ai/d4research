@@ -3,8 +3,8 @@ import {
   ProviderInstanceId,
   type ProviderOptionSelection,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { createModelCapabilities } from "@d4research/shared/model";
 import { useState } from "react";
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";

@@ -1,4 +1,4 @@
-import type { ComposerContextRecord, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { ComposerContextRecord, EnvironmentId, ThreadId } from "@d4research/contracts";
 import {
   composerChipSizeSuffix,
   contextChipIcon,
@@ -7,7 +7,7 @@ import {
   type ContextChipIconRef,
   UNAVAILABLE_CONTEXT_CHIP_PRESENTATION,
 } from "./composerChipPresentation";
-import { formatComposerModelMention } from "@t3tools/client-runtime/composer-model-mentions";
+import { formatComposerModelMention } from "@d4research/client-runtime/composer-model-mentions";
 import type {
   SelectableMarkdownModel,
   SelectableMarkdownSkill,
@@ -15,8 +15,8 @@ import type {
 import {
   formatComposerContextHref,
   parseComposerContextHref,
-} from "@t3tools/shared/composerContextReferences";
-import { hasThreadLinks, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+} from "@d4research/shared/composerContextReferences";
+import { hasThreadLinks, parseThreadLinkHref } from "@d4research/shared/threadLinks";
 
 export function enrichedContextLinkPresentation(
   href: string,

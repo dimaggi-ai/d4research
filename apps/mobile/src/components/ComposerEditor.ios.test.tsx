@@ -134,7 +134,7 @@ vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid", randomHex: () => "0000" })
 vi.mock("../state/assets", () => ({ assetEnvironment: {} }));
 vi.mock("../state/attachments", () => ({ attachmentEnvironment: {} }));
 vi.mock("../state/session", () => ({ environmentSession: {} }));
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@d4research/client-runtime/state/runtime", () => ({
   createEnvironmentRpcCommand: () => Symbol("rpc-command"),
   settlePromise: vi.fn(),
   squashAtomCommandFailure: vi.fn(),

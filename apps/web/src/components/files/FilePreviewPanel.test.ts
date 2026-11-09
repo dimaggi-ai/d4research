@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { openRtf, openNotebook, openDocument, openEpub } from "./extendedDocumentPreview";
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { ProjectReadFileError } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@d4research/contracts";
+import { ProjectReadFileError } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
 

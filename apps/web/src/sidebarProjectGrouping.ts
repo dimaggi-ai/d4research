@@ -2,13 +2,13 @@ import type {
   EnvironmentId,
   ScopedProjectRef,
   SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
   resolveScratchProjectScopeKey,
   type ProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@d4research/client-runtime/state/project-grouping";
 import type { Project } from "./types";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {

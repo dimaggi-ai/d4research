@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
-import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
+import { offersLinkedEnvironments } from "@d4research/client-runtime/link-request";
 import {
   AuthAccessWriteScope,
   AuthMcpClientAccess,
@@ -11,7 +11,7 @@ import {
   managedRuntimeModeDenial,
   mcpClientScopes,
   sessionGrantsScope,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Check, Copy } from "lucide";
 import * as Option from "effect/Option";

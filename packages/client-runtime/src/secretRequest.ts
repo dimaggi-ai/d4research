@@ -6,8 +6,8 @@ import {
   type SecretRequestAnswerInput,
   type ServerConfig,
   type ServerSettings,
-} from "@t3tools/contracts";
-import { builtInSecretProviderDefinitions } from "@t3tools/secret-provider-definitions/registry";
+} from "@d4research/contracts";
+import { builtInSecretProviderDefinitions } from "@d4research/secret-provider-definitions/registry";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

@@ -4,8 +4,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { getEnvironmentSpeechModels } from "@t3tools/client-runtime/voice-input";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
+import { getEnvironmentSpeechModels } from "@d4research/client-runtime/voice-input";
 import {
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
@@ -15,7 +15,7 @@ import {
   type SpeechCustomWords,
   type SpeechPostProcessingOptions,
   type SpeechTranscriptionOptions,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { act, render, stubGlobal } from "../../test/render";
 import { VoiceInputSetup } from "../components/chat/VoiceInputSetup";
@@ -111,8 +111,8 @@ vi.mock("../hooks/useSettings", () => ({
 }));
 vi.mock("./runEnvironmentSpeech", () => ({ runEnvironmentSpeech: Effect.runPromise }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
-vi.mock("@t3tools/client-runtime/voice-input", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/voice-input")>()),
+vi.mock("@d4research/client-runtime/voice-input", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@d4research/client-runtime/voice-input")>()),
   getEnvironmentSpeechStatus: (prepared: PreparedConnection) =>
     Effect.sync(() => {
       mocks.statusRequests.push(prepared.environmentId);

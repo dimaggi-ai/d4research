@@ -1,5 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import type { ToolCallVisibility } from "@t3tools/contracts/settings";
+import type { ToolCallVisibility } from "@d4research/contracts/settings";
 import { AsyncResult } from "effect/reactivity";
 import { View } from "react-native";
 

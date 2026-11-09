@@ -1,4 +1,4 @@
-import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime/relay";
+import { ManagedRelay, relayRequestFailureDetail } from "@d4research/client-runtime/relay";
 import * as Schema from "effect/Schema";
 
 const isRequestFailed = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);

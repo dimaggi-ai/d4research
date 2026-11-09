@@ -6,7 +6,7 @@ import {
   type Project,
   type RuntimeRequestId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { backgroundWorkHoldsCompletion } from "./orchestrationV2PendingBackgroundWork.ts";

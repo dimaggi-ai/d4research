@@ -4,7 +4,7 @@ import {
   type AuthMcpClientAccess,
   isRuntimeModeAbove,
   parseMcpApprovalCode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /**
  * The picker's access, lowered to a managed ceiling: the user's choice, else Auto for a typed

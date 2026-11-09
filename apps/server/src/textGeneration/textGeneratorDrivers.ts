@@ -1,4 +1,4 @@
-import type { TextGeneratorKind, TextGeneratorModel } from "@t3tools/contracts";
+import type { TextGeneratorKind, TextGeneratorModel } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {

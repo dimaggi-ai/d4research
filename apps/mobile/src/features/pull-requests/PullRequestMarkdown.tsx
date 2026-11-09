@@ -1,8 +1,8 @@
 import {
   splitPullRequestBody,
   type PullRequestBodySegment,
-} from "@t3tools/client-runtime/pull-request-markdown";
-import { markdownTaskMarkerOffset } from "@t3tools/shared/markdownTaskList";
+} from "@d4research/client-runtime/pull-request-markdown";
+import { markdownTaskMarkerOffset } from "@d4research/shared/markdownTaskList";
 import type { ReactNode } from "react";
 import { View } from "react-native";
 import { useProject } from "../../state/entities";
@@ -12,16 +12,16 @@ import {
   PullRequestMediaContext,
   usePullRequestMediaUrl,
 } from "./PullRequestMedia";
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@d4research/shared/video";
 import { createContext, useContext, useMemo, useState } from "react";
 import {
   changeRequestReferenceAutolinker,
   resolveChangeRequestMediaUrl,
-} from "@t3tools/client-runtime/pull-request-markdown";
+} from "@d4research/client-runtime/pull-request-markdown";
 import {
   sourceControlClients,
   type ReferenceAutolink,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@d4research/client-runtime/source-control-clients";
 import { linkReferenceAutolinks } from "./pullRequestAutolinks";
 
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";

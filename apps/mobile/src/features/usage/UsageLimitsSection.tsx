@@ -1,6 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { RegistryContext, useAtomMount, useAtomValue } from "@effect/atom-react";
-import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
+import { normalizeProviderAccentColor } from "@d4research/client-runtime/state/provider-instance-display";
 import {
   AuthProvidersManageScope,
   type EnvironmentId,
@@ -9,7 +9,7 @@ import {
   type ServerProvider,
   type ServerProviderResetCredits,
   type ServerProviderUsageWindow,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   formatDuration,
   formatResetsIn,
@@ -17,7 +17,7 @@ import {
   paceOf,
   paceRemainingPercent,
   remainingPercent,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import { type ReactNode, useContext, useRef, useState } from "react";
 import { Atom } from "effect/reactivity";
 import { Linking, Pressable, View } from "react-native";

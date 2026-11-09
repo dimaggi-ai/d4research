@@ -1,8 +1,8 @@
-import { collectComposerModelMentions } from "@t3tools/client-runtime/composer-model-mentions";
-import type { EnvironmentId, ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
-import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+import { collectComposerModelMentions } from "@d4research/client-runtime/composer-model-mentions";
+import type { EnvironmentId, ScopedThreadRef, ServerProviderSkill } from "@d4research/contracts";
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
-import { matchInlineSkills } from "@t3tools/shared/inlineSkills";
+import { matchInlineSkills } from "@d4research/shared/inlineSkills";
 
 import { useRightPanelStore } from "~/rightPanelStore";
 import { SKILL_CHIP_ICON_SVG } from "../composerInlineChip";

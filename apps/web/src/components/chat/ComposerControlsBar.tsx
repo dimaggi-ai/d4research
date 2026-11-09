@@ -17,8 +17,8 @@ import {
   type ProviderInstanceId,
   type RuntimeMode,
   type ServerProvider,
-} from "@t3tools/contracts";
-import type { EffortDisplay } from "@t3tools/contracts/settings";
+} from "@d4research/contracts";
+import type { EffortDisplay } from "@d4research/contracts/settings";
 import { cn } from "~/lib/utils";
 import { resolveComposerTraitsInput } from "./composerProviderState";
 import { useApplyThreadModelPick } from "./useApplyThreadModelPick";

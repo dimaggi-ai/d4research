@@ -9,7 +9,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";

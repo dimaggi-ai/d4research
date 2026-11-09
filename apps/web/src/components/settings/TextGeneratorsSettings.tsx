@@ -6,8 +6,8 @@ import {
   type ServerProvider,
   TextGeneratorConfig,
   type TextGeneratorModel,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { createModelSelection } from "@d4research/shared/model";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";

@@ -1,4 +1,4 @@
-import { isLocalEditorFileUrl, LOCAL_FILE_LINK_SCHEMES } from "@t3tools/contracts";
+import { isLocalEditorFileUrl, LOCAL_FILE_LINK_SCHEMES } from "@d4research/contracts";
 import type { Paragraph, PhrasingContent, Root, RootContent } from "mdast";
 import { remarkKeepWindowsPaths } from "./markdownWindowsPaths.ts";
 import { type PluggableList, type Processor, type Transformer, unified } from "unified";

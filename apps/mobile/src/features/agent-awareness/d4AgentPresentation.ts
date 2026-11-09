@@ -9,6 +9,27 @@ import type {
 } from "@d4research/contracts";
 import { D4AgentError } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
+import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
+import {
+  fileRoutePathSegments,
+  resolveFileLinkPath,
+  resolveWorkspaceRelativeFilePath,
+} from "../files/filePath";
+
+/** The ThreadFile route a file link in Nia's chat opens, or null when the link is not a file. */
+export function niaFileLinkRoute(
+  href: string,
+  workspaceRoot: string | null | undefined,
+): { readonly path: string[]; readonly line?: string } | null {
+  const presentation = resolveMarkdownLinkPresentation(href);
+  if (presentation.kind !== "file") return null;
+  const path = resolveFileLinkPath(workspaceRoot, presentation.path);
+  if (path === null) return null;
+  return {
+    path: fileRoutePathSegments(resolveWorkspaceRelativeFilePath(workspaceRoot, path) ?? path),
+    ...(presentation.line ? { line: String(presentation.line) } : {}),
+  };
+}
 
 export function systemCheckLabel(check: D4AgentSystemCheck): string {
   return {

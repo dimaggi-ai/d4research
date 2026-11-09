@@ -17,6 +17,7 @@ export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
 export const PI_T3_MCP_EXTENSION_SOURCE = `\
 import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { Type } from "typebox";
@@ -66,6 +67,57 @@ function runtimeMode(): RuntimeMode {
     value === "full-access"
     ? value
     : "full-access";
+}
+
+type ToolGuardDecision = { readonly decision: "allow" | "ask" | "deny"; readonly reason: string };
+
+const TOOL_GUARD_TOOL_NAMES: Record<string, string> = { bash: "Bash", edit: "Edit", write: "Write" };
+
+// Pi has no hook config of its own, so T3 runs its Tool Guard wrapper here. The wrapper
+// fails closed for these tools inside Core; a wrapper that cannot run fails closed here.
+function toolGuardDecision(toolName: string, input: unknown): Promise<ToolGuardDecision | undefined> {
+  const hook = env("T3RESEARCH_TOOL_GUARD_HOOK");
+  const guardName = TOOL_GUARD_TOOL_NAMES[toolName];
+  if (env("T3RESEARCH_TOOL_GUARD_MODE") === undefined || hook === undefined || guardName === undefined) {
+    return Promise.resolve(undefined);
+  }
+  const record = input !== null && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const toolInput = typeof record.path === "string" ? { ...record, file_path: record.path } : record;
+  const request = JSON.stringify({ hook_event_name: "PreToolUse", tool_name: guardName, tool_input: toolInput });
+  const failed: ToolGuardDecision = { decision: "deny", reason: "Tool Guard could not evaluate this call and failed closed." };
+  return new Promise((resolve) => {
+    const child = hook.toLowerCase().endsWith(".ps1")
+      ? NodeChildProcess.spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", hook], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true })
+      : NodeChildProcess.spawn(hook, [], { stdio: ["pipe", "pipe", "ignore"] });
+    let stdout = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve(failed);
+    }, 30_000);
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(failed);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      try {
+        const output = JSON.parse(stdout).hookSpecificOutput ?? {};
+        const decision = output.permissionDecision;
+        if (code !== 0 || (decision !== "allow" && decision !== "ask" && decision !== "deny")) {
+          resolve(failed);
+          return;
+        }
+        resolve({ decision, reason: String(output.permissionDecisionReason ?? "Tool Guard policy decision") });
+      } catch {
+        resolve(failed);
+      }
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(request);
+  });
 }
 
 function toolInputSummary(input: unknown): string {
@@ -362,6 +414,18 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   };
 
   pi.on("tool_call", async (event, ctx) => {
+    const guard = await toolGuardDecision(event.toolName, event.input);
+    if (guard?.decision === "deny") {
+      return { block: true, reason: "Tool Guard blocked " + event.toolName + ": " + guard.reason };
+    }
+    if (guard?.decision === "ask") {
+      const approved = await ctx.ui.confirm(
+        "Tool Guard review: allow " + event.toolName + "?",
+        guard.reason + "\\n\\n" + toolInputSummary(event.input),
+        { signal: ctx.signal },
+      );
+      if (!approved) return { block: true, reason: event.toolName + " was declined in Tool Guard review." };
+    }
     // Server-side Nia action cards own approvals in all three permission modes.
     if (d4AgentOnly) {
       if (isOwnedMcpTool(event.toolName)) return;

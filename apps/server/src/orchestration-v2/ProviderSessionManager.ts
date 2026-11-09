@@ -1,4 +1,4 @@
-import { toolGuardEnvironment } from "../provider/toolGuardRuntime.ts";
+import { toolGuardEnvironment } from "@d4research/shared/toolGuardRuntime";
 import * as D4AgentStore from "../d4Agent/D4AgentStore.ts";
 import {
   resolveThreadWorkspaces,

@@ -1,4 +1,4 @@
-import { setToolGuardRuntimeEnabled } from "../../provider/toolGuardRuntime.ts";
+import { setToolGuardRuntimeEnabled } from "@d4research/shared/toolGuardRuntime";
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
@@ -19460,7 +19460,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             });
             assert.equal(
               harness.getOpenedOptions()?.env?.T3RESEARCH_TOOL_GUARD_MODE,
-              mode === "full-access" ? "shadow" : "enforcement",
+              "enforcement",
             );
             assert.equal(harness.getOpenedOptions()?.env?.T3RESEARCH_RUNTIME_MODE, mode);
             yield* harness.offerAndWait(

@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Pi extensions run outside Effect; these tests exercise their native filesystem boundary.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
@@ -470,6 +471,132 @@ describe("Pi tool discovery permissions", () => {
     const replaced = await toolCall!({ toolName: "tool_search", input: {} }, ctx);
     assert.equal(replaced?.block, true);
     assert.equal(confirmations.at(-1), "Allow tool_search?");
+  });
+});
+
+describe("Pi Tool Guard", () => {
+  type ToolCallHook = (
+    event: { toolName: string; input: unknown },
+    ctx: { ui: { confirm: (title: string, detail: string) => Promise<boolean> } },
+  ) => Promise<{ block: true; reason: string } | undefined>;
+
+  async function loadGuardedToolCall(hookPath: string, environment: Record<string, string> = {}) {
+    let toolCall: ToolCallHook | undefined;
+    const source = NodeModule.stripTypeScriptTypes(
+      PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
+        "export default async function",
+        "async function",
+      ),
+    );
+    await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
+      process: {
+        env: {
+          T3_PI_RUNTIME_MODE: "full-access",
+          T3RESEARCH_TOOL_GUARD_MODE: "enforcement",
+          T3RESEARCH_TOOL_GUARD_HOOK: hookPath,
+          ...environment,
+        },
+      },
+      NodeChildProcess,
+      setTimeout,
+      clearTimeout,
+      pi: {
+        registerCommand: () => {},
+        on: (name: string, handler: ToolCallHook) => {
+          if (name === "tool_call") toolCall = handler;
+        },
+      },
+    });
+    assert.isDefined(toolCall);
+    return toolCall!;
+  }
+
+  it("applies the guard's decisions in full access", async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "pi-tool-guard-"));
+    const requests = NodePath.join(root, "requests.jsonl");
+    const hook = NodePath.join(root, "hook");
+    await NodeFSP.writeFile(
+      hook,
+      [
+        "#!/bin/sh",
+        "input=$(cat)",
+        `printf '%s\\n' "$input" >> '${requests}'`,
+        'case "$input" in',
+        `  *"git push"*) echo '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"Push needs review."}}' ;;`,
+        `  *"rm -rf"*) echo '{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"Never."}}' ;;`,
+        `  *) echo '{"hookSpecificOutput":{"permissionDecision":"allow"}}' ;;`,
+        "esac",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const toolCall = await loadGuardedToolCall(hook);
+    const confirmations: string[] = [];
+    let answer = false;
+    const ctx = {
+      ui: {
+        confirm: async (title: string, detail: string) => {
+          confirmations.push(`${title} ${detail.split("\n")[0]}`);
+          return answer;
+        },
+      },
+    };
+
+    const denied = await toolCall({ toolName: "bash", input: { command: "rm -rf /" } }, ctx);
+    assert.equal(denied?.block, true);
+    assert.include(denied?.reason, "Never.");
+    assert.equal(confirmations.length, 0);
+
+    const declined = await toolCall({ toolName: "bash", input: { command: "git push" } }, ctx);
+    assert.equal(declined?.block, true);
+    assert.deepEqual(confirmations, ["Tool Guard review: allow bash? Push needs review."]);
+
+    answer = true;
+    assert.isUndefined(await toolCall({ toolName: "bash", input: { command: "git push" } }, ctx));
+    assert.isUndefined(await toolCall({ toolName: "write", input: { path: "/tmp/x" } }, ctx));
+    assert.isUndefined(await toolCall({ toolName: "read", input: { path: "/tmp/x" } }, ctx));
+    assert.equal(confirmations.length, 2);
+
+    const sent = (await NodeFSP.readFile(requests, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(sent.at(-1), {
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { path: "/tmp/x", file_path: "/tmp/x" },
+    });
+    assert.equal(sent.length, 4);
+
+    const niaToolCall = await loadGuardedToolCall(hook, { T3_PI_TOOL_POLICY: "d4-agent" });
+    const niaDenied = await niaToolCall({ toolName: "bash", input: { command: "rm -rf /" } }, ctx);
+    assert.include(niaDenied?.reason, "Never.");
+    const niaReviewed = await niaToolCall(
+      { toolName: "bash", input: { command: "git push" } },
+      ctx,
+    );
+    assert.include(niaReviewed?.reason, "declined in T3 Code");
+    assert.equal(confirmations.length, 3);
+    const niaAllowed = await niaToolCall({ toolName: "write", input: { path: "/tmp/x" } }, ctx);
+    assert.include(niaAllowed?.reason, "declined in T3 Code");
+
+    const supervised = await loadGuardedToolCall(hook, { T3_PI_RUNTIME_MODE: "approval-required" });
+    let confirmation = 0;
+    const runtimeDeclined = await supervised(
+      { toolName: "bash", input: { command: "git push" } },
+      { ui: { confirm: async () => ++confirmation === 1 } },
+    );
+    assert.equal(confirmation, 2);
+    assert.include(runtimeDeclined?.reason, "declined in T3 Code");
+  });
+
+  it("fails closed when the guard cannot run", async () => {
+    const toolCall = await loadGuardedToolCall("/nonexistent/t3research-tool-guard-hook");
+    const result = await toolCall(
+      { toolName: "bash", input: { command: "ls" } },
+      { ui: { confirm: async () => true } },
+    );
+    assert.equal(result?.block, true);
+    assert.include(result?.reason, "failed closed");
   });
 });
 

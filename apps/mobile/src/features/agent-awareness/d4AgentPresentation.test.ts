@@ -8,7 +8,32 @@ import {
   projectBelongsToAgentContext,
   brainIndexStatus,
   actionHeading,
+  niaFileLinkRoute,
 } from "./d4AgentPresentation";
+import { ENRICHED_INLINE_FILE_LINK_REGEX } from "../../lib/enrichedLinkPresentation";
+import { markdownForNativeRendering } from "../../lib/markdownDocument";
+
+it("opens an absolute inline-code path outside Nia's workspace in the file viewer", () => {
+  const rendered = markdownForNativeRendering(
+    "Report: `/var/www/intel/2026-11-09.md`",
+    ENRICHED_INLINE_FILE_LINK_REGEX,
+  );
+  const href = /\]\(<?([^)>]+)>?\)/.exec(rendered)?.[1];
+  expect(href).toBeDefined();
+  expect(niaFileLinkRoute(href!, "/home/u/.t3/userdata/d4-agent/workspace")).toEqual({
+    path: ["", "var", "www", "intel", "2026-11-09.md"],
+  });
+});
+
+it("opens workspace files relative to Nia's workspace and keeps the line", () => {
+  expect(
+    niaFileLinkRoute(
+      "/home/u/.t3/userdata/d4-agent/workspace/notes/a.md:12",
+      "/home/u/.t3/userdata/d4-agent/workspace",
+    ),
+  ).toEqual({ path: ["notes", "a.md"], line: "12" });
+  expect(niaFileLinkRoute("https://example.com/a.md", "/w")).toBeNull();
+});
 it("labels disk values as percent used and failed services as counts", () => {
   expect(
     systemCheckLabel({

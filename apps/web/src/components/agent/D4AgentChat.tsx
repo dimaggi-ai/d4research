@@ -2,7 +2,7 @@ import { observeResize } from "../../lib/observeResize";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { useAssetUrl } from "../../assets/assetUrls";
 import { useEnvironmentQuery } from "../../state/query";
-import { useEnvironmentThreadRefs, useThreadShell } from "../../state/entities";
+import { useEnvironmentThreadRefs, useProject, useThreadShell } from "../../state/entities";
 import {
   type ChatAttachment,
   type D4AgentState,
@@ -48,6 +48,7 @@ import { MessageCopyButton } from "../chat/MessageCopyButton";
 import { ChatCanvas } from "../chat/ChatCanvas";
 import { ChatScrollToEndButton } from "../chat/ChatScrollToEndButton";
 import { ChatWorkspaceHeader } from "../chat/ChatWorkspaceHeader";
+import { NiaFilePanel } from "./NiaFilePanel";
 import { NiaRoutines } from "./NiaRoutines";
 import { D4AgentComposer } from "./D4AgentComposer";
 import { useRightPanelStore } from "../../rightPanelStore";
@@ -108,8 +109,10 @@ export function D4AgentChat({
   refresh: () => void;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const agentShell = useThreadShell(
-    state.threadId ? { environmentId, threadId: state.threadId } : null,
+  const agentThreadRef = state.threadId ? { environmentId, threadId: state.threadId } : undefined;
+  const agentShell = useThreadShell(agentThreadRef ?? null);
+  const agentProject = useProject(
+    state.projectId ? { environmentId, projectId: state.projectId } : null,
   );
   const activity = agentActivityLabel({
     runtime: agentShell?.runtime ?? null,
@@ -282,6 +285,7 @@ export function D4AgentChat({
                           )}
                           cwd={undefined}
                           environmentId={environmentId}
+                          filePanelThreadRef={agentThreadRef}
                           lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
                           parseRawHtml={false}
                         />
@@ -380,6 +384,13 @@ export function D4AgentChat({
               </div>
             </div>
           </ChatCanvas>
+          {agentThreadRef && agentProject ? (
+            <NiaFilePanel
+              threadRef={agentThreadRef}
+              workspaceRoot={agentProject.workspaceRoot}
+              projectName={agentProject.title}
+            />
+          ) : null}
         </section>
       )}
     />

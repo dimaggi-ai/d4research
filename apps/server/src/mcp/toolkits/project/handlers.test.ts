@@ -37,6 +37,7 @@ import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import * as D4AgentContext from "../../../d4Agent/D4AgentContext.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -53,6 +54,8 @@ const clientLaunchHarness = (input: {
   readonly hostedAppUrl?: string;
   /** The orchestrator refuses the new thread's mode, as under a managed ceiling. */
   readonly refusedByCeiling?: true;
+  /** Launch from a live agent thread instead of an OAuth client. */
+  readonly caller?: { readonly runtimeMode: RuntimeMode; readonly ownedByNia: boolean };
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -63,7 +66,26 @@ const clientLaunchHarness = (input: {
   const projectDefaults: { model: ModelSelection | null } = {
     model: input.overrideModel === undefined ? modelSelection : null,
   };
+  const callerId = ThreadId.make("thread:caller");
+  const callerShell =
+    input.caller === undefined
+      ? undefined
+      : ({
+          id: callerId,
+          projectId,
+          modelSelection,
+          runtimeMode: input.caller.runtimeMode,
+          interactionMode: "default",
+          providerInstanceId: modelSelection.instanceId,
+          activeRunId: "run:caller",
+          archivedAt: null,
+          deletedAt: null,
+        } as unknown as OrchestrationV2ThreadShell);
   const layerDependencies = Layer.mergeAll(
+    Layer.mock(D4AgentContext.D4AgentContext)({
+      owns: (threadId) =>
+        Effect.succeed(input.caller?.ownedByNia === true && threadId === callerId),
+    }),
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
     }),
@@ -84,19 +106,30 @@ const clientLaunchHarness = (input: {
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "client:session-1",
-      thread: undefined,
-      client: {
-        sessionId: "session-1",
-        label: "Claude Code",
-        access: input.runtimeModeCeiling,
-        hostedAppUrl: input.hostedAppUrl,
-      },
+      thread:
+        callerShell === undefined
+          ? undefined
+          : {
+              threadId: callerId,
+              providerSessionId: "provider-session-caller",
+              providerInstanceId: modelSelection.instanceId,
+            },
+      client:
+        callerShell === undefined
+          ? {
+              sessionId: "session-1",
+              label: "Claude Code",
+              access: input.runtimeModeCeiling,
+              hostedAppUrl: input.hostedAppUrl,
+            }
+          : undefined,
       issuedAt: 0,
       capabilities: new Set(["orchestration" as const]),
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
       // A thread exists once a launch started it.
       getThreadShell: (threadId) => {
+        if (threadId === callerId && callerShell !== undefined) return Effect.succeed(callerShell);
         const launch = input.launched.find((candidate) => candidate.threadId === threadId);
         return Effect.succeed(
           launch === undefined
@@ -274,6 +307,47 @@ it.effect(
         message: "Example Corp limits threads to Supervised.",
       });
     }),
+);
+
+it.effect("a thread Nia launches starts at the configured default instead of Nia's mode", () =>
+  Effect.gen(function* () {
+    const launchFrom = Effect.fn("test.launchFrom")(function* (
+      caller: { readonly runtimeMode: RuntimeMode; readonly ownedByNia: boolean },
+      defaultRuntimeMode: RuntimeMode,
+    ) {
+      const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+      const { projectId, dependencies } = clientLaunchHarness({
+        runtimeModeCeiling: "full-access",
+        defaultRuntimeMode,
+        launched,
+        caller,
+      });
+      const toolkit = yield* ProjectToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+            Layer.provide(dependencies),
+          ),
+        ),
+      );
+      yield* toolkit
+        .handle("t3_thread_launch", { projectId, title: "Fix", message: "Fix the bug" })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+      return launched[0];
+    });
+
+    const nia = { runtimeMode: "approval-required", ownedByNia: true } as const;
+    const fullAccess = yield* launchFrom(nia, "full-access");
+    expect(fullAccess?.runtimeMode).toBe("full-access");
+    expect(fullAccess?.initialMessage?.senderThreadId).toBe("thread:caller");
+    expect((yield* launchFrom(nia, "auto"))?.runtimeMode).toBe("auto");
+
+    // Any other agent thread still hands its own mode down.
+    const agent = yield* launchFrom(
+      { runtimeMode: "approval-required", ownedByNia: false },
+      "full-access",
+    );
+    expect(agent?.runtimeMode).toBe("approval-required");
+  }),
 );
 
 it.effect("a launch steps an inherited mode down to the provider's, and refuses one it lacks", () =>

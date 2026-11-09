@@ -7,6 +7,7 @@ import {
 import { discoverGrokSkills, leadingGrokSkillMention } from "./skills.ts";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import { resolveSelfInvocation, type SelfInvocation } from "@d4research/shared/nodeRuntime";
+import { toolGuardEnvironment } from "@d4research/shared/toolGuardRuntime";
 import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
@@ -221,6 +222,21 @@ export function grokLaunchRuntimeMode(
     : "approval-required";
 }
 
+/**
+ * Grok runs the managed Tool Guard hook from ~/.claude/settings.json. Under always-approve a
+ * hook "ask" reaches T3's full-access permission handling, which approves it, so in full access
+ * the wrapper turns a review rule into a block instead.
+ */
+export function grokToolGuardEnvironment(
+  environment: NodeJS.ProcessEnv,
+  runtimeMode: RuntimeMode,
+): NodeJS.ProcessEnv {
+  const guarded = toolGuardEnvironment(environment, runtimeMode);
+  return guarded.T3RESEARCH_TOOL_GUARD_MODE !== undefined && runtimeMode === "full-access"
+    ? { ...guarded, T3RESEARCH_TOOL_GUARD_ESCALATE: "deny" }
+    : guarded;
+}
+
 export function makeGrokAcpAdapterFlavor(
   options: GrokAdapterV2Options,
   homeDirectory: string,
@@ -296,7 +312,10 @@ export function makeGrokAcpAdapterFlavor(
           ...input,
           interruptPromptOnCancel: input.interruptPromptOnCancel ?? false,
           grokSettings: options.settings,
-          environment: options.environment,
+          environment: grokToolGuardEnvironment(
+            options.environment,
+            grokLaunchRuntimeMode(runtimePolicy),
+          ),
           runtimeMode: grokLaunchRuntimeMode(runtimePolicy),
         })),
     // Auto prompts represent classifier refusals and must reach the user.

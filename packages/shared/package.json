@@ -92,6 +92,10 @@
       "types": "./src/semver.ts",
       "import": "./src/semver.ts"
     },
+    "./toolGuardRuntime": {
+      "types": "./src/toolGuardRuntime.ts",
+      "import": "./src/toolGuardRuntime.ts"
+    },
     "./Net": {
       "types": "./src/Net.ts",
       "import": "./src/Net.ts"

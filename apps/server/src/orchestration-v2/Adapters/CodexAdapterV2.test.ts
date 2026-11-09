@@ -2,7 +2,7 @@ import * as NodeOS from "node:os";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Path from "effect/Path";
 import * as ServerConfig from "../../config.ts";
-import { setToolGuardRuntimeEnabled } from "../../provider/toolGuardRuntime.ts";
+import { setToolGuardRuntimeEnabled } from "@d4research/shared/toolGuardRuntime";
 import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
 import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 import {
@@ -10044,7 +10044,7 @@ it.effect("passes Tool Guard policy to the native Codex app-server environment",
           env.T3RESEARCH_RUNTIME_MODE,
         ]),
         [
-          ["yes", "shadow", "full-access"],
+          ["yes", "enforcement", "full-access"],
           ["yes", "enforcement", "approval-required"],
         ],
       );

@@ -419,6 +419,28 @@ describe("ChatMarkdown workspace file opens", () => {
     expect(openFile).toHaveBeenCalledExactlyOnceWith(threadRef, "/elsewhere/b.md", 9, undefined);
     expect(workspaceSearch).toHaveBeenCalledOnce();
   });
+
+  it("opens an absolute inline-code path in the file panel of a chat without its own thread", async () => {
+    setup();
+    using openFile = vi
+      .spyOn(useRightPanelStore.getState(), "openFile")
+      .mockImplementation(() => {});
+    await using screen = await renderText("Report: `/var/www/intel/2026-11-09.md`", {
+      cwd: undefined,
+      environmentId: threadRef.environmentId,
+      filePanelThreadRef: threadRef,
+    });
+    const link = screen.container.querySelector("a");
+    expect(link).not.toBeNull();
+    await act(async () => link!.click());
+
+    expect(openFile).toHaveBeenCalledExactlyOnceWith(
+      threadRef,
+      "/var/www/intel/2026-11-09.md",
+      undefined,
+      undefined,
+    );
+  });
 });
 
 describe("ChatMarkdown skill chips", () => {

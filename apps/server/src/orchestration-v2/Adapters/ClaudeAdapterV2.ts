@@ -85,7 +85,7 @@ import {
 import { AgentScope } from "@d4research/shared/AgentScope";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@d4research/shared/model";
-import { toolGuardEnvironment } from "../../provider/toolGuardRuntime.ts";
+import { toolGuardEnvironment } from "@d4research/shared/toolGuardRuntime";
 import {
   CLAUDE_RESUME_COMPACTION_COMPACT_ANSWER,
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,

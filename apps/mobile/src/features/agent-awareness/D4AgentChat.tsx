@@ -8,7 +8,7 @@ import {
   type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
-import { isSessionNotice, postTime } from "./d4AgentPresentation";
+import { isSessionNotice, niaFileLinkRoute, postTime } from "./d4AgentPresentation";
 import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
@@ -20,7 +20,7 @@ import {
 } from "@d4research/contracts";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import { useLinkTo } from "@react-navigation/native";
+import { useLinkTo, useNavigation } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
 import {
   useMemo,
@@ -237,6 +237,7 @@ function NiaMarkdown(props: {
   readonly textStyle: ComponentProps<typeof SelectableMarkdownText>["textStyle"];
   readonly preserveSoftBreaks: boolean;
   readonly openThread: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+  readonly openFile: (href: string) => void;
 }) {
   const markdown = useLiveThreadLinkLabels(props.text, props.environmentId);
   const threadIcons = useThreadChipIcons(props.environmentId, markdown);
@@ -259,6 +260,8 @@ function NiaMarkdown(props: {
           if (target) props.openThread(target.environmentId, target.threadId);
         } else if (/^https?:\/\//i.test(href)) {
           void tryOpenExternalUrl(href, "markdown-link");
+        } else {
+          props.openFile(href);
         }
       }}
     />
@@ -284,6 +287,7 @@ export function D4AgentChat({
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const linkTo = useLinkTo();
+  const navigation = useNavigation();
   const [text, setTextState] = useState("");
   // Dictation reads and watches the draft outside render, so it mirrors the text in a ref.
   const textRef = useRef("");
@@ -317,9 +321,7 @@ export function D4AgentChat({
   const [error, setError] = useState<string | null>(null);
   const taskSelection =
     taskSelectionOverride ??
-    resolveD4AgentTaskModelSelection(
-      config?.settings.d4Agent ?? { taskModelSelection: null },
-    );
+    resolveD4AgentTaskModelSelection(config?.settings.d4Agent ?? { taskModelSelection: null });
   const voiceInput = useVoiceInputController({
     ownerKey: state.threadId === null ? "nia" : `nia:${state.threadId}`,
     label: "Nia",
@@ -471,6 +473,24 @@ export function D4AgentChat({
                   textStyle={markdownStyles[entry.role]}
                   preserveSoftBreaks={entry.role === "user"}
                   openThread={openScopedThread}
+                  openFile={(href) => {
+                    const file = state.threadId
+                      ? niaFileLinkRoute(
+                          href,
+                          projects.find(
+                            (project) =>
+                              project.environmentId === environmentId &&
+                              project.id === state.projectId,
+                          )?.workspaceRoot,
+                        )
+                      : null;
+                    if (file && state.threadId)
+                      navigation.navigate("ThreadFile", {
+                        environmentId: String(environmentId),
+                        threadId: String(state.threadId),
+                        ...file,
+                      });
+                  }}
                 />
               )}
               {entry.links

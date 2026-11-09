@@ -33,17 +33,14 @@ directory, and policy directory.
 
 ## Mode mapping
 
-The per-thread access selector (`RuntimeMode`) maps to two guard modes:
+Every runtime mode, including `full-access`, runs the guard in `enforcement`. Full access lifts the
+provider's own approval prompts, so the guard's deny and review rules are then the only check left
+on destructive and public actions; they must still block. The adapters pass the runtime mode as
+`T3RESEARCH_RUNTIME_MODE` and `T3RESEARCH_TOOL_GUARD_PROFILE` for the audit record.
 
-| Runtime mode                                     | Guard mode    | Meaning                                             |
-| ------------------------------------------------ | ------------- | --------------------------------------------------- |
-| `approval-required`, `auto-accept-edits`, `auto` | `enforcement` | Policy decisions block or escalate the tool call    |
-| `full-access`                                    | `shadow`      | Every rule evaluates and is audited, nothing blocks |
-
-Full access therefore stays audited without pretending to be restricted. The shadow profile
-(`ops/tool-guard/profiles/local-coding-shadow/`) mirrors the enforcement profile with
-`mode: shadow`; the server regenerates it from the enforcement policy on every policy write
-([`toolGuardPolicy.ts`][policy], `writeToolGuardPolicy`).
+The server still regenerates the shadow profile (`ops/tool-guard/profiles/local-coding-shadow/`)
+from the enforcement policy on every policy write ([`toolGuardPolicy.ts`][policy],
+`writeToolGuardPolicy`), but no runtime mode selects it.
 
 ## Policy format
 

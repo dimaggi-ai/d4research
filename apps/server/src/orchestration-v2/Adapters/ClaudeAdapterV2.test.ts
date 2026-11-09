@@ -16784,7 +16784,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             });
             assert.equal(
               harness.getOpenedOptions()?.env?.T3RESEARCH_TOOL_GUARD_MODE,
-              mode === "full-access" ? "shadow" : "enforcement",
+              "enforcement",
             );
             assert.equal(harness.getOpenedOptions()?.env?.T3RESEARCH_RUNTIME_MODE, mode);
             yield* Queue.offer(

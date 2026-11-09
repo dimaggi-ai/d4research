@@ -50,11 +50,11 @@ adapters.
 
 ## How the access modes map
 
-Tool Guard follows the per-thread access selector. **Supervised**, **Auto-accept edits**, and
-**Auto** run the guard in _enforcement_: a matching policy rule can block a command outright or
-require human review. **Full access** runs the guard in _shadow_: every rule still evaluates and is
-written to the local audit log, but nothing is blocked. Native provider permissions apply in all
-modes; Tool Guard is an additional layer, not a replacement.
+Tool Guard enforces its policy in every access mode, including **Full access**. A matching rule
+can block a command outright or ask you to review it first, and every decision is written to the
+local audit log. Full access turns off the provider's own approval prompts, not Tool Guard. Tool
+Guard is an additional layer over native provider permissions, not a replacement. To stop it,
+disable it in Settings.
 
 ## View and edit the policy
 
@@ -65,5 +65,4 @@ you can review exactly what would be enforced.
 
 Once the managed integration is installed, the same page becomes an editor: add, edit, or delete
 rules (rule id, effect, matched field, regex pattern, and description). Saved changes apply to the
-managed profile on this environment; the audit-only shadow copy used by Full access is kept in sync
-automatically.
+managed profile on this environment.

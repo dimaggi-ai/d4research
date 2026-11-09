@@ -8774,7 +8774,7 @@ it.effect("passes Tool Guard policy to the native Codex app-server environment",
           env.T3RESEARCH_RUNTIME_MODE,
         ]),
         [
-          ["yes", "shadow", "full-access"],
+          ["yes", "enforcement", "full-access"],
           ["yes", "enforcement", "approval-required"],
         ],
       );

@@ -14,7 +14,9 @@ export function toolGuardEnvironment(
   return {
     ...environment,
     T3RESEARCH_RUNTIME_MODE: runtimeMode,
-    T3RESEARCH_TOOL_GUARD_MODE: runtimeMode === "full-access" ? "shadow" : "enforcement",
+    // Full access lifts the provider's own prompts, not the guard: its deny and review
+    // rules are then the only check left on destructive and public actions.
+    T3RESEARCH_TOOL_GUARD_MODE: "enforcement",
     T3RESEARCH_TOOL_GUARD_PROFILE: runtimeMode,
   };
 }

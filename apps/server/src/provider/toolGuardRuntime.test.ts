@@ -7,7 +7,7 @@ describe("toolGuardEnvironment", () => {
     ["approval-required", "enforcement"],
     ["auto-accept-edits", "enforcement"],
     ["auto", "enforcement"],
-    ["full-access", "shadow"],
+    ["full-access", "enforcement"],
   ] as const)("maps %s to Tool Guard %s mode", (runtimeMode, policyMode) => {
     setToolGuardRuntimeEnabled(true);
     expect(toolGuardEnvironment({ EXISTING: "kept" }, runtimeMode)).toEqual({

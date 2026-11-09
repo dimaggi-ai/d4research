@@ -231,6 +231,7 @@ vi.mock("./useD4AgentState", () => ({
   }),
 }));
 vi.mock("@react-navigation/native-stack", () => ({ useHeaderHeight: () => 0 }));
+vi.mock("../../components/ui/useBarInset", () => ({ useContentTopInset: () => 0 }));
 vi.mock("@react-navigation/native", () => ({
   createNavigationContainerRef: () => ({ current: null }),
   useLinkTo: () => mocks.navigate,

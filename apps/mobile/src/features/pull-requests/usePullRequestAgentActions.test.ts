@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequestDetail } from "@d4research/contracts";
 import { usePullRequestAgentActions } from "./usePullRequestAgentActions";
 
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+
 const state = vi.hoisted(() => ({
   connected: false,
   canAsk: true,

@@ -234,8 +234,9 @@ describe("mobile dependency graph", () => {
       ["state", "features", 7, "state must not add imports from features"],
       ["lib", "features", 7, "lib must not add imports from features"],
       // components -> features: mostly the appearance preferences provider
-      // and the layout toolbar bridges.
-      ["components", "features", 35, "components must not add imports from features"],
+      // and the layout toolbar bridges. Upstream's two PdfPreview variants
+      // also share the file feature's loading/error feedback.
+      ["components", "features", 37, "components must not add imports from features"],
       // native -> features: native glue reading appearance/keyboard/review features.
       ["native", "features", 10, "native must not add imports from features"],
       ["lib", "state", 12, "lib must not add imports from state"],

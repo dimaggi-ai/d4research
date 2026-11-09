@@ -22,7 +22,12 @@ guard_output="$(printf '%s' "$normalized" | "$script_dir/t3research-tool-guard-h
 decision="$(printf '%s' "$guard_output" | jq -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)" || fail_closed
 reason="$(printf '%s' "$guard_output" | jq -r '.hookSpecificOutput.permissionDecisionReason // "Tool Guard policy decision"' 2>/dev/null)" || fail_closed
 
+# Agy runs headless here and lets an "ask" through, so a review rule has to block.
+if [ "$decision" = "ask" ]; then
+  decision="deny"
+  reason="Tool Guard review required; ask the user to run it. $reason"
+fi
 case "$decision" in
-  deny|ask|allow) jq -nc --arg decision "$decision" --arg reason "$reason" '{decision:$decision,reason:$reason}' ;;
+  deny|allow) jq -nc --arg decision "$decision" --arg reason "$reason" '{decision:$decision,reason:$reason}' ;;
   *) fail_closed ;;
 esac

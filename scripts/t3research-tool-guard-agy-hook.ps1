@@ -27,6 +27,11 @@ try {
   if ($permission -notin @("allow", "ask", "deny")) { Deny-FailedEvaluation }
   $reason = $decision.hookSpecificOutput.permissionDecisionReason
   if ([string]::IsNullOrWhiteSpace([string]$reason)) { $reason = "Tool Guard policy decision" }
+  # Agy runs headless here and lets an "ask" through, so a review rule has to block.
+  if ($permission -eq "ask") {
+    $permission = "deny"
+    $reason = "Tool Guard review required; ask the user to run it. $reason"
+  }
   @{ decision = $permission; reason = $reason } | ConvertTo-Json -Compress
 } catch {
   Deny-FailedEvaluation

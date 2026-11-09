@@ -47,7 +47,7 @@ export class ProviderInstallation extends Context.Service<
       input: ProviderSetupInput,
     ) => Effect.Effect<ProviderInstallState, ProviderSetupError>;
   }
->()("t3/provider/providerInstallation") {}
+>()("d4research/provider/providerInstallation") {}
 
 const make = Effect.fn("makeProviderInstallation")(function* () {
   const antigravityInstallation = yield* AntigravityInstallation.AntigravityInstallation;

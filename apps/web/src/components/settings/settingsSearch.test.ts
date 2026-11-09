@@ -208,7 +208,7 @@ describe("searchSettings", () => {
 
   it("finds the Welcome page only where a primary computer can open it", () => {
     const availability = {
-      hasCloudPublicConfig: true,
+      hasCloudPublicConfig: false,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
@@ -220,7 +220,6 @@ describe("searchSettings", () => {
         "welcome page",
         filterAvailableSettingsSearchItems({ ...availability, hasPrimaryEnvironment }),
       ).map((item) => item.id);
-    // Hosted web reaches remote computers but has no primary one to set up.
     expect(ids(false)).not.toContain("welcome-page");
     expect(ids(true)).toContain("welcome-page");
   });

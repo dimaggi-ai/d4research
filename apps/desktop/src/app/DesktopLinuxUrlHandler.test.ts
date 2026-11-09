@@ -21,8 +21,7 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 
-// Derived so the rebrand pass cannot rewrite the compatibility alias this test pins.
-const LOWERCASE_APP_ID = "com.t3tools.T3Code".toLowerCase();
+const LOWERCASE_APP_ID = "ai.dimaggi.d4research".toLowerCase();
 
 interface RecordedRegistration {
   readonly directories: string[];
@@ -37,7 +36,7 @@ const makeEnvironment = (path: Path.Path, overrides: Record<string, unknown> = {
     isPackaged: true,
     isDevelopment: false,
     displayName: "d4research (Alpha)",
-    linuxDesktopEntryName: "com.t3tools.T3Code.desktop",
+    linuxDesktopEntryName: "ai.dimaggi.d4research.desktop",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
     desktopLauncherPath: Option.none(),
     appImagePath: Option.some("/home/alice/Applications/T3-Code.AppImage"),
@@ -203,7 +202,7 @@ describe("DesktopLinuxUrlHandler", () => {
         assert.equal(recorded.files.length, 1);
         assert.equal(
           recorded.files[0]?.path,
-          "/home/alice/.local/share/applications/com.t3tools.T3Code.desktop",
+          "/home/alice/.local/share/applications/ai.dimaggi.d4research.desktop",
         );
         assert.include(
           recorded.files[0]?.content,
@@ -217,7 +216,7 @@ describe("DesktopLinuxUrlHandler", () => {
           },
           {
             command: "xdg-mime",
-            args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
+            args: ["default", "ai.dimaggi.d4research.desktop", "x-scheme-handler/t3code"],
           },
         ]);
       });
@@ -236,7 +235,7 @@ describe("DesktopLinuxUrlHandler", () => {
           displayName: "d4research (Alpha)",
           execTarget: process.execPath,
           scheme: "t3code",
-          iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",
+          iconPath: "/home/alice/.local/share/icons/ai.dimaggi.d4research.desktop.png",
         }),
       );
     });
@@ -263,7 +262,7 @@ describe("DesktopLinuxUrlHandler", () => {
           displayName: "d4research (Alpha)",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
           scheme: "t3code",
-          iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",
+          iconPath: "/home/alice/.local/share/icons/ai.dimaggi.d4research.desktop.png",
         }),
       });
 
@@ -276,7 +275,7 @@ describe("DesktopLinuxUrlHandler", () => {
         },
         {
           command: "xdg-mime",
-          args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
+          args: ["default", "ai.dimaggi.d4research.desktop", "x-scheme-handler/t3code"],
         },
       ]);
     });
@@ -284,7 +283,7 @@ describe("DesktopLinuxUrlHandler", () => {
 
   it.effect("installs a persistent icon even when the desktop entry is already current", () => {
     const recorded = emptyRecording();
-    const iconPath = "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png";
+    const iconPath = "/home/alice/.local/share/icons/ai.dimaggi.d4research.desktop.png";
     return Effect.gen(function* () {
       yield* runRegister(recorded, {
         iconSource: "/tmp/.mount_T3/resources/icon.png",
@@ -332,14 +331,14 @@ describe("DesktopLinuxUrlHandler", () => {
       yield* runRegister(unpackaged, {
         environment: {
           isPackaged: false,
-          linuxDesktopEntryName: "com.t3tools.T3Code.Development.desktop",
+          linuxDesktopEntryName: "ai.dimaggi.d4research.Development.desktop",
         },
       });
 
       assert.deepEqual(nonLinux.files, []);
       assert.equal(
         unpackaged.files[0]?.path,
-        "/home/alice/.local/share/applications/com.t3tools.T3Code.Development.desktop",
+        "/home/alice/.local/share/applications/ai.dimaggi.d4research.Development.desktop",
       );
       assert.deepEqual(unpackaged.commands, []);
     });
@@ -359,7 +358,7 @@ describe("DesktopLinuxUrlHandler", () => {
           module: "FileSystem",
           method: "writeFileString",
           description: "read-only filesystem",
-          pathOrDescriptor: "/home/alice/.local/share/applications/com.t3tools.T3Code.desktop",
+          pathOrDescriptor: "/home/alice/.local/share/applications/ai.dimaggi.d4research.desktop",
         }),
       });
 
@@ -588,18 +587,18 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       // Case-insensitive macOS volumes store both Linux aliases as one directory entry.
       assert.deepEqual(
         [...names].sort(),
-        fixture.caseSensitive
-          ? ["com.t3tools.T3Code.png", `${LOWERCASE_APP_ID}.png`]
+        fixture.caseSensitive && LOWERCASE_APP_ID !== "ai.dimaggi.d4research"
+          ? ["ai.dimaggi.d4research.png", `${LOWERCASE_APP_ID}.png`]
           : [`${LOWERCASE_APP_ID}.png`],
       );
-      for (const name of [LOWERCASE_APP_ID, "com.t3tools.T3Code"]) {
+      for (const name of [LOWERCASE_APP_ID, "ai.dimaggi.d4research"]) {
         const target = path.join(fixture.appsDir, `${name}.png`);
         assert.deepEqual([...(yield* fileSystem.readFile(target))], [...icon]);
         yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
       }
 
       yield* registerWithRealFileSystem(run);
-      for (const name of [LOWERCASE_APP_ID, "com.t3tools.T3Code"]) {
+      for (const name of [LOWERCASE_APP_ID, "ai.dimaggi.d4research"]) {
         const info = yield* fileSystem.stat(path.join(fixture.appsDir, `${name}.png`));
         assert.equal(Option.getOrThrow(info.mtime).getTime(), fixture.pastSeconds * 1000);
       }
@@ -615,10 +614,10 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       const fixture = yield* themeIconFixture(new Uint8Array([1, 2, 3]));
       yield* fixture.seedCache;
       const lower = path.join(fixture.appsDir, `${LOWERCASE_APP_ID}.png`);
-      const upper = path.join(fixture.appsDir, "com.t3tools.T3Code.png");
+      const upper = path.join(fixture.appsDir, "ai.dimaggi.d4research.png");
       yield* fileSystem.writeFile(lower, new Uint8Array([3, 2, 1]));
       yield* fileSystem.writeFile(upper, new Uint8Array([1, 2, 3]));
-      const separateAliases = fixture.caseSensitive;
+      const separateAliases = fixture.caseSensitive && lower !== upper;
       if (!separateAliases) yield* fileSystem.writeFile(lower, new Uint8Array([3, 2, 1]));
       for (const target of [lower, upper]) {
         yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
@@ -659,7 +658,9 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
 
       yield* registerWithRealFileSystem(run);
 
-      assert.isTrue(yield* fileSystem.exists(path.join(fixture.appsDir, "com.t3tools.T3Code.png")));
+      assert.isTrue(
+        yield* fileSystem.exists(path.join(fixture.appsDir, "ai.dimaggi.d4research.png")),
+      );
       assert.equal(iconCacheRuns(run), 1);
     }).pipe(Effect.scoped),
   );

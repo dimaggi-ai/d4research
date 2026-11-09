@@ -321,7 +321,11 @@ describe("mobile task permissions", () => {
     expect(state.enqueue).not.toHaveBeenCalled();
     expect(state.clearDraft).not.toHaveBeenCalled();
     composer.onChangeDraftMessage("Edited locally");
+    composer.onUpdateInteractionMode("plan");
     expect(state.draft.text).toBe("Edited locally");
+    expect(state.updateSettings).toHaveBeenCalledWith("secondary:thread", {
+      interactionMode: "plan",
+    });
   });
 
   it("keeps an armed fresh session for the message after an approval redirect", async () => {
@@ -441,6 +445,10 @@ describe("mobile task permissions", () => {
     state.serverConfig = {
       ...state.serverConfig,
       providers: [{ instanceId: "codex", driver: "codex", enabled: false }],
+      settings: {
+        ...state.serverConfig!.settings,
+        providerInstances: { codex: { driver: "codex", enabled: false } },
+      },
     } as unknown as ServerConfig;
     state.draft = { ...state.draft, attachments: [] };
     expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();

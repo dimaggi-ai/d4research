@@ -145,7 +145,7 @@ minimumReleaseAgeExclude:
   - expo-modules-autolinking@58.0.7
   - expo-modules-core@58.0.11 || 58.0.19 || 58.0.22
   - expo-modules-jsi@58.0.7 || 58.0.14 || 58.0.15
-  - expo-notifications@58.1.5
+  - expo-notifications@58.1.8
   - expo-sharing@58.0.19
   - expo-sqlite@58.0.13
   - expo-symbols@58.0.4
@@ -224,7 +224,7 @@ overrides:
   expo-network: 58.0.4
   expo-sharing: 58.0.22
   expo-widgets: 58.0.27
-  expo-notifications: 58.1.5
+  expo-notifications: 58.1.8
   expo-video: 58.0.13
   "@ff-labs/fff-node": 0.11.0
   "@legendapp/list": 3.7.2
@@ -357,8 +357,8 @@ patchedDependencies:
   react-native-svg@15.16.1: patches/react-native-svg@15.16.1.patch
   # iOS: a feed following its end keeps the end through a size-only reflow in one pass.
   "@legendapp/list@3.7.2": patches/@legendapp__list@3.7.2.patch
-  # Keep the fork notification delivery race fix until it is ported to the new Expo version.
-  expo-notifications@58.1.5: patches/expo-notifications@58.1.5.patch
+  # Preserve responses received while notification delegates are running.
+  expo-notifications@58.1.8: patches/expo-notifications@58.1.8.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
 # caught when the lockfile changes instead of scrolling past as a warning.

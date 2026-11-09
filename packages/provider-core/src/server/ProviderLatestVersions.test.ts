@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -7,6 +8,19 @@ import * as Fiber from "effect/Fiber";
 import * as ProviderLatestVersions from "./ProviderLatestVersions.ts";
 
 describe("ProviderLatestVersions", () => {
+  it.effect("version lookups stay opt-in after all cached versions are invalidated", () =>
+    Effect.gen(function* () {
+      const versions = yield* ProviderLatestVersions.ProviderLatestVersions;
+      const lookup = Effect.die("disabled version checks must not contact a provider");
+      expect(yield* versions.cached("cli", lookup)).toBeNull();
+      yield* versions.invalidateAll;
+      expect(yield* versions.cached("cli", lookup, { fresh: true })).toBeNull();
+    }).pipe(
+      Effect.provide(ProviderLatestVersions.layer),
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+    ),
+  );
+
   it.effect("concurrent misses for one key share a single lookup", () =>
     Effect.gen(function* () {
       const latestVersions = yield* ProviderLatestVersions.make();

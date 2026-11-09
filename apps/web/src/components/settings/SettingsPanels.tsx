@@ -1,3 +1,4 @@
+import { providerInstanceEntriesFor } from "../../providerInstances";
 import { scopedIdleCompaction } from "./scopedSettings";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SettledThreadCleanupSection } from "./StorageSettings";

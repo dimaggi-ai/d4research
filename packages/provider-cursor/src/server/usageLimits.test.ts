@@ -56,16 +56,21 @@ describe("Cursor usage limits", () => {
 
   it.effect("requires explicit credentials and accepts an auth token", () =>
     Effect.gen(function* () {
-      for (const token of [undefined, "explicit-token"]) {
-        const limits = yield* readCursorUsageLimits(
-          { apiEndpoint: "" },
-          token ? { CURSOR_AUTH_TOKEN: token } : {},
-        ).pipe(
+      for (const [apiEndpoint, environment, token] of [
+        ["", {}, undefined],
+        ["", { AGENT_CLI_CREDENTIAL_STORE: "file", HOME: "/unused" }, undefined],
+        ["https://cursor.example/", { CURSOR_AUTH_TOKEN: "explicit-token" }, "explicit-token"],
+        ["", { CURSOR_AUTH_TOKEN: "explicit-token" }, "explicit-token"],
+      ] as const) {
+        const limits = yield* readCursorUsageLimits({ apiEndpoint }, environment).pipe(
           Effect.provideService(
             HttpClient.HttpClient,
             HttpClient.make((request) => {
               expect(token).toBe("explicit-token");
               expect(request.headers.authorization).toBe("Bearer explicit-token");
+              expect(request.url).toBe(
+                `${apiEndpoint.replace(/\/$/, "") || "https://api2.cursor.sh"}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`,
+              );
               return Effect.succeed(
                 HttpClientResponse.fromWeb(
                   request,

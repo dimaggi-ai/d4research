@@ -5396,6 +5396,7 @@ function ChatViewContent(props: ChatViewProps) {
           return;
         }
         const scrollNode = list.getScrollableNode();
+        if (!scrollNode) return;
         let finished = false;
         const finishAnimatedPositioning = () => {
           if (finished) {

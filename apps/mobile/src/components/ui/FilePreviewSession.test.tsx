@@ -10,6 +10,10 @@ const harness = vi.hoisted(() => ({
   mounts: 0,
 }));
 
+vi.mock("react-native", () => ({ Keyboard: { dismiss: vi.fn() } }));
+vi.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ addListener: () => () => {}, isFocused: () => true }),
+}));
 vi.mock("../../state/assets", () => ({ refreshAssetUrl: harness.refreshAssetUrl }));
 vi.mock("../../lib/localAttachmentPreview", () => ({ loadLocalAttachmentPreview: vi.fn() }));
 vi.mock("../../lib/attachmentDownload", () => ({

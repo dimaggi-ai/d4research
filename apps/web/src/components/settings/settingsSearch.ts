@@ -245,6 +245,18 @@ const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
 
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "legacy-context-window-indicator",
+    title: "Context window indicator (legacy)",
+    to: "/settings/labs",
+    searchTerms: ["composer meter usage tokens circle old"],
+  },
+  {
+    id: "legacy-plan-mode",
+    title: "Plan mode (legacy)",
+    to: "/settings/labs",
+    searchTerms: ["build plan composer old"],
+  },
+  {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
     title: "Keep worktrees with local changes",

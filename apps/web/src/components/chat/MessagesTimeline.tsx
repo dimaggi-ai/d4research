@@ -1358,7 +1358,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const sharedState: TimelineRowSharedState = {
     onRollbackCheckpoint,
     onToggleHandoffFold: (messageId, rowId) => {
-      suspendEndScrollMaintenanceForDisclosure(rowId);
+      preserveDisclosurePosition(rowId);
       setExpandedHandoffMessageIds((current) => {
         const next = new Set(current);
         if (next.has(messageId)) next.delete(messageId);
@@ -4993,6 +4993,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
         <div className="whitespace-pre-wrap wrap-break-word text-sm">
           <SkillInlineText
             text={comment.text}
+            environmentId={ctx.threadRef?.environmentId ?? null}
             skills={ctx.skills}
             threadRef={ctx.threadRef ?? undefined}
           />

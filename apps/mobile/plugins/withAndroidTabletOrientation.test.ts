@@ -45,7 +45,7 @@ async function prebuildAndroid(input = { manifest: MANIFEST, mainActivity: MAIN_
   const projectRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tablet-orientation-"));
   projectRoots.push(projectRoot);
   const sourceRoot = NodePath.join(projectRoot, "android/app/src/main");
-  const activityPath = NodePath.join(sourceRoot, "java/com/t3tools/t3code/MainActivity.kt");
+  const activityPath = NodePath.join(sourceRoot, "java/ai/dimaggi/d4research/MainActivity.kt");
   const manifestPath = NodePath.join(sourceRoot, "AndroidManifest.xml");
   NodeFS.mkdirSync(NodePath.dirname(activityPath), { recursive: true });
   NodeFS.writeFileSync(manifestPath, input.manifest);

@@ -615,7 +615,6 @@ export function D4AgentComposer({
                       )
                     }
                     allowPromptInjectedEffort={false}
-                    planModeEnabled={false}
                     disabled={!canConfigure || saving || sending}
                   />
                 ) : null}

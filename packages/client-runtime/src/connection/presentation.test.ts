@@ -50,7 +50,7 @@ function supervisorState(overrides: Partial<SupervisorConnectionState>): Supervi
 }
 
 describe("connection presentation", () => {
-  it("copies the T3 Connect MCP address first, then the route this device is connected over", () => {
+  it("copies the connected route address, then the saved address", () => {
     const route = (connectionId: string, httpBaseUrl: string): ConnectionRoute => {
       const target = new BearerConnectionTarget({ ...TARGET, connectionId });
       return {
@@ -80,13 +80,6 @@ describe("connection presentation", () => {
       "http://100.115.1.44:3773/mcp",
     );
     expect(environmentMcpUrl({ entry })).toBe("http://192.168.4.53:3773/mcp");
-    expect(
-      environmentMcpUrl({
-        entry,
-        connectedTarget: lan.target,
-        relayHttpBaseUrl: "https://tunnel.example.test",
-      }),
-    ).toBe("https://tunnel.example.test/mcp");
   });
 
   // regression: #16909 Copy MCP URL falls back to an alternate route when the relay route has no address
@@ -105,13 +98,6 @@ describe("connection presentation", () => {
     expect(environmentMcpUrl({ entry, connectedTarget: relay })).toBe(
       "https://environment.example.test/mcp",
     );
-    expect(
-      environmentMcpUrl({
-        entry,
-        connectedTarget: relay,
-        relayHttpBaseUrl: "https://tunnel.example.test",
-      }),
-    ).toBe("https://tunnel.example.test/mcp");
   });
 
   it("distinguishes initial connection, reconnect, and retry errors", () => {

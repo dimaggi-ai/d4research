@@ -6,7 +6,10 @@ import { PROJECT_JUMP_KEYBINDING_COMMANDS } from "@d4research/contracts";
 
 import { installSidebarTree } from "../lib/sidebarTree";
 import { resolveProjectExpanded, useUiStateStore } from "../uiStateStore";
-import { SidebarProjectFolderHeader, sidebarFolderRowId } from "./sidebar/SidebarProjectFolderHeader";
+import {
+  SidebarProjectFolderHeader,
+  sidebarFolderRowId,
+} from "./sidebar/SidebarProjectFolderHeader";
 import { type EnvironmentId, type ScopedProjectRef } from "@d4research/contracts";
 import type { EnvironmentServerConfig } from "@d4research/client-runtime/connection";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
@@ -496,11 +499,14 @@ function useSidebarThreads(input: {
   });
 
   const { pinnedThreads, workingThreads, snoozedThreads, settledThreads } = partition;
-  const activeThreads = folderGroups !== null ? partition.activeThreads : applySidebarThreadOrder({
-    items: partition.activeThreads,
-    order: manualThreadOrder,
-    getId: threadShellKey,
-  });
+  const activeThreads =
+    folderGroups !== null
+      ? partition.activeThreads
+      : applySidebarThreadOrder({
+          items: partition.activeThreads,
+          order: manualThreadOrder,
+          getId: threadShellKey,
+        });
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
     scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
@@ -555,7 +561,9 @@ function useSidebarThreads(input: {
         });
   const orderedThreads = [
     ...pinnedThreads,
-    ...(projectFolders === null ? activeThreads : projectFolders.flatMap((folder) => folder.threads)),
+    ...(projectFolders === null
+      ? activeThreads
+      : projectFolders.flatMap((folder) => folder.threads)),
     ...visibleWorkingThreads,
     ...visibleSnoozedThreads,
     ...renderedSettledThreads,
@@ -1275,51 +1283,54 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (isMobile) setOpenMobile(false);
     void handleNewThread(scopeProjectRef(group.environmentId, group.id));
   });
-  useStableCallback((group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
-    const api = readLocalApi();
-    if (!api) return;
-    void (async () => {
-      const clicked = await settlePromise(() =>
-        api.contextMenu.show(
-          [
-            { id: "new-thread", label: "New thread" },
-            { id: "copy-path", label: "Copy path" },
-            ...(canPinProject(group)
-              ? [
-                  group.pinned
-                    ? { id: "unpin", label: "Unpin project", icon: "pin-off" }
-                    : { id: "pin", label: "Pin project", icon: "pin" },
-                ]
-              : []),
-            { id: "project-settings", label: "Project settings", icon: "settings" },
-          ],
-          position,
-        ),
-      );
-      if (clicked._tag === "Failure") return;
-      switch (clicked.value) {
-        case "new-thread":
-          startThreadInProjectFolder(group);
-          return;
-        case "copy-path":
-          copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
-          return;
-        case "pin":
-        case "unpin":
-          setProjectGroupPinned(group, clicked.value === "pin");
-          return;
-        case "project-settings":
-          openProjectSettings(group);
-          return;
-      }
-    })();
-  });
+  const handleProjectFolderContextMenu = useStableCallback(
+    (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
+      const api = readLocalApi();
+      if (!api) return;
+      void (async () => {
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "new-thread", label: "New thread" },
+              { id: "copy-path", label: "Copy path" },
+              ...(canPinProject(group)
+                ? [
+                    group.pinned
+                      ? { id: "unpin", label: "Unpin project", icon: "pin-off" }
+                      : { id: "pin", label: "Pin project", icon: "pin" },
+                  ]
+                : []),
+              { id: "project-settings", label: "Project settings", icon: "settings" },
+            ],
+            position,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "new-thread":
+            startThreadInProjectFolder(group);
+            return;
+          case "copy-path":
+            copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
+            return;
+          case "pin":
+          case "unpin":
+            setProjectGroupPinned(group, clicked.value === "pin");
+            return;
+          case "project-settings":
+            openProjectSettings(group);
+            return;
+        }
+      })();
+    },
+  );
 
   // Retain legacy local arrangements until migration to shared order keys finishes.
   // Older servers still use the local fallback.
   const manualThreadOrder = useSidebarThreadOrderStore((state) => state.order);
   const migratingThreadOrder = useSidebarThreadOrderStore((state) => state.migrating);
   const setManualThreadOrder = useSidebarThreadOrderStore((state) => state.setOrder);
+
   const {
     workingShelfEnabled,
     pinnedThreads,
@@ -3327,7 +3338,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 newThreadShortcutLabel={newThreadShortcutLabel}
                 newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
                 showNewThreadInProjectHint={
-                  !shouldCreateNewThreadInCurrentProject(false, scopeGroups.length, projectGroups.length)
+                  !shouldCreateNewThreadInCurrentProject(
+                    false,
+                    scopeGroups.length,
+                    projectGroups.length,
+                  )
                 }
                 searchInputRef={threadSearchInputRef}
                 searchQuery={threadSearchQuery}
@@ -3468,8 +3483,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = folderRow
-                          ? folderRowsMultiline ? "folder-multiline" : "folder"
-                          : isCard ? "card" : "slim";
+                          ? folderRowsMultiline
+                            ? "folder-multiline"
+                            : "folder"
+                          : isCard
+                            ? "card"
+                            : "slim";
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3482,7 +3501,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             variant={rowVariant}
-                            navigationParent={folderRow ?? (section === "working" || section === "snoozed" || section === "settled" ? `shelf:${section}` : undefined)}
+                            navigationParent={
+                              folderRow ??
+                              (section === "working" ||
+                              section === "snoozed" ||
+                              section === "settled"
+                                ? `shelf:${section}`
+                                : undefined)
+                            }
                             variantAction={
                               section === "snoozed"
                                 ? "unsnooze"

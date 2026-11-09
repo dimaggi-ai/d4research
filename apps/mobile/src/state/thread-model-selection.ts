@@ -1,6 +1,7 @@
 import { runAtomCommand, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
+  DEFAULT_PROVIDER_INTERACTION_MODE,
   type EnvironmentId,
   type ModelSelection,
   type ThreadId,
@@ -9,6 +10,7 @@ import {
 import { scopedThreadKey } from "../lib/scopedEntities";
 import * as Dialog from "../components/ui/Dialog";
 import { appAtomRegistry } from "./atom-registry";
+import { serverEnvironment } from "./server";
 import { readEnvironmentScope } from "./session";
 import { environmentThreadShells, threadEnvironment } from "./threads";
 import {
@@ -24,7 +26,15 @@ export function selectThreadModel(
   const threadKey = scopedThreadKey(ref.environmentId, ref.threadId);
   // Its own object, so an older reply for an equal pick cannot release this one.
   const modelSelection = { ...value };
-  updateComposerDraftSettings(threadKey, { modelSelection });
+  const provider = appAtomRegistry
+    .get(serverEnvironment.configValueAtom(ref.environmentId))
+    ?.providers.find((candidate) => candidate.instanceId === modelSelection.instanceId);
+  updateComposerDraftSettings(threadKey, {
+    modelSelection,
+    ...(provider?.showInteractionModeToggle === false
+      ? { interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE }
+      : {}),
+  });
   const thread = appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
   // Another instance replaces the live session, which may hold an open question; that pick
   // still waits for a sent message.

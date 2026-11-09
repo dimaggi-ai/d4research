@@ -23,6 +23,7 @@ import {
   sendsTokenInClear,
   usableRoutes,
 } from "./routes.ts";
+import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
@@ -142,6 +143,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
 export const make = Effect.gen(function* () {
   const resolver = yield* ConnectionResolver.ConnectionResolver;
   const sessions = yield* RpcSession.RpcSessionFactory;
+  const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
   const httpClient = yield* HttpClient.HttpClient;
 
   // The descriptor is public, so this sends no credential to whatever

@@ -112,9 +112,7 @@ function Header(props: { readonly gitStatus: VcsStatusResult | null; readonly ti
         onRunProjectScript: async () => {},
       }}
       hasThreadCwd
-      fileInspectorSupported={false}
       inspectorMode={null}
-      onToggleInspector={() => {}}
       onOpenFilesInspector={() => {}}
     />
   );

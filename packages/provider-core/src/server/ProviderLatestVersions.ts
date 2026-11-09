@@ -106,6 +106,7 @@ export const layer = Layer.effect(
       : ProviderLatestVersions.of({
           cached: Effect.fn("ProviderLatestVersions.cached")(() => Effect.succeed(null)),
           invalidate: versions.invalidate,
+          invalidateAll: versions.invalidateAll,
         });
   }),
 );

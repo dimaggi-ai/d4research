@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import { splitAndroidHeaderActions } from "./headerMenu.android";
 import {
-  androidHeaderMenuActions,
-  findHeaderMenuAction,
-  splitAndroidHeaderActions,
-} from "./headerMenu.android";
+  menuActionsFromAppBarItems as androidHeaderMenuActions,
+  findAppBarMenuItem as findHeaderMenuAction,
+} from "./menuActionItems";
 import type { AppBarMenuItem } from "./AppBar.types";
 
 const items: ReadonlyArray<AppBarMenuItem> = [

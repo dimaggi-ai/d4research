@@ -3,7 +3,7 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'com.t3tools.agentnotifications'
+group = 'ai.dimaggi.d4research.agentnotifications'
 version = '0.0.0'
 
 android {

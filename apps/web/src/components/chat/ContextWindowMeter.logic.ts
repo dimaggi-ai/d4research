@@ -1,9 +1,5 @@
 import type { ModelSelection, ProviderDriverKind, ProviderInstanceId } from "@d4research/contracts";
 import {
-  CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
-  isClaudeResumeCompactionQuestion,
-} from "@d4research/shared/claudeCompaction";
-import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
@@ -41,24 +37,6 @@ export function hasAvailableCompactionProvider(input: {
   return providerSupportsManualCompaction(
     resolveSelectableProviderInstanceEntry(compatibleProviders, input.instanceId ?? undefined),
   );
-}
-
-export function hasDismissedResumeCompaction(
-  activities: ReadonlyArray<{ readonly kind: string; readonly payload: unknown }>,
-): boolean {
-  return activities.some((activity) => {
-    if (activity.kind !== "user-input.resolved") return false;
-    const payload = activity.payload;
-    if (!payload || typeof payload !== "object") return false;
-    const answers = (payload as { readonly answers?: unknown }).answers;
-    if (!answers || typeof answers !== "object" || Array.isArray(answers)) return false;
-
-    return Object.entries(answers).some(
-      ([question, answer]) =>
-        isClaudeResumeCompactionQuestion(question) &&
-        answer === CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
-    );
-  });
 }
 
 export function shouldOfferResumeCompaction(input: {

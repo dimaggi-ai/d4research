@@ -894,7 +894,7 @@ export function ThreadSearchPullRequestNumber({
 
 export function resolveThreadPr(input: {
   threadBranch: string | null;
-  gitStatus: VcsStatusResult | null;
+  gitStatus: Pick<VcsStatusResult, "refName" | "pr"> | null;
 }): ThreadPr | null {
   const { threadBranch, gitStatus } = input;
   if (gitStatus === null) {

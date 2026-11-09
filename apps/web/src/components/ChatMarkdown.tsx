@@ -235,6 +235,8 @@ interface ChatMarkdownProps {
   workspaceRoot?: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
   pullRequestPanelRef?: ScopedThreadRef | undefined;
+  /** Opens file links in this thread's file panel when there is no `threadRef`; nothing else uses it. */
+  filePanelThreadRef?: ScopedThreadRef | undefined;
   environmentId?: EnvironmentId | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
   isStreaming?: boolean;
@@ -511,7 +513,9 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   sourceControlMedia = false,
+  filePanelThreadRef,
 }: ChatMarkdownProps) {
+  const fileThreadRef = threadRef ?? filePanelThreadRef;
   const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
   const mediaRequestId = useRef(0);
@@ -831,7 +835,7 @@ function useChatMarkdownState({
     panelPath: string,
     line: number | undefined,
   ) => {
-    if (!threadRef) return;
+    if (!fileThreadRef) return;
     // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
     const fallbackTarget = resolveMarkdownFilePanelTarget({
@@ -841,7 +845,9 @@ function useChatMarkdownState({
       workspaceRoots: markdownWorkspaceRoots,
     });
     const openAt = (target: { path: string; workspaceRoot?: string | undefined }) =>
-      useRightPanelStore.getState().openFile(threadRef, target.path, line, target.workspaceRoot);
+      useRightPanelStore
+        .getState()
+        .openFile(fileThreadRef, target.path, line, target.workspaceRoot);
     const searchAcrossRoots =
       markdownWorkspaceRoots.length > 0 &&
       (needsWorkspaceBasenameLookup(panelPath) ||
@@ -864,14 +870,14 @@ function useChatMarkdownState({
           const stripped = stripRepeatedWorkspacePrefix(rootPath, root.path);
           if (stripped !== null) {
             const metadata = await getFilesystemMetadata({
-              environmentId: threadRef.environmentId,
+              environmentId: fileThreadRef.environmentId,
               input: { paths: [resolveWorkspaceFilePath(rootPath, root.path)] },
             });
             if (metadata._tag === "Success" && metadata.value.entries[0] === null)
               lookupPath = stripped;
           }
           const result = await searchProjectEntries({
-            environmentId: threadRef.environmentId,
+            environmentId: fileThreadRef.environmentId,
             input: {
               cwd: root.path,
               query: lookupPath,
@@ -931,7 +937,7 @@ function useChatMarkdownState({
         )}
         copyMarkdown={copyMarkdown}
         theme={resolvedTheme}
-        threadRef={threadRef}
+        threadRef={fileThreadRef}
         onOpen={
           canUseShellActions
             ? async () =>

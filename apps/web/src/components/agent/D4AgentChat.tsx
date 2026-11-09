@@ -2,7 +2,7 @@ import { observeResize } from "../../lib/observeResize";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { useAssetUrl } from "../../assets/assetUrls";
 import { useEnvironmentQuery } from "../../state/query";
-import { useEnvironmentThreadRefs, useThreadShell } from "../../state/entities";
+import { useEnvironmentThreadRefs, useProject, useThreadShell } from "../../state/entities";
 import {
   type ChatAttachment,
   type D4AgentState,
@@ -48,6 +48,7 @@ import { MessageCopyButton } from "../chat/MessageCopyButton";
 import { ChatCanvas } from "../chat/ChatCanvas";
 import { ChatScrollToEndButton } from "../chat/ChatScrollToEndButton";
 import { ChatWorkspaceHeader } from "../chat/ChatWorkspaceHeader";
+import { NiaFilePanel } from "./NiaFilePanel";
 import { NiaRoutines } from "./NiaRoutines";
 import { D4AgentComposer } from "./D4AgentComposer";
 
@@ -107,8 +108,10 @@ export function D4AgentChat({
   refresh: () => void;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const agentShell = useThreadShell(
-    state.threadId ? { environmentId, threadId: state.threadId } : null,
+  const agentThreadRef = state.threadId ? { environmentId, threadId: state.threadId } : undefined;
+  const agentShell = useThreadShell(agentThreadRef ?? null);
+  const agentProject = useProject(
+    state.projectId ? { environmentId, projectId: state.projectId } : null,
   );
   const activity = agentActivityLabel({
     runtime: agentShell?.runtime ?? null,
@@ -127,12 +130,14 @@ export function D4AgentChat({
   const conversation = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLElement | null>(null);
+  // oxlint-disable-next-line t3code/no-manual-memo -- a callback ref must keep one identity, or React detaches and reattaches it, setting state, every render
   const registerComposer = useCallback((node: HTMLDivElement | null) => {
     composer.current = node;
     setComposerOverlayElement(node);
   }, []);
   const [composerInset, setComposerInset] = useState(0);
   const [showScrollToEnd, setShowScrollToEnd] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a ResizeObserver on the composer node, held while mounted
   useLayoutEffect(() => {
     const node = composer.current;
     if (!node) return;
@@ -142,6 +147,7 @@ export function D4AgentChat({
   const content = useRef<HTMLDivElement>(null);
   // A width change or late-rendering markdown reflows the transcript without changing it; a
   // reader at the end stays there.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ResizeObservers that keep the DOM scroll position pinned to the end
   useLayoutEffect(() => {
     const node = conversation.current;
     const lane = content.current;
@@ -156,6 +162,7 @@ export function D4AgentChat({
       stopNode();
     };
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the DOM log to a new message while the reader follows the end
   useEffect(() => {
     if (!state.transcript?.length || composerInset === 0) return;
     const node = conversation.current;
@@ -278,6 +285,7 @@ export function D4AgentChat({
                           )}
                           cwd={undefined}
                           environmentId={environmentId}
+                          filePanelThreadRef={agentThreadRef}
                           lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
                           parseRawHtml={false}
                         />
@@ -372,6 +380,13 @@ export function D4AgentChat({
               </div>
             </div>
           </ChatCanvas>
+          {agentThreadRef && agentProject ? (
+            <NiaFilePanel
+              threadRef={agentThreadRef}
+              workspaceRoot={agentProject.workspaceRoot}
+              projectName={agentProject.title}
+            />
+          ) : null}
         </section>
       )}
     />

@@ -8,7 +8,7 @@ import {
   type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
-import { isSessionNotice, postTime } from "./d4AgentPresentation";
+import { isSessionNotice, niaFileLinkRoute, postTime } from "./d4AgentPresentation";
 import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
@@ -19,7 +19,7 @@ import {
 } from "@d4research/contracts";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import { useLinkTo } from "@react-navigation/native";
+import { useLinkTo, useNavigation } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
 import { useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from "react-native";
@@ -196,6 +196,7 @@ export function D4AgentChat({
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const linkTo = useLinkTo();
+  const navigation = useNavigation();
   const [text, setText] = useState("");
   // undefined follows the saved default; null explicitly means manager-only conversation.
   const [taskSelectionOverride, setTaskSelectionOverride] = useState<
@@ -340,7 +341,26 @@ export function D4AgentChat({
                   textStyle={markdownStyles[entry.role]}
                   preserveSoftBreaks={entry.role === "user"}
                   onLinkPress={(href) => {
-                    if (/^https?:\/\//i.test(href)) void tryOpenExternalUrl(href, "markdown-link");
+                    if (/^https?:\/\//i.test(href)) {
+                      void tryOpenExternalUrl(href, "markdown-link");
+                      return;
+                    }
+                    const file = state.threadId
+                      ? niaFileLinkRoute(
+                          href,
+                          projects.find(
+                            (project) =>
+                              project.environmentId === environmentId &&
+                              project.id === state.projectId,
+                          )?.workspaceRoot,
+                        )
+                      : null;
+                    if (file && state.threadId)
+                      navigation.navigate("ThreadFile", {
+                        environmentId: String(environmentId),
+                        threadId: String(state.threadId),
+                        ...file,
+                      });
                   }}
                 />
               )}

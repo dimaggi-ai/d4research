@@ -51,7 +51,7 @@ import {
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@d4research/shared/model";
 import { appendGeneratedImageEmbeds } from "@d4research/shared/generatedImageMarkdown";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
-import { toolGuardEnvironment } from "../../provider/toolGuardRuntime.ts";
+import { toolGuardEnvironment } from "@d4research/shared/toolGuardRuntime";
 import type {
   ChatAttachment,
   OrchestrationV2AppThread,

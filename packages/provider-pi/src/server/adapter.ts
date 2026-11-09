@@ -1,4 +1,5 @@
 import * as HostProcess from "@d4research/shared/HostProcess";
+import { toolGuardEnvironment } from "@d4research/shared/toolGuardRuntime";
 import { AgentScope } from "@d4research/shared/AgentScope";
 import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import { readToolOutputImage } from "@d4research/shared/toolOutput";
@@ -463,7 +464,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       }
       const launch = buildPiRpcLaunch({
         launchArgs: resolvedLaunchArgs.args,
-        environment: options.environment,
+        environment: toolGuardEnvironment(options.environment, input.runtimePolicy.runtimeMode),
         mcpSession,
         extensionPath,
         runtimeMode: input.runtimePolicy.runtimeMode,

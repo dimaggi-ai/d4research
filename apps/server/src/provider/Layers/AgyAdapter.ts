@@ -28,7 +28,7 @@ import {
   ProviderAdapterValidationError,
 } from "../Errors.ts";
 import type { AgyAdapterShape } from "../Services/AgyAdapter.ts";
-import { toolGuardEnvironment } from "../toolGuardRuntime.ts";
+import { toolGuardEnvironment } from "@d4research/shared/toolGuardRuntime";
 import { decodeAgyStreamLine } from "./AgyStream.ts";
 
 const PROVIDER = ProviderDriverKind.make("agy");

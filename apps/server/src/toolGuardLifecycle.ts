@@ -7,7 +7,7 @@ import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ServerConfig from "./config.ts";
 import { withCodexAppServerClient } from "./provider/CodexProvider.ts";
-import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
+import { setToolGuardRuntimeEnabled } from "@d4research/shared/toolGuardRuntime";
 
 export const TOOL_GUARD_MANAGED_MARKER = "d4research-tool-guard-managed";
 const CODEX_HOOK_ARGS = "--escalate-as-deny";
@@ -378,7 +378,7 @@ export const initializeToolGuardRuntime = Effect.fn("initializeToolGuardRuntime"
   const platform = yield* HostProcess.Platform;
   const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const manifest = yield* readToolGuardManifest(managed.manifest);
-  setToolGuardRuntimeEnabled(manifest?.enabled === true);
+  setToolGuardRuntimeEnabled(manifest?.enabled === true, managed.hook);
 });
 
 export const manageToolGuard = Effect.fn("manageToolGuard")(
@@ -449,7 +449,7 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
         installedAt,
       });
       yield* setManagedHooksEnabled(true, managed.hook, managed.agyHook);
-      setToolGuardRuntimeEnabled(true);
+      setToolGuardRuntimeEnabled(true, managed.hook);
       const codexWarning = yield* trustManagedCodexHook(managed.hook);
       return {
         ok: true,
@@ -462,7 +462,7 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
     if (action === "enable") {
       yield* writeJson(managed.manifest, { ...manifest, version: 1, enabled: true });
       yield* setManagedHooksEnabled(true, managed.hook, managed.agyHook);
-      setToolGuardRuntimeEnabled(true);
+      setToolGuardRuntimeEnabled(true, managed.hook);
       const codexWarning = yield* trustManagedCodexHook(managed.hook);
       return {
         ok: true,

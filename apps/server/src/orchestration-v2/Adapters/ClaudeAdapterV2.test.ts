@@ -1,4 +1,4 @@
-import { setToolGuardRuntimeEnabled } from "../../provider/toolGuardRuntime.ts";
+import { setToolGuardRuntimeEnabled } from "@d4research/shared/toolGuardRuntime";
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";

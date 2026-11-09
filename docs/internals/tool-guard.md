@@ -26,8 +26,22 @@ Codex needs two extra steps. It skips a user hook until that hook's hash is reco
 `--escalate-as-deny`: the wrapper turns a review rule into a block whose reason tells the agent to
 ask the user, and prints nothing on allow.
 
+Agy runs a headless `ask` as allow, so its wrapper turns a review rule into a block.
+
+Grok has no managed entry of its own: it runs the hooks in `~/.claude/settings.json`, so it picks
+up the Claude entry. It sends `toolName`/`toolInput` instead of Claude's `tool_name`/`tool_input`,
+and the wrapper renames them when `GROK_HOOK_EVENT` is set. A Grok hook `ask` overrides
+always-approve and reaches T3 as an ACP permission request, which T3's full-access policy approves,
+so in full access the Grok adapter sets `T3RESEARCH_TOOL_GUARD_ESCALATE=deny` and the wrapper
+blocks instead.
+
+Pi has no hook config. The d4research Pi extension
+(`packages/provider-pi/src/server/mcpExtensionSource.ts`) runs the wrapper named by
+`T3RESEARCH_TOOL_GUARD_HOOK` for `bash`, `edit`, and `write` before its runtime-mode checks, and
+shows an `ask` as a normal approval.
+
 The wrapper script exits immediately (allowing the tool) unless `T3RESEARCH_TOOL_GUARD_MODE` is
-set. The Claude, Codex, and Agy adapters set that variable per provider process through
+set. The Claude, Codex, Agy, Grok, and Pi adapters set that variable per provider process through
 `toolGuardEnvironment` ([`toolGuardRuntime.ts`][runtime]), but only while the managed integration
 is enabled. This creates a double gate: a hook entry alone does nothing outside a session launched
 by an enabled d4research environment.
@@ -113,4 +127,4 @@ No in-app audit viewer exists yet; the log is a local file.
 [lifecycle]: ../../apps/server/src/toolGuardLifecycle.ts
 [status]: ../../apps/server/src/toolGuardStatus.ts
 [policy]: ../../apps/server/src/toolGuardPolicy.ts
-[runtime]: ../../apps/server/src/provider/toolGuardRuntime.ts
+[runtime]: ../../packages/shared/src/toolGuardRuntime.ts

@@ -56,8 +56,8 @@ local audit log. Full access turns off the provider's own approval prompts, not 
 Guard is an additional layer over native provider permissions, not a replacement. To stop it,
 disable it in Settings.
 
-Codex cannot pause a command for review, so in Codex threads a review rule blocks the command
-instead, and the agent asks you to run it yourself.
+Codex and Agy cannot pause a command for review, and neither can Grok in **Full access**. In those
+threads a review rule blocks the command instead, and the agent asks you to run it yourself.
 
 ## View and edit the policy
 

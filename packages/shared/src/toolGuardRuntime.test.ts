@@ -18,6 +18,16 @@ describe("toolGuardEnvironment", () => {
     });
   });
 
+  it("passes the hook path to providers that call the wrapper themselves", () => {
+    setToolGuardRuntimeEnabled(true, "/data/tool-guard/hook");
+    expect(toolGuardEnvironment({}, "full-access").T3RESEARCH_TOOL_GUARD_HOOK).toBe(
+      "/data/tool-guard/hook",
+    );
+    setToolGuardRuntimeEnabled(false);
+    setToolGuardRuntimeEnabled(true);
+    expect(toolGuardEnvironment({}, "full-access").T3RESEARCH_TOOL_GUARD_HOOK).toBeUndefined();
+  });
+
   it("preserves native provider permissions when the integration is disabled", () => {
     setToolGuardRuntimeEnabled(false);
     const environment = { EXISTING: "kept" };

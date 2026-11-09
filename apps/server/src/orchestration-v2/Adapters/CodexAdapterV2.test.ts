@@ -2,7 +2,7 @@ import * as NodeOS from "node:os";
 import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Path from "effect/Path";
 import * as ServerConfig from "../../config.ts";
-import { setToolGuardRuntimeEnabled } from "../../provider/toolGuardRuntime.ts";
+import { setToolGuardRuntimeEnabled } from "@d4research/shared/toolGuardRuntime";
 import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
 import {
   makeProviderTextDeltaCoalescer,

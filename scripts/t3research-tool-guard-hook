@@ -43,8 +43,21 @@ fi
 policy_dir="${T3RESEARCH_TOOL_GUARD_POLICY_DIR:-$default_policy_dir}"
 
 mkdir -p "$data_dir" 2>/dev/null || true
+# Grok runs this hook from ~/.claude/settings.json but sends camelCase toolName/toolInput,
+# while Core reads Claude's tool_name/tool_input.
+guard_input() {
+  if [ -n "${GROK_HOOK_EVENT:-}" ]; then
+    jq -c 'if has("tool_name") then . else . + {
+      tool_name: ({"run_terminal_command": "Bash", "search_replace": "Edit"}[.toolName] // .toolName),
+      tool_input: (.toolInput + (if .toolInput.file_path == null and .toolInput.path != null
+        then {file_path: .toolInput.path} else {} end))
+    } end'
+  else
+    cat
+  fi
+}
 guard() {
-  "$guard_bin" hook \
+  guard_input | "$guard_bin" hook \
     -policy-dir "$policy_dir" \
     -mode "$guard_mode" \
     -agent-id "t3research-local" \
@@ -52,9 +65,10 @@ guard() {
     -protect-self \
     -fail-closed-tools bash,write,edit,notebookedit
 }
-# Codex accepts only "deny" from PreToolUse and runs an "ask" as allow, so for Codex a
-# review rule has to block, and an allow is silence rather than a reported hook error.
-if [ "${1:-}" = "--escalate-as-deny" ]; then
+# Codex accepts only "deny" from PreToolUse and runs an "ask" as allow, and T3 approves a
+# Grok "ask" in full access, so there a review rule has to block. For Codex an allow is
+# silence rather than a reported hook error.
+if [ "${1:-}" = "--escalate-as-deny" ] || [ "${T3RESEARCH_TOOL_GUARD_ESCALATE:-}" = "deny" ]; then
   guard | sed -e '/"permissionDecision":"allow"/d' \
     -e 's/"permissionDecision":"ask"/"permissionDecision":"deny"/' \
     -e 's/"permissionDecisionReason":"/"permissionDecisionReason":"Tool Guard review required; ask the user to run it. /'

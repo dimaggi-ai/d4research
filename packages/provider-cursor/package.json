@@ -32,10 +32,6 @@
       "types": "./src/server/CursorAccountReader.ts",
       "import": "./src/server/CursorAccountReader.ts"
     },
-    "./server/CursorKeychain": {
-      "types": "./src/server/CursorKeychain.ts",
-      "import": "./src/server/CursorKeychain.ts"
-    },
     "./server/CursorUsageAccounts": {
       "types": "./src/server/CursorUsageAccounts.ts",
       "import": "./src/server/CursorUsageAccounts.ts"
@@ -62,7 +58,6 @@
     "@d4research/contracts": "workspace:*",
     "@d4research/provider-core": "workspace:*",
     "@d4research/shared": "workspace:*",
-    "@napi-rs/keyring": "^1.3.0",
     "effect": "catalog:",
     "yaml": "catalog:"
   },

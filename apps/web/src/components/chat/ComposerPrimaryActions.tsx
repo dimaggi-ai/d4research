@@ -1,4 +1,4 @@
-import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
+import { memo, type MouseEventHandler, type PointerEventHandler, type ReactNode } from "react";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -26,6 +26,8 @@ interface PendingActionState {
 }
 
 interface ComposerPrimaryActionsProps {
+  /** Footer controls (dictation) that always sit right before the primary button. */
+  children?: ReactNode;
   compact: boolean;
   canOperateThread: boolean;
   pendingAction: PendingActionState | null;
@@ -84,6 +86,7 @@ const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
 };
 
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
+  children,
   compact,
   canOperateThread,
   pendingAction,
@@ -186,6 +189,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             </Button>
           )
         ) : null}
+        {children}
         <button
           type="submit"
           className={cn(messageActionPillClassName, "h-8 sm:h-7", compact ? "px-3" : "px-4")}
@@ -215,6 +219,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   if (showPlanFollowUpPrompt && (promptHasText || !canResume)) {
     if (promptHasText) {
       return (
+        <>
+        {children}
         <button
           type="submit"
           className={cn(messageActionPillClassName, "h-9 sm:h-8", compact ? "px-3" : "px-4")}
@@ -223,10 +229,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         >
           {isConnecting || isSendBusy ? "Sending..." : "Refine"}
         </button>
+        </>
       );
     }
 
     return (
+      <>
+      {children}
       <div data-chat-composer-implement-actions="true" className="flex items-center justify-end">
         <button
           type="submit"
@@ -265,11 +274,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           </MenuPopup>
         </Menu>
       </div>
+      </>
     );
   }
 
   if (canInterrupt && !hasSendableContent && !isEditingQueuedMessage) {
-    return renderStopGenerationButton(false);
+    return <>{children}{renderStopGenerationButton(false)}</>;
   }
 
   const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
@@ -367,10 +377,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const sendActions = canInterrupt ? (
     <div className="flex items-center gap-2">
       {renderStopGenerationButton(false)}
+      {children}
       {submit}
     </div>
   ) : (
-    submit
+    <>{children}{submit}</>
   );
   if (compactTokens === null) return sendActions;
 

@@ -6,11 +6,7 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
 } from "@d4research/contracts";
-import {
-  needsCursorKeychainAccess,
-  refreshUsage,
-  usageSummaryInput,
-} from "@d4research/client-runtime/state/usage";
+import { refreshUsage, usageSummaryInput } from "@d4research/client-runtime/state/usage";
 import { resolveUsageAccess } from "@d4research/client-runtime/state/usage-access";
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@d4research/shared/usageMerge";
 import * as Option from "effect/Option";
@@ -30,7 +26,6 @@ export interface EnvironmentUsageStatus {
   readonly canReadDiagnostics: boolean;
   readonly error: string | null;
   readonly summary: UsageSummary | null;
-  readonly needsCursorKeychainAccess: boolean;
 }
 
 /**
@@ -57,7 +52,6 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
           isConnected: presentation.connection.phase === "connected",
           ...access,
           summary: null,
-          needsCursorKeychainAccess: false,
         });
         continue;
       }
@@ -79,10 +73,6 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         canReadDiagnostics: true,
         error: result._tag === "Failure" ? "This environment could not report usage." : null,
         summary,
-        needsCursorKeychainAccess: needsCursorKeychainAccess(
-          summary,
-          get(serverEnvironment.providersValueAtom(environmentId)),
-        ),
       });
     }
     return statuses;

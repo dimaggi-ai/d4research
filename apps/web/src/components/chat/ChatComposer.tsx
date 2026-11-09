@@ -118,6 +118,13 @@ import {
   formatAssistantCitationForComposer,
   replaceTextRange,
 } from "../../composer-logic";
+import { useApplyThreadModelPick } from "./useApplyThreadModelPick";
+import { usePromptSuggestion } from "./usePromptSuggestion";
+import { useFreshSessionArmed } from "./freshSessionArms";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
+import { formatComposerModelMention } from "@d4research/client-runtime/composer-model-mentions";
+import { matchComposerModelItems } from "./composerModelMentions";
+import { Kbd } from "../ui/kbd";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import {
@@ -1321,7 +1328,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       ) : props.reserveContextWindowMeter ? (
         <ContextWindowMeterPlaceholder />
       ) : null}
-      {props.children}
       <ComposerPrimaryActions
         voiceInputActive={props.voiceInputActive ?? false}
         compact={props.compact}
@@ -1352,7 +1358,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         compactBeforeSendTokens={props.compactBeforeSendTokens}
         keepFullHistory={props.keepFullHistory}
         onToggleKeepFullHistory={props.onToggleKeepFullHistory}
-      />
+      >
+        {props.children}
+      </ComposerPrimaryActions>
     </>
   );
 });
@@ -1994,6 +2002,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activeTasksProgress = shownSyncPhase === null ? props.activeTasksProgress : null;
   const activeTaskSteps = shownSyncPhase === null ? props.activeTaskSteps : null;
   const isEditingQueuedMessage = editingQueuedAttachments !== null;
+  const applyThreadModelPick = useApplyThreadModelPick();
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const composerDraftTargetKeyRef = useRef("");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps async draft completion guards aligned with the committed composer target.
@@ -2663,6 +2672,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
+        ...matchComposerModelItems({
+          instanceEntries: providerInstanceEntries,
+          modelOptionsByInstance,
+          query: composerTrigger.query,
+        }),
         ...matchComposerThreadItems({
           shells: environmentThreadShells,
           environmentId,
@@ -2954,6 +2968,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const promptUltrathink = readPromptUltrathink(prompt);
 
+  const persistComposerModelOptions = () => {
+    // A staged model switch may need Memo even within the same provider instance.
+    if (
+      activeThread?.runtime &&
+      (activeThread.modelSelection.instanceId !== selectedInstanceId ||
+        activeThread.modelSelection.model !== selectedModel)
+    ) return;
+    void applyThreadModelPick(composerDraftTarget);
+  };
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
     provider: selectedProvider,
     instanceId: selectedInstanceId,
@@ -2966,6 +2989,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptUltrathink,
     onPromptEdit: editPromptFromTraitsStable,
     planModeEnabled: settings.planModeEnabled,
+    onDraftModelOptionsChange: persistComposerModelOptions,
   });
   const providerTraitsPickerInput = {
     provider: selectedProvider,
@@ -2980,6 +3004,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPromptEdit: editPromptFromTraitsStable,
     planModeEnabled: settings.planModeEnabled,
     isComposerOwned: true,
+    onDraftModelOptionsChange: persistComposerModelOptions,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
   const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
   const [inlineRestingControlsHost, setInlineRestingControlsHost] = useState<HTMLDivElement | null>(
@@ -4040,6 +4065,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return;
     }
+    if (item.type === "model") {
+      if (trigger.kind !== "path") return;
+      const replacement = `${formatComposerModelMention(item.instanceId, item.model)} `;
+      const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+        snapshot.value, trigger.rangeEnd, replacement,
+      );
+      const applied = applyPromptReplacement(trigger.rangeStart, replacementRangeEnd, replacement, {
+        expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd),
+      });
+      if (applied) setComposerHighlightedItemId(null);
+      return;
+    }
     if (item.type === "thread") {
       if (trigger.kind !== "path") return;
       const shell = readThreadShell(item.thread);
@@ -4385,6 +4422,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return true;
   };
 
+  const { suggestion: promptSuggestion, dismiss: dismissPromptSuggestion } = usePromptSuggestion(
+    environmentId,
+    activeThread,
+  );
+  const freshSessionArmed = useFreshSessionArmed(scopedThreadKey(routeThreadRef));
+  const offeredPromptSuggestion =
+    phase !== "running" &&
+    phase !== "disconnected" &&
+    !isSendBusy &&
+    !freshSessionArmed &&
+    !speechInput.freezesEditor &&
+    composerContextRecords.size === 0 &&
+    !isComposerApprovalState &&
+    !activePendingProgress &&
+    !showPlanFollowUpPrompt &&
+    !projectSelectionRequired &&
+    !showProviderUnavailable
+      ? promptSuggestion
+      : null;
+
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem = false) => {
     const submissionIntent = composerSubmissionIntentForKey({
       event,
@@ -4404,7 +4461,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const menuIsActive =
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
     if (key === "Escape") {
-      if (!menuIsActive || event.isComposing || event.keyCode === 229) return false;
+      if (event.isComposing || event.keyCode === 229) return false;
+      if (!menuIsActive) {
+        if (offeredPromptSuggestion === null || promptRef.current.length > 0) return false;
+        dismissPromptSuggestion();
+        return true;
+      }
       dismissComposerTrigger(trigger);
       composerMenuOpenRef.current = false;
       return true;
@@ -4424,6 +4486,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onSelectComposerItem(selectedItem);
         return true;
       }
+    }
+    if (
+      key === "Tab" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey &&
+      !event.isComposing && event.keyCode !== 229 && !menuIsActive &&
+      offeredPromptSuggestion !== null && promptRef.current.length === 0
+    ) {
+      return applyPromptReplacement(0, 0, offeredPromptSuggestion);
     }
     if ((key === "ArrowUp" || key === "ArrowDown") && submissionIntent === null) {
       return navigatePromptHistory(key === "ArrowUp" ? "backward" : "forward", event);
@@ -6437,6 +6506,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             model: selectedModel,
             persistSticky: true,
           });
+        persistComposerModelOptions();
         if (change.prompt !== promptRef.current) {
           applyPromptReplacementStable(0, promptRef.current.length, change.prompt, {
             expandedCursorAfterReplace: change.cursor,
@@ -7543,7 +7613,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? "Enable a provider in Settings to send a message"
                                 : phase === "disconnected"
                                   ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                  : (offeredPromptSuggestion ?? "Ask anything, @tag files/folders, $use skills, or / for commands")
+                    }
+                    placeholderSuffix={
+                      offeredPromptSuggestion !== null ? (
+                        <span className="ml-2 inline-flex align-[1px]">
+                          <Kbd variant="outline">⇥ Tab</Kbd>
+                        </span>
+                      ) : undefined
                     }
                     disabled={
                       isConnecting ||

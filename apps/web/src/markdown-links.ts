@@ -1,3 +1,4 @@
+import { isLocalEditorFileUrl } from "@d4research/contracts";
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import {
   isTerminalLinkActivation,
@@ -378,6 +379,14 @@ function looksLikeHostname(segment: string, hasPosition: boolean): boolean {
   if (labels.length < 2 || lastLabel === undefined) return false;
   if (GENERIC_HOSTNAME_TLDS.has(lastLabel)) return true;
   return !hasPosition && COUNTRY_HOSTNAME_TLDS.has(lastLabel);
+}
+
+export function isLocalEditorFileHref(href: string): boolean {
+  try {
+    return isLocalEditorFileUrl(new URL(href));
+  } catch {
+    return false;
+  }
 }
 
 export function resolveInlineCodeFileLinkMeta(

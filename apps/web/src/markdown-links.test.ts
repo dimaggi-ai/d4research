@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import {
   extractMarkdownLinkHrefs,
   isWindowsDrivePathHref,
+  isLocalEditorFileHref,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFilePanelTarget,
   resolveMarkdownFileLinkMeta,
@@ -171,6 +172,37 @@ describe("shouldOpenMarkdownFileLinkInBrowserByDefault", () => {
     expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.PDF?download=1")).toBe(true);
     expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.html")).toBe(false);
     expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.xml")).toBe(false);
+  });
+});
+
+describe("isLocalEditorFileHref", () => {
+  it("accepts absolute file deep links of known editors", () => {
+    for (const href of [
+      "cursor://file/Users/me/repo/file.md:186",
+      "vscode://file/Users/me/repo/file.md:3:7",
+      "vscode-insiders://file/Users/me/repo/file.md",
+      "VSCODE://file/C:/Users/me/repo/file.md:3",
+    ]) {
+      expect(isLocalEditorFileHref(href), href).toBe(true);
+    }
+  });
+
+  it("rejects other hosts, userinfo, relative paths, and unknown schemes", () => {
+    for (const href of [
+      "cursor://anysphere.cursor-deeplink/prompt?text=hi",
+      "vscode://user@file/Users/me/repo/file.md",
+      "vscode://file:8080/Users/me/repo/file.md",
+      "vscode://vscode-remote/ssh-remote+example.com/home/user/project",
+      "cursor://file",
+      "cursor:file/Users/me/repo/file.md",
+      "foo://file/Users/me/repo/file.md",
+      "zed://file/Users/me/repo/file.md",
+      "javascript:alert(1)",
+      "./file.md",
+      "",
+    ]) {
+      expect(isLocalEditorFileHref(href), href).toBe(false);
+    }
   });
 });
 

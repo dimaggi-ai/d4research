@@ -1,6 +1,6 @@
 import type { ChatAttachment, EnvironmentId, ThreadId } from "@d4research/contracts";
 import { imageMimeType } from "@d4research/shared/image";
-import type { FilePreviewItem } from "../../components/FilePreviewModal.types";
+import type { FilePreviewItem } from "../../components/ui/FilePreviewModal.types";
 import { markdownImageSources } from "../../lib/markdownImageSources";
 import { resolveMarkdownMediaPreview } from "../../lib/markdownMedia";
 

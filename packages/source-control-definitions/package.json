@@ -16,6 +16,7 @@
     "@d4research/source-control-azure-devops": "workspace:*",
     "@d4research/source-control-bitbucket": "workspace:*",
     "@d4research/source-control-core": "workspace:*",
+    "@d4research/source-control-cursor-origin": "workspace:*",
     "@d4research/source-control-forgejo": "workspace:*",
     "@d4research/source-control-gitcafe": "workspace:*",
     "@d4research/source-control-github": "workspace:*",

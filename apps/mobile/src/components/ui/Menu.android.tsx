@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { cloneElement, isValidElement, type ReactElement } from "react";
-import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
+import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu.android";
 import type { MenuProps } from "./Menu.types";
 
 /** Uses the same actions as iOS menus, with Android appearance and editor anchoring. */

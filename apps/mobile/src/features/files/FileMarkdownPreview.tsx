@@ -16,8 +16,8 @@ import {
 import { ThreadMarkdownVideo } from "../threads/ThreadMarkdownVideo";
 import { resolveMarkdownMediaPreview } from "../../lib/markdownMedia";
 import { normalizeNativeMarkdownUrl } from "../../lib/markdownLinks";
-import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
-import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/ui/VideoPreviewModal";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {

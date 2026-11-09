@@ -9,8 +9,8 @@ import {
   type OrchestrationV2RunAttempt,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
-  type PlanId,
   type RunId,
+  type PlanId,
   type ToolActivitySurface,
   type ToolActivityIcon,
   type ToolActivitySource,
@@ -37,10 +37,7 @@ import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
 } from "@d4research/client-runtime/state/thread-requests";
-import type {
-  ThreadRunSummary,
-  ThreadRuntimeSummary,
-} from "@d4research/client-runtime/state/shell";
+import type { ThreadRunSummary, ThreadRuntimeSummary } from "@d4research/client-runtime/state/shell";
 import { threadRuntimeHasInterruptibleRun } from "@d4research/client-runtime/state/thread-execution";
 import { turnItemIsWorkspacePreparation } from "@d4research/client-runtime/state/turn-item-presentation";
 

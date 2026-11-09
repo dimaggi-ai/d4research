@@ -14,21 +14,14 @@ import {
   threadSearchSubject,
   type ThreadSearchShell,
 } from "@d4research/client-runtime/state/thread-search";
-import {
-  foldSearchQuery,
-  rankSearchItems,
-  scoreThreadSearch,
-} from "@d4research/shared/paletteSearch";
+import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@d4research/shared/paletteSearch";
 import {
   isListedThreadLineage,
   type ContextMenuItem,
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import type {
-  SidebarProjectSortOrder,
-  SidebarThreadSortOrder,
-} from "@d4research/contracts/settings";
+import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@d4research/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import {
   effectiveSnoozed,
@@ -1207,7 +1200,10 @@ export function resolveThreadStatusPill(input: {
 }
 
 export function getFallbackThreadIdAfterDelete<
-  T extends Pick<Thread, "id" | "projectId" | "createdAt" | "updatedAt" | "settledOverride"> &
+  T extends Pick<
+    Thread,
+    "id" | "projectId" | "createdAt" | "updatedAt" | "settledOverride" | "lineage"
+  > &
     ThreadSortInput &
     ThreadSnoozeShell,
 >(input: {
@@ -1231,7 +1227,8 @@ export function getFallbackThreadIdAfterDelete<
           thread.id !== deletedThreadId &&
           !deletedThreadIds?.has(thread.id) &&
           thread.settledOverride !== "settled" &&
-          !effectiveSnoozed(thread, { now }),
+          !effectiveSnoozed(thread, { now }) &&
+          !isSidebarHiddenThread(thread),
       ),
       sortOrder,
     )[0]?.id ?? null

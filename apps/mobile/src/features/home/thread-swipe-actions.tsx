@@ -370,20 +370,30 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
   }));
   const actionStyle = useAnimatedStyle(() => ({ opacity: actionOpacity.value, height: "100%" }));
   const commitPrimaryAction = useCallback(() => {
+    if (!mountedRef.current) return;
     primaryAction.onPress();
     if (!pendingDismissRef.current) swipeableRef.current?.close();
   }, [primaryAction]);
+  const onDelete = props.onDelete;
+  const commitFullSwipe = useCallback(() => {
+    if (!mountedRef.current) return;
+    if (fullSwipeAction === "primary") commitPrimaryAction();
+    else {
+      swipeableRef.current?.close();
+      onDelete();
+    }
+  }, [commitPrimaryAction, fullSwipeAction, onDelete]);
   const handleRelease = useCallback(
-    (translation: SharedValue<number>) => {
+    (translation: SharedValue<number>, canceled: boolean) => {
       "worklet";
       if (dismissing.value) return true;
-      if (fullSwipeAction === "primary" && -translation.value >= fullSwipeThreshold) {
-        runOnJS(commitPrimaryAction)();
+      if (!canceled && -translation.value >= fullSwipeThreshold) {
+        runOnJS(commitFullSwipe)();
         return true;
       }
       return false;
     },
-    [commitPrimaryAction, dismissing, fullSwipeAction, fullSwipeThreshold],
+    [commitFullSwipe, dismissing, fullSwipeThreshold],
   );
   const handleFullSwipeArmedChange = useCallback((armed: boolean) => {
     if (armed && !fullSwipeArmedRef.current) {
@@ -433,11 +443,6 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
             }
 
             props.onSwipeableWillOpen?.(methods);
-            if (fullSwipeArmedRef.current && fullSwipeAction !== "primary") {
-              fullSwipeArmedRef.current = false;
-              methods.close();
-              props.onDelete();
-            }
           }}
           overshootFriction={1}
           overshootRight

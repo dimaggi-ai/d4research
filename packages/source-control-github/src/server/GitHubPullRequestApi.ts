@@ -1,7 +1,4 @@
-import {
-  isCommitSha,
-  normalizeHost,
-} from "@d4research/source-control-core/server/pullRequestUtils";
+import { isCommitSha, normalizeHost } from "@d4research/source-control-core/server/pullRequestUtils";
 import { removeAgentCredits } from "@d4research/source-control-core/server/mergeMessage";
 import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
@@ -2200,9 +2197,9 @@ export const make = Effect.gen(function* () {
           .pipe(
             graphql({ ...input, operation: "getReviewThreadComments" }),
             Effect.map(toReviewThreadCommentsPage),
-            Effect.flatMap(({ belongsToPullRequest, comments, nextCursor }) =>
+            Effect.flatMap(({ belongsToPullRequest, ...page }) =>
               belongsToPullRequest
-                ? Effect.succeed({ comments, nextCursor })
+                ? Effect.succeed(page)
                 : Effect.fail(
                     new GitHubSubjectScopeError({
                       cwd: input.cwd,

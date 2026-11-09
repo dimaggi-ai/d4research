@@ -38,7 +38,7 @@
     "generate:expo-schema": "node scripts/fetch-expo-schema.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.316",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.321",
     "@cursor/sdk": "1.2.0",
     "@d4research/provider-acp": "workspace:*",
     "@d4research/provider-acp-registry": "workspace:*",
@@ -54,6 +54,7 @@
     "@d4research/source-control-azure-devops": "workspace:*",
     "@d4research/source-control-bitbucket": "workspace:*",
     "@d4research/source-control-core": "workspace:*",
+    "@d4research/source-control-cursor-origin": "workspace:*",
     "@d4research/source-control-definitions": "workspace:*",
     "@d4research/source-control-forgejo": "workspace:*",
     "@d4research/source-control-gitcafe": "workspace:*",
@@ -73,7 +74,7 @@
     "proper-lockfile": "4.1.2",
     "saxes": "6.0.0",
     "stream-chain": "^4.2.5",
-    "stream-json": "3.6.0",
+    "stream-json": "3.7.0",
     "transcribe-cpp": "0.4.1",
     "undici": "catalog:",
     "yaml": "catalog:",

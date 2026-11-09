@@ -8,7 +8,6 @@ d4research is a private workspace for long-running research across models and co
 - [Starter research scenario](./user/starter-research.md)
 - [Starter sample corpus](./user/samples/kitten-fluffiness.md)
 - [Install and first run](./user/install.md)
-- [Welcome wizard](./user/welcome-wizard.md)
 - [Product concepts](./user/concepts.md)
 - [Troubleshooting](./user/troubleshooting.md)
 - [The composer](./user/composer.md)
@@ -24,6 +23,7 @@ d4research is a private workspace for long-running research across models and co
 - [Terminal history](./user/terminal.md)
 
 - [Voice input](./user/voice-input.md)
+- [Text generation models](./user/text-generation.md)
 - [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Organizing threads](./user/thread-sidebar.md)

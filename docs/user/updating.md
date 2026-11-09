@@ -73,8 +73,11 @@ the d4research CLI updater installs fork release archives.
 
 On web and desktop, **Settings → Providers** shows provider updates for the selected environment.
 **Update all** updates every outdated provider on every connected environment
-at once. Hover over **Update all** to see which providers it will update. Providers that d4research
-cannot update automatically remain available for manual updating from their provider row.
+at once. Hover it to see which providers it will update. A provider is left out
+when any of its enabled, outdated instances offers only a manual update command,
+or when its instances use different update commands, such as two instances that
+run different CLI installs. Update those by hand, or point every instance of the
+provider at the same CLI.
 
 ## Remote Clients
 

@@ -15,6 +15,9 @@ Manage shared usage and credits through **Manage usage** in d4research.
 If a request requires a feature not covered by ChatGPT plan sharing, use another
 provider for that request.
 
+Fast and Ultrafast speeds are unavailable with this connection. To use the speed
+options your account supports, [use an existing Codex login](#use-an-existing-codex-login).
+
 When reconnecting, select the same Codex account you used before, in both d4research
 and on OpenAI's sign-in page. Disconnecting stops running threads but keeps their history.
 You can reconnect later.
@@ -28,6 +31,13 @@ panel. If the page fails to load, copy the URL from the browser's address bar in
 d4research can use your installed Codex and its existing login. Run `codex login`
 on the machine where the environment is running. See [Provider setup](./install.md#providers)
 for installation and custom configuration.
+
+Running `codex login` does not change a managed ChatGPT connection. In
+**Settings > Providers**, add a Codex instance, choose **Configure manually**,
+and complete the wizard. Then select that instance from the thread's model
+picker. See [Use multiple accounts](#use-multiple-accounts).
+
+## Use multiple accounts
 
 Common reasons:
 

@@ -29,7 +29,8 @@ type ComposerProviderStateInput = {
   models: ReadonlyArray<ServerProviderModel>;
   promptInjectionState?: ComposerPromptInjectionState;
   modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined;
-  planModeEnabled: boolean;
+  planModeEnabled?: boolean;
+  includePlanAgent?: boolean;
 };
 
 type ComposerPromptInjectionState = "none" | "ultrathink";
@@ -86,7 +87,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     models,
     modelOptions,
     promptInjectionState = "none",
-    planModeEnabled,
+    planModeEnabled = input.includePlanAgent ?? false,
   } = input;
   if (provider === "opencode") {
     const normalizedModel = normalizeModelSlug(model, provider);
@@ -148,7 +149,8 @@ export function getComposerReasoningStep(input: {
   reportedModelSelection?: ModelSelection | null | undefined;
   prompt: string;
   cursor: number;
-  planModeEnabled: boolean;
+  planModeEnabled?: boolean;
+  includePlanAgent?: boolean;
   direction: 1 | -1;
 }): {
   prompt: string;
@@ -161,7 +163,7 @@ export function getComposerReasoningStep(input: {
     input.model,
     input.provider,
     input.modelOptions,
-    input.planModeEnabled,
+    input.includePlanAgent ?? input.planModeEnabled ?? false,
   );
   const step = getReasoningTraitStep({
     provider: input.provider,
@@ -171,7 +173,7 @@ export function getComposerReasoningStep(input: {
     modelOptions: selections,
     reportedModelSelection: input.reportedModelSelection,
     prompt,
-    planModeEnabled: input.planModeEnabled,
+    includePlanAgent: input.includePlanAgent ?? input.planModeEnabled ?? false,
     direction: input.direction,
   });
   if (!step) return null;
@@ -187,13 +189,15 @@ type TraitsRenderInput = {
   instanceId?: ProviderInstanceId;
   threadRef?: ScopedThreadRef;
   draftId?: DraftId;
+  onDraftModelOptionsChange?: () => void;
   model: string;
   models: ReadonlyArray<ServerProviderModel>;
   modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
   reportedModelSelection?: ModelSelection | null | undefined;
   promptUltrathink: PromptUltrathink;
   onPromptEdit: (edit: (prompt: string) => string) => void;
-  planModeEnabled: boolean;
+  planModeEnabled?: boolean;
+  includePlanAgent?: boolean;
   size?: ComposerControlSize;
   hidden?: boolean;
   triggerClassName?: string;
@@ -212,13 +216,14 @@ function renderTraitsControl(
     instanceId,
     threadRef,
     draftId,
+    onDraftModelOptionsChange,
     model,
     models,
     modelOptions,
     reportedModelSelection,
     promptUltrathink,
     onPromptEdit,
-    planModeEnabled,
+    planModeEnabled = input.includePlanAgent ?? false,
     size,
     hidden,
     triggerClassName,
@@ -244,7 +249,7 @@ function renderTraitsControl(
       model,
       modelOptions: resolvedModelOptions,
       promptUltrathink,
-      planModeEnabled,
+      includePlanAgent: planModeEnabled,
     })
   ) {
     return null;
@@ -256,12 +261,13 @@ function renderTraitsControl(
       models={models}
       {...(threadRef ? { threadRef } : {})}
       {...(draftId ? { draftId } : {})}
+      {...(onDraftModelOptionsChange ? { onDraftModelOptionsChange } : {})}
       model={model}
       modelOptions={resolvedModelOptions}
       reportedModelSelection={reportedModelSelection}
       promptUltrathink={promptUltrathink}
       onPromptEdit={onPromptEdit}
-      planModeEnabled={planModeEnabled}
+      includePlanAgent={planModeEnabled}
       {...(size !== undefined ? { size } : {})}
       {...(hidden !== undefined ? { hidden } : {})}
       {...(triggerClassName !== undefined ? { triggerClassName } : {})}

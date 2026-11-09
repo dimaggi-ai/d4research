@@ -34,7 +34,6 @@ import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost
 import { CursorDriver } from "./driver.ts";
 import * as CursorAgentSdk from "./CursorAgentSdk.ts";
 import * as CursorSdk from "./CursorSdk.ts";
-import * as CursorKeychain from "./CursorKeychain.ts";
 import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
@@ -50,11 +49,6 @@ const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
   Layer.provideMerge(
     Layer.mock(CursorAgentSdk.CursorAgentSdkRunner)({
       open: () => Effect.die("Maintenance resolution must not open a Cursor session"),
-    }),
-  ),
-  Layer.provideMerge(
-    Layer.succeed(CursorKeychain.CursorKeychain, {
-      accessToken: Effect.die("The driver test must not read the Keychain"),
     }),
   ),
   Layer.provideMerge(

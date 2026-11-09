@@ -137,7 +137,7 @@ export function applyShellStreamEvent(
   snapshot: OrchestrationV2ShellSnapshot,
   event: Exclude<
     OrchestrationV2ShellStreamItem,
-    { readonly kind: "snapshot" } | { readonly kind: "synchronized" }
+    { readonly kind: "snapshot" | "synchronized" | "snapshot-required" }
   >,
   pendingMonitorUpdates?: Map<ThreadId, AgentMonitorUpdate>,
 ): OrchestrationV2ShellSnapshot {
@@ -264,7 +264,7 @@ export function createShellStreamEventReducer(maxPendingMonitorUpdates = 1_000) 
       snapshot: OrchestrationV2ShellSnapshot,
       event: Exclude<
         OrchestrationV2ShellStreamItem,
-        { readonly kind: "snapshot" | "synchronized" }
+        { readonly kind: "snapshot" | "synchronized" | "snapshot-required" }
       >,
     ) => {
       const next = applyShellStreamEvent(snapshot, event, pending);
@@ -300,9 +300,9 @@ function batchRows<T extends { readonly id: unknown }>(rows: ReadonlyArray<T>) {
   };
 }
 
-export type ShellStreamEvent = Exclude<
+export type ShellStreamEvent = Extract<
   OrchestrationV2ShellStreamItem,
-  { readonly kind: "snapshot" | "synchronized" | "monitor.snapshot" | "monitor.updated" }
+  { readonly sequence: number }
 >;
 
 /** Apply ordered deltas with one index and at most one new array per collection. */

@@ -19,6 +19,7 @@
     "generate": "graphqlgen"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
     "@d4research/contracts": "workspace:*",
     "@d4research/provider-core": "workspace:*",
     "@d4research/shared": "workspace:*",
@@ -28,7 +29,6 @@
   "devDependencies": {
     "@d4research/source-control-testing": "workspace:*",
     "@effect/graphql-generator": "catalog:",
-    "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"

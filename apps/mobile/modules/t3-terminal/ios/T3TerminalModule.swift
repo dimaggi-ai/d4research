@@ -7,7 +7,7 @@ public class T3TerminalModule: Module {
     // Bumped when native hardware-keyboard handling changes; surfaced in the JS debug
     // logs so a stale native binary is distinguishable from a broken key pipeline.
     Constants([
-      "hardwareKeyRevision": 3,
+      "hardwareKeyRevision": 4,
       "outputRevision": 1,
     ])
 
@@ -67,7 +67,15 @@ public class T3TerminalModule: Module {
       Prop("captureRequest") { (view: T3TerminalView, request: Double) in
         view.captureRequest = request
       }
-      Events("onInput", "onResize", "onCapture")
+
+      Prop("sharedGrid") { (view: T3TerminalView, sharedGrid: [Int]) in
+        view.sharedGrid = sharedGrid
+      }
+      Events("onInput", "onResize", "onCapture", "onPaste")
+
+      OnViewDidUpdateProps { (view: T3TerminalView) in
+        view.applyPendingBuffer()
+      }
     }
   }
 }

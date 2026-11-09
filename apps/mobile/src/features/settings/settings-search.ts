@@ -1,8 +1,4 @@
-import {
-  foldSearchQuery,
-  rankSearchItems,
-  scoreSearchTerms,
-} from "@d4research/shared/paletteSearch";
+import { foldSearchQuery, rankSearchItems, scoreSearchTerms } from "@d4research/shared/paletteSearch";
 
 import type { SettingsPageTarget } from "./components/settings-page-targets";
 
@@ -28,6 +24,12 @@ const SETTINGS_SEARCH_TERMS = {
     "terminal",
     "word break",
     "math",
+    "tool calls in chat",
+    "hide tool calls",
+    "commands edits searches",
+    "work log",
+    "zen",
+    "final answers only",
   ],
   SettingsNavigation: ["tabs", "tab order", "reorder", "hide tabs"],
   SettingsKeyboard: ["return key", "send message", "new line", "hardware keyboard"],
@@ -105,17 +107,11 @@ const SETTINGS_SEARCH_TERMS = {
     "start from remote",
   ],
   SettingsLabs: [
-    "legacy",
-    "plan mode",
     "beta",
     "linked environments",
     "link machine",
-    "tool calls in chat",
-    "hide tool calls",
-    "commands edits searches",
-    "work log",
-    "zen",
-    "final answers only",
+    "fast worktree checkout",
+    "clone cache",
   ],
   SettingsEnvironmentMaintenance: ["updates", "provider updates", "restart", "manage environments"],
   SettingsAbout: [

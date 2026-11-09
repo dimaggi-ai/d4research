@@ -13,14 +13,12 @@ import { useEnvironmentQuery } from "~/state/query";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
+import {
+  filterAvailableSettingsSearchItems,
+  getThreadAutoSettlementSearchAvailability,
+} from "./settingsSearch";
 
-import type { SettingsScopeSearch } from "./settingsScope";
-
-import { filterAvailableSettingsSearchItems } from "./settingsSearch";
-
-import { getThreadAutoSettlementSearchAvailability } from "./settingsSearch";
-
-export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
+export function useAvailableSettingsSearchItems() {
   const { environments } = useEnvironments();
   // Explicit booleans keep flags out of the filter cache so environment updates do not rebuild the list.
   const hasEnvironment =
@@ -32,15 +30,18 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
         hasServerConfig: environment.serverConfig !== null,
       }),
     ) === true;
-  const hasMacProviderSettingsEnvironment =
+  // Any machine that offers it; the row then shows for a settings scope where all selected ones do.
+  const hasFastWorktreeCheckoutEnvironment =
     environments.some(
       (environment) =>
-        (scopeSearch.machine === undefined || environment.environmentId === scopeSearch.machine) &&
-        environment.serverConfig?.environment.platform.os === "darwin" &&
-        isProviderSettingsEnvironmentAvailable({
-          connectionPhase: environment.connection.phase,
-          hasServerConfig: true,
-        }),
+        environment.connection.phase === "connected" &&
+        environment.serverConfig?.environment.capabilities.fastWorktreeCheckout === true,
+    ) === true;
+  const hasTextGeneratorsEnvironment =
+    environments.some(
+      (environment) =>
+        environment.serverConfig !== null &&
+        environment.serverConfig.managedPolicy?.limits?.providers?.allowedDrivers === undefined,
     ) === true;
   const hasThreadAutoSettlement =
     getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0;
@@ -58,7 +59,6 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     localEnvironmentDisabled,
     hasEnvironment,
     hasProviderSettingsEnvironment,
-    hasMacProviderSettingsEnvironment,
     canManageLocalBackend,
     isWslSettingsRowVisible: isWslSettingsRowVisible({
       state: desktopWsl.data,
@@ -66,5 +66,8 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     }),
     hasThreadAutoSettlement,
     hasPeerLinkHost,
+    hasFastWorktreeCheckoutEnvironment,
+    hasTextGeneratorsEnvironment,
+    hasPrimaryEnvironment: primaryEnvironmentId !== null,
   });
 }

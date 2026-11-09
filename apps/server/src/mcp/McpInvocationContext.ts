@@ -146,10 +146,12 @@ export interface McpInvocationScope {
 /**
  * T3 Code renders `t3-thread://` links as thread chips. Other MCP clients cannot open them, so
  * they get a web URL on the origin they reached, or an explicit hosted-app override.
+ * A known `title` labels the chip for clients that cannot load this environment's threads.
  */
 export const threadLinkFor = (
   scope: Pick<McpInvocationScope, "environmentId" | "client">,
   threadId: ThreadId,
+  title?: string,
 ): string => {
   const origin = scope.client?.webOrigin;
   if (origin !== undefined) {
@@ -157,7 +159,9 @@ export const threadLinkFor = (
   }
   const hostedAppUrl = scope.client?.hostedAppUrl;
   const ref = { environmentId: scope.environmentId, threadId };
-  return hostedAppUrl === undefined ? formatThreadLink(ref) : hostedThreadLink(ref, hostedAppUrl);
+  return hostedAppUrl === undefined
+    ? formatThreadLink(ref, title)
+    : hostedThreadLink(ref, hostedAppUrl);
 };
 
 export class McpInvocationContext extends Context.Service<

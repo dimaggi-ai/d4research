@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId } from "@d4research/contracts";
-import type { FilePreviewItem } from "../components/FilePreviewModal.types";
+import type { FilePreviewItem } from "../components/ui/FilePreviewModal.types";
 import { filePreviewGallery, filePreviewKey, filePreviewName } from "./filePreviewGallery";
 
 const first: FilePreviewItem = { kind: "image", uri: "https://example.com/first.png" };

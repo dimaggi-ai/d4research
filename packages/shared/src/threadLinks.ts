@@ -11,8 +11,9 @@ const HOSTED_PREFIX = `${DEFAULT_HOSTED_APP_URL}/threads/`;
 const HOSTED_SEGMENT = "[A-Za-z0-9_%-]+";
 const HOSTED_LINK = `${HOSTED_PREFIX.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}${HOSTED_SEGMENT}/${HOSTED_SEGMENT}`;
 // Code comes first in the alternation so a link written inside a code span or fence is skipped.
+// A labeled link's destination may be angle-bracketed, as CommonMark allows: [label](<href>).
 const THREAD_LINK_OUTSIDE_CODE = new RegExp(
-  String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(\`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?<href>t3-thread:\/\/v[12]\/[^\s)]+|${HOSTED_LINK})\)|<(?<autolink>t3-thread:\/\/v[12]\/[^\s<>]+|${HOSTED_LINK})>|(?<bare>${HOSTED_LINK})(?![\w%/?#-])|(?<![\w/<])(?<protocolBare>t3-thread:\/\/v[12]\/[^\s<>()[\]]+)`,
+  String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(\`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?:<(?<angleHref>t3-thread:\/\/v[12]\/[^\s<>]+|${HOSTED_LINK})>|(?<href>t3-thread:\/\/v[12]\/[^\s>)]+|${HOSTED_LINK}))\)|<(?<autolink>t3-thread:\/\/v[12]\/[^\s<>]+|${HOSTED_LINK})>|(?<bare>${HOSTED_LINK})(?![\w%/?#-])|(?<![\w/<])(?<protocolBare>t3-thread:\/\/v[12]\/[^\s<>()[\]]+)`,
   "g",
 );
 // A bare URL ends a sentence too; the closing punctuation is not part of the thread id.
@@ -75,7 +76,7 @@ export function parseThreadLinkHref(href: string): ThreadLink | null {
   return environmentId === null || threadId === null ? null : { environmentId, threadId };
 }
 
-export function percentDecodedThreadLinkId(threadId: ThreadId): ThreadId | null {
+function percentDecodedThreadLinkId(threadId: ThreadId): ThreadId | null {
   try {
     const decoded = decodeURIComponent(threadId);
     return decoded === threadId ? null : Option.getOrNull(decodeThreadId(decoded));
@@ -129,7 +130,9 @@ const linkLabel = (label: string | undefined) =>
 /** Without a label, an autolink: clients show the thread's current title. */
 export function formatThreadLink(ref: ThreadLink, label?: string): string {
   const cleaned = linkLabel(label);
-  return cleaned ? `[${cleaned}](${threadLinkHref(ref)})` : `<${threadLinkHref(ref)}>`;
+  const href = threadLinkHref(ref);
+  const destination = /[()]/.test(href) ? `<${href}>` : href;
+  return cleaned ? `[${cleaned}](${destination})` : `<${href}>`;
 }
 
 /** What a person copies out of T3 Code: a Markdown link that opens the thread anywhere. */
@@ -157,6 +160,7 @@ export function threadLinkRefs(
   const pattern = new RegExp(THREAD_LINK_OUTSIDE_CODE);
   for (let match = pattern.exec(markdown); match !== null; match = pattern.exec(markdown)) {
     const href =
+      match.groups?.angleHref ??
       match.groups?.href ??
       match.groups?.autolink ??
       match.groups?.bare ??
@@ -187,10 +191,10 @@ export function replaceThreadLinks(
   if (!hasThreadLinks(markdown)) return markdown;
   return markdown.replace(THREAD_LINK_OUTSIDE_CODE, (source, ...args) => {
     const groups = args.at(-1) as Partial<
-      Record<"href" | "autolink" | "bare" | "protocolBare" | "label", string>
+      Record<"angleHref" | "href" | "autolink" | "bare" | "protocolBare" | "label", string>
     >;
     const protocolBare = groups.protocolBare?.replace(TRAILING_PUNCTUATION, "");
-    const href = groups.href ?? groups.autolink ?? groups.bare ?? protocolBare;
+    const href = groups.angleHref ?? groups.href ?? groups.autolink ?? groups.bare ?? protocolBare;
     const link = href === undefined ? null : parseThreadLinkHref(href);
     const label = groups.label && URL_LABEL.test(groups.label.trim()) ? undefined : groups.label;
     const replacement = link && replace(link, label);

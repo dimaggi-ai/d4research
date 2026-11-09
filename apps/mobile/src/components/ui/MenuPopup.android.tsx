@@ -14,7 +14,7 @@ import { resolveScaledTextRole } from "../../lib/appearancePreferences";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import type { MenuPopupProps } from "./MenuPopup";
-import { isAppSymbolName, SymbolView, type AppSymbolName } from "./AppSymbol";
+import { isAppSymbolName, SymbolView, type AppSymbolName } from "./AppSymbol.android";
 
 // The glyph is a React Native view hosted in the Compose row, and its native host consumes
 // every touch over it, so the row's onClick never sees a tap on the icon. The glyph runs the

@@ -62,6 +62,7 @@ interface TerminalSurfaceProps extends ViewProps {
   readonly onCapture?: (text: string) => void;
   readonly theme?: TerminalTheme;
   readonly onInput: (data: string) => void;
+  readonly onPaste?: (text: string) => void;
   readonly onResize: (size: { readonly cols: number; readonly rows: number }) => void;
 }
 
@@ -314,6 +315,9 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
           style={{ flex: 1 }}
           themeConfig={buildGhosttyThemeConfig(theme)}
           onInput={handleNativeInput}
+          onPaste={(event) => {
+            if (props.isRunning && !props.readOnly) props.onPaste?.(event.nativeEvent.text);
+          }}
           onResize={handleNativeResize}
           captureRequest={props.captureRequest}
           onCapture={(event) => props.onCapture?.(event.nativeEvent.text)}

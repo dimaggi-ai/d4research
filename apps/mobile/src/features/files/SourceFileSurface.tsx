@@ -2,16 +2,18 @@ import { keyTextOccurrences } from "../review/textOccurrenceKeys";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import type { ComponentType } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   Text as NativeText,
   useWindowDimensions,
   View,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { LoadingStrip } from "../../components/ui/LoadingStrip";
@@ -35,8 +37,13 @@ import {
 } from "./nativeSourceFileAdapter";
 import { SourceText } from "@d4research/mobile-source-text";
 
-import { boundedSelectableSourceTokens, prepareSourceFileDocument } from "./source-file-document";
+import {
+  boundedSelectableSourceTokens,
+  prepareSourceFileDocument,
+  selectableSourceHtml,
+} from "./source-file-document";
 import { sourceHighlightAtom } from "./sourceHighlightingState";
+import { createSourceLineScroll } from "./source-file-scroll";
 
 interface SourceFileSurfaceProps {
   readonly contents: string;
@@ -45,6 +52,7 @@ interface SourceFileSurfaceProps {
   readonly initialLine?: number | null;
   readonly headerInsetTop?: number;
   readonly selectable?: boolean;
+  readonly onLongPressLine?: (line: number) => void;
   readonly onRefresh?: () => Promise<void> | void;
 }
 
@@ -57,8 +65,10 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
   readonly tokens: ReadonlyArray<ReviewHighlightedToken> | null;
   readonly highlighted: boolean;
   readonly wordBreak: boolean;
+  readonly onLongPress?: () => void;
 }) {
-  return (
+  const selectable = props.onLongPress === undefined;
+  const row = (
     <View
       className={cn("flex-row", props.highlighted && "bg-primary/10")}
       style={{ minHeight: props.codeSurface.rowHeight }}
@@ -75,7 +85,7 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
         {props.index + 1}
       </NativeText>
       <NativeText
-        selectable
+        selectable={selectable}
         selectionColorClassName={Platform.OS === "android" ? "accent-focus/32" : undefined}
         numberOfLines={props.wordBreak ? undefined : 1}
         className="flex-1 font-normal text-foreground"
@@ -105,7 +115,7 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
                 return (
                   <NativeText
                     key={`${start}:${token.content.length}:${token.color ?? ""}`}
-                    selectable
+                    selectable={selectable}
                     selectionColorClassName={
                       Platform.OS === "android" ? "accent-focus/32" : undefined
                     }
@@ -124,6 +134,20 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
           : renderVisibleWhitespace(props.line || " ")}
       </NativeText>
     </View>
+  );
+  const onLongPress = props.onLongPress;
+  return onLongPress ? (
+    <Pressable
+      onLongPress={onLongPress}
+      accessibilityActions={[{ name: "longpress", label: "Select text" }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "longpress") onLongPress();
+      }}
+    >
+      {row}
+    </Pressable>
+  ) : (
+    row
   );
 });
 
@@ -183,7 +207,7 @@ function NativeSourceFileSurface(
     readonly NativeView: ComponentType<NativeReviewDiffViewProps>;
   },
 ) {
-  const { NativeView, onRefresh } = props;
+  const { NativeView, onLongPressLine, onRefresh } = props;
   const insets = useSafeAreaInsets();
   const columnMetrics = useNativeColumnLayoutMetrics();
   const safeArea = columnMetrics?.safeArea ?? insets;
@@ -226,6 +250,11 @@ function NativeSourceFileSurface(
         styleJson={styleJson}
         themeJson={themeJson}
         tokensJson={tokensJson}
+        onPressLine={({ nativeEvent }) => {
+          if (nativeEvent.gesture === "longPress" && nativeEvent.newLineNumber !== undefined) {
+            onLongPressLine?.(nativeEvent.newLineNumber);
+          }
+        }}
         {...(onRefresh
           ? {
               refreshing: isPullRefreshing,
@@ -239,7 +268,8 @@ function NativeSourceFileSurface(
 
 function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
   const usesAutomaticInsets = Platform.OS === "ios" && !props.embedded;
-  const foreground = useUniwindTheme()["--color-foreground"];
+  const appTheme = useUniwindTheme();
+  const foreground = appTheme["--color-foreground"];
   const { codeSurface, codeWordBreak } = useAppearanceCodeSurface();
   const { normalizedContents, lines, status, targetIndex, tokens } = useSourceFileModel(props);
   const selectableTokens = useMemo(
@@ -247,52 +277,45 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     [props.selectable, tokens],
   );
   const listRef = useRef<FlatList<string>>(null);
+  const [lineScroll] = useState(createSourceLineScroll);
   const { isPullRefreshing, handlePullToRefresh } = useSourceFileRefresh(props.onRefresh);
   const refreshControl = props.onRefresh ? (
     <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullToRefresh()} />
   ) : undefined;
 
-  const scrollRequest = useMemo(
-    () => ({ path: props.path, index: targetIndex }),
-    [props.path, targetIndex],
-  );
+  const usesLineList = !props.selectable;
+  // Android lays out a full selectable TextView on the UI thread, which can stall large files.
+  const usesWebSelection = props.selectable === true && Platform.OS === "android";
+  const usesTextSelection = props.selectable === true && !usesWebSelection;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Scroll the native source list to the requested line after layout.
-  useEffect(() => {
-    const { index } = scrollRequest;
-    if (index === null) {
+  // Layout effect so a pending jump is cancelled in the commit that swaps the file.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the FlatList to the target line and cancels a pending jump when the file changes
+  useLayoutEffect(() => {
+    if (targetIndex === null || !usesLineList) {
       return;
     }
-    const frame = requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({
-        index,
-        animated: false,
-        viewPosition: 0.3,
-      });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [scrollRequest]);
+    lineScroll.scrollToLine(listRef.current, targetIndex);
+    return lineScroll.cancel;
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Opening another file at the same line index, or leaving selection mode, scrolls the remounted list to it.
+  }, [lineScroll, props.path, targetIndex, usesLineList]);
 
-  const renderLine = useCallback(
-    ({ item, index }: { item: string; index: number }) => (
-      <HighlightedSourceLine
-        codeSurface={codeSurface}
-        index={index}
-        line={item}
-        tokens={tokens?.[index] ?? null}
-        highlighted={index === targetIndex}
-        wordBreak={codeWordBreak}
-      />
-    ),
-    [codeSurface, codeWordBreak, targetIndex, tokens],
+  const { onLongPressLine } = props;
+  const renderLine = ({ item, index }: { item: string; index: number }) => (
+    <HighlightedSourceLine
+      codeSurface={codeSurface}
+      index={index}
+      line={item}
+      tokens={tokens?.[index] ?? null}
+      highlighted={index === targetIndex}
+      wordBreak={codeWordBreak}
+      onLongPress={onLongPressLine ? () => onLongPressLine(index + 1) : undefined}
+    />
   );
 
-  // One native text selection scope lets Select All include the whole file;
-  // FlatList rows would restrict selection to individual lines.
-  const selectableBlock = props.selectable ? (
+  // One native text view permits document-wide selection; virtualized rows cannot.
+  const selectableBlock = usesTextSelection ? (
     <SourceText
       selectable
-      selectionColorClassName={Platform.OS === "android" ? "accent-focus/32" : undefined}
       style={{
         color: foreground,
         fontFamily: REVIEW_MONO_FONT_FAMILY,
@@ -335,6 +358,33 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     </SourceText>
   ) : null;
 
+  const webSelection = usesWebSelection ? (
+    <WebView
+      source={{
+        html: selectableSourceHtml(normalizedContents, {
+          foreground,
+          selection: appTheme["--color-focus"],
+          fontSize: codeSurface.fontSize,
+          rowHeight: codeSurface.rowHeight,
+          wordBreak: codeWordBreak,
+        }),
+      }}
+      originWhitelist={["*"]}
+      // Android pastes copied HTML as styled text with collapsed whitespace, so copy plain text.
+      // Wrapped text reflows once the WebView reaches its final width, so scroll again then.
+      injectedJavaScript={`addEventListener("copy",(event)=>{event.clipboardData.setData("text/plain",getSelection().toString());event.preventDefault();});${
+        targetIndex === null
+          ? ""
+          : `const line=document.getElementById("L${targetIndex + 1}");const reveal=()=>line?.scrollIntoView({block:"center"});reveal();addEventListener("resize",reveal,{once:true});`
+      }true;`}
+      domStorageEnabled={false}
+      cacheEnabled={false}
+      setSupportMultipleWindows={false}
+      onShouldStartLoadWithRequest={(request) => request.url === "about:blank"}
+      style={{ flex: 1, backgroundColor: "transparent" }}
+    />
+  ) : null;
+
   const list = (
     <FlatList
       ref={listRef}
@@ -361,10 +411,11 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
         paddingTop: 8,
       }}
       renderItem={renderLine}
+      onScrollToIndexFailed={lineScroll.onScrollToIndexFailed}
+      onScrollBeginDrag={lineScroll.cancel}
     />
   );
 
-  const usesLineList = !props.selectable;
   const padded = (
     <ScrollView
       refreshControl={refreshControl}
@@ -383,7 +434,7 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
 
   return (
     <View className="relative flex-1 bg-sheet">
-      <SourceHighlightStatusView status={status} />
+      {usesWebSelection ? null : <SourceHighlightStatusView status={status} />}
       {usesLineList ? (
         codeWordBreak ? (
           list
@@ -392,6 +443,8 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
             {list}
           </ScrollView>
         )
+      ) : usesWebSelection ? (
+        webSelection
       ) : codeWordBreak ? (
         padded
       ) : (

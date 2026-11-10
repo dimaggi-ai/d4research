@@ -1,6 +1,6 @@
 // @effect-diagnostics effectFnOpportunity:warning -- d4research module predating the Effect.fn style rule.
 import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
-import { ThreadId } from "@d4research/contracts";
+import { ThreadId, type D4BrainContext } from "@d4research/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Synchronous hashing and exclusive temporary names are required inside the filesystem transaction.
 import * as NodeCrypto from "node:crypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Pure path operations also run inside synchronous SQLite and filesystem boundaries.
@@ -38,6 +38,7 @@ import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import { KumbukaBrain } from "./KumbukaBrain.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as Files from "./SecondBrainFiles.ts";
 import * as Index from "./SecondBrainIndex.ts";
@@ -78,8 +79,15 @@ export class SecondBrainService extends Context.Service<
     readonly status: () => BrainEffect<BrainStatus>;
     readonly map: () => BrainEffect<BrainMap>;
     readonly catalog: () => BrainEffect<readonly BrainCatalogEntry[]>;
-    readonly read: (input: BrainReadInput) => BrainEffect<BrainReadResult>;
-    readonly search: (input: BrainSearchInput) => BrainEffect<BrainSearchResponse>;
+    /** With a context and Kumbuka configured, the page comes from Kumbuka under that context's token. */
+    readonly read: (
+      input: BrainReadInput,
+      context?: D4BrainContext,
+    ) => BrainEffect<BrainReadResult>;
+    readonly search: (
+      input: BrainSearchInput,
+      context?: D4BrainContext,
+    ) => BrainEffect<BrainSearchResponse>;
     readonly backlinks: (file: string) => BrainEffect<{ paths: string[]; truncated: boolean }>;
     readonly lint: () => BrainEffect<{ issues: BrainLintIssue[]; truncated: boolean }>;
     readonly reindex: () => BrainEffect<BrainStatus>;
@@ -113,6 +121,7 @@ export class SecondBrainService extends Context.Service<
       providerThreadId?: string;
       projectTitle?: string;
       workspacePath?: string;
+      brainContext?: D4BrainContext;
     }) => BrainEffect<BrainTurnContext>;
   }
 >()("d4research/second-brain/SecondBrainService") {}
@@ -193,10 +202,12 @@ function linkGraph(notes: NoteDocument[]) {
     }
   return { resolve, inbound, backlinks, titles, ids };
 }
+// Kumbuka always returns its best passages; below this reranker score they are not injected unasked.
+const INJECTION_FLOOR = 0.3;
 const isApprovedPath = (path: string) => path !== "log.md" && !path.startsWith("raw/");
 function boundedRead(
   file: string,
-  snapshot: Files.FileSnapshot,
+  snapshot: Pick<Files.FileSnapshot, "content" | "hash">,
   startLine = 1,
   endLine?: number,
 ): BrainReadResult {
@@ -233,6 +244,7 @@ const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;
   const files = yield* Files.SecondBrainFiles;
   const index = yield* Index.SecondBrainIndex;
+  const kumbuka = yield* KumbukaBrain;
   const readOwnership = yield* AgentAccess.ownershipSnapshot;
   const isOrdinaryEvidence = (
     proposal: Pick<BrainProposal, "evidence">,
@@ -860,24 +872,36 @@ const make = Effect.gen(function* () {
         }),
       ),
     ),
-    read: Effect.fn("SecondBrainService.read")((input) =>
-      locked(
-        Effect.gen(function* () {
-          const valid = yield* validate(BrainReadInput, input);
-          const { root: vault } = yield* configure;
-          const data = yield* files.read(vault, valid.path);
-          return yield* pure(() => boundedRead(valid.path, data, valid.startLine, valid.endLine));
-        }),
-      ),
+    read: Effect.fn("SecondBrainService.read")((input, context) =>
+      context !== undefined && kumbuka.enabled
+        ? Effect.gen(function* () {
+            const valid = yield* validate(BrainReadInput, input);
+            const page = yield* kumbuka.page(context, valid.path);
+            return yield* pure(() => boundedRead(valid.path, page, valid.startLine, valid.endLine));
+          })
+        : locked(
+            Effect.gen(function* () {
+              const valid = yield* validate(BrainReadInput, input);
+              const { root: vault } = yield* configure;
+              const data = yield* files.read(vault, valid.path);
+              return yield* pure(() =>
+                boundedRead(valid.path, data, valid.startLine, valid.endLine),
+              );
+            }),
+          ),
     ),
-    search: Effect.fn("SecondBrainService.search")((input) =>
-      locked(
-        Effect.gen(function* () {
-          const valid = yield* validate(BrainSearchInput, input);
-          const { vault, config, snapshot } = yield* ready();
-          return yield* searchIn(vault, config, snapshot, valid);
-        }),
-      ),
+    search: Effect.fn("SecondBrainService.search")((input, context) =>
+      context !== undefined && kumbuka.enabled
+        ? Effect.flatMap(validate(BrainSearchInput, input), (valid) =>
+            kumbuka.search(context, valid),
+          )
+        : locked(
+            Effect.gen(function* () {
+              const valid = yield* validate(BrainSearchInput, input);
+              const { vault, config, snapshot } = yield* ready();
+              return yield* searchIn(vault, config, snapshot, valid);
+            }),
+          ),
     ),
     backlinks: Effect.fn("SecondBrainService.backlinks")((file) =>
       locked(
@@ -1296,16 +1320,19 @@ const make = Effect.gen(function* () {
             if (included < catalog.length)
               append(`(+${catalog.length - included} more notes: use brain_search)\n`);
           }
-          const found = yield* searchIn(
-            vault,
-            config,
-            snapshot,
-            {
-              query: input.userText.slice(0, 4096),
-              limit: config.injection.retrievalResults,
-            },
-            true,
-          );
+          const wanted = {
+            query: input.userText.slice(0, 4096),
+            limit: config.injection.retrievalResults,
+          };
+          // The core block stays on the vault; retrieved passages follow the thread's context.
+          const found = kumbuka.enabled
+            ? yield* kumbuka.search(input.brainContext ?? "Global", wanted).pipe(
+                Effect.map((reply) => ({
+                  ...reply,
+                  results: reply.results.filter((hit) => hit.score >= INJECTION_FLOOR),
+                })),
+              )
+            : yield* searchIn(vault, config, snapshot, wanted, true);
           let retrieved = "";
           const citations: BrainCitation[] = [];
           for (const { citation: c, score } of found.results) {

@@ -12,6 +12,7 @@ import * as AlmanacService from "./almanac/AlmanacService.ts";
 import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
 import * as SecondBrainCaptureReactor from "./second-brain/SecondBrainCaptureReactor.ts";
 import * as Scheduler from "./scheduling/Scheduler.ts";
+import * as KumbukaBrain from "./second-brain/KumbukaBrain.ts";
 import * as SecondBrainService from "./second-brain/SecondBrainService.ts";
 import * as SecondBrainFiles from "./second-brain/SecondBrainFiles.ts";
 import * as SecondBrainIndex from "./second-brain/SecondBrainIndex.ts";
@@ -289,6 +290,7 @@ const layerSecondBrain = SecondBrainService.layer.pipe(
   Layer.provide(SecondBrainFiles.layer),
   Layer.provideMerge(SecondBrainIndex.layer),
   Layer.provide(SecondBrainEmbeddings.layer),
+  Layer.provide(KumbukaBrain.layer),
   Layer.provide(layerServerSettings),
 );
 

@@ -20,7 +20,13 @@ import * as Layer from "effect/Layer";
 
 import { ServerSettingsService } from "../serverSettings.ts";
 import { AlmanacConnection } from "./AlmanacConnection.ts";
-import { parseBrowse, parseRead, parseRecall, parseSearch } from "./AlmanacText.ts";
+import {
+  CURRENT_VERSION,
+  parseBrowse,
+  parseRead,
+  parseRecall,
+  parseSearch,
+} from "./AlmanacText.ts";
 
 type AlmanacEffect<A> = Effect.Effect<A, AlmanacError>;
 
@@ -40,7 +46,9 @@ export class AlmanacService extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settings = yield* ServerSettingsService;
-  const fallback = yield* Config.String("ALMANAC_MCP_COMMAND").pipe(
+  // The store is Kumbuka; the older variable name still works for an existing install.
+  const fallback = yield* Config.String("KUMBUKA_MCP_COMMAND").pipe(
+    Config.orElse(() => Config.String("ALMANAC_MCP_COMMAND")),
     Config.withDefault(""),
     Effect.orDie,
   );
@@ -81,7 +89,7 @@ const make = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => Effect.sync(() => connection.close()));
 
   const browse = Effect.fn("AlmanacService.browse")(function* (input: AlmanacBrowseInput) {
-    return yield* call("memory_browse", input).pipe(parsed("memory_browse", parseBrowse));
+    return yield* call("kumbuka_browse", input).pipe(parsed("kumbuka_browse", parseBrowse));
   });
 
   return AlmanacService.of({
@@ -96,30 +104,38 @@ const make = Effect.gen(function* () {
     }),
     browse,
     search: Effect.fn("AlmanacService.search")(function* ({ query, limit }) {
-      return yield* call("knowledge_search", { query, top_k: limit ?? 10 }).pipe(
-        parsed("knowledge_search", parseSearch),
+      return yield* call("kumbuka_search", { query, top_k: limit ?? 10 }).pipe(
+        parsed("kumbuka_search", parseSearch),
       );
     }),
     recall: Effect.fn("AlmanacService.recall")(function* ({ query, limit }) {
-      return yield* call("memory_recall", { query, top_k: limit ?? 10 }).pipe(
-        parsed("memory_recall", parseRecall),
+      return yield* call("kumbuka_recall", { query, top_k: limit ?? 10 }).pipe(
+        parsed("kumbuka_recall", parseRecall),
       );
     }),
     read: Effect.fn("AlmanacService.read")(function* ({ sourceId, start, maxChars }) {
-      return yield* call("knowledge_read", {
+      return yield* call("kumbuka_read", {
         source_id: sourceId,
         start: start ?? 0,
         max_chars: maxChars ?? 8000,
-      }).pipe(parsed("knowledge_read", parseRead));
+      }).pipe(parsed("kumbuka_read", parseRead));
     }),
     remember: Effect.fn("AlmanacService.remember")(function* ({ text }) {
-      return yield* call("memory_add", { text }).pipe(written);
+      return yield* call("kumbuka_add", { text }).pipe(written);
     }),
     update: Effect.fn("AlmanacService.update")(function* ({ memoryId, text }) {
-      return yield* call("memory_update", { memory_id: memoryId, text }).pipe(written);
+      // The update names the version it replaces; the history reply ends with it.
+      const version = yield* call("kumbuka_history", { memory_id: memoryId }).pipe(
+        parsed("kumbuka_history", (reply) => CURRENT_VERSION.exec(reply)?.[1] ?? null),
+      );
+      return yield* call("kumbuka_update", {
+        memory_id: memoryId,
+        text,
+        expected_version: Number(version),
+      }).pipe(written);
     }),
     forget: Effect.fn("AlmanacService.forget")(function* ({ memoryId }) {
-      return yield* call("memory_forget", { memory_id: memoryId }).pipe(written);
+      return yield* call("kumbuka_forget", { memory_id: memoryId }).pipe(written);
     }),
   });
 });

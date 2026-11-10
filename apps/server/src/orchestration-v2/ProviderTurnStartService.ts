@@ -1942,6 +1942,8 @@ export const layer: Layer.Layer<
                 includeCore:
                   !nativeThreadHasTurns || effectiveHandoffs.length > 0 || retryHandoff.length > 0,
                 providerThreadId: providerThread.id,
+                brainContext:
+                  settings.d4Agent.projectContexts[projection.thread.projectId] ?? "Global",
                 ...(brainProject
                   ? { projectTitle: brainProject.title, workspacePath: brainProject.workspaceRoot }
                   : {}),

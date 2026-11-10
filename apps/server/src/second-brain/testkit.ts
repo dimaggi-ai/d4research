@@ -9,6 +9,7 @@ import * as ServerConfig from "../config.ts";
 import * as Files from "./SecondBrainFiles.ts";
 import * as Index from "./SecondBrainIndex.ts";
 import * as Embeddings from "./SecondBrainEmbeddings.ts";
+import * as Kumbuka from "./KumbukaBrain.ts";
 import * as Service from "./SecondBrainService.ts";
 
 export function withBrain<A, E, R>(
@@ -26,6 +27,7 @@ export function withBrain<A, E, R>(
     | Scope.Scope
   >,
   overrides: Partial<SecondBrainSettings> = {},
+  kumbuka: Layer.Layer<Kumbuka.KumbukaBrain> = Kumbuka.layerDisabled,
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
@@ -38,6 +40,7 @@ export function withBrain<A, E, R>(
         Files.layer,
         Index.layer,
         Embeddings.layer,
+        kumbuka,
         ServerSettingsService.layerTest({
           secondBrain: { path: root, generateIndex: false, ...overrides },
         }),

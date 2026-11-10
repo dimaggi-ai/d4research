@@ -1,6 +1,8 @@
 import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
 import * as Effect from "effect/Effect";
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
+import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
+import { ServerSettingsService } from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { BrainToolkit } from "./tools.ts";
@@ -14,6 +16,21 @@ export const BrainToolkitHandlersLive = McpToolAccess.toLayer(
   BrainToolkit,
   Effect.gen(function* () {
     const service = yield* SecondBrainService.SecondBrainService;
+    const settings = yield* ServerSettingsService;
+    /** The context of the calling thread's project; a caller outside a thread reads the shared context. */
+    const context = Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      if (scope.thread === undefined) return "Global" as const;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const shell = yield* threads
+        .getThreadShell(scope.thread.threadId)
+        .pipe(Effect.orElseSucceed(() => null));
+      const mapped = yield* settings.getSettings.pipe(
+        Effect.map((value) => (shell ? value.d4Agent.projectContexts[shell.projectId] : undefined)),
+        Effect.orElseSucceed(() => undefined),
+      );
+      return mapped ?? ("Global" as const);
+    });
     return {
       brain_capture: McpToolAccess.writesWithCapability(() =>
         Effect.gen(function* () {
@@ -31,8 +48,12 @@ export const BrainToolkitHandlersLive = McpToolAccess.toLayer(
       ),
       brain_status: McpToolAccess.reads(() => service.status()),
       brain_map: McpToolAccess.reads(() => service.map()),
-      brain_read: McpToolAccess.reads((input) => service.read(input)),
-      brain_search: McpToolAccess.reads((input) => service.search(input)),
+      brain_read: McpToolAccess.reads((input) =>
+        Effect.flatMap(context, (bound) => service.read(input, bound)),
+      ),
+      brain_search: McpToolAccess.reads((input) =>
+        Effect.flatMap(context, (bound) => service.search(input, bound)),
+      ),
       brain_backlinks: McpToolAccess.reads((input) => service.backlinks(input.path)),
       brain_propose: McpToolAccess.writesWithCapability((input) =>
         Effect.flatMap(actor, (id) => service.propose(input, id)),

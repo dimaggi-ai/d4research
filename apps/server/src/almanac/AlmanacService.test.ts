@@ -37,6 +37,9 @@ describe("AlmanacService", () => {
       const read = yield* service.read({ sourceId: "7e36da31-f6d0-4ffe-b13c-47151534d90b" });
       expect(read.content).toBe("line one\nline two");
       expect(yield* service.remember({ text: "A fact" })).toEqual({ result: "created A fact" });
+      expect(
+        yield* service.update({ memoryId: "7e36da31-f6d0-4ffe-b13c-47151534d90b", text: "New" }),
+      ).toEqual({ result: "updated v4" });
       const refused = yield* Effect.flip(
         service.forget({ memoryId: "7e36da31-f6d0-4ffe-b13c-47151534d90b" }),
       );

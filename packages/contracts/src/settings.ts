@@ -2208,9 +2208,17 @@ export const CloudSpeechCredentials = Schema.Struct({
   openrouter: CloudSpeechCredential,
 });
 
-/** Empty falls back to the server's ALMANAC_MCP_COMMAND, so a host can configure it once. */
+/**
+ * The memory provider, reached over MCP: a stdio command or a streamable HTTP url.
+ * Empty values fall back to the server's MEMORY_MCP_* variables, so a host can configure it once.
+ * provider names a built-in profile (empty: detected from the tool list); profile is a custom one as JSON.
+ */
 export const AlmanacSettings = Schema.Struct({
   command: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  url: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  provider: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  scope: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  profile: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type AlmanacSettings = typeof AlmanacSettings.Type;
 
@@ -2952,7 +2960,15 @@ export const ServerSettingsPatch = Schema.Struct({
       localBaseUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
-  almanac: Schema.optionalKey(Schema.Struct({ command: Schema.optionalKey(TrimmedString) })),
+  almanac: Schema.optionalKey(
+    Schema.Struct({
+      command: Schema.optionalKey(TrimmedString),
+      url: Schema.optionalKey(TrimmedString),
+      provider: Schema.optionalKey(TrimmedString),
+      scope: Schema.optionalKey(TrimmedString),
+      profile: Schema.optionalKey(TrimmedString),
+    }),
+  ),
   secondBrain: Schema.optionalKey(
     Schema.Struct({
       path: Schema.optionalKey(TrimmedString),

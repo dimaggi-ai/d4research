@@ -29,6 +29,16 @@ NodeReadline.createInterface({ input: process.stdin }).on("line", (line) => {
         serverInfo: { name: "fake-almanac", version: "1.0.0" },
       },
     });
+  } else if (method === "tools/list") {
+    send({
+      id,
+      result: {
+        tools: ["kumbuka_search", ...Object.keys(tools)].map((name) => ({
+          name,
+          inputSchema: { type: "object" },
+        })),
+      },
+    });
   } else if (method === "tools/call") {
     send({ id, result: tools[params.name](params.arguments) });
   } else {

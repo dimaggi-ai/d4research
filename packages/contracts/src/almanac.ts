@@ -2,10 +2,11 @@ import * as Schema from "effect/Schema";
 
 const Text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192));
 const Day = Schema.NullOr(Schema.String);
-const Id = Schema.String.check(Schema.isUUID());
+// Providers name memories and sources differently: UUIDs, entity names, document ids.
+const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512));
 
 export class AlmanacError extends Schema.TaggedError<AlmanacError>()("AlmanacError", {
-  code: Schema.Literals(["not_configured", "unavailable", "rejected", "malformed"]),
+  code: Schema.Literals(["not_configured", "unavailable", "rejected", "malformed", "unsupported"]),
   operation: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {
@@ -19,6 +20,8 @@ export class AlmanacError extends Schema.TaggedError<AlmanacError>()("AlmanacErr
         return `Almanac refused ${this.operation}.`;
       case "malformed":
         return `Almanac returned an unreadable reply to ${this.operation}.`;
+      case "unsupported":
+        return `The configured memory provider does not support ${this.operation}.`;
     }
   }
 }

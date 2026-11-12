@@ -56,13 +56,28 @@ guard_input() {
     cat
   fi
 }
+# Protect what the guard runs from: its policy, the managed install, and the provider
+# hook configs that call this wrapper. Core's -protect-self would cover all of ~/.claude,
+# which also blocks Claude's own memory and plan files.
+if [ -d "$script_dir/../profiles" ]; then
+  guard_root="$(cd "$script_dir/.." && pwd)"
+else
+  guard_root="$policy_dir"
+fi
+protect_args=(-protect-path "$policy_dir" -protect-path "$guard_root")
+if [ -n "${HOME:-}" ]; then
+  for protected in .claude/settings.json .claude/settings.local.json .claude/hooks \
+    .codex/hooks.json .gemini/config/hooks.json .gemini/settings.json; do
+    protect_args+=(-protect-path "$HOME/$protected")
+  done
+fi
 guard() {
   guard_input | "$guard_bin" hook \
     -policy-dir "$policy_dir" \
     -mode "$guard_mode" \
     -agent-id "t3research-local" \
     -audit-log "$data_dir/decisions.jsonl" \
-    -protect-self \
+    "${protect_args[@]}" \
     -fail-closed-tools bash,write,edit,notebookedit
 }
 # Codex accepts only "deny" from PreToolUse and runs an "ask" as allow, and T3 approves a

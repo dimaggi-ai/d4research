@@ -11,7 +11,10 @@ import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
+import {
+  OrchestratorCommandRejectedError,
+  OrchestratorRuntimeModeAboveCeilingError,
+} from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
@@ -30,10 +33,17 @@ import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
+import {
+  dispatchFailure,
+  newCommandId,
+  readCaller,
+  resolveProjectId,
+  unavailable,
+} from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 const isAboveCeilingError = Schema.is(OrchestratorRuntimeModeAboveCeilingError);
+const isRejectedError = Schema.is(OrchestratorCommandRejectedError);
 
 function projectFailure(error: Project.ProjectServiceError) {
   if (error._tag === "ProjectOperationError") return unavailable();
@@ -291,6 +301,9 @@ export const layer = McpToolAccess.toLayer(
                     code: "invalid_request",
                     message: error.cause.message,
                   });
+                }
+                if (error._tag === "ThreadLaunchError" && isRejectedError(error.cause)) {
+                  return dispatchFailure(error.cause);
                 }
                 return unavailable();
               }),

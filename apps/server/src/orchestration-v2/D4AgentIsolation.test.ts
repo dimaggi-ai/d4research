@@ -11,6 +11,7 @@ import {
 } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -168,6 +169,61 @@ it.effect(
           if (result._tag === "Failure")
             assert.equal(result.failure._tag, "OrchestratorCommandRejectedError");
         }
+      }
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "threads agents launch into the agent project over MCP stay writable; earlier agent conversations do not",
+  () =>
+    Effect.gen(function* () {
+      const engine = yield* Orchestrator.OrchestratorV2;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("agent-workspace-project");
+      yield* sql`
+        INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+        VALUES (${projectId}, 'Nia', '/isolated-agent-workspace', '[]', '2026-11-12T00:00:00.000Z', '2026-11-12T00:00:00.000Z')
+      `;
+      const create = (threadId: ThreadId, creationSource: "mcp" | "server") =>
+        engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`create-${threadId}`),
+          threadId,
+          projectId,
+          title: threadId,
+          modelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: creationSource === "mcp" ? "agent" : "system",
+          creationSource,
+        });
+      const launched = ThreadId.make("mcp:launch:worker");
+      const earlier = ThreadId.make("earlier-agent-conversation");
+      yield* create(launched, "mcp");
+      yield* create(earlier, "server");
+      // ThreadLaunchService records the prepared workspace with no dispatch origin.
+      yield* engine.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("launch:workspace"),
+        threadId: launched,
+        branch: null,
+        worktreePath: "/isolated-agent-workspace/worker",
+      });
+      const rejected = yield* Effect.result(
+        engine.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("forged:workspace"),
+          threadId: earlier,
+          branch: null,
+          worktreePath: "/elsewhere",
+        }),
+      );
+      assert.equal(rejected._tag, "Failure");
+      if (rejected._tag === "Failure") {
+        assert.equal(rejected.failure._tag, "OrchestratorCommandRejectedError");
+        assert.include(rejected.failure.message, "belongs to the d4 agent");
       }
     }).pipe(Effect.provide(layerTest)),
 );

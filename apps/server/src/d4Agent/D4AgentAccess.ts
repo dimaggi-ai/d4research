@@ -29,10 +29,12 @@ export const ownership = Effect.gen(function* () {
         return true;
       if (Option.isNone(sql)) return false;
       // A quarantined state file must not expose the old aggregate conversation.
+      // Threads agents launched into this project over MCP are ordinary work, not Nia's.
       const matches = yield* sql.value<{ owned: number }>`
       SELECT 1 AS owned FROM orchestration_v2_projection_threads AS threads
       JOIN projection_projects AS projects ON projects.project_id = threads.project_id
       WHERE threads.thread_id = ${threadId} AND projects.workspace_root = ${store.value.workspace}
+        AND COALESCE(json_extract(threads.payload_json, '$.creationSource'), '') <> 'mcp'
       LIMIT 1
     `.pipe(Effect.catch(() => Effect.succeed([{ owned: 1 }])));
       return matches.length > 0;
@@ -51,6 +53,7 @@ export const ownershipSnapshot = Effect.gen(function* () {
       SELECT threads.thread_id AS threadId FROM orchestration_v2_projection_threads AS threads
       JOIN projection_projects AS projects ON projects.project_id = threads.project_id
       WHERE projects.workspace_root = ${store.value.workspace}
+        AND COALESCE(json_extract(threads.payload_json, '$.creationSource'), '') <> 'mcp'
     `.pipe(Effect.result);
     // Failed ownership reads hide evidence rather than expose a quarantined conversation.
     if (matches._tag === "Failure") return (_threadId: ThreadId) => true;

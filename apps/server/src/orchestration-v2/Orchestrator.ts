@@ -234,7 +234,8 @@ export class OrchestratorCommandRejectedError extends Schema.TaggedError<Orchest
   { commandId: CommandId, commandType: Schema.String, cause: Schema.optional(Schema.Defect()) },
 ) {
   override get message(): string {
-    return `Orchestration command ${this.commandType} (${this.commandId}) was rejected before commit.`;
+    const reason = typeof this.cause === "string" ? ` ${this.cause}` : "";
+    return `Orchestration command ${this.commandType} (${this.commandId}) was rejected before commit.${reason}`;
   }
 }
 export class OrchestratorProjectionError extends Schema.TaggedError<OrchestratorProjectionError>()(
@@ -14374,6 +14375,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return yield* new OrchestratorCommandRejectedError({
           commandId: command.commandId,
           commandType: command.type,
+          cause: `Thread ${threadId} belongs to the d4 agent; ${command.type} cannot link it to other threads.`,
         });
     }
     if (
@@ -14389,6 +14391,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* new OrchestratorCommandRejectedError({
         commandId: command.commandId,
         commandType: command.type,
+        cause: `Thread ${commandThreadId(command)} belongs to the d4 agent; only the signed-in user can send ${command.type} to it (origin: ${origin ?? "agent tool"}).`,
       });
     const existingReceipt = yield* commandReceipts.getByCommandId(command.commandId).pipe(
       Effect.mapError(

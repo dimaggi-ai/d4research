@@ -80,7 +80,7 @@ rules:
       and:
         - field: parameters.command
           operator: regex
-          value: '\b(env|printenv)\b|\bset\s*(\d*[|;&)>]|\n|$)|(\$\{?[A-Z_]*KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)'
+          value: '\b(env|printenv)\b|\bset([''"\x60]|\s*(\d*[|;&)>]|#|\\|\n|$))|(\$\{?[A-Z_]*KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)'
         - field: parameters.command
           operator: regex
           value: '\b(curl|wget|nc|ncat|ssh|scp|rsync)\b'

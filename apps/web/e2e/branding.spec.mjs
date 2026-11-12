@@ -4,12 +4,9 @@ import * as NodePath from "node:path";
 
 export async function onboardingBranding({ page, webUrl, screenshotDir }) {
   await page.goto(`${webUrl}/welcome`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("dialog", { name: "Set up d4research", exact: true }).waitFor();
-  const identity = page.getByRole("img", { name: "d4research", exact: true });
-  await identity.waitFor();
-  NodeAssert.equal(await identity.locator("svg image").getAttribute("href"), "/d4-mark.svg");
-  await identity.getByText("[Research]", { exact: true }).waitFor();
-  NodeAssert.equal(await page.getByText("Set up T3 Code", { exact: true }).count(), 0);
+  // First run is one Welcome page; the logo lives in the boot shell, which `branding` covers.
+  await page.getByRole("heading", { name: "Welcome to d4research", exact: true }).waitFor();
+  NodeAssert.equal(await page.getByText(/T3 Code/).count(), 0);
   await page.screenshot({ path: NodePath.join(screenshotDir, "onboarding-d4-branding.png") });
 }
 

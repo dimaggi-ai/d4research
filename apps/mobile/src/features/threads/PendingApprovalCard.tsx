@@ -9,7 +9,7 @@ import {
   fullAccessOverrideExplanation,
 } from "@d4research/client-runtime/state/thread-requests";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import type { PendingApproval } from "../../lib/threadActivity";
@@ -37,6 +37,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   const canRespond = props.approval.responseCapability === "live";
   const disabled = !canRespond || props.respondingApprovalId === props.approval.requestId;
   const [explanationOpen, setExplanationOpen] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
   return (
     <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
       <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
@@ -45,15 +46,25 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
       <Text className="font-t3-bold text-lg text-foreground">
         {props.approval.appName ?? props.approval.requestKind}
       </Text>
-      {props.approval.detail ? (
-        <Text className="font-sans text-sm leading-normal text-foreground-secondary">
-          {props.approval.detail}
-        </Text>
-      ) : null}
-      {props.approval.reason ? (
-        <Text className="font-sans text-xs leading-normal text-warning-foreground">
-          {props.approval.reason}
-        </Text>
+      {props.approval.reason || props.approval.detail ? (
+        // The reason and full request scroll inside the card so the decision buttons stay visible.
+        <ScrollView style={{ maxHeight: Math.max(160, windowHeight * 0.4) }} nestedScrollEnabled>
+          {props.approval.reason ? (
+            <Text selectable className="font-sans text-sm leading-normal text-foreground">
+              {props.approval.reason}
+            </Text>
+          ) : null}
+          {props.approval.detail ? (
+            <Text
+              selectable
+              className={`${props.approval.reason ? "mt-2 " : ""}${
+                props.approval.requestKind === "mcp-elicitation" ? "font-sans" : "font-mono"
+              } text-sm leading-normal text-foreground-secondary`}
+            >
+              {props.approval.detail}
+            </Text>
+          ) : null}
+        </ScrollView>
       ) : null}
       {props.approval.fullAccessOverride ? (
         <Pressable

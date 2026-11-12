@@ -48,21 +48,33 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
           <span className="ml-auto shrink-0 tabular-nums">1/{pendingCount}</span>
         ) : null}
       </span>
-      <Detail
-        aria-label={detailAriaLabel}
-        className={cn(
-          "block max-h-20 w-full min-w-0 overflow-auto text-xs text-foreground [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 [&::-webkit-scrollbar]:h-1.5",
-          approval.requestKind === "mcp-elicitation"
-            ? "whitespace-pre-wrap font-sans wrap-break-word"
-            : "whitespace-pre font-mono",
-        )}
-        data-approval-detail="complete"
+      {/* A small window leaves the drawer little height: the reason and the whole request scroll
+          here, wrapped, while the decision buttons stay beside them. */}
+      <span
+        className="flex max-h-[min(40dvh,22rem)] w-full min-w-0 flex-col gap-1.5 overflow-y-auto overscroll-contain [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         tabIndex={0}
       >
-        {approval.responseCapability === "not_resumable"
-          ? "Provider process is gone. Interrupt or restart the run to respond."
-          : approval.detail || fallbackLabel}
-      </Detail>
+        {approval.reason ? (
+          <span
+            aria-label="Reason"
+            className="block whitespace-pre-wrap text-xs text-muted-foreground select-text wrap-anywhere"
+          >
+            {approval.reason}
+          </span>
+        ) : null}
+        <Detail
+          aria-label={detailAriaLabel}
+          className={cn(
+            "block w-full min-w-0 shrink-0 whitespace-pre-wrap text-xs text-foreground select-text wrap-anywhere",
+            approval.requestKind === "mcp-elicitation" ? "font-sans" : "font-mono",
+          )}
+          data-approval-detail="complete"
+        >
+          {approval.responseCapability === "not_resumable"
+            ? "Provider process is gone. Interrupt or restart the run to respond."
+            : approval.detail || fallbackLabel}
+        </Detail>
+      </span>
     </span>
   );
 });

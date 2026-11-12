@@ -170,7 +170,8 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
         : null
       : mocks.allowed,
 }));
-vi.mock("../../state/server", async () => ({
+vi.mock("../../state/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/server")>()),
   primaryServerEnvironmentThemesAtom: (await import("effect/reactivity")).Atom.make([]),
   environmentServerConfigsAtom: vi.fn(),
   EMPTY_SERVER_PROVIDERS: [],
@@ -336,7 +337,8 @@ vi.mock("../../composerDraftStore", async () => ({
   clearComposerDraftsEnvironment: vi.fn(),
 }));
 vi.mock("../../sidebarPendingFileDropStore", () => ({ useSidebarPendingFileDropStore: {} }));
-vi.mock("../../state/shell", () => ({
+vi.mock("../../state/shell", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/shell")>()),
   environmentSnapshotAtom: vi.fn(),
   useEnvironmentShellStatus: () => "live",
 }));

@@ -286,7 +286,9 @@ function D4AgentPanelContent({
   const approvals = hasApprovals ? (
     <section
       aria-label="Waiting for you"
-      className="max-h-[50dvh] overflow-y-auto px-4 py-3 text-sm"
+      // Focusable so the keyboard can scroll a long request; the decision buttons stay pinned.
+      tabIndex={0}
+      className="max-h-[min(70dvh,48rem)] overflow-y-auto overscroll-contain px-4 py-3 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
       {!state.modelAvailable ? (
         <p role="status" className="py-1 text-muted-foreground">
@@ -634,7 +636,7 @@ function AgentActionRecord({
         </dl>
       ) : null}
       {pending ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="sticky -top-3 z-10 -mx-1 flex flex-wrap gap-2 bg-card px-1 py-2">
           <Button
             size="sm"
             variant="outline"

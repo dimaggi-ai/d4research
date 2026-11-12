@@ -25,7 +25,7 @@ import {
   type ThreadId,
 } from "@d4research/contracts";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
-import { Pressable, View, ScrollView, TextInput } from "react-native";
+import { Pressable, View, ScrollView, TextInput, useWindowDimensions } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { cn } from "../../lib/cn";
@@ -235,6 +235,7 @@ function D4AgentPanelContent({
   } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
   const proposals = (state.memoryProposals ?? []).filter(
@@ -253,7 +254,16 @@ function D4AgentPanelContent({
     Boolean(query.error || actionError || decisionState?.error);
   if (!hasContent) return null;
   return (
-    <View className="max-h-64 border-b border-border bg-surface">
+    <View
+      className="border-b border-border bg-surface"
+      // A pending decision needs its reason and full request readable, so it may take most of a
+      // short window (iPad split view, the app on a Mac) instead of the 256pt status strip.
+      style={{
+        maxHeight: state.actionLog.some((record) => record.status === "pending")
+          ? Math.max(256, windowHeight * 0.6)
+          : 256,
+      }}
+    >
       <ScrollView contentContainerClassName="gap-2 px-4 py-2">
         <View className="flex-row flex-wrap items-center gap-2">
           {(state.reminders ?? []).length > 0 ? (

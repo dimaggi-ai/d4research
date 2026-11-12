@@ -48,7 +48,7 @@ import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { VoiceConversationBanner, VoiceConversationButton } from "../chat/VoiceConversationControl";
+import { VoiceConversationButton } from "../chat/VoiceConversationControl";
 import {
   classifyComposerAttachmentFile,
   fileAttachmentCapabilityBlockReason,
@@ -64,6 +64,8 @@ import { ComposerPrimaryActions } from "../chat/ComposerPrimaryActions";
 import { ComposerSurface } from "../chat/ComposerSurface";
 import { ComposerFooter } from "../chat/ComposerFooter";
 import { d4AgentTaskFailureMessage } from "./d4AgentTaskFeedback";
+import { isSessionNotice } from "./d4AgentPresentation";
+import { NiaVoiceMode, requestNiaVoiceSummary } from "./NiaVoiceMode";
 import type { ComposerDraftContextRecords } from "../composerContextPresentation";
 
 type DraftAttachment = ComposerImageAttachment | ComposerFileAttachment;
@@ -658,6 +660,7 @@ export function D4AgentComposer({
                 </ComposerControl>
                 <NiaVoice
                   key={`${environmentId}:${state.brainContext}:${state.threadId}`}
+                  environmentId={environmentId}
                   state={state}
                   error={error}
                   disabled={
@@ -716,20 +719,23 @@ export function D4AgentComposer({
 }
 
 function NiaVoice({
+  environmentId,
   state,
   disabled,
   error,
   onTranscript,
   onError,
 }: {
+  environmentId: EnvironmentId;
   state: D4AgentState;
   disabled: boolean;
   error: string | null;
   onTranscript: (text: string) => boolean;
   onError: (message: string) => void;
 }) {
+  const transcript = state.transcript ?? [];
   const voice = useVoiceConversation({
-    messages: (state.transcript ?? [])
+    messages: transcript
       .filter((entry) => entry.role !== "system")
       .map((entry) => ({
         id: entry.id,
@@ -739,9 +745,12 @@ function NiaVoice({
       })),
     onTranscript,
     onError,
+    summarize: (text) => requestNiaVoiceSummary(environmentId, text),
   });
+  // Voice mode shows the conversation spoken since it opened, not the whole history.
+  const [baseline, setBaseline] = useState<ReadonlySet<string>>(() => new Set());
   const stop = useRef(voice.stopConversation);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest stop handler for the error effect
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the Escape and error handlers pointed at the latest stop function.
   useLayoutEffect(() => {
     stop.current = voice.stopConversation;
   });
@@ -749,16 +758,29 @@ function NiaVoice({
   useEffect(() => {
     if (error) stop.current();
   }, [error]);
+  const end = () => stop.current();
+  const toggle = () => {
+    if (!voice.active) setBaseline(new Set(transcript.map((entry) => entry.id)));
+    voice.toggleConversation();
+  };
   return (
     <>
-      <VoiceConversationButton
-        {...voice}
-        disabled={disabled && !voice.active}
-        onToggle={voice.toggleConversation}
-      />
-      <div className="absolute inset-x-0 bottom-full">
-        <VoiceConversationBanner {...voice} onToggle={voice.toggleConversation} />
-      </div>
+      <VoiceConversationButton {...voice} disabled={disabled && !voice.active} onToggle={toggle} />
+      {voice.active ? (
+        <NiaVoiceMode
+          environmentId={environmentId}
+          entries={transcript.filter(
+            (entry) =>
+              !baseline.has(entry.id) && entry.role !== "system" && !isSessionNotice(entry),
+          )}
+          status={voice.status}
+          levelRef={voice.levelRef}
+          heard={voice.heard}
+          spoken={voice.spoken}
+          hasOriginalReply={voice.hasOriginalReply}
+          onStop={end}
+        />
+      ) : null}
     </>
   );
 }

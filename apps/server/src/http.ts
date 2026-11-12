@@ -90,6 +90,7 @@ import {
 } from "./memoAttachment.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
 import { requestUrl } from "./requestUrl.ts";
+import { summarizeForSpeech, VOICE_SUMMARY_MAX_INPUT_CHARACTERS } from "./voiceSummary.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
@@ -104,6 +105,7 @@ const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
 const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
+const VOICE_SUMMARY_PATH = "/api/voice/summarize";
 
 // A decoded JSON body must be a plain object before we read named fields off it.
 // `typeof` alone is not enough: arrays and `null` are also `"object"`, and a
@@ -1130,6 +1132,46 @@ export function buildHandoffMemoryText(input: {
 // handoff settings (local Ollama by default, provider session when selected,
 // deterministic truncation as last resort — never an error) and attempts to
 // persist the compressed summary (not the raw transcript) to local Memo.
+export const voiceSummaryRouteLayer = HttpRouter.add(
+  "POST",
+  VOICE_SUMMARY_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = yield* request.json;
+      const text =
+        isJsonObjectRequestBody(body) && typeof body.text === "string" ? body.text.trim() : "";
+      if (!text) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Text must be non-empty." },
+          { status: 400, headers: { "cache-control": "no-store" } },
+        );
+      }
+      const summary = yield* summarizeForSpeech({
+        text: text.slice(0, VOICE_SUMMARY_MAX_INPUT_CHARACTERS),
+      });
+      return HttpServerResponse.jsonUnsafe(
+        { ok: true, text: summary },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "The local summarizer is unavailable." },
+          { status: 502, headers: { "cache-control": "no-store" } },
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
 export const handoffPrepareRouteLayer = HttpRouter.add(
   "POST",
   HANDOFF_PREPARE_PATH,

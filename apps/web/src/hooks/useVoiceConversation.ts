@@ -1,10 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { ChatMessage } from "../types";
 
 const DEFAULT_VOICE_GATEWAY_URL = "http://127.0.0.1:8093";
 const SILENCE_THRESHOLD = 0.025;
 const SILENCE_DURATION_MS = 900;
 const MIN_SPEECH_DURATION_MS = 250;
+// Replies longer than this, or with code or tables, are summarized before speaking; the full
+// text stays on screen.
+export const SPOKEN_SUMMARY_THRESHOLD_CHARS = 600;
+const LEVEL_WINDOW_SECONDS = 0.04;
 const SILENT_WAV_DATA_URL =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
@@ -66,6 +70,65 @@ export function spokenExcerpt(markdown: string): string {
     .slice(0, 360);
 }
 
+export function needsSpokenSummary(markdown: string): boolean {
+  if (markdown.includes("```")) return true;
+  if (/^\s*\|.*\|\s*$/m.test(markdown) && /^\s*\|?\s*:?-{3,}/m.test(markdown)) return true;
+  return speechReadyText(markdown).length > SPOKEN_SUMMARY_THRESHOLD_CHARS;
+}
+
+/**
+ * Loudness per 40 ms window of a 16-bit PCM WAV, normalized to 0..1. The
+ * playback level is read from this instead of routing the reply through Web
+ * Audio, because a MediaElementSource on iOS goes silent while its context is
+ * suspended.
+ */
+export function wavLevelEnvelope(buffer: ArrayBuffer): Float32Array | null {
+  const view = new DataView(buffer);
+  if (buffer.byteLength < 44 || view.getUint32(0, false) !== 0x52494646) return null;
+  let offset = 12;
+  let channels = 1;
+  let sampleRate = 0;
+  let bitsPerSample = 0;
+  while (offset + 8 <= buffer.byteLength) {
+    const id = view.getUint32(offset, false);
+    const size = view.getUint32(offset + 4, true);
+    const body = offset + 8;
+    if (id === 0x666d7420) {
+      channels = view.getUint16(body + 2, true);
+      sampleRate = view.getUint32(body + 4, true);
+      bitsPerSample = view.getUint16(body + 14, true);
+    } else if (id === 0x64617461) {
+      if (bitsPerSample !== 16 || sampleRate === 0 || channels === 0) return null;
+      const end = Math.min(buffer.byteLength, body + size);
+      const frameBytes = 2 * channels;
+      const windowFrames = Math.max(1, Math.round(sampleRate * LEVEL_WINDOW_SECONDS));
+      const frames = Math.floor((end - body) / frameBytes);
+      const envelope = new Float32Array(Math.ceil(frames / windowFrames));
+      let peak = 0;
+      for (let index = 0; index < envelope.length; index += 1) {
+        const first = index * windowFrames;
+        const last = Math.min(frames, first + windowFrames);
+        let sum = 0;
+        for (let frame = first; frame < last; frame += 1) {
+          const sample = view.getInt16(body + frame * frameBytes, true) / 32768;
+          sum += sample * sample;
+        }
+        const rms = Math.sqrt(sum / Math.max(1, last - first));
+        envelope[index] = rms;
+        peak = Math.max(peak, rms);
+      }
+      if (peak > 0) {
+        for (let index = 0; index < envelope.length; index += 1) {
+          envelope[index] = (envelope[index] ?? 0) / peak;
+        }
+      }
+      return envelope;
+    }
+    offset = body + size + (size % 2);
+  }
+  return null;
+}
+
 function speechReadyText(markdown: string): string {
   return markdown
     .replace(/```[\s\S]*?```/g, "")
@@ -94,10 +157,13 @@ export async function summarizeReplyForSpeech(
     fetcher?: typeof fetch;
     gatewayUrl?: string;
     timeoutMs?: number;
+    summarize?: ((markdown: string) => Promise<string | null>) | undefined;
   } = {},
 ): Promise<string> {
   const fallback = spokenExcerpt(markdown);
   if (!fallback) return "";
+  const preferred = await options.summarize?.(markdown).catch(() => null);
+  if (preferred?.trim()) return preferred.trim();
 
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), options.timeoutMs ?? 8_000);
@@ -118,15 +184,37 @@ export async function summarizeReplyForSpeech(
   }
 }
 
+export interface SpokenVoiceReply {
+  readonly messageId: string;
+  readonly text: string;
+  readonly summarized: boolean;
+}
+
 export function useVoiceConversation(options: {
   messages: readonly (Pick<ChatMessage, "role" | "text" | "streaming"> & { readonly id: string })[];
   onTranscript: (transcript: string) => boolean;
   onError: (message: string) => void;
-}) {
-  const { messages, onError, onTranscript } = options;
+  /** Preferred summarizer for long replies; the voice gateway and an excerpt are fallbacks. */
+  summarize?: (markdown: string) => Promise<string | null>;
+}): {
+  active: boolean;
+  status: VoiceConversationStatus;
+  hasOriginalReply: boolean;
+  /** Microphone or playback loudness, 0..1, updated every animation frame without rendering. */
+  levelRef: RefObject<number>;
+  heard: string | null;
+  spoken: SpokenVoiceReply | null;
+  toggleConversation: () => void;
+  stopConversation: () => void;
+} {
+  const { messages, onError, onTranscript, summarize } = options;
   const [status, setStatus] = useState<VoiceConversationStatus>("idle");
   const [active, setActive] = useState(false);
   const [hasOriginalReply, setHasOriginalReply] = useState(false);
+  const [heard, setHeard] = useState<string | null>(null);
+  const [spoken, setSpoken] = useState<SpokenVoiceReply | null>(null);
+  const levelRef = useRef(0);
+  const playbackFrameRef = useRef<number | null>(null);
   const activeRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -138,7 +226,7 @@ export function useVoiceConversation(options: {
   const cancelRecordingRef = useRef(false);
   const chunksRef = useRef<Blob[]>([]);
   const pendingAssistantIdsRef = useRef<Set<string> | null>(null);
-  const originalReplyRef = useRef<string | null>(null);
+  const originalReplyRef = useRef<{ id: string; text: string } | null>(null);
   const startListeningRef = useRef<() => Promise<void>>(async () => undefined);
 
   const stopTracks = () => {
@@ -161,7 +249,33 @@ export function useVoiceConversation(options: {
     }
   };
 
+  const stopPlaybackLevel = () => {
+    if (playbackFrameRef.current !== null) cancelAnimationFrame(playbackFrameRef.current);
+    playbackFrameRef.current = null;
+    levelRef.current = 0;
+  };
+
+  const followPlaybackLevel = (audio: HTMLAudioElement, envelope: Float32Array | null) => {
+    stopPlaybackLevel();
+    const step = () => {
+      if (audio.ended || !audio.src) {
+        levelRef.current = 0;
+        playbackFrameRef.current = null;
+        return;
+      }
+      const index = Math.floor(audio.currentTime / LEVEL_WINDOW_SECONDS);
+      levelRef.current = audio.paused
+        ? 0
+        : envelope
+          ? (envelope[index] ?? 0)
+          : 0.45 + 0.25 * Math.sin(audio.currentTime * 9);
+      playbackFrameRef.current = requestAnimationFrame(step);
+    };
+    playbackFrameRef.current = requestAnimationFrame(step);
+  };
+
   const stopPlayback = () => {
+    stopPlaybackLevel();
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
@@ -198,6 +312,7 @@ export function useVoiceConversation(options: {
     chunksRef.current = [];
     stopTracks();
     stopPlayback();
+    levelRef.current = 0;
     setStatus("idle");
   };
 
@@ -206,33 +321,40 @@ export function useVoiceConversation(options: {
     onError(message);
   };
 
-  const speak = async (markdown: string, summarize = true) => {
+  const speak = async (reply: { id: string; text: string }, allowSummary = true) => {
+    const markdown = reply.text;
     if (!spokenExcerpt(markdown)) {
       if (activeRef.current) void startListeningRef.current();
       return;
     }
     const unlockedAudio = audioRef.current;
     unlockedAudio?.pause();
-    if (summarize) {
-      originalReplyRef.current = markdown;
+    const summarized = allowSummary && needsSpokenSummary(markdown);
+    if (summarized) {
+      originalReplyRef.current = { id: reply.id, text: markdown };
       setHasOriginalReply(true);
       setStatus("summarizing");
     }
     try {
-      const text = summarize
-        ? await summarizeReplyForSpeech(markdown)
+      const text = summarized
+        ? await summarizeReplyForSpeech(markdown, { summarize })
         : speechReadyText(markdown).slice(0, 6_000);
       if (!activeRef.current) return;
+      setSpoken({ messageId: reply.id, text, summarized });
       setStatus("speaking");
       const body = new URLSearchParams({ text });
       const response = await fetch(`${voiceGatewayUrl()}/voice/tts`, { method: "POST", body });
       requireSuccessfulResponse(response, `Voice gateway returned ${response.status}`);
       const audio = unlockedAudio ?? new Audio();
-      const objectUrl = URL.createObjectURL(await response.blob());
+      const wav = await response.arrayBuffer();
+      const objectUrl = URL.createObjectURL(
+        new Blob([wav], { type: response.headers.get("content-type") ?? "audio/wav" }),
+      );
       audio.src = objectUrl;
       audio.setAttribute("playsinline", "");
       audioRef.current = audio;
       const finish = () => {
+        stopPlaybackLevel();
         URL.revokeObjectURL(objectUrl);
         audio.removeAttribute("src");
         clearPlaybackHandlers(audio);
@@ -245,6 +367,7 @@ export function useVoiceConversation(options: {
       audio.addEventListener("ended", finish, { once: true });
       audio.addEventListener("error", handleError, { once: true });
       await audio.play();
+      followPlaybackLevel(audio, wavLevelEnvelope(wav));
     } catch {
       failConversation(voiceGatewayUnavailableMessage());
     }
@@ -273,6 +396,7 @@ export function useVoiceConversation(options: {
         await startListeningRef.current();
         return;
       }
+      setHeard(transcript);
       const originalReply = originalReplyRef.current;
       if (originalReply && isReadOriginalRequest(transcript)) {
         void speak(originalReply, false);
@@ -316,6 +440,7 @@ export function useVoiceConversation(options: {
         const audio = new Blob(chunksRef.current, { type: mimeType });
         recorderRef.current = null;
         chunksRef.current = [];
+        levelRef.current = 0;
         stopTracks();
         if (!cancelled && activeRef.current) void transcribeRecording(audio, mimeType);
       };
@@ -338,6 +463,8 @@ export function useVoiceConversation(options: {
           samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length,
         );
         const now = performance.now();
+        // Speech RMS sits around 0.02-0.2; scale it into the 0..1 range the visuals expect.
+        levelRef.current = Math.min(1, rms * 6);
         if (rms >= SILENCE_THRESHOLD) {
           if (heardSpeechAt === null) heardSpeechAt = now;
           lastVoiceAt = now;
@@ -369,6 +496,8 @@ export function useVoiceConversation(options: {
     }
     activeRef.current = true;
     setActive(true);
+    setHeard(null);
+    setSpoken(null);
     unlockPlayback();
     void startListeningRef.current();
   };
@@ -388,7 +517,7 @@ export function useVoiceConversation(options: {
       );
     if (!reply) return;
     pendingAssistantIdsRef.current = null;
-    void speak(reply.text);
+    void speak(reply);
   }, [messages, speak]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Retain original-reply invalidation for imperative voice commands; deriving this flag alone would leave the playback ref stale.
@@ -396,7 +525,9 @@ export function useVoiceConversation(options: {
     const originalReply = originalReplyRef.current;
     if (
       originalReply &&
-      !messages.some((message) => message.role === "assistant" && message.text === originalReply)
+      !messages.some(
+        (message) => message.role === "assistant" && message.text === originalReply.text,
+      )
     ) {
       originalReplyRef.current = null;
       setHasOriginalReply(false);
@@ -411,5 +542,14 @@ export function useVoiceConversation(options: {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Release microphone tracks, audio playback, and recording resources when the hook unmounts.
   useEffect(() => () => stopConversationRef.current(), []);
 
-  return { active, status, hasOriginalReply, toggleConversation, stopConversation };
+  return {
+    active,
+    status,
+    hasOriginalReply,
+    levelRef,
+    heard,
+    spoken,
+    toggleConversation,
+    stopConversation,
+  };
 }

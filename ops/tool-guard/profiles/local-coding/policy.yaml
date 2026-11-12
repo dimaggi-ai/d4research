@@ -80,10 +80,10 @@ rules:
       and:
         - field: parameters.command
           operator: regex
-          value: '(env|printenv|set)\b|(\$\{?[A-Z_]*KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)'
+          value: '\b(env|printenv)\b|\bset\s*(\d*[|;&)>]|\n|$)|(\$\{?[A-Z_]*KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)'
         - field: parameters.command
           operator: regex
-          value: '\b(curl|wget|nc|ncat|ssh|scp|rsync)\b|\|'
+          value: '\b(curl|wget|nc|ncat|ssh|scp|rsync)\b'
     effect: deny
     citation:
       excerpt: "Piping environment variables or secrets to network commands is never permitted."

@@ -47,8 +47,13 @@ is enabled. This creates a double gate: a hook entry alone does nothing outside 
 by an enabled d4research environment.
 
 When active, the wrapper runs `tg hook` with `-policy-dir`, `-mode`, an audit log at
-`<data-dir>/decisions.jsonl`, `-protect-self`, and `-fail-closed-tools bash,write,edit,notebookedit`
-(those tools deny when the engine itself fails). `T3RESEARCH_TOOL_GUARD_BIN`,
+`<data-dir>/decisions.jsonl`, a `-protect-path` list, and
+`-fail-closed-tools bash,write,edit,notebookedit` (those tools deny when the engine itself fails).
+The protected paths are the policy directory, the managed install directory (binary, wrappers,
+profiles, and audit log), the provider hook configs listed above, `~/.claude/settings.local.json`,
+and `~/.claude/hooks`. A write to any of them is denied before policy evaluation. The wrapper does
+not pass Core's `-protect-self`, because that flag protects all of `~/.claude` and would block
+Claude's own memory and plan files. `T3RESEARCH_TOOL_GUARD_BIN`,
 `T3RESEARCH_TOOL_GUARD_DATA_DIR`, and `T3RESEARCH_TOOL_GUARD_POLICY_DIR` override binary, audit
 directory, and policy directory.
 

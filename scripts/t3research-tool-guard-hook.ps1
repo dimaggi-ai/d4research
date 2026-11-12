@@ -48,12 +48,25 @@ if ($env:GROK_HOOK_EVENT) {
     }
   } catch {}
 }
+# Protect what the guard runs from: its policy, the managed install, and the provider
+# hook configs that call this wrapper. Core's -protect-self would cover all of ~/.claude,
+# which also blocks Claude's own memory and plan files.
+$protectArguments = @("-protect-path", $policyDirectory, "-protect-path", $integrationDirectory)
+$userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+if ($userHome) {
+  foreach ($protected in @(
+      ".claude\settings.json", ".claude\settings.local.json", ".claude\hooks",
+      ".codex\hooks.json", ".gemini\config\hooks.json", ".gemini\settings.json"
+    )) {
+    $protectArguments += @("-protect-path", (Join-Path $userHome $protected))
+  }
+}
 $decision = $request | & $guardBinary hook `
   -policy-dir $policyDirectory `
   -mode $guardMode `
   -agent-id "d4research-local" `
   -audit-log (Join-Path $dataDirectory "decisions.jsonl") `
-  -protect-self `
+  @protectArguments `
   -fail-closed-tools "bash,write,edit,notebookedit"
 $guardExit = $LASTEXITCODE
 # Codex accepts only "deny" from PreToolUse and runs an "ask" as allow, and T3 approves a

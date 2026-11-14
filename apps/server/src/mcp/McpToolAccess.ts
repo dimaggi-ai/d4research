@@ -188,7 +188,12 @@ export const writesThreads = <P, A, E, R>(
         const owns = yield* D4AgentAccess.ownership;
         for (const threadId of threads(params)) {
           const targetId = threadId ?? caller.scope.thread?.threadId;
-          if (targetId !== undefined && (yield* owns(targetId))) return yield* unavailable();
+          if (
+            targetId !== undefined &&
+            (yield* owns(targetId)) &&
+            !(targetId === caller.scope.thread?.threadId && caller.scope.thread.turnMode === "user")
+          )
+            return yield* unavailable();
           if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
           const target = yield* caller.threads
             .getThreadShell(threadId)

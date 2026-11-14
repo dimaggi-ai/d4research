@@ -29,7 +29,6 @@ import {
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { D4AgentControls } from "./D4AgentControls";
 import { Switch } from "../ui/switch";
-import { Button } from "../ui/button";
 import { SettingsRow, SettingsSection, SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useScopedSettings } from "./useScopedSettings";
@@ -150,7 +149,7 @@ function AgentMonitorForm() {
       .catch(() => setSaveError("Could not save Nia skills."))
       .finally(() => setSaving(false));
   };
-  const saveModel = (modelSelection: ModelSelection | null) => void writeAgent({ modelSelection });
+  const saveModel = (modelSelection: ModelSelection) => void writeAgent({ modelSelection });
   const saveTaskModel = (taskModelSelection: ModelSelection) =>
     void writeAgent({ taskModelSelection });
   return (
@@ -275,16 +274,6 @@ function AgentMonitorForm() {
                       saveModel(createModelSelection(instanceId, model))
                     }
                   />
-                  {agent.modelSelection ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={!allowed || saving}
-                      onClick={() => saveModel(null)}
-                    >
-                      Clear
-                    </Button>
-                  ) : null}
                 </div>
               }
             />

@@ -250,14 +250,6 @@ function EnvironmentMonitorSettings({
           disabled={!allowed || saving}
           onPress={() => setPicker("manager")}
         />
-        {agent.modelSelection ? (
-          <SettingsRow
-            icon="xmark"
-            label="Clear Nia model"
-            disabled={!allowed || saving}
-            onPress={() => void writeAgent({ modelSelection: null })}
-          />
-        ) : null}
         <D4AgentControls
           environmentId={target.environmentId}
           agent={agent}

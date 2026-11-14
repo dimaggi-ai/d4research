@@ -585,7 +585,8 @@ export function D4AgentChat({
                 disabled={sending}
                 emphasized
                 icon="brain"
-                label={formatModelSelectionLabel(config?.providers, taskSelection)}
+                label={`Tasks · ${formatModelSelectionLabel(config?.providers, taskSelection)}`}
+                maxWidth="100%"
                 onPress={() => setTaskPickerOpen(true)}
               />
             </ComposerToolbarScroller>

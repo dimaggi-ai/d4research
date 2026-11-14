@@ -1101,7 +1101,7 @@ it("sends the exact request-local worker selected in native chat", async () => {
     [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
   await act(async () =>
     press(
-      `${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId} · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model}`,
+      `Tasks · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId} · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model}`,
     ).click(),
   );
   expect(document.body.textContent).toContain("Alternate worker");
@@ -1143,7 +1143,7 @@ it("always shows a concrete task model and dictates into the Nia draft", async (
   expect(container.textContent).not.toContain("No task model");
   expect(
     press(
-      `${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId} · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model}`,
+      `Tasks · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.instanceId} · ${DEFAULT_D4_AGENT_TASK_MODEL_SELECTION.model}`,
     ),
   ).toBeDefined();
   await act(async () => press("Start dictation")!.click());

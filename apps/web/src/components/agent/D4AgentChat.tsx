@@ -136,7 +136,7 @@ export function D4AgentChat({
       threadId={state.threadId}
       render={({ approvals, details }) => {
         const header = (
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <WorkspaceBreadcrumb ariaLabel="Active thread">
               <WorkspaceBreadcrumbItem current>
                 <span className="mr-2">

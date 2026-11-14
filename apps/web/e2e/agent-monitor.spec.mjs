@@ -306,14 +306,6 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await page.screenshot({ path: NodePath.join(screenshotDir, "monitor-mobile.png") });
   await savedChange(
     app,
-    "clear agent model",
-    () =>
-      page.locator("#agent-monitor").getByRole("button", { name: "Clear", exact: true }).click(),
-    (value) => (value.modelSelection ?? null) === null,
-    "d4Agent",
-  );
-  await savedChange(
-    app,
     "disable monitor notifications",
     () => notifications.click(),
     (value) => (value.notificationsEnabled ?? false) === false,
@@ -346,7 +338,8 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   NodeAssert.equal(await notifications.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await agentEnabled.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await probes.getAttribute("aria-checked"), "false");
-  NodeAssert.equal(await picker.innerText(), "Choose model");
+  // Turning Nia off keeps its model; Settings has no separate way to clear it.
+  NodeAssert.notEqual(await picker.innerText(), "Choose model");
   NodeAssert.equal(
     await page.locator('[data-slot="sidebar-inner"]').getByRole("button", { name: "Nia" }).count(),
     0,

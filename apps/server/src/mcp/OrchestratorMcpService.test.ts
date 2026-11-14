@@ -1,3 +1,6 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
+import * as AgentStore from "../d4Agent/D4AgentStore.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -5,6 +8,7 @@ import {
   CommandId,
   ContextTransferId,
   EnvironmentId,
+  EventId,
   GitCommandError,
   MessageId,
   NodeId,
@@ -38,6 +42,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
@@ -3851,5 +3856,252 @@ describe("OrchestratorMcpService thread stop", () => {
         }).pipe(Effect.provide(layerTest));
       }),
     ),
+  );
+
+  it.effect(
+    "Nia user turns delegate, receive results and cancel through the real orchestrator",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cwd = yield* checkpointWorkspace("mcp-nia-delegation");
+          const ownership = Layer.mock(AgentStore.D4AgentStore)({
+            workspace: cwd,
+            get: Effect.succeed({
+              threadId,
+              sessions: [{ threadId: ThreadId.make("nia:other") }],
+            } as never),
+          });
+          const adapters = ProviderAdapterRegistry.layerSingle(liveAdapter(cwd));
+          const database = SqlitePersistence.layerMemory;
+          const engine = ProviderReplayHarness.layerWithRegistry(
+            { name: "mcp-nia-delegation" },
+            adapters,
+            { databaseLayer: database, runEffectWorker: false, runContinuationWorker: true },
+          );
+          const threads = ThreadManagementService.layer.pipe(
+            Layer.provideMerge(engine),
+            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(database))),
+          );
+          const layer = layerOrchestratorService.pipe(
+            Layer.provideMerge(threads),
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                NodeCrypto.layer,
+                adapters,
+                ServerSettings.layerTest(),
+                Layer.mock(ProviderRegistry.ProviderRegistry)({
+                  getProviders: Effect.succeed([
+                    {
+                      instanceId,
+                      driver,
+                      enabled: true,
+                      installed: true,
+                      version: "test",
+                      status: "ready",
+                      auth: { status: "authenticated" },
+                      checkedAt: "2026-11-14T00:00:00Z",
+                      models: [
+                        {
+                          slug: modelSelection.model,
+                          name: modelSelection.model,
+                          isCustom: false,
+                          capabilities: null,
+                        },
+                      ],
+                      slashCommands: [],
+                      skills: [],
+                    },
+                  ]),
+                }),
+                Layer.mock(ProjectService.ProjectService)({}),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+                Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+              ),
+            ),
+            Layer.provideMerge(ownership),
+            Layer.provideMerge(database),
+          );
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            const sink = yield* EventSink.EventSinkV2;
+            const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`
+              INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+              VALUES ('project:nia', 'Nia', ${cwd}, '[]', '2026-11-14T00:00:00.000Z', '2026-11-14T00:00:00.000Z')
+            `;
+            const scope: McpInvocationScope = {
+              ...client,
+              client: undefined,
+              thread: {
+                threadId,
+                providerInstanceId: instanceId,
+                providerSessionId: "nia:user",
+                turnMode: "user",
+              },
+            };
+            yield* orchestrator.dispatch({
+              type: "thread.create",
+              commandId: CommandId.make("nia:create"),
+              threadId,
+              projectId: ProjectId.make("project:nia"),
+              title: "Nia",
+              modelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: cwd,
+              createdBy: "user",
+              creationSource: "server",
+            });
+            yield* orchestrator
+              .dispatch({
+                type: "message.dispatch",
+                commandId: CommandId.make("nia:send"),
+                threadId,
+                messageId: MessageId.make("nia:message"),
+                text: "Delegate this work.",
+                attachments: [],
+                dispatchMode: { type: "start_immediately" },
+                createdBy: "user",
+                creationSource: "web",
+              })
+              .pipe(Effect.provideService(AgentAccess.DispatchOrigin, "authenticated-user"));
+            yield* worker.drain();
+            assert.equal((yield* service.capabilities(scope)).parentThreadId, threadId);
+            const task = yield* service.delegateTask(scope, {
+              task: "Produce a result",
+              mode: "async",
+              clientRequestId: "nia:delegate",
+            });
+            for (const turnMode of [undefined, "restricted"] as const) {
+              const restricted = {
+                ...scope,
+                thread: {
+                  threadId,
+                  providerInstanceId: instanceId,
+                  providerSessionId: "nia:user",
+                  ...(turnMode === undefined ? {} : { turnMode }),
+                },
+              };
+              assert.equal(
+                (yield* service.capabilities(restricted).pipe(Effect.flip)).code,
+                "capability_denied",
+              );
+              assert.equal(
+                (yield* service
+                  .delegateTask(restricted, { task: "Denied", mode: "async" })
+                  .pipe(Effect.flip)).code,
+                "capability_denied",
+              );
+              assert.equal(
+                (yield* service.taskStatus(restricted, task.taskId).pipe(Effect.flip)).code,
+                "capability_denied",
+              );
+              assert.equal(
+                (yield* service.cancelTask(restricted, { taskId: task.taskId }).pipe(Effect.flip))
+                  .code,
+                "capability_denied",
+              );
+            }
+            for (const caller of [scope, client]) {
+              assert.equal(
+                (yield* service
+                  .readThread(caller, { threadId: ThreadId.make("nia:other") })
+                  .pipe(Effect.flip)).code,
+                "capability_denied",
+              );
+            }
+            assert.isNotNull(task.childThreadId);
+            yield* worker.drain();
+            const child = yield* orchestrator.getThreadProjection(task.childThreadId!);
+            assert.equal(child.thread.creationSource, "mcp");
+            const owns = yield* AgentAccess.ownership;
+            assert.isTrue(yield* owns(threadId));
+            assert.isFalse(yield* owns(child.thread.id));
+            assert.equal((yield* service.taskStatus(scope, task.taskId)).status, "running");
+            const run = child.runs[0]!;
+            const delivered = yield* orchestrator.streamDomainEvents.pipe(
+              Stream.filter(
+                (event) =>
+                  event.type === "message.updated" &&
+                  event.threadId === threadId &&
+                  event.payload.delegatedCompletion?.taskIds.includes(task.taskId) === true,
+              ),
+              Stream.take(1),
+              Stream.runDrain,
+              Effect.forkScoped,
+            );
+            const now = yield* DateTime.now;
+            yield* sink.write({
+              commandId: CommandId.make("nia:child-completed"),
+              events: [
+                {
+                  id: EventId.make("nia:child-result"),
+                  type: "message.updated",
+                  threadId: child.thread.id,
+                  runId: run.id,
+                  providerInstanceId: instanceId,
+                  occurredAt: now,
+                  payload: {
+                    id: MessageId.make("nia:child-result"),
+                    threadId: child.thread.id,
+                    runId: run.id,
+                    role: "assistant",
+                    createdBy: "agent",
+                    creationSource: "provider",
+                    nodeId: run.rootNodeId,
+                    streaming: false,
+                    text: "Verified child result",
+                    attachments: [],
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                },
+                {
+                  id: EventId.make("nia:child-completed"),
+                  type: "run.updated",
+                  threadId: child.thread.id,
+                  runId: run.id,
+                  providerInstanceId: instanceId,
+                  occurredAt: now,
+                  payload: { ...run, status: "completed", completedAt: now },
+                },
+              ],
+            });
+            yield* Fiber.join(delivered);
+            const result = yield* service.taskStatus(scope, task.taskId);
+            assert.equal(result.status, "completed");
+            assert.equal(result.summary, "Verified child result");
+            assert.isNotNull(result.resultContextTransferId);
+            const parent = yield* orchestrator.getThreadProjection(threadId);
+            assert.equal(
+              parent.subagents.find((item) => item.id === task.taskId)?.completionDelivery?.state,
+              "acknowledged",
+            );
+            const cancellable = yield* service.delegateTask(scope, {
+              task: "Cancel this task",
+              mode: "async",
+              clientRequestId: "nia:cancel-delegate",
+            });
+            yield* worker.drain();
+            const cancelled = yield* service.cancelTask(scope, {
+              taskId: cancellable.taskId,
+              clientRequestId: "nia:cancel",
+            });
+            assert.equal(cancelled.status, "cancel_requested");
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(threadId)).subagents.find(
+                (item) => item.id === cancellable.taskId,
+              )?.completionDelivery?.state,
+              "disposed",
+            );
+          }).pipe(Effect.provide(layer));
+        }),
+      ),
   );
 });

@@ -14360,6 +14360,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       "orchestration_v2.thread_id": commandThreadId(command),
     });
     const origin = yield* D4AgentAccess.DispatchOrigin;
+    const ownUserDelegation =
+      (command.type === "delegated_task.request" ||
+        command.type === "delegated_task.wake-policy" ||
+        command.type === "delegated_task.completion-delivery.acknowledge" ||
+        command.type === "delegated_task.completion-delivery.dispose" ||
+        command.type === "subagent.stop") &&
+      commandThreadId(command) === (yield* D4AgentAccess.DelegatingUserThread);
     const protectedIds =
       command.type === "thread.fork" || command.type === "thread.merge_back"
         ? [command.sourceThreadId, command.targetThreadId]
@@ -14371,6 +14378,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? [command.sourcePlanRef.threadId]
               : [];
     for (const threadId of protectedIds) {
+      if (command.type === "delegated_task.request" && ownUserDelegation) continue;
       if (yield* ownsD4Agent(threadId))
         return yield* new OrchestratorCommandRejectedError({
           commandId: command.commandId,
@@ -14385,6 +14393,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type !== "thread.unarchive" &&
       origin !== "authenticated-user" &&
       origin !== "internal-heartbeat" &&
+      !ownUserDelegation &&
       !(origin === "internal-server" && command.type === "message.dispatch") &&
       (yield* ownsD4Agent(commandThreadId(command)))
     )

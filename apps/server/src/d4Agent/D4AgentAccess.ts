@@ -14,6 +14,12 @@ export const ToolCaller = Context.Reference<ThreadId | undefined>("d4research/d4
   defaultValue: () => undefined,
 });
 
+// Only the MCP service can authorize delegation from its authenticated user-turn caller.
+export const DelegatingUserThread = Context.Reference<ThreadId | undefined>(
+  "d4research/d4Agent/DelegatingUserThread",
+  { defaultValue: () => undefined },
+);
+
 // Store ownership is available below the monitor/context layer without a cycle.
 export const ownership = Effect.gen(function* () {
   const store = yield* Effect.serviceOption(Store.D4AgentStore);

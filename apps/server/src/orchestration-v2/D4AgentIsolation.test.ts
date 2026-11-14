@@ -157,17 +157,26 @@ it.effect(
       ];
       for (const origin of ["authenticated-user", "internal-server"] as const) {
         for (const [index, command] of commands.entries()) {
-          const result = yield* Effect.result(
-            engine
-              .dispatch({
-                ...command,
-                commandId: CommandId.make(`blocked-${origin}-${index}`),
-              } as Parameters<typeof engine.dispatch>[0])
-              .pipe(Effect.provideService(AgentAccess.DispatchOrigin, origin)),
-          );
-          assert.equal(result._tag, "Failure");
-          if (result._tag === "Failure")
-            assert.equal(result.failure._tag, "OrchestratorCommandRejectedError");
+          for (const caller of [
+            undefined,
+            ordinary,
+            ...(command.type === "delegated_task.request" ? [] : [owned]),
+          ]) {
+            const result = yield* Effect.result(
+              engine
+                .dispatch({
+                  ...command,
+                  commandId: CommandId.make(`blocked-${origin}-${index}`),
+                } as Parameters<typeof engine.dispatch>[0])
+                .pipe(
+                  Effect.provideService(AgentAccess.DispatchOrigin, origin),
+                  Effect.provideService(AgentAccess.DelegatingUserThread, caller),
+                ),
+            );
+            assert.equal(result._tag, "Failure");
+            if (result._tag === "Failure")
+              assert.equal(result.failure._tag, "OrchestratorCommandRejectedError");
+          }
         }
       }
     }).pipe(Effect.provide(layerTest)),

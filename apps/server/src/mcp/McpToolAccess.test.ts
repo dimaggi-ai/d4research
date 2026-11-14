@@ -364,18 +364,59 @@ it.effect("refuses a change when the calling thread cannot be read", () =>
   ),
 );
 
-it.effect("other MCP agents cannot mutate or read the owned agent conversation", () =>
+it.effect("only the owned caller's user turn can mutate its owned agent conversation", () =>
   Effect.gen(function* () {
+    const ownedUser = {
+      ...supervised,
+      thread: { ...supervised.thread!, turnMode: "user" as const },
+    };
+    const ownedRestricted = {
+      ...supervised,
+      thread: { ...supervised.thread!, turnMode: "restricted" as const },
+    };
     const forgedOrigin = {
       origin: "internal-server",
       dispatchOrigin: "internal-server",
       creationSource: "server",
+      turnMode: "user",
+      mode: "user",
     };
+    expect(yield* call("writes_threads", ownedUser, { threadId: supervisedThreadId })).toBe("ran");
+    expect(yield* call("writes_threads", ownedUser)).toBe("ran");
+    expect(
+      yield* call("writes_threads", ownedRestricted, {
+        threadId: supervisedThreadId,
+        ...forgedOrigin,
+      }),
+    ).toBe("orchestration_error");
+    expect(yield* call("writes_threads", ownedRestricted, forgedOrigin)).toBe(
+      "orchestration_error",
+    );
+    expect(
+      yield* call("writes_threads", supervised, { threadId: supervisedThreadId, ...forgedOrigin }),
+    ).toBe("orchestration_error");
+    expect(yield* call("writes_threads", supervised, forgedOrigin)).toBe("orchestration_error");
+    expect(yield* call("writes_threads", ownedUser, { threadId: planThreadId })).toBe(
+      "orchestration_error",
+    );
     expect(
       yield* call("writes_threads", fullAccess, { threadId: fullAccessThreadId, ...forgedOrigin }),
     ).toBe("ran");
     expect(
       yield* call("writes_threads", fullAccess, { threadId: supervisedThreadId, ...forgedOrigin }),
+    ).toBe("orchestration_error");
+    expect(
+      yield* call(
+        "writes_threads",
+        { ...fullAccess, thread: { ...fullAccess.thread!, turnMode: "user" } },
+        { threadId: supervisedThreadId, ...forgedOrigin },
+      ),
+    ).toBe("orchestration_error");
+    expect(
+      yield* call("writes_threads", fullAccessClient, {
+        threadId: supervisedThreadId,
+        ...forgedOrigin,
+      }),
     ).toBe("orchestration_error");
     const result = yield* Effect.result(
       readThread(supervisedThreadId).pipe(
@@ -394,7 +435,10 @@ it.effect("other MCP agents cannot mutate or read the owned agent conversation",
         Layer.provideMerge(
           Layer.mock(AgentStore.D4AgentStore)({
             workspace: "/private-agent",
-            get: Effect.succeed({ threadId: supervisedThreadId } as never),
+            get: Effect.succeed({
+              threadId: supervisedThreadId,
+              sessions: [{ threadId: planThreadId }],
+            } as never),
           }),
         ),
       ),

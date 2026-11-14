@@ -17,11 +17,14 @@ import {
 } from "@d4research/contracts";
 import { getProviderOptionDescriptors } from "@d4research/shared/model";
 import { useState, type ComponentProps, type ReactNode } from "react";
-import { View, TextInput, Modal, Pressable, ScrollView } from "react-native";
+import { View, TextInput } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useProjects } from "../../state/entities";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { PickerSheet } from "./PickerSheet";
+import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
+import { SettingsSection } from "./components/SettingsSection";
 
 type Agent = ServerSettings["d4Agent"];
 type Monitor = ServerSettings["agentMonitor"];
@@ -457,40 +460,27 @@ function AgentChoiceRow({
         disabled={disabled}
         onPress={() => setOpen(true)}
       />
-      <Modal
+      <PickerSheet
+        title={label}
         visible={open}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setOpen(false)}
+        onClose={() => setOpen(false)}
+        contentContainerClassName="px-5 pb-10"
       >
-        <View className="flex-1 bg-background pt-6">
-          <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-lg font-t3-semibold text-foreground">{label}</Text>
-            <Pressable accessibilityRole="button" className="p-2" onPress={() => setOpen(false)}>
-              <Text className="text-accent">Done</Text>
-            </Pressable>
-          </View>
-          <ScrollView contentContainerClassName="gap-2 px-5 pb-10">
-            {options.map((option) => (
-              <Pressable
-                key={option.id}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: value === option.id }}
-                className="rounded-xl bg-surface px-4 py-4"
-                onPress={() => {
-                  onChange(option.id);
-                  setOpen(false);
-                }}
-              >
-                <Text className="text-base text-foreground">
-                  {option.label}
-                  {value === option.id ? " ✓" : ""}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      </Modal>
+        <SettingsSection>
+          {options.map((option, index) => (
+            <SettingsChoiceRow
+              key={option.id}
+              label={option.label}
+              selected={value === option.id}
+              separated={index > 0}
+              onPress={() => {
+                onChange(option.id);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </SettingsSection>
+      </PickerSheet>
     </>
   );
 }

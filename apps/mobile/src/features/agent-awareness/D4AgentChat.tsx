@@ -30,7 +30,7 @@ import {
   type ComponentRef,
   type ReactNode,
 } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
 import { flattenThemeColor } from "../../lib/mobileTheme";
@@ -62,7 +62,7 @@ import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
 import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
-import { ModelRow } from "../threads/ThreadSettingsRows";
+import { ModelPickerSheet } from "../settings/PickerSheet";
 import { AppBar } from "../../components/ui/AppBar";
 import { ComposerEditor, type ComposerEditorSelection } from "../../components/ComposerEditor";
 import {
@@ -663,52 +663,18 @@ export function D4AgentChat({
           </Text>
         ) : null}
       </View>
-      <Modal
+      <ModelPickerSheet
+        title="Task model"
         visible={taskPickerOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setTaskPickerOpen(false)}
-      >
-        <View className="flex-1 bg-background pt-6">
-          <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-lg font-t3-semibold text-foreground">Task model</Text>
-            <Pressable
-              accessibilityRole="button"
-              className="p-2"
-              onPress={() => setTaskPickerOpen(false)}
-            >
-              <Text className="text-base text-accent">Done</Text>
-            </Pressable>
-          </View>
-          <ScrollView contentContainerClassName="gap-4 pb-10">
-            {taskGroups.map((group) => (
-              <View key={group.providerKey} className="gap-2">
-                <Text className="px-5 text-sm text-foreground-muted">{group.providerLabel}</Text>
-                {group.models.map((option, index) => (
-                  <ModelRow
-                    key={option.key}
-                    option={option}
-                    selected={
-                      option.selection.instanceId === taskSelection.instanceId &&
-                      option.selection.model === taskSelection.model
-                    }
-                    onPress={() => {
-                      setTaskSelectionOverride(option.selection);
-                      setTaskPickerOpen(false);
-                      bindDraft();
-                    }}
-                    isFavorite={false}
-                    favoritesLoaded={false}
-                    onToggleFavorite={() => {}}
-                    isFirst={index === 0}
-                    isLast={index === group.models.length - 1}
-                  />
-                ))}
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      </Modal>
+        groups={taskGroups}
+        selected={taskSelection}
+        onSelect={(option) => {
+          setTaskSelectionOverride(option.selection);
+          setTaskPickerOpen(false);
+          bindDraft();
+        }}
+        onClose={() => setTaskPickerOpen(false)}
+      />
     </KeyboardAvoidingView>
   );
 }

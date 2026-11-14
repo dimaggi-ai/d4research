@@ -8,6 +8,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { environmentSession, usePreparedConnection } from "../../state/session";
 import { D4AgentControls } from "./D4AgentControls";
 import { NiaMcpServerList } from "./NiaMcpServerList";
+import { ModelPickerSheet } from "./PickerSheet";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
@@ -15,6 +16,7 @@ import {
   supportsD4AgentDriver,
   type EnvironmentId,
   type ServerSettings,
+  type ServerSettingsPatch,
 } from "@d4research/contracts";
 import {
   agentMonitorLabel,
@@ -25,21 +27,27 @@ import {
 import { useLinkTo } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
-import { AppState, Linking, Modal, Pressable, View } from "react-native";
+import { AppState, Linking, Pressable, View } from "react-native";
 import * as Effect from "effect/Effect";
-import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
 import { formatModelSelectionLabel } from "@d4research/client-runtime/state/provider-instance-display";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { useEnvironmentServerConfig, useThreadShells } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ModelRow } from "../threads/ThreadSettingsRows";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsRow } from "./components/SettingsRow";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+
+async function readNotificationPermission(): Promise<string> {
+  const result = await Notifications.getPermissionsAsync().catch(() => null);
+  if (result === null) return "Notification permission unavailable";
+  if (result.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL)
+    return "Notifications: provisional";
+  return result.granted ? "Notifications: allowed" : "Notifications: not allowed";
+}
 
 const skillsInventoryAtom = Atom.family((environmentId: EnvironmentId) =>
   connectionAtomRuntime
@@ -102,20 +110,9 @@ function EnvironmentMonitorSettings({
   useEffect(() => {
     let active = true;
     const readPermission = () => {
-      void Notifications.getPermissionsAsync()
-        .then((result) => {
-          if (active)
-            setPermissionState(
-              result.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
-                ? "Notifications: provisional"
-                : result.granted
-                  ? "Notifications: allowed"
-                  : "Notifications: not allowed",
-            );
-        })
-        .catch(() => {
-          if (active) setPermissionState("Notification permission unavailable");
-        });
+      void readNotificationPermission().then((label) => {
+        if (active) setPermissionState(label);
+      });
     };
     readPermission();
     const subscription = AppState.addEventListener("change", (state) => {
@@ -150,59 +147,46 @@ function EnvironmentMonitorSettings({
   );
   const attention = monitorAttentionThreads(monitored);
   const activity = monitorActivityThreads(monitored);
+  const threadRow = (thread: (typeof monitored)[number]) => (
+    <SettingsRow
+      key={thread.id}
+      icon="bubble.left"
+      label={thread.title}
+      value={agentMonitorLabel(thread.source.agentMonitor!)}
+      onPress={() =>
+        linkTo(
+          `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
+        )
+      }
+    />
+  );
   const listCount = (count: number) =>
     count > AGENT_MONITOR_LIST_LIMIT ? `${AGENT_MONITOR_LIST_LIMIT}/${count}` : String(count);
-  const write = async (patch: Partial<ServerSettings["agentMonitor"]>) => {
+  const save = async (patch: ServerSettingsPatch) => {
     if (saving || !allowed) return;
     setSaving(true);
     setSaveError(null);
-    await updateSettings({
-      environmentId: target.environmentId,
-      input: { patch: { agentMonitor: { ...monitor, ...patch } } },
-    })
+    await updateSettings({ environmentId: target.environmentId, input: { patch } })
       .then((result) => {
         if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
       })
       .catch(() => setSaveError("Could not save Nia settings."))
       .finally(() => setSaving(false));
   };
-  const writeAgent = async (patch: Partial<ServerSettings["d4Agent"]>) => {
-    if (saving || !allowed) return;
-    setSaving(true);
-    setSaveError(null);
-    await updateSettings({
-      environmentId: target.environmentId,
-      input: { patch: { d4Agent: { ...agent, ...patch } } },
-    })
-      .then((result) => {
-        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
-      })
-      .catch(() => setSaveError("Could not save Nia settings."))
-      .finally(() => setSaving(false));
-  };
+  const write = (patch: Partial<ServerSettings["agentMonitor"]>) =>
+    save({ agentMonitor: { ...monitor, ...patch } });
+  const writeAgent = (patch: Partial<ServerSettings["d4Agent"]>) =>
+    save({ d4Agent: { ...agent, ...patch } });
   const skills = target.serverConfig.settings.skills;
   const writeSkills = async (name: string, enabled: boolean) => {
-    if (saving || !allowed) return;
     if (enabled && skills.enabledForNia.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT) return;
-    setSaving(true);
-    setSaveError(null);
-    await updateSettings({
-      environmentId: target.environmentId,
-      input: {
-        patch: {
-          skills: {
-            enabledForNia: enabled
-              ? [...skills.enabledForNia, name]
-              : skills.enabledForNia.filter((item) => item !== name),
-          },
-        },
+    await save({
+      skills: {
+        enabledForNia: enabled
+          ? [...skills.enabledForNia, name]
+          : skills.enabledForNia.filter((item) => item !== name),
       },
-    })
-      .then((result) => {
-        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
-      })
-      .catch(() => setSaveError("Could not save Nia settings."))
-      .finally(() => setSaving(false));
+    });
   };
   const toggleNotifications = async (enabled: boolean) => {
     if (enabled) {
@@ -217,16 +201,7 @@ function EnvironmentMonitorSettings({
       }
     }
     setPermissionMessage(null);
-    if (enabled) {
-      const current = await Notifications.getPermissionsAsync().catch(() => null);
-      setPermissionState(
-        current?.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
-          ? "Notifications: provisional"
-          : current?.granted
-            ? "Notifications: allowed"
-            : "Notifications: not allowed",
-      );
-    }
+    if (enabled) setPermissionState(await readNotificationPermission());
     await write({ notificationsEnabled: enabled });
   };
   return (
@@ -361,40 +336,14 @@ function EnvironmentMonitorSettings({
                             No threads need attention.
                           </Text>
                         ) : (
-                          attention
-                            .slice(0, AGENT_MONITOR_LIST_LIMIT)
-                            .map((thread) => (
-                              <SettingsRow
-                                key={thread.id}
-                                icon="bubble.left"
-                                label={thread.title}
-                                value={agentMonitorLabel(thread.source.agentMonitor!)}
-                                onPress={() =>
-                                  linkTo(
-                                    `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
-                                  )
-                                }
-                              />
-                            ))
+                          attention.slice(0, AGENT_MONITOR_LIST_LIMIT).map(threadRow)
                         )}
                       </View>
                     ) : null}
                     {monitor.enabled && activity.length > 0 ? (
                       <View>
                         <Text className="px-4 py-3 text-base text-foreground">{`Thread activity · ${listCount(activity.length)}`}</Text>
-                        {activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
-                          <SettingsRow
-                            key={thread.id}
-                            icon="bubble.left"
-                            label={thread.title}
-                            value={agentMonitorLabel(thread.source.agentMonitor!)}
-                            onPress={() =>
-                              linkTo(
-                                `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
-                              )
-                            }
-                          />
-                        ))}
+                        {activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map(threadRow)}
                       </View>
                     ) : null}
                   </>
@@ -476,60 +425,21 @@ function EnvironmentMonitorSettings({
           {saveError}
         </Text>
       ) : null}
-      <Modal
+      <ModelPickerSheet
+        title={picker === "task" ? "Task model" : "Nia model"}
         visible={picker !== null}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setPicker(null)}
-      >
-        <View className="flex-1 bg-background pt-6">
-          <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-lg font-t3-semibold text-foreground">
-              {picker === "task" ? "Task model" : "Nia model"}
-            </Text>
-            <Pressable accessibilityRole="button" onPress={() => setPicker(null)} className="p-2">
-              <Text className="text-base text-accent">Done</Text>
-            </Pressable>
-          </View>
-          <ScreenScrollView contentContainerClassName="gap-4 pb-10">
-            {(picker === "task" ? taskGroups : groups).map((group) => (
-              <View key={group.providerKey} className="gap-2">
-                <Text className="px-5 text-sm text-foreground-muted">{group.providerLabel}</Text>
-                {group.models.map((option, index) => (
-                  <ModelRow
-                    key={option.key}
-                    option={option}
-                    selected={
-                      option.selection.instanceId ===
-                        (picker === "task"
-                          ? taskSelection.instanceId
-                          : agent.modelSelection?.instanceId) &&
-                      option.selection.model ===
-                        (picker === "task" ? taskSelection.model : agent.modelSelection?.model)
-                    }
-                    onPress={() => {
-                      void writeAgent(
-                        picker === "task"
-                          ? { taskModelSelection: option.selection }
-                          : { modelSelection: option.selection },
-                      );
-                      setPicker(null);
-                    }}
-                    isFavorite={false}
-                    favoritesLoaded={false}
-                    onToggleFavorite={() => {}}
-                    isFirst={index === 0}
-                    isLast={index === group.models.length - 1}
-                  />
-                ))}
-              </View>
-            ))}
-            {(picker === "task" ? taskGroups : groups).length === 0 ? (
-              <Text className="p-5 text-sm text-foreground-muted">No providers available.</Text>
-            ) : null}
-          </ScreenScrollView>
-        </View>
-      </Modal>
+        groups={picker === "task" ? taskGroups : groups}
+        selected={picker === "task" ? taskSelection : agent.modelSelection}
+        onSelect={(option) => {
+          void writeAgent(
+            picker === "task"
+              ? { taskModelSelection: option.selection }
+              : { modelSelection: option.selection },
+          );
+          setPicker(null);
+        }}
+        onClose={() => setPicker(null)}
+      />
     </View>
   );
 }

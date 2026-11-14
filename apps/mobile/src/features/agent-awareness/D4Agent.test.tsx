@@ -494,6 +494,9 @@ vi.mock("../layout/workspace/ListFilterMenu", () => ({
   ),
 }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/ScreenScrollView", () => ({
+  ScreenScrollView: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
 vi.mock("../../components/ui/EmptyState", () => ({
   EmptyState: ({ title }: { title: string }) => <span>{title}</span>,
 }));

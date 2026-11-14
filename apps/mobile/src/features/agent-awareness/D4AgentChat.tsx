@@ -1,14 +1,35 @@
+import { appendNiaSystemNotices } from "@d4research/client-runtime/d4-agent-timeline";
+import { AuthOrchestrationOperateScope } from "@d4research/contracts";
+import { useEnvironmentScope } from "../../state/session";
+import { useThreadRequests } from "../../state/use-selected-thread-requests";
+import { PendingApprovalCard } from "../threads/PendingApprovalCard";
+import { PendingUserInputCard } from "../threads/PendingUserInputCard";
+import type { LegendListRef } from "@legendapp/list/react-native";
+import { useSharedValue, useDerivedValue } from "react-native-reanimated";
+import * as Option from "effect/Option";
+import { deriveThreadCheckpointSummaries } from "@d4research/client-runtime/state/thread-checkpoints";
+import {
+  deriveThreadActivityRun,
+  deriveThreadRuntime,
+  deriveRunlessWorkStartedAt,
+} from "@d4research/client-runtime/state/thread-execution";
+import { resolveThreadWorkingStartedAt } from "@d4research/client-runtime/state/models";
+import { buildThreadFeed, createThreadFeedCache } from "../../lib/threadActivity";
+import { useRemoteEnvironmentRuntime } from "../../state/use-remote-environment-registry";
+import { mobilePreferencesAtom } from "../../state/preferences";
+import { AsyncResult } from "effect/reactivity";
+import { useEnvironmentThread, threadEnvironment } from "../../state/threads";
+import { ThreadFeed } from "../threads/ThreadFeed";
+import { WorkspaceMutationIdProvider } from "../threads/WorkspaceMutationIdProvider";
+import { projectThreadContentPresentation } from "../threads/threadContentPresentation";
 import {
   agentDraftMovedNotice,
   agentDraftOrigin,
   agentMentionOptions,
   agentMentionQuery,
   insertAgentMention,
-  niaSystemTextSegments,
   type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
-import { isSessionNotice, niaFileLinkRoute, postTime } from "./d4AgentPresentation";
 import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
@@ -20,42 +41,26 @@ import {
 } from "@d4research/contracts";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import { useLinkTo, useNavigation } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
+import { useRef, useState, type ReactNode } from "react";
 import {
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type ComponentRef,
-  type ReactNode,
-} from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
-import { flattenThemeColor } from "../../lib/mobileTheme";
-import { getFontFamily } from "../../lib/useFontFamily";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
-import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "../../components/ui/AppText";
 import {
-  resolveThreadLink,
   useEnvironmentServerConfig,
-  useLiveThreadLinkLabels,
   useProjects,
-  useThreadChipIcons,
   useThreadShells,
   useThreadShell,
 } from "../../state/entities";
-import { appAtomRegistry } from "../../state/atom-registry";
 import { scopeThreadRef } from "@d4research/client-runtime/environment";
-import { parseThreadLinkHref } from "@d4research/shared/threadLinks";
-import {
-  enrichedThreadLinkCustomization,
-  withChipIcon,
-} from "../../native/useEnrichedLinkVariants";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { D4AgentPanel } from "./D4Agent";
@@ -72,7 +77,6 @@ import {
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
 import { ComposerSurface } from "../threads/ThreadComposer";
-import { useAssetUrl } from "../../state/assets";
 import {
   ComposerDictationCancelAction,
   ComposerDictationPrimaryAction,
@@ -84,29 +88,6 @@ import { useVoiceInputController } from "../voice-input/useVoiceInputController"
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 
 const isD4AgentError = Schema.is(D4AgentError);
-
-function NiaFileLink({
-  environmentId,
-  path,
-  children,
-}: {
-  environmentId: EnvironmentId;
-  path: string;
-  children: string;
-}) {
-  const url = useAssetUrl(environmentId, { _tag: "draft-workspace-file", cwd: "/", path });
-  return (
-    <Text
-      accessibilityRole="link"
-      className="text-accent"
-      onPress={() => {
-        if (url) void tryOpenExternalUrl(url, "markdown-link");
-      }}
-    >
-      {children}
-    </Text>
-  );
-}
 
 function taskFailureMessage(
   failure: unknown,
@@ -135,59 +116,6 @@ function taskFailureMessage(
   return "Could not send this message. Your draft is preserved.";
 }
 
-function useNiaMarkdownStyles() {
-  const { appearance } = useAppearancePreferences();
-  const theme = useUniwindTheme();
-  const fontFamily = getFontFamily("regular");
-  const boldFontFamily = getFontFamily("bold");
-  return useMemo(() => {
-    const typography = resolveNativeMarkdownTypography(appearance.baseFontSize);
-    const common = {
-      ...typography,
-      fontFamily,
-      headingFontFamily: boldFontFamily,
-      boldFontFamily,
-      contextChipBorderColor: flattenThemeColor(
-        theme["--color-border"],
-        theme["--color-user-bubble"],
-      ),
-    };
-    const userColor = theme["--color-user-bubble-foreground"];
-    return {
-      user: {
-        ...common,
-        color: userColor,
-        strongColor: userColor,
-        mutedColor: userColor,
-        linkColor: userColor,
-        inlineCodeColor: theme["--color-user-bubble-foreground-muted"],
-        codeColor: theme["--color-md-user-code-text"],
-        codeBackgroundColor: theme["--color-md-user-code-bg"],
-        codeBlockBackgroundColor: theme["--color-md-user-fence-bg"],
-        fileTextColor: userColor,
-        skillTextColor: theme["--color-user-bubble-skill-foreground"],
-        quoteMarkerColor: userColor,
-        dividerColor: userColor,
-      },
-      assistant: {
-        ...common,
-        color: theme["--color-md-body"],
-        strongColor: theme["--color-md-strong"],
-        mutedColor: theme["--color-md-body"],
-        linkColor: theme["--color-md-link"],
-        inlineCodeColor: theme["--color-foreground-secondary"],
-        codeColor: theme["--color-md-code-text"],
-        codeBackgroundColor: theme["--color-md-code-bg"],
-        codeBlockBackgroundColor: theme["--color-md-code-bg"],
-        fileTextColor: theme["--color-md-code-text"],
-        skillTextColor: theme["--color-inline-skill-foreground"],
-        quoteMarkerColor: theme["--color-md-blockquote-border"],
-        dividerColor: theme["--color-md-hr"],
-      },
-    };
-  }, [appearance.baseFontSize, theme, fontFamily, boldFontFamily]);
-}
-
 export function D4AgentRoute({
   environmentId,
   threadId,
@@ -211,6 +139,35 @@ export function D4AgentRoute({
   const resolveArchivedRoute = environmentId !== null && threadId !== null && shell === null;
   const query = useD4AgentState(environmentId, isAgentProject || resolveArchivedRoute);
   const state = query.data;
+  const [viewed, setViewed] = useState({
+    environmentId,
+    routeThreadId: threadId,
+    activeThreadId: state?.threadId ?? null,
+    context: state?.brainContext ?? null,
+    threadId,
+  });
+  if (viewed.environmentId !== environmentId || viewed.routeThreadId !== threadId) {
+    setViewed({
+      environmentId,
+      routeThreadId: threadId,
+      activeThreadId: state?.threadId ?? null,
+      context: state?.brainContext ?? null,
+      threadId,
+    });
+  } else if (
+    state &&
+    (viewed.activeThreadId !== state.threadId || viewed.context !== state.brainContext)
+  ) {
+    const followActive =
+      viewed.activeThreadId === viewed.threadId ||
+      (viewed.context !== null && viewed.context !== state.brainContext);
+    setViewed({
+      ...viewed,
+      activeThreadId: state.threadId,
+      context: state.brainContext,
+      threadId: followActive && state.threadId !== null ? state.threadId : viewed.threadId,
+    });
+  }
   const isAgentRoute =
     isAgentProject || (threadId !== null && state?.chatThreadIds?.includes(threadId) === true);
   if (
@@ -224,47 +181,15 @@ export function D4AgentRoute({
       </View>
     );
   return isAgentRoute && state && environmentId !== null ? (
-    <D4AgentChat environmentId={environmentId} state={state} refresh={query.refresh} />
+    <D4AgentChat
+      environmentId={environmentId}
+      state={state}
+      refresh={query.refresh}
+      threadId={viewed.threadId}
+      onSent={(threadId) => setViewed((current) => ({ ...current, threadId }))}
+    />
   ) : (
     children
-  );
-}
-
-/** Thread links in Nia's replies show the thread's title as a chip and open that thread. */
-function NiaMarkdown(props: {
-  readonly environmentId: EnvironmentId;
-  readonly text: string;
-  readonly textStyle: ComponentProps<typeof SelectableMarkdownText>["textStyle"];
-  readonly preserveSoftBreaks: boolean;
-  readonly openThread: (environmentId: EnvironmentId, threadId: ThreadId) => void;
-  readonly openFile: (href: string) => void;
-}) {
-  const markdown = useLiveThreadLinkLabels(props.text, props.environmentId);
-  const threadIcons = useThreadChipIcons(props.environmentId, markdown);
-  return (
-    <SelectableMarkdownText
-      markdown={markdown}
-      textStyle={props.textStyle}
-      preserveSoftBreaks={props.preserveSoftBreaks}
-      linkCustomization={(href) =>
-        withChipIcon(enrichedThreadLinkCustomization(href), threadIcons.get(href))
-      }
-      onLinkPress={(href) => {
-        const link = parseThreadLinkHref(href);
-        if (link) {
-          const target =
-            resolveThreadLink((atom) => appAtomRegistry.get(atom), link, props.environmentId) ??
-            (link.environmentId === null
-              ? scopeThreadRef(props.environmentId, link.threadId)
-              : null);
-          if (target) props.openThread(target.environmentId, target.threadId);
-        } else if (/^https?:\/\//i.test(href)) {
-          void tryOpenExternalUrl(href, "markdown-link");
-        } else {
-          props.openFile(href);
-        }
-      }}
-    />
   );
 }
 
@@ -272,22 +197,23 @@ export function D4AgentChat({
   environmentId,
   state,
   refresh,
+  threadId: requestedThreadId,
+  onSent,
 }: {
   environmentId: EnvironmentId;
   state: D4AgentState;
   refresh: () => void;
+  threadId?: ThreadId | null;
+  onSent?: (threadId: ThreadId) => void;
 }) {
-  const markdownStyles = useNiaMarkdownStyles();
+  const threadId = requestedThreadId === undefined ? state.threadId : requestedThreadId;
   const insets = useSafeAreaInsets();
-  const transcript = (state.transcript ?? []).filter((entry) => !isSessionNotice(entry));
   const config = useEnvironmentServerConfig(environmentId);
   const projects = useProjects();
   const threads = useThreadShells();
   const enabled = config?.settings.d4Agent.enabled === true;
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
-  const linkTo = useLinkTo();
-  const navigation = useNavigation();
   const [text, setTextState] = useState("");
   // Dictation reads and watches the draft outside render, so it mirrors the text in a ref.
   const textRef = useRef("");
@@ -344,8 +270,6 @@ export function D4AgentChat({
   );
   const showsDictation = voicePresentation.statusLabel !== null;
   const taskGroups = groupByProvider(buildModelOptions(config, taskSelection, undefined, null));
-  const conversation = useRef<ComponentRef<typeof ScrollView>>(null);
-  const followConversation = useRef(true);
   const submit = async () => {
     if (sending || !enabled || !allowed || !text.trim() || moved || voiceInput.blocksSubmission)
       return;
@@ -378,6 +302,7 @@ export function D4AgentChat({
     } else {
       setText((current) => (current === submitted ? "" : current));
       setTaskSelectionOverride(undefined);
+      onSent?.(result.value.threadId);
       refresh();
     }
     setSending(false);
@@ -388,147 +313,32 @@ export function D4AgentChat({
       className="flex-1 bg-background"
     >
       <AppBar title="Nia" />
-      <ScrollView
-        ref={conversation}
-        className="flex-1"
-        contentContainerClassName="gap-4 px-4 pb-6"
-        // The glass header floats over this column. Padding, not an adjusted inset, because
-        // scrollToEnd ignores adjusted insets and would pull short chats under the header.
-        contentContainerStyle={{
-          paddingTop: (NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top : 0) + 24,
-        }}
-        scrollEventThrottle={16}
-        onScroll={(event) => {
-          const { contentSize, contentOffset, layoutMeasurement } = event.nativeEvent;
-          followConversation.current =
-            contentSize.height - contentOffset.y - layoutMeasurement.height < 64;
-        }}
-        onContentSizeChange={() => {
-          if (followConversation.current) conversation.current?.scrollToEnd({ animated: false });
-        }}
-      >
+      <View style={{ paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top : 0 }}>
         {state.threadId ? (
           <D4AgentPanel environmentId={environmentId} threadId={state.threadId} />
         ) : null}
-        {transcript.map((entry) => {
-          const segments =
-            entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
-          // System text already shows every label; only links it could not place are repeated below.
-          const inline = new Set(
-            segments?.flatMap((segment) => (segment.kind === "thread" ? [segment.threadId] : [])),
-          );
-          const openScopedThread = (target: EnvironmentId, threadId: ThreadId) =>
-            linkTo(`/threads/${encodeURIComponent(target)}/${encodeURIComponent(threadId)}`);
-          const openThread = (threadId: ThreadId) => openScopedThread(environmentId, threadId);
-          return (
-            <View
-              key={entry.id}
-              // Same row shapes as the thread feed: user bubble on the right, assistant text
-              // unboxed, server posts as a quiet card.
-              accessibilityLabel={
-                entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context
-              }
-              className={
-                entry.role === "user"
-                  ? "max-w-[85%] gap-2 self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5"
-                  : entry.role === "assistant"
-                    ? "gap-2"
-                    : "gap-2 rounded-xl border border-border px-3 py-2"
-              }
-            >
-              {entry.role === "system" ? (
-                <Text selectable className="text-sm text-foreground">
-                  {segments?.map((segment, index) =>
-                    segment.kind === "text" ? (
-                      segment.text
-                    ) : segment.kind === "file" ? (
-                      <NiaFileLink
-                        key={`${segment.path}:${segment.text}`}
-                        environmentId={environmentId}
-                        path={segment.path}
-                      >
-                        {segment.text}
-                      </NiaFileLink>
-                    ) : (
-                      <Text
-                        // oxlint-disable-next-line react/no-array-index-key -- segments of one immutable message
-                        key={index}
-                        accessibilityRole="link"
-                        className="text-accent"
-                        onPress={() =>
-                          segment.kind === "url"
-                            ? void tryOpenExternalUrl(segment.href, "markdown-link")
-                            : openThread(segment.threadId)
-                        }
-                      >
-                        {segment.text}
-                      </Text>
-                    ),
-                  )}
-                </Text>
-              ) : (
-                <NiaMarkdown
-                  environmentId={environmentId}
-                  text={entry.text}
-                  textStyle={markdownStyles[entry.role]}
-                  preserveSoftBreaks={entry.role === "user"}
-                  openThread={openScopedThread}
-                  openFile={(href) => {
-                    const file = state.threadId
-                      ? niaFileLinkRoute(
-                          href,
-                          projects.find(
-                            (project) =>
-                              project.environmentId === environmentId &&
-                              project.id === state.projectId,
-                          )?.workspaceRoot,
-                        )
-                      : null;
-                    if (file && state.threadId)
-                      navigation.navigate("ThreadFile", {
-                        environmentId: String(environmentId),
-                        threadId: String(state.threadId),
-                        ...file,
-                      });
-                  }}
-                />
-              )}
-              {entry.links
-                .filter(
-                  (link) =>
-                    segments === null || (link.threadId !== null && !inline.has(link.threadId)),
-                )
-                .map((link) =>
-                  link.threadId ? (
-                    <Pressable
-                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                      accessibilityRole="link"
-                      onPress={() => openThread(link.threadId!)}
-                      className="py-2"
-                    >
-                      <Text className="text-accent">{link.label}</Text>
-                    </Pressable>
-                  ) : (
-                    <Text
-                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                      className="text-sm text-foreground-muted"
-                    >
-                      {link.label}
-                    </Text>
-                  ),
-                )}
-              {entry.role === "user" ? null : (
-                <Text className="text-xs text-foreground-muted">{postTime(entry.createdAt)}</Text>
-              )}
-            </View>
-          );
-        })}
-        {transcript.length === 0 ? (
+      </View>
+      {threadId ? (
+        <NiaThreadFeed
+          key={`${environmentId}:${threadId}`}
+          environmentId={environmentId}
+          threadId={threadId}
+          state={state}
+        />
+      ) : (
+        <View className="flex-1 px-4 py-6">
           <Text className="text-sm text-foreground-muted">
             Ask what needs attention, send a message to a thread, or start research.
           </Text>
-        ) : null}
-      </ScrollView>
+        </View>
+      )}
+      {threadId ? (
+        <NiaThreadRequests
+          key={`${environmentId}:${threadId}`}
+          environmentId={environmentId}
+          threadId={threadId}
+        />
+      ) : null}
       <View className="gap-2 px-4 pb-4 pt-2">
         {agentMentionQuery(text) !== null && enabled && allowed ? (
           <ScrollView
@@ -676,5 +486,156 @@ export function D4AgentChat({
         onClose={() => setTaskPickerOpen(false)}
       />
     </KeyboardAvoidingView>
+  );
+}
+
+function NiaThreadFeed({
+  environmentId,
+  threadId,
+  state,
+}: {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  state: D4AgentState;
+}) {
+  const detail = useEnvironmentThread(environmentId, threadId);
+  const projection = Option.getOrNull(detail.data);
+  const thread = projection?.thread;
+  const connection = useRemoteEnvironmentRuntime(environmentId);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const projects = useProjects();
+  const [cache] = useState(createThreadFeedCache);
+  const listRef = useRef<LegendListRef | null>(null);
+  const freeze = useSharedValue(false);
+  const contentInsetEndAdjustment = useSharedValue(0);
+  const loadEarlierHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
+    label: "load earlier thread history",
+    reportFailure: false,
+  });
+  const context =
+    threadId === state.threadId
+      ? state.brainContext
+      : state.openSessions?.find((session) => session.threadId === threadId)?.context;
+  const items = projection?.visibleTurnItems ?? [];
+  const feed = buildThreadFeed(
+    context === undefined
+      ? items
+      : appendNiaSystemNotices(items, state.transcript ?? [], environmentId, threadId, context),
+    {
+      attempts: projection?.attempts,
+      nodes: projection?.nodes,
+      checkpointSummaries: projection ? deriveThreadCheckpointSummaries(projection) : [],
+      cache,
+    },
+  );
+  const latestRun = projection ? deriveThreadActivityRun(projection) : null;
+  const runtime = projection ? deriveThreadRuntime(projection) : null;
+  const runlessWorkStartedAt = projection ? deriveRunlessWorkStartedAt(projection) : null;
+  const detailRef = scopeThreadRef(environmentId, threadId);
+  return (
+    <WorkspaceMutationIdProvider threadRef={detailRef}>
+      <ThreadFeed
+        environmentId={environmentId}
+        threadId={threadId}
+        detailRef={detailRef}
+        threadTitle={thread?.title ?? "Nia"}
+        workspaceRoot={
+          thread?.worktreePath ??
+          projects.find(
+            (project) =>
+              project.environmentId === environmentId && project.id === thread?.projectId,
+          )?.workspaceRoot
+        }
+        feed={feed}
+        toolCallVisibility={
+          AsyncResult.isSuccess(preferences)
+            ? (preferences.value.toolCallVisibility ?? "showAll")
+            : "showAll"
+        }
+        queuedMessages={[]}
+        dispatchingMessageId={null}
+        onEditPendingMessage={null}
+        contentPresentation={projectThreadContentPresentation({
+          hasDetail: projection !== null,
+          detailError: Option.getOrNull(detail.error),
+          detailDeleted: detail.status === "deleted",
+          connectionState: connection?.connectionState ?? "available",
+        })}
+        latestRun={latestRun}
+        activeWorkStartedAt={
+          resolveThreadWorkingStartedAt({ latestRun, runtime }) ?? runlessWorkStartedAt
+        }
+        runlessWorkActive={runlessWorkStartedAt !== null}
+        listRef={listRef}
+        freeze={freeze}
+        anchorMessageId={null}
+        contentInsetEndAdjustment={contentInsetEndAdjustment}
+        keyboardOffset={0}
+        contentTopInset={24}
+        historyControls={
+          detail.history.hasMoreHistory || detail.history.error !== null
+            ? {
+                hasMoreHistory: detail.history.hasMoreHistory,
+                loading: detail.history.loading,
+                error: detail.history.error,
+                onLoadEarlier: () => {
+                  void loadEarlierHistory({ environmentId, input: { threadId } });
+                },
+                onLoadThrough: (throughEntryId) => {
+                  void loadEarlierHistory({ environmentId, input: { threadId, throughEntryId } });
+                },
+              }
+            : undefined
+        }
+      />
+    </WorkspaceMutationIdProvider>
+  );
+}
+
+function NiaThreadRequests({
+  environmentId,
+  threadId,
+}: {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+}) {
+  const requests = useThreadRequests(scopeThreadRef(environmentId, threadId));
+  const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const { height } = useWindowDimensions();
+  const maxHeight = useDerivedValue(() => height * 0.5);
+  const [collapsed, setCollapsed] = useState(false);
+  const cardProgress = useDerivedValue<number>(() => (collapsed ? 0 : 1));
+  const cardCoverage = useSharedValue(0);
+  return (
+    <View className="gap-3 px-4">
+      {requests.activePendingApproval ? (
+        <PendingApprovalCard
+          canOperateThread={canOperateThread}
+          approval={requests.activePendingApproval}
+          respondingApprovalId={requests.respondingApprovalId}
+          onRespond={requests.onRespondToApproval}
+        />
+      ) : null}
+      {requests.activePendingUserInput ? (
+        <PendingUserInputCard
+          key={requests.activePendingUserInput.requestId}
+          environmentId={environmentId}
+          canOperateThread={canOperateThread}
+          pendingUserInput={requests.activePendingUserInput}
+          maxHeight={maxHeight}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed(!collapsed)}
+          cardProgress={cardProgress}
+          cardCoverage={cardCoverage}
+          drafts={requests.activePendingUserInputDrafts}
+          answers={requests.activePendingUserInputAnswers}
+          respondingUserInputId={requests.respondingUserInputId}
+          onSelectOption={requests.onSelectUserInputOption}
+          onChangeCustomAnswer={requests.onChangeUserInputCustomAnswer}
+          onSubmit={requests.onSubmitUserInput}
+          onDismiss={requests.onDismissUserInput}
+        />
+      ) : null}
+    </View>
   );
 }

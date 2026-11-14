@@ -1,3 +1,8 @@
+import { useRef, type ComponentProps } from "react";
+import type { LegendListRef } from "@legendapp/list/react";
+import { MessagesTimeline } from "../chat/MessagesTimeline";
+import { makeStreamingTimelineFixture } from "../../test-fixtures";
+import { deriveTimelineEntriesFromVisibleTurnItems } from "../../session-logic";
 import type { Editor } from "@tiptap/core";
 import { serializeEditorDoc } from "../../composer-rich-text-doc";
 import { ThreadRouteView } from "../ThreadRouteView";
@@ -13,6 +18,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ThreadId,
+  RuntimeRequestId,
   DEFAULT_D4_AGENT_TASK_MODEL_SELECTION,
   ProjectId,
   ProviderInstanceId,
@@ -22,9 +28,13 @@ import {
   type D4AgentSettings,
   type D4AgentActionRecord,
   type D4AgentState,
+  type OrchestrationV2ProjectedTurnItem,
 } from "@d4research/contracts";
 
 const mocks = vi.hoisted(() => ({
+  insertionText: "Timeline citation",
+  insertionResult: undefined as boolean | undefined,
+  turnItemsByThread: {} as Record<string, OrchestrationV2ProjectedTurnItem[]>,
   resolve: vi.fn(async () => ({
     _tag: "Success",
     value: { threadId: "agent-thread" as ThreadId },
@@ -60,7 +70,7 @@ const mocks = vi.hoisted(() => ({
   updateSettings: vi.fn(async () => ({ _tag: "Success" })),
   running: false,
   interrupt: vi.fn(async () => ({ _tag: "Success", value: undefined })),
-  respondToApproval: vi.fn(async () => ({ _tag: "Success", value: undefined })),
+  respondToApproval: vi.fn(async (_input: unknown) => ({ _tag: "Success", value: undefined })),
   pendingRequests: null as null | {
     approvals: ReadonlyArray<{
       requestId: string;
@@ -105,10 +115,12 @@ vi.mock("@d4research/client-runtime/state/server", async (importOriginal) => {
     waitForD4AgentThreadShell: () => Effect.succeed(true),
   };
 });
-vi.mock("../../state/threads", () => ({
+vi.mock("../../state/threads", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/threads")>()),
   environmentThreadShells: { threadShellAtom: () => "shell" },
   environmentThreadDetails: { pendingRequestsAtom: () => "pending-requests" },
   threadEnvironment: {
+    ...(await importOriginal<typeof import("../../state/threads")>()).threadEnvironment,
     interruptTurn: { kind: "interrupt" },
     respondToApproval: { kind: "respond-approval" },
   },
@@ -117,7 +129,8 @@ vi.mock("../../state/threads", () => ({
 vi.mock("../../state/use-orchestration-command", () => ({
   useOrchestrationCommand: () => mocks.interrupt,
 }));
-vi.mock("../../lib/attachmentUploadQueue", () => ({
+vi.mock("../../lib/attachmentUploadQueue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/attachmentUploadQueue")>()),
   useAttachmentUploadStore: (selector: (store: { uploadsByImageId: object }) => unknown) =>
     selector({ uploadsByImageId: {} }),
   startAttachmentUpload: vi.fn(),
@@ -137,14 +150,16 @@ vi.mock("../../lib/attachmentUploadQueue", () => ({
       sizeBytes,
     })),
 }));
-vi.mock("../../assets/assetUrls", () => ({
+vi.mock("../../assets/assetUrls", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../assets/assetUrls")>()),
   useAssetUrlState: vi.fn(),
   useAssetUrlRefresh: vi.fn(),
   resolveAssetUrl: vi.fn(),
   useAssetUrl: (environmentId: string, asset: { attachmentId: string }) =>
     `/${environmentId}/attachments/${asset.attachmentId}`,
 }));
-vi.mock("../../hooks/useSettings", () => ({
+vi.mock("../../hooks/useSettings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../hooks/useSettings")>()),
   updateClientSettings: vi.fn(async () => undefined),
   getClientSettings: vi.fn(),
   ensureClientSettingsHydrated: vi.fn(),
@@ -153,7 +168,8 @@ vi.mock("../../hooks/useSettings", () => ({
   useEnvironmentSettings: () => ({ ...DEFAULT_CLIENT_SETTINGS, ...DEFAULT_SERVER_SETTINGS }),
   useEnvironmentIdentificationMode: () => "none",
   useMergedSettings: (settings: object) => ({ ...DEFAULT_CLIENT_SETTINGS, ...settings }),
-  useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
+  useClientSettings: (selector?: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
+    selector ? selector(DEFAULT_CLIENT_SETTINGS) : DEFAULT_CLIENT_SETTINGS,
   useUpdateClientSettings: () => vi.fn(),
   useUpdateEnvironmentSettings: () => vi.fn(),
   useEnvironmentModelPreferences: () => ({ favorites: [], hiddenModels: [] }),
@@ -166,31 +182,33 @@ vi.mock("../../rpc/atomRegistry", async (importOriginal) => ({
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
-    value === "config"
-      ? mocks.configLoaded
-        ? {
-            environment: {
-              capabilities: {
-                attachmentUploads: true,
-                fileAttachments: { maxUploadBytes: 10000000 },
+    value === "keybindings"
+      ? []
+      : value === "config"
+        ? mocks.configLoaded
+          ? {
+              environment: {
+                capabilities: {
+                  attachmentUploads: true,
+                  fileAttachments: { maxUploadBytes: 10000000 },
+                },
               },
-            },
-            settings: {
-              ...DEFAULT_SERVER_SETTINGS,
-              d4Agent: {
-                ...DEFAULT_SERVER_SETTINGS.d4Agent,
-                enabled: mocks.enabled,
-                modelSelection: mocks.modelSelection,
-                taskModelSelection: mocks.taskModelSelection,
-                projectContexts: mocks.projectContexts,
+              settings: {
+                ...DEFAULT_SERVER_SETTINGS,
+                d4Agent: {
+                  ...DEFAULT_SERVER_SETTINGS.d4Agent,
+                  enabled: mocks.enabled,
+                  modelSelection: mocks.modelSelection,
+                  taskModelSelection: mocks.taskModelSelection,
+                  projectContexts: mocks.projectContexts,
+                },
+                agentMonitor: { enabled: mocks.monitorEnabled },
               },
-              agentMonitor: { enabled: mocks.monitorEnabled },
-            },
-          }
-        : null
-      : value === "pending-requests"
-        ? mocks.pendingRequests
-        : mocks.allowed,
+            }
+          : null
+        : value === "pending-requests"
+          ? mocks.pendingRequests
+          : mocks.allowed,
 }));
 vi.mock("../../state/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../state/server")>()),
@@ -254,7 +272,9 @@ vi.mock("../../state/query", () => ({
     error: null,
   }),
 }));
-vi.mock("../../state/entities", () => ({
+vi.mock("../../state/entities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/entities")>()),
+  useServerConfigs: () => new Map(),
   useEnvironmentSupportsServerBrowser: vi.fn(),
   readEnvironmentSupportsServerBrowser: vi.fn(),
   useEnvironmentThreadRefs: () => [],
@@ -313,7 +333,18 @@ vi.mock("../ui/sidebar", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("../ChatView", () => ({ default: () => <button>Initialize Git</button> }));
+vi.mock("../ChatView", () => ({
+  default: (props: ComponentProps<typeof import("../ChatView").default>) => (
+    <ProjectedChatView {...props} />
+  ),
+}));
+vi.mock("../../assets/longLivedAssetUrls", () => ({
+  useLongLivedAssetUrl: () => ({
+    _tag: "Success",
+    url: "about:blank",
+    expiresAt: Date.now() + 60 * 60_000,
+  }),
+}));
 vi.mock("../ChatMarkdown", () => ({
   MarkdownCodeBlockFrame: vi.fn(),
   default: ({ text }: { text: string }) => <div className="chat-markdown">{text}</div>,
@@ -336,7 +367,8 @@ vi.mock("../chat/ProviderModelPicker", () => ({
     </button>
   ),
 }));
-vi.mock("../ChatView.logic", () => ({
+vi.mock("../ChatView.logic", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ChatView.logic")>()),
   resolveDraftPromotionNavigationTarget: () => null,
   threadHasStarted: () => false,
 }));
@@ -402,6 +434,79 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   useLocation: () => ({ pathname: "/test-environment" }),
   useParams: () => ({}),
 }));
+function ProjectedChatView({
+  environmentId,
+  threadId,
+  header,
+  composer,
+  composerHandle,
+  mapTimelineItems,
+}: ComponentProps<typeof import("../ChatView").default>) {
+  const listRef = useRef<LegendListRef | null>(null);
+  return (
+    <>
+      {header}
+      <button
+        aria-label="Insert timeline citation"
+        onClick={() => {
+          mocks.insertionResult = composerHandle?.current?.insertTextAtEnd(mocks.insertionText);
+        }}
+      >
+        Insert timeline citation
+      </button>
+      <div style={{ height: 500, display: "flex", flexDirection: "column" }}>
+        <MessagesTimeline
+          timelineEntries={deriveTimelineEntriesFromVisibleTurnItems({
+            visibleTurnItems:
+              mapTimelineItems?.(mocks.turnItemsByThread[threadId] ?? []) ??
+              mocks.turnItemsByThread[threadId] ??
+              [],
+            optimisticMessages: [],
+          })}
+          isWorking={mocks.running}
+          listRef={listRef}
+          latestRun={null}
+          turnDiffSummaries={[]}
+          runs={[]}
+          routeThreadKey={`${environmentId}:${threadId}`}
+          onOpenTurnDiff={() => {}}
+          onOpenThread={() => {}}
+          onForkFromRun={async () => {}}
+          supportsConversationRollback={false}
+          onRevertToTurnCount={() => {}}
+          isRevertingCheckpoint={false}
+          onImageExpand={() => {}}
+          activeThreadEnvironmentId={environmentId}
+          markdownCwd={undefined}
+          resolvedTheme="light"
+          timestampFormat="locale"
+          workspaceRoot={undefined}
+          anchorMessageId={null}
+          onAnchorReady={() => {}}
+          onAnchorSizeChanged={() => {}}
+          contentInsetEndAdjustment={0}
+          liveFollowEnabled
+          onIsAtEndChange={() => {}}
+          canOperateThread={mocks.allowed}
+          pendingApprovals={(mocks.pendingRequests?.approvals ?? []).map((approval) => ({
+            ...approval,
+            requestId: RuntimeRequestId.make(approval.requestId),
+          }))}
+          onRespondToApproval={async (requestId, decision) =>
+            mocks.respondToApproval({ environmentId, input: { threadId, requestId, decision } })
+          }
+        />
+      </div>
+      {composer}
+    </>
+  );
+}
+
+function projectedReply(text: string): OrchestrationV2ProjectedTurnItem[] {
+  const fixture = makeStreamingTimelineFixture(text);
+  return [fixture.visibleTurnItems[5]!];
+}
+
 function niaEditor() {
   const input = container.querySelector<HTMLElement & { editor: Editor }>(
     '[data-testid="composer-editor"][aria-label="Message Nia"]',
@@ -431,6 +536,9 @@ const environmentId = EnvironmentId.make("test-environment");
 const threadId = ThreadId.make("agent-thread");
 // Tests share one fixture and helpers read `container`, so each test acquires it first.
 async function setupNia() {
+  mocks.insertionText = "Timeline citation";
+  mocks.insertionResult = undefined;
+  mocks.turnItemsByThread = {};
   mocks.resolve.mockClear();
   mocks.connectionPhase = "connected";
   mocks.send.mockClear();
@@ -1056,7 +1164,7 @@ it("refreshes an open CTO result after completion without collapsing its details
   expect(container.textContent).toContain("Review slow question");
 });
 
-it("keeps one visible transcript across isolated context routes and hides provider history", async () => {
+it("renders the selected Nia thread's projected history instead of the side transcript", async () => {
   await using _nia = await setupNia();
   const oldThreadId = ThreadId.make("old-global-session");
   mocks.state = {
@@ -1065,57 +1173,194 @@ it("keeps one visible transcript across isolated context routes and hides provid
     chatThreadIds: [oldThreadId, threadId],
     transcript: [
       {
-        id: "first",
-        role: "user",
+        id: "stale",
+        role: "assistant",
         context: "Global",
-        text: "What needs me?",
+        text: "Stale side transcript",
         createdAt: "2026-10-24T12:00:00.000Z",
         links: [],
       },
+    ],
+  };
+  mocks.turnItemsByThread[oldThreadId] = projectedReply("Global projected history");
+  mocks.turnItemsByThread[threadId] = projectedReply("YB projected history");
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
+      <p>Native route fallback</p>
+    </D4AgentRoute>,
+  );
+  expect(container.textContent).toContain("Global projected history");
+  expect(container.textContent).not.toContain("YB projected history");
+  expect(container.textContent).not.toContain("Stale side transcript");
+  expect(container.textContent).not.toContain("Native route fallback");
+  await screen.rerender(
+    <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+      <p>Native route fallback</p>
+    </D4AgentRoute>,
+  );
+  expect(container.textContent).toContain("YB projected history");
+  expect(container.textContent).not.toContain("Global projected history");
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
+it.each(["Global", "YB"] as const)(
+  "follows an active Nia session rotation into %s",
+  async (context) => {
+    await using _nia = await setupNia();
+    const nextThreadId = ThreadId.make("rotated-session");
+    mocks.turnItemsByThread[threadId] = projectedReply("Original active history");
+    mocks.turnItemsByThread[nextThreadId] = projectedReply("Rotated active history");
+    await screen.rerender(
+      <D4AgentChat
+        environmentId={environmentId}
+        threadId={threadId}
+        state={mocks.state!}
+        refresh={mocks.refresh}
+      />,
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Original active history"));
+    mocks.state = { ...mocks.state!, threadId: nextThreadId, brainContext: context };
+    await screen.rerender(
+      <D4AgentChat
+        environmentId={environmentId}
+        threadId={threadId}
+        state={mocks.state!}
+        refresh={mocks.refresh}
+      />,
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Rotated active history"));
+    expect(container.textContent).not.toContain("Original active history");
+  },
+);
+
+it("keeps an explicitly viewed archived session through passive rotation and follows its next send", async () => {
+  await using _nia = await setupNia();
+  const archivedThreadId = ThreadId.make("viewed-archive");
+  const nextThreadId = ThreadId.make("rotated-active");
+  mocks.turnItemsByThread[archivedThreadId] = projectedReply("Archived projected history");
+  mocks.turnItemsByThread[nextThreadId] = projectedReply("New active projected history");
+  await screen.rerender(
+    <D4AgentChat
+      environmentId={environmentId}
+      threadId={archivedThreadId}
+      state={mocks.state!}
+      refresh={mocks.refresh}
+    />,
+  );
+  await vi.waitFor(() => expect(container.textContent).toContain("Archived projected history"));
+  mocks.state = { ...mocks.state!, threadId: nextThreadId };
+  await screen.rerender(
+    <D4AgentChat
+      environmentId={environmentId}
+      threadId={archivedThreadId}
+      state={mocks.state!}
+      refresh={mocks.refresh}
+    />,
+  );
+  expect(container.textContent).toContain("Archived projected history");
+  expect(container.textContent).not.toContain("New active projected history");
+  mocks.send.mockResolvedValueOnce({ _tag: "Success", value: { threadId: nextThreadId } });
+  await act(() => writeNiaDraft("Continue the active session"));
+  await act(() => niaSubmit().click());
+  await vi.waitFor(() => expect(container.textContent).toContain("New active projected history"));
+  expect(container.textContent).not.toContain("Archived projected history");
+});
+
+it("inserts timeline text into Nia's composer through the shared composer handle", async () => {
+  await using _nia = await setupNia();
+  await screen.rerender(
+    <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+  );
+  await act(() => writeNiaDraft("Existing draft"));
+  await act(() =>
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Insert timeline citation"]')!
+      .click(),
+  );
+  expect(mocks.insertionResult).toBe(true);
+  expect(niaDraftText()).toBe("Existing draft\n\nTimeline citation");
+  await act(() => niaSubmit().click());
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: expect.objectContaining({
+      text: "Existing draft\n\nTimeline citation",
+      expectedThreadId: threadId,
+      expectedContext: "Global",
+    }),
+  });
+  mocks.insertionText = "y";
+  const insert = () =>
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Insert timeline citation"]')!
+      .click();
+  await act(() => writeNiaDraft(`${"x".repeat(15997)}  `));
+  await act(insert);
+  expect(mocks.insertionResult).toBe(true);
+  expect(niaDraftText()).toBe(`${"x".repeat(15997)}\n\ny`);
+  expect(niaDraftText()).toHaveLength(16000);
+  const original = `${"x".repeat(15998)}  `;
+  await act(() => writeNiaDraft(original));
+  await act(insert);
+  expect(mocks.insertionResult).toBe(false);
+  expect(niaDraftText()).toBe(original);
+});
+
+it("renders html_render output and command work through the shared Nia route timeline", async () => {
+  await using _nia = await setupNia();
+  mocks.state = {
+    ...mocks.state!,
+    transcript: [
       {
-        id: "divider",
+        id: "report:research",
         role: "system",
-        context: "YB",
-        text: "Context changed to YB. New session.",
-        createdAt: "2026-10-24T12:01:00.000Z",
+        context: "Global",
+        text: "Research completed",
+        createdAt: "2026-09-04T00:00:08.000Z",
         links: [],
-      },
-      {
-        id: "reply",
-        role: "assistant",
-        context: "YB",
-        text: "Review this thread.",
-        createdAt: "2026-10-24T12:02:00.000Z",
-        links: [
-          { label: "Validated target", threadId: ThreadId.make("valid-target"), projectId: null },
-          { label: "Other context label", threadId: null, projectId: null },
-        ],
       },
     ],
   };
+  const fixture = makeStreamingTimelineFixture();
+  const tool = fixture.visibleTurnItems[4]!;
+  if (tool.item.type !== "dynamic_tool") throw new Error("Expected dynamic tool fixture");
+  mocks.turnItemsByThread[threadId] = [
+    fixture.visibleTurnItems[1]!,
+    {
+      ...tool,
+      item: {
+        ...tool.item,
+        toolName: "mcp__t3-code__html_render",
+        output: {
+          htmlRender: { attachmentId: "nia-chart.html", title: "Nia chart", height: 200 },
+        },
+      },
+    },
+  ];
   await screen.rerender(
-    <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
-      <p>Private provider history</p>
-    </D4AgentRoute>,
+    <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
   );
-  expect(container.textContent).toContain("What needs me?");
-  expect(container.textContent).not.toContain("Context changed to YB. New session.");
-  expect(container.textContent).toContain("Review this thread.");
-  expect(container.textContent).not.toContain("Private provider history");
-  expect(mocks.send).not.toHaveBeenCalled();
-  expect(container.querySelector('a[href="/test-environment/valid-target"]')?.textContent).toBe(
-    "Validated target",
+  await vi.waitFor(() =>
+    expect(container.querySelector('iframe[title="Nia chart"]')).not.toBeNull(),
   );
-  expect(
-    [...container.querySelectorAll("a")].some((item) => item.textContent === "Other context label"),
-  ).toBe(false);
-  await screen.rerender(
-    <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-      <p>Private YB provider history</p>
-    </D4AgentRoute>,
+  const fold = [...container.querySelectorAll<HTMLElement>("button, [role=button]")].find(
+    (button) => button.textContent?.startsWith("Worked for"),
   );
-  expect(container.textContent).toContain("What needs me?");
-  expect(container.textContent).not.toContain("Private YB provider history");
+  expect(fold).toBeDefined();
+  await act(() => fold!.click());
+  const work = [...container.querySelectorAll<HTMLElement>("button, [role=button]")].find(
+    (button) => button.textContent?.includes("vp test"),
+  );
+  expect(work).toBeDefined();
+  await act(() => work!.click());
+  expect(container.textContent).toContain("Test failed");
+  expect(niaEditor()).toBeDefined();
+  const report = [...container.querySelectorAll<HTMLElement>("button, [role=button]")].find(
+    (button) => button.textContent?.startsWith("Research"),
+  );
+  expect(report).toBeDefined();
+  await act(() => report!.click());
+  expect(container.textContent).toContain("Research completed");
+  expect(container.textContent).toContain("Nia");
 });
 
 it("keeps open sessions out of the chat panel", async () => {
@@ -1620,6 +1865,7 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
       },
     ],
   };
+  mocks.turnItemsByThread[threadId] = projectedReply("Retained conversation");
   function NativeMissingRoute() {
     mocks.nativeRoute();
     return <button>Initialize Git</button>;
@@ -1637,7 +1883,7 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
       <NativeMissingRoute />
     </D4AgentRoute>,
   );
-  expect(container.textContent).toContain("Retained conversation");
+  await vi.waitFor(() => expect(container.textContent).toContain("Retained conversation"));
   expect(container.textContent).not.toContain("Initialize Git");
   expect(mocks.nativeRoute).not.toHaveBeenCalled();
   expect(mocks.navigate).not.toHaveBeenCalled();
@@ -1645,6 +1891,7 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
 
 it("keeps the actual web route on an archived idle-closed agent conversation after reload", async () => {
   await using _nia = await setupNia();
+  mocks.turnItemsByThread[threadId] = projectedReply("Retained conversation");
   mocks.routeShellMissing = true;
   mocks.state = {
     ...mocks.state!,
@@ -1666,7 +1913,7 @@ it("keeps the actual web route on an archived idle-closed agent conversation aft
   await screen.rerender(
     <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
   );
-  expect(container.textContent).toContain("Retained conversation");
+  await vi.waitFor(() => expect(container.textContent).toContain("Retained conversation"));
   expect(container.textContent).not.toContain("Initialize Git");
   expect(mocks.nativeRoute).not.toHaveBeenCalled();
   expect(mocks.navigate).not.toHaveBeenCalled();
@@ -1974,7 +2221,7 @@ it("answers a provider approval raised inside Nia's thread and stops a running t
   await screen.rerender(
     <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
   );
-  const requests = document.querySelector<HTMLElement>('[aria-label="Nia needs your approval"]')!;
+  const requests = container;
   expect(requests.textContent).toContain("rm intel.json");
   const decline = Array.from(requests.querySelectorAll("button")).find((button) =>
     /decline|deny|reject/i.test(button.textContent ?? ""),

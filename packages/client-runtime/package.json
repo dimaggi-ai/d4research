@@ -4,6 +4,10 @@
   "license": "MIT",
   "type": "module",
   "exports": {
+    "./d4-agent-timeline": {
+      "types": "./src/d4-agent-timeline.ts",
+      "default": "./src/d4-agent-timeline.ts"
+    },
     "./state/agent-monitor": {
       "types": "./src/state/agentMonitor.ts",
       "default": "./src/state/agentMonitor.ts"

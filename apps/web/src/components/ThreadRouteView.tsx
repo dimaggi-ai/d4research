@@ -44,12 +44,14 @@ export function ThreadRouteView({
       className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
       inert={background}
     >
-      <D4AgentRoute
-        environmentId={target.kind === "server" ? target.threadRef.environmentId : null}
-        threadId={target.kind === "server" ? target.threadRef.threadId : null}
-      >
-        <NativeThreadRouteView target={target} background={background} />
-      </D4AgentRoute>
+      <BackgroundThreadContext value={background}>
+        <D4AgentRoute
+          environmentId={target.kind === "server" ? target.threadRef.environmentId : null}
+          threadId={target.kind === "server" ? target.threadRef.threadId : null}
+        >
+          <NativeThreadRouteView target={target} background={background} />
+        </D4AgentRoute>
+      </BackgroundThreadContext>
     </SidebarInset>
   );
 }
@@ -228,7 +230,7 @@ function NativeThreadRouteView({
 
   return (
     <>
-      <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
+      {view}
       {background ? null : redirect}
     </>
   );

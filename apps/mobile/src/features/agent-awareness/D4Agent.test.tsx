@@ -1,7 +1,11 @@
+import * as Option from "effect/Option";
+import * as DateTime from "effect/DateTime";
+import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@d4research/client-runtime/state/threads";
+import type { ThreadFeedProps } from "../threads/ThreadFeed";
 import { environmentProjects } from "../../state/projects";
 import { AtomRegistry } from "effect/reactivity";
 import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
-import { makeThreadShellFixture } from "../../test-fixtures";
+import { makeRawThreadShell, makeThreadShellFixture } from "../../test-fixtures";
 import { HomeScreen } from "../home/HomeScreen";
 import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
 import { act } from "react";
@@ -16,6 +20,10 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ThreadId,
+  MessageId,
+  TurnItemId,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2TurnItem,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -27,6 +35,10 @@ import {
 } from "@d4research/contracts";
 
 const mocks = vi.hoisted(() => ({
+  projection: null as OrchestrationV2ThreadProjection | null,
+  feed: vi.fn(),
+  loadEarlier: vi.fn(async () => ({ _tag: "Success" })),
+  threadTarget: vi.fn(),
   resolve: vi.fn(async () => ({
     _tag: "Success",
     value: { threadId: "agent-thread" as ThreadId },
@@ -89,46 +101,85 @@ vi.mock("../../state/environments", () => ({
 }));
 vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: () => "shell" },
+  threadEnvironment: { loadEarlierHistory: { kind: "load-earlier" } },
+  useEnvironmentThread: (environmentId: EnvironmentId, threadId: ThreadId) => {
+    mocks.threadTarget(environmentId, threadId);
+    return {
+      ...EMPTY_ENVIRONMENT_THREAD_STATE,
+      data: mocks.projection === null ? Option.none() : Option.some(mocks.projection),
+      status: "live",
+    };
+  },
   olderSettledThreads: { shelfAtom: () => "older-settled" },
+}));
+vi.mock("react-native-reanimated", () => ({
+  useSharedValue: (value: unknown) => ({ value }),
+  useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
+}));
+vi.mock("../../state/preferences", () => ({ mobilePreferencesAtom: "preferences" }));
+vi.mock("../threads/WorkspaceMutationIdProvider", () => ({
+  WorkspaceMutationIdProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+vi.mock("../threads/ThreadFeed", () => ({
+  ThreadFeed: (props: ThreadFeedProps) => {
+    mocks.feed(props);
+    return (
+      <div data-testid="ordinary-thread-feed">
+        {props.feed.map((entry) => (
+          <div key={entry.id} data-row-type={entry.type}>
+            {entry.type === "message"
+              ? entry.message.text
+              : entry.type === "html-render"
+                ? entry.render.title
+                : entry.type === "activity-group"
+                  ? entry.activities.map((activity) => activity.summary).join("\n")
+                  : entry.type}
+          </div>
+        ))}
+      </div>
+    );
+  },
 }));
 vi.mock("../../state/atom-registry", () => ({ appAtomRegistry: {} }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
-    value === "older-settled"
-      ? new Map()
-      : value === "list-environments"
-        ? {
-            providersByEnvironmentId: new Map(),
-            machineByEnvironmentId: new Map(),
-            settlementEnvironmentIds: new Set(),
-            snoozeEnvironmentIds: new Set(),
-            pinningEnvironmentIds: new Set(),
-            autoSettleOptOutEnvironmentIds: new Set(),
-            pinReorderEnvironmentIds: new Set(),
-            activeReorderEnvironmentIds: new Set(),
-            titleRegenerationEnvironmentIds: new Set(),
-          }
-        : value === mocks.configAtom
-          ? mocks.configLoaded
-            ? {
-                settings: {
-                  ...DEFAULT_SERVER_SETTINGS,
-                  providerInstances: {
-                    "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+    value === "preferences"
+      ? { _tag: "Success", value: { toolCallVisibility: "showAll" } }
+      : value === "older-settled"
+        ? new Map()
+        : value === "list-environments"
+          ? {
+              providersByEnvironmentId: new Map(),
+              machineByEnvironmentId: new Map(),
+              settlementEnvironmentIds: new Set(),
+              snoozeEnvironmentIds: new Set(),
+              pinningEnvironmentIds: new Set(),
+              autoSettleOptOutEnvironmentIds: new Set(),
+              pinReorderEnvironmentIds: new Set(),
+              activeReorderEnvironmentIds: new Set(),
+              titleRegenerationEnvironmentIds: new Set(),
+            }
+          : value === mocks.configAtom
+            ? mocks.configLoaded
+              ? {
+                  settings: {
+                    ...DEFAULT_SERVER_SETTINGS,
+                    providerInstances: {
+                      "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+                    },
+                    d4Agent: {
+                      ...DEFAULT_SERVER_SETTINGS.d4Agent,
+                      enabled: mocks.enabled,
+                      projectContexts: mocks.projectContexts,
+                      taskModelSelection: mocks.taskModelSelection,
+                    },
+                    agentMonitor: { enabled: mocks.monitorEnabled },
                   },
-                  d4Agent: {
-                    ...DEFAULT_SERVER_SETTINGS.d4Agent,
-                    enabled: mocks.enabled,
-                    projectContexts: mocks.projectContexts,
-                    taskModelSelection: mocks.taskModelSelection,
-                  },
-                  agentMonitor: { enabled: mocks.monitorEnabled },
-                },
-                providers: mocks.providers,
-              }
-            : null
-          : mocks.allowed,
+                  providers: mocks.providers,
+                }
+              : null
+            : mocks.allowed,
 }));
 vi.mock("../../state/presentation", () => ({ threadListEnvironmentsAtom: "list-environments" }));
 vi.mock("../../state/server", async () => {
@@ -157,19 +208,21 @@ vi.mock("../../state/server", async () => {
 });
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: { kind?: string }) =>
-    command.kind === "undo-archive"
-      ? mocks.undo
-      : command.kind === "send"
-        ? mocks.send
-        : command.kind === "close-session"
-          ? mocks.closeSession
-          : command.kind === "switch"
-            ? mocks.switchContext
-            : command.kind === "new-session"
-              ? mocks.newSession
-              : command.kind === "proposal"
-                ? mocks.resolveProposal
-                : mocks.resolve,
+    command.kind === "load-earlier"
+      ? mocks.loadEarlier
+      : command.kind === "undo-archive"
+        ? mocks.undo
+        : command.kind === "send"
+          ? mocks.send
+          : command.kind === "close-session"
+            ? mocks.closeSession
+            : command.kind === "switch"
+              ? mocks.switchContext
+              : command.kind === "new-session"
+                ? mocks.newSession
+                : command.kind === "proposal"
+                  ? mocks.resolveProposal
+                  : mocks.resolve,
 }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
@@ -610,7 +663,12 @@ vi.mock("../../state/use-selected-thread-git-actions", () => ({
 vi.mock("../../state/use-selected-thread-git-state", () => ({
   useSelectedThreadGitState: vi.fn(),
 }));
-vi.mock("../../state/use-selected-thread-requests", () => ({ useSelectedThreadRequests: vi.fn() }));
+vi.mock("../../state/use-selected-thread-requests", () => ({
+  useSelectedThreadRequests: vi.fn(),
+  useThreadRequests: () => ({ activePendingApproval: null, activePendingUserInput: null }),
+}));
+vi.mock("../threads/PendingApprovalCard", () => ({ PendingApprovalCard: () => null }));
+vi.mock("../threads/PendingUserInputCard", () => ({ PendingUserInputCard: () => null }));
 vi.mock("../../state/use-selected-thread-worktree", () => ({ useSelectedThreadWorktree: vi.fn() }));
 vi.mock("../../state/use-thread-composer-state", () => ({ useThreadComposerState: vi.fn() }));
 vi.mock("../threads/threadContentPresentation", () => ({
@@ -646,8 +704,61 @@ let root: Root;
 let container: HTMLDivElement;
 const environmentId = EnvironmentId.make("test-environment");
 const threadId = ThreadId.make("agent-thread");
+function itemBase(id: string, targetThreadId = threadId) {
+  const timestamp = DateTime.makeUnsafe("2026-10-24T12:00:00.000Z");
+  return {
+    id: TurnItemId.make(id),
+    threadId: targetThreadId,
+    runId: null,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 0,
+    status: "completed" as const,
+    title: null,
+    startedAt: timestamp,
+    completedAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+function threadProjection(
+  targetThreadId = threadId,
+  items: OrchestrationV2TurnItem[] = [],
+): OrchestrationV2ThreadProjection {
+  return {
+    thread: { ...makeRawThreadShell({ id: targetThreadId }), lastVisitedAt: null },
+    runs: [],
+    attempts: [],
+    nodes: [],
+    subagents: [],
+    providerSessions: [],
+    providerThreads: [],
+    providerTurns: [],
+    runtimeRequests: [],
+    messages: [],
+    plans: [],
+    turnItems: items,
+    checkpointScopes: [],
+    checkpoints: [],
+    contextHandoffs: [],
+    contextTransfers: [],
+    visibleTurnItems: items.map((item, position) => ({
+      item,
+      position,
+      visibility: "local",
+      sourceThreadId: targetThreadId,
+      sourceItemId: item.id,
+    })),
+    updatedAt: DateTime.makeUnsafe("2026-10-24T12:00:00.000Z"),
+  };
+}
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  mocks.projection = threadProjection();
+  mocks.feed.mockClear();
+  mocks.threadTarget.mockClear();
   mocks.resolve.mockClear();
   mocks.connectionPhase = "connected";
   mocks.send.mockClear();
@@ -855,74 +966,154 @@ it("refreshes an open CTO result after completion without collapsing its details
   expect(container.textContent).toContain("Review slow question");
 });
 
-it("keeps one visible transcript across isolated context routes and hides provider history", async () => {
+it("uses the routed Nia thread projection for ordinary HTML and work-log rows", async () => {
   const oldThreadId = ThreadId.make("old-global-session");
   mocks.state = {
     ...mocks.state!,
-    brainContext: "YB",
     chatThreadIds: [oldThreadId, threadId],
     transcript: [
       {
-        id: "first",
-        role: "user",
+        id: "stale",
+        role: "assistant",
         context: "Global",
-        text: "What needs me?",
+        text: "State transcript must not render",
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
+      },
+    ],
+  };
+  mocks.projection = threadProjection(oldThreadId, [
+    {
+      ...itemBase("reply", oldThreadId),
+      type: "assistant_message",
+      messageId: MessageId.make("reply"),
+      text: "Ordinary projected reply",
+      streaming: false,
+    },
+    {
+      ...itemBase("html", oldThreadId),
+      type: "dynamic_tool",
+      toolName: "html_render",
+      input: {},
+      output: { htmlRender: { attachmentId: "nia-chart", title: "Nia chart", height: 320 } },
+    },
+    {
+      ...itemBase("command", oldThreadId),
+      type: "command_execution",
+      input: "pwd",
+      output: "/workspace",
+      exitCode: 0,
+    },
+  ]);
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
+        <p>Ordinary route fallback</p>
+      </D4AgentRoute>,
+    ),
+  );
+  expect(mocks.threadTarget).toHaveBeenCalledWith(environmentId, oldThreadId);
+  expect(container.textContent).toContain("Ordinary projected reply");
+  expect(container.textContent).toContain("Nia chart");
+  expect(container.querySelector('[data-row-type="html-render"]')).not.toBeNull();
+  expect(container.querySelector('[data-row-type="activity-group"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("State transcript must not render");
+  expect(container.textContent).not.toContain("Ordinary route fallback");
+  expect(mocks.feed.mock.lastCall?.[0]).toMatchObject({
+    environmentId,
+    threadId: oldThreadId,
+    detailRef: { environmentId, threadId: oldThreadId },
+  });
+});
+
+it("keeps state-only Nia notices in the ordinary feed without duplicating conversation or leaking another context", async () => {
+  mocks.state = {
+    ...mocks.state!,
+    transcript: [
+      {
+        id: "report:global",
+        role: "system",
+        context: "Global",
+        text: "Research report is ready",
         createdAt: "2026-10-24T12:00:00.000Z",
         links: [],
       },
       {
-        id: "divider",
+        id: "report:other",
         role: "system",
-        context: "YB",
-        text: "Context changed to YB. New session.",
-        createdAt: "2026-10-24T12:01:00.000Z",
+        context: "Dimaggi",
+        text: "Other context report",
+        createdAt: "2026-10-24T12:00:00.000Z",
         links: [],
       },
       {
-        id: "reply",
+        id: "duplicate",
         role: "assistant",
-        context: "YB",
-        text: "Review this thread.",
-        createdAt: "2026-10-24T12:02:00.000Z",
-        links: [
-          { label: "Validated target", threadId: ThreadId.make("valid-target"), projectId: null },
-          { label: "Other context label", threadId: null, projectId: null },
-        ],
+        context: "Global",
+        text: "Duplicate state reply",
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
       },
     ],
   };
   await act(() =>
     root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
-        <p>Private provider history</p>
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  expect(container.textContent).toContain("Research report is ready");
+  expect(container.textContent).not.toContain("Other context report");
+  expect(container.textContent).not.toContain("Duplicate state reply");
+});
+
+it("follows Nia's active session after context changes while retaining an explicit historical route", async () => {
+  const historical = ThreadId.make("historical-nia");
+  mocks.state = { ...mocks.state!, chatThreadIds: [historical, threadId] };
+  const renderRoute = () =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={historical}>
+        <p>Fallback</p>
       </D4AgentRoute>,
-    ),
-  );
-  expect(container.textContent).toContain("What needs me?");
-  expect(container.textContent).not.toContain("Context changed to YB. New session.");
-  expect(container.textContent).toContain("Review this thread.");
-  expect(container.textContent).not.toContain("Private provider history");
-  expect(mocks.send).not.toHaveBeenCalled();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Validated target")!
-      .click(),
-  );
-  expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/valid-target`);
-  expect(
-    [...container.querySelectorAll("button")].some(
-      (item) => item.textContent === "Other context label",
-    ),
-  ).toBe(false);
+    );
+  await act(renderRoute);
+  expect(mocks.threadTarget.mock.lastCall).toEqual([environmentId, historical]);
+  mocks.state = { ...mocks.state!, threadId: ThreadId.make("rotated-global") };
+  await act(renderRoute);
+  expect(mocks.threadTarget.mock.lastCall).toEqual([environmentId, historical]);
+  mocks.state = { ...mocks.state!, brainContext: "YB", threadId: ThreadId.make("yb-session") };
+  await act(renderRoute);
+  expect(mocks.threadTarget.mock.lastCall).toEqual([environmentId, "yb-session"]);
+  mocks.state = { ...mocks.state!, threadId: ThreadId.make("rotated-yb") };
+  await act(renderRoute);
+  expect(mocks.threadTarget.mock.lastCall).toEqual([environmentId, "rotated-yb"]);
+});
+
+it("shows the active Nia session after sending from an archived route", async () => {
+  const historical = ThreadId.make("historical-nia");
+  mocks.state = { ...mocks.state!, chatThreadIds: [historical, threadId] };
   await act(() =>
     root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <p>Private YB provider history</p>
+      <D4AgentRoute environmentId={environmentId} threadId={historical}>
+        <p>Fallback</p>
       </D4AgentRoute>,
     ),
   );
-  expect(container.textContent).toContain("What needs me?");
-  expect(container.textContent).not.toContain("Private YB provider history");
+  expect(mocks.threadTarget.mock.lastCall).toEqual([environmentId, historical]);
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
+  await act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      "Show the current work",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Send")!
+      .click(),
+  );
+  expect(mocks.threadTarget.mock.lastCall).toEqual([environmentId, threadId]);
 });
 
 it("keeps open sessions out of the chat panel", async () => {
@@ -1574,6 +1765,15 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
       },
     ],
   };
+  mocks.projection = threadProjection(threadId, [
+    {
+      ...itemBase("retained"),
+      type: "assistant_message",
+      messageId: MessageId.make("retained"),
+      text: "Retained conversation",
+      streaming: false,
+    },
+  ]);
   function NativeMissingRoute() {
     mocks.nativeRoute();
     return <button>Initialize Git</button>;
@@ -1953,90 +2153,4 @@ it("asks before creating a thread and then links the thread it created", async (
   expect(mocks.navigate).toHaveBeenCalledWith(
     `/threads/${environmentId}/${encodeURIComponent("d4-action:start-1")}`,
   );
-});
-
-it("opens web Markdown links without treating unvalidated internal or command links as navigation", async () => {
-  mocks.openExternal.mockClear();
-  mocks.navigate.mockClear();
-  mocks.state = {
-    ...mocks.state!,
-    transcript: [
-      {
-        id: "markdown-links",
-        role: "assistant",
-        context: "Global",
-        text: "[Web](https://example.test) [Command](command:run) [Thread](t3://thread/hidden)",
-        createdAt: "2026-10-24T12:00:00.000Z",
-        links: [],
-      },
-      {
-        id: "literal-system",
-        role: "system",
-        context: "Global",
-        text: "[Unvalidated](https://other.test)",
-        createdAt: "2026-10-24T12:00:00.000Z",
-        links: [],
-      },
-    ],
-  };
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
-  );
-  for (const label of ["Web", "Command", "Thread"]) {
-    await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === label)!
-        .click(),
-    );
-  }
-  expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-    "https://example.test",
-    "markdown-link",
-  );
-  expect(mocks.navigate).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("[Unvalidated](https://other.test)");
-  expect(
-    [...container.querySelectorAll("button")].some(
-      (button) => button.textContent === "Unvalidated",
-    ),
-  ).toBe(false);
-});
-
-it("shows Nia's thread links as titled links that open the thread, however they were written", async () => {
-  mocks.navigate.mockClear();
-  mocks.threadTitles = { t1: "Fix the build", t2: "Plan the release", t3: "Audit logs" };
-  const url = (id: string) => `t3-thread://v2/${environmentId}/${id}`;
-  mocks.state = {
-    ...mocks.state!,
-    transcript: [
-      {
-        id: "thread-links",
-        role: "assistant",
-        context: "Global",
-        text: `See ${url("t1")}. Also <${url("t2")}> and [${url("t3")}](${url("t3")}).`,
-        createdAt: "2026-10-24T12:00:00.000Z",
-        links: [],
-      },
-    ],
-  };
-  await act(() =>
-    root.render(
-      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
-    ),
-  );
-  // The Markdown mock prints its source; a link is only rendered once it is `[title](href)`.
-  expect(container.textContent!.replace(/\]\([^)]*\)/g, "]")).not.toContain("t3-thread://");
-  for (const label of ["Fix the build", "Plan the release", "Audit logs"]) {
-    await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === label)!
-        .click(),
-    );
-  }
-  expect(mocks.navigate.mock.calls.map(([path]) => path)).toEqual(
-    ["t1", "t2", "t3"].map((id) => `/threads/${environmentId}/${id}`),
-  );
-  mocks.threadTitles = {};
 });

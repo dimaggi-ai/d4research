@@ -1,3 +1,4 @@
+import type { ChatViewComposerHandle } from "../ChatView";
 import {
   D4AgentError,
   DEFAULT_SERVER_SETTINGS,
@@ -8,6 +9,7 @@ import {
   type D4AgentState,
   type EnvironmentId,
   type ModelSelection,
+  type ThreadId,
 } from "@d4research/contracts";
 import {
   agentDraftMovedNotice,
@@ -26,7 +28,15 @@ import { createModelSelection } from "@d4research/shared/model";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import { PaperclipIcon, XIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
 import { useMergedSettings } from "../../hooks/useSettings";
 import { randomUUID } from "../../lib/utils";
@@ -81,17 +91,21 @@ const noop = () => {};
 const isD4AgentError = Schema.is(D4AgentError);
 
 export function D4AgentComposer({
+  ref,
   environmentId,
   state,
   active,
   refresh,
   banner,
+  onSent,
 }: {
+  ref?: Ref<ChatViewComposerHandle>;
   environmentId: EnvironmentId;
   state: D4AgentState;
   active: boolean;
   refresh: () => void;
   banner?: ReactNode;
+  onSent?: (threadId: ThreadId) => void;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
@@ -145,6 +159,17 @@ export function D4AgentComposer({
   const disabled = !enabled || !allowed || sending;
   const moved = agentDraftMovedNotice(origin, state);
   const bindDraft = () => setOrigin((current) => current ?? agentDraftOrigin(state));
+  useImperativeHandle(ref, () => ({
+    getPrompt: () => text,
+    insertTextAtEnd: (inserted) => {
+      const next = `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${inserted}`;
+      if (disabled || moved || next.length > MAX_PROMPT_LENGTH) return false;
+      bindDraft();
+      focusAfterMention.current = true;
+      setText(next);
+      return true;
+    },
+  }));
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS);
   const fallbackSelection = settings ? resolveAppModelSelectionState(settings, providers) : null;
@@ -348,6 +373,7 @@ export function D4AgentComposer({
         );
         if (stale) refresh();
       } else {
+        onSent?.(result.value.threadId);
         setText((current) => (current === submitted || voiceText !== undefined ? "" : current));
         setTaskSelectionOverride(undefined);
         const ids = new Set(submittedAttachments.map((attachment) => attachment.id));

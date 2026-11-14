@@ -23,6 +23,7 @@ import {
   type ProviderApprovalDecision,
   type RuntimeRequestId,
   type ThreadId,
+  type ScopedThreadRef,
 } from "@d4research/contracts";
 import {
   type PendingThreadRequests,
@@ -164,6 +165,23 @@ function collectAnsweredRequestDrafts(
 }
 
 export function useSelectedThreadRequests() {
+  const { selectedThread } = useThreadSelection();
+  const pendingRequests = useSelectedThreadPendingRequests();
+  return usePendingThreadRequests(selectedThread, pendingRequests);
+}
+
+export function useThreadRequests(ref: ScopedThreadRef) {
+  const pendingRequests = useAtomValue(environmentThreadDetails.pendingRequestsAtom(ref));
+  return usePendingThreadRequests(
+    { environmentId: ref.environmentId, id: ref.threadId },
+    pendingRequests,
+  );
+}
+
+function usePendingThreadRequests(
+  selectedThreadShell: { readonly environmentId: EnvironmentId; readonly id: ThreadId } | null,
+  pendingRequests: PendingThreadRequests | null,
+) {
   const respondToApproval = useAtomCommand(
     threadEnvironment.respondToApproval,
     "thread approval response",
@@ -176,8 +194,6 @@ export function useSelectedThreadRequests() {
     threadEnvironment.dismissUserInput,
     "thread user input dismissal",
   );
-  const { selectedThread: selectedThreadShell } = useThreadSelection();
-  const pendingRequests = useSelectedThreadPendingRequests();
   const userInputDraftsByRequestKey = useAtomValue(userInputDraftsByRequestKeyAtom);
   const userInputResponsesInFlight = useRef(new Set<string>());
   const [respondingApprovalId, setRespondingApprovalId] = useState<RuntimeRequestId | null>(null);

@@ -48,6 +48,7 @@ export function NiaRoutines({
         open={open}
         onClose={() => setOpen(false)}
         showCloseButton
+        belowTitlebar
       >
         <SheetHeader>
           <SheetTitle>Routines</SheetTitle>

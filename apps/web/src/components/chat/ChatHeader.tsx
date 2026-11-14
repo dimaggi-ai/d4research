@@ -67,6 +67,10 @@ function resolveRenameCommit(input: {
 // needs this: it swallows input while open, so the wait must cover the OS
 // double-click interval.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
+
+// Room for the fixed titlebar controls that float over the header's right edge.
+export const chatHeaderControlsInset = (rightPanelOpen: boolean) =>
+  rightPanelOpen ? "pr-10" : "pr-24";
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
@@ -280,7 +284,7 @@ export const ChatHeader = memo(function ChatHeader({
       ref={breadcrumbContainerRef}
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        rightPanelOpen ? "pr-10" : "pr-24",
+        chatHeaderControlsInset(rightPanelOpen),
       )}
       onContextMenu={handleHeaderContextMenu}
     >

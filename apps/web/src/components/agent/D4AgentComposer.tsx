@@ -126,10 +126,6 @@ export function D4AgentComposer({
   const projects = useProjects();
   const threads = useThreadShells();
   const [text, setText] = useState("");
-  // undefined follows the saved task model; a task model is always selected.
-  const [taskSelectionOverride, setTaskSelectionOverride] = useState<ModelSelection | undefined>(
-    undefined,
-  );
   const [cursor, setCursor] = useState(0);
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const focusAfterMention = useRef(false);
@@ -174,9 +170,9 @@ export function D4AgentComposer({
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS);
   const fallbackSelection = settings ? resolveAppModelSelectionState(settings, providers) : null;
   const selection = settings ? (settings.d4Agent.modelSelection ?? fallbackSelection) : null;
-  // Never fall back to Nia's picker default: the task model has its own default.
-  const taskSelection =
-    taskSelectionOverride ?? (settings ? resolveD4AgentTaskModelSelection(settings.d4Agent) : null);
+  // Both models are server settings, so every client shows and changes the same ones. Never fall
+  // back to Nia's picker default: the task model has its own default.
+  const taskSelection = settings ? resolveD4AgentTaskModelSelection(settings.d4Agent) : null;
   const allEntries = settings ? providerInstanceEntriesFor(providers, settings, null) : [];
   const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const entry = entries.find((candidate) => candidate.instanceId === selection?.instanceId);
@@ -226,13 +222,15 @@ export function D4AgentComposer({
     };
   }, []);
 
-  const saveSelection = async (modelSelection: ModelSelection) => {
+  const saveSelection = async (
+    patch: { modelSelection: ModelSelection } | { taskModelSelection: ModelSelection },
+  ) => {
     if (!settings || !canConfigure || saving) return;
     setSaving(true);
     await (async () => {
       const result = await updateSettings({
         environmentId,
-        input: { patch: { d4Agent: { ...settings.d4Agent, modelSelection } } },
+        input: { patch: { d4Agent: { ...settings.d4Agent, ...patch } } },
       });
       if (result._tag === "Failure") setError("Could not save Nia settings.");
     })()
@@ -375,7 +373,6 @@ export function D4AgentComposer({
       } else {
         onSent?.(result.value.threadId);
         setText((current) => (current === submitted || voiceText !== undefined ? "" : current));
-        setTaskSelectionOverride(undefined);
         const ids = new Set(submittedAttachments.map((attachment) => attachment.id));
         draftAttachments.current = draftAttachments.current.filter(
           (attachment) => !ids.has(attachment.id),
@@ -636,7 +633,9 @@ export function D4AgentComposer({
                     triggerAriaLabel="Nia model"
                     disabled={!canConfigure || saving || sending}
                     onInstanceModelChange={(instanceId, model) =>
-                      void saveSelection(createModelSelection(instanceId, model))
+                      void saveSelection({
+                        modelSelection: createModelSelection(instanceId, model),
+                      })
                     }
                   />
                 ) : null}
@@ -654,9 +653,13 @@ export function D4AgentComposer({
                     }}
                     modelOptions={selection.options}
                     onModelOptionsChange={(options) =>
-                      void saveSelection(
-                        createModelSelection(selection.instanceId, selection.model, options),
-                      )
+                      void saveSelection({
+                        modelSelection: createModelSelection(
+                          selection.instanceId,
+                          selection.model,
+                          options,
+                        ),
+                      })
                     }
                     allowPromptInjectedEffort={false}
                     disabled={!canConfigure || saving || sending}
@@ -672,11 +675,12 @@ export function D4AgentComposer({
                     modelOptionsByInstance={taskModelOptions}
                     triggerAriaLabel="Nia task model"
                     triggerClassName="min-w-32 shrink-0"
-                    disabled={sending}
-                    onInstanceModelChange={(instanceId, model) => {
-                      setTaskSelectionOverride(createModelSelection(instanceId, model));
-                      bindDraft();
-                    }}
+                    disabled={!canConfigure || saving || sending}
+                    onInstanceModelChange={(instanceId, model) =>
+                      void saveSelection({
+                        taskModelSelection: createModelSelection(instanceId, model),
+                      })
+                    }
                   />
                 ) : null}
               </ComposerFooter.Controls>

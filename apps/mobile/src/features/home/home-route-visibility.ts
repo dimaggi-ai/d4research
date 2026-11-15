@@ -1,7 +1,9 @@
 import { RegistryContext } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { useContext, useRef, useSyncExternalStore } from "react";
+import { use, useContext, useRef, useSyncExternalStore } from "react";
 import type { Atom } from "effect/reactivity";
+
+import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 
 /**
  * Home stays mounted under a pushed Thread, and native-stack never freezes the
@@ -43,10 +45,12 @@ export function recordHomeFocus(): void {
 
 export function useHomeRouteVisible(): boolean {
   const navigation = useNavigation();
+  const primaryColumn = use(NativePrimaryColumnContext);
   const visible = useSyncExternalStore(subscribeHomeVisibility, () => homeVisible);
   // Before Home's first navigation event: a cold deep link mounts Home under
-  // its Thread without ever showing it.
-  return visible ?? navigation.isFocused();
+  // its Thread without ever showing it. A sidebar beside its detail is shown
+  // without focus, and a tab switch remounts it with no event of its own.
+  return visible ?? (primaryColumn?.presented === true || navigation.isFocused());
 }
 
 export function useAtomValueWhileVisible<A>(atom: Atom.Atom<A>, visible: boolean): A {

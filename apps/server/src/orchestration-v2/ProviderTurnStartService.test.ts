@@ -1053,6 +1053,7 @@ function makeLocalCommandHarness(input: {
             owns: () => Effect.succeed(true),
             isChatThread: () => Effect.succeed(input.niaUserTurn === true),
             homeDirectory: "/home/nia",
+            taskModelSelection: () => Effect.die("unused"),
           }),
     ),
     Layer.provide(

@@ -41,6 +41,7 @@ import {
   useAtomValueWhileVisible,
   useHomeRouteVisible,
 } from "./home-route-visibility";
+import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 
 const shellsAtom = Atom.make(0).pipe(Atom.keepAlive);
 let registry: AtomRegistry.AtomRegistry;
@@ -56,13 +57,23 @@ function Probe() {
   return null;
 }
 
-function mount() {
+function mount(primaryColumn: { readonly presented: boolean } | null = null) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   root = createRoot(document.createElement("div"));
   act(() =>
     root!.render(
       <RegistryContext.Provider value={registry}>
-        <Probe />
+        <NativePrimaryColumnContext
+          value={
+            primaryColumn && {
+              ...primaryColumn,
+              selectedThreadKey: null,
+              selectedPullRequestKey: null,
+            }
+          }
+        >
+          <Probe />
+        </NativePrimaryColumnContext>
       </RegistryContext.Provider>,
     ),
   );
@@ -133,6 +144,14 @@ describe("Home route visibility", () => {
     stream(5);
     act(() => recordHomeFocus());
     expect(renders.at(-1)).toEqual({ visible: true, value: 5 });
+  });
+
+  it("stays live when Home remounts in a presented sidebar beside a focused detail", () => {
+    // Switching sidebar tabs remounts Home with no appearance event while a thread has focus.
+    harness.state.focused = false;
+    mount({ presented: true });
+    stream(3);
+    expect(renders.at(-1)).toEqual({ visible: true, value: 3 });
   });
 
   it("starts hidden when a deep link mounts Home under its Thread", () => {

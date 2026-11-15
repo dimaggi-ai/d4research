@@ -72,27 +72,32 @@ export function D4AgentControls({
       })
     : [];
   const numeric = (
-    label: string,
+    field: { readonly title: string; readonly label: string; readonly description?: string },
     value: number,
     min: number,
     max: number,
     save: (value: number) => void,
   ) => (
-    <View className="flex-row items-center justify-between gap-3 px-4 py-3">
-      <Text className="flex-1 text-base text-foreground">{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        keyboardType="number-pad"
-        className="min-w-16 rounded border border-border px-3 py-2 text-foreground"
-        editable={!disabled}
-        defaultValue={String(value)}
-        key={`${label}:${value}`}
-        onEndEditing={(event) => {
-          const next = Number(event.nativeEvent.text);
-          if (Number.isInteger(next) && next >= min && next <= max) save(next);
-        }}
-      />
-    </View>
+    <>
+      <View className="flex-row items-center justify-between gap-3 px-4 py-3">
+        <Text className="flex-1 text-base text-foreground">{field.title}</Text>
+        <TextInput
+          accessibilityLabel={field.label}
+          keyboardType="number-pad"
+          className="min-w-16 rounded border border-border px-3 py-2 text-foreground"
+          editable={!disabled}
+          defaultValue={String(value)}
+          key={`${field.label}:${value}`}
+          onEndEditing={(event) => {
+            const next = Number(event.nativeEvent.text);
+            if (Number.isInteger(next) && next >= min && next <= max) save(next);
+          }}
+        />
+      </View>
+      {field.description ? (
+        <Text className="px-4 pb-3 text-sm text-foreground-muted">{field.description}</Text>
+      ) : null}
+    </>
   );
   if (section === "nia")
     return (
@@ -115,7 +120,7 @@ export function D4AgentControls({
                   "",
               )}
               options={[{ id: "", label: "Provider default" }, ...descriptor.options]}
-              disabled={disabled}
+              disabled={disabled || !agent.modelSelection}
               onChange={(value) => {
                 if (agent.modelSelection)
                   void writeAgent({
@@ -132,13 +137,34 @@ export function D4AgentControls({
               }}
             />
           ))}
+        <AgentChoiceRow
+          icon="gearshape"
+          label="Permission level"
+          value={agent.permissionMode}
+          disabled={disabled}
+          options={[
+            { id: "read-only", label: "Read-only" },
+            { id: "ask", label: "Ask" },
+            { id: "act", label: "Act" },
+          ]}
+          onChange={(value) => {
+            if (value === "read-only" || value === "ask" || value === "act")
+              void writeAgent({ permissionMode: value });
+          }}
+        />
+        <Text className="px-4 pb-3 text-sm text-foreground-muted">
+          Read-only observes. Ask requires approval for each action. Act sets reminders, submits
+          memory proposals for review, and asks CTO questions when enabled for the selected context.
+          Sending, starting threads, interrupting, answering, commands and schedules always require
+          your approval. Provider permission approvals remain manual.
+        </Text>
       </>
     );
   if (section === "host")
     return (
       <>
         {numeric(
-          "Disk warning percent",
+          { title: "Disk warning percent", label: "Disk warning percent" },
           agent.diskWarningPercent,
           50,
           99,
@@ -225,28 +251,6 @@ export function D4AgentControls({
   if (section !== "threads") return null;
   return (
     <>
-      <AgentChoiceRow
-        icon="gearshape"
-        label="Permission level"
-        value={agent.permissionMode}
-        disabled={disabled}
-        options={[
-          { id: "read-only", label: "Read-only" },
-          { id: "ask", label: "Ask" },
-          { id: "act", label: "Act" },
-        ]}
-        onChange={(value) => {
-          if (value === "read-only" || value === "ask" || value === "act")
-            void writeAgent({ permissionMode: value });
-        }}
-      />
-      <Text className="px-4 pb-3 text-sm text-foreground-muted">
-        Read-only observes. Ask requires approval for each action. Act sets reminders, submits
-        memory proposals for review, and asks CTO questions when enabled for the selected context.
-        Sending, starting threads, interrupting, answering, commands and schedules always require
-        your approval. Provider permission approvals remain manual.
-      </Text>
-
       {projects.map((project) => (
         <AgentChoiceRow
           key={project.id}
@@ -336,9 +340,13 @@ export function D4AgentControls({
           });
         }}
       />
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        Posts a summary when attention changes. Off by default.
+      </Text>
       <SettingsSwitchRow
         icon="moon"
         label="Quiet hours"
+        subtitle="Uses the device time zone saved when enabled, with its UTC offset as a fallback."
         value={agent.quietHours !== null}
         disabled={disabled}
         onValueChange={(enabled) =>
@@ -376,14 +384,15 @@ export function D4AgentControls({
               />
             </View>
           ))}
-          <Text className="px-4 pb-3 text-sm text-foreground-muted">
-            24-hour time. Uses the device time zone saved when enabled, with its UTC offset as a
-            fallback.
-          </Text>
+          <Text className="px-4 pb-3 text-sm text-foreground-muted">24-hour time, HH:MM.</Text>
         </>
       ) : null}
       {numeric(
-        "Stuck threshold minutes",
+        {
+          title: "Stuck threshold",
+          label: "Stuck threshold minutes",
+          description: "Minutes without progress before a thread needs attention.",
+        },
         monitor.stuckAfterMinutes,
         1,
         240,
@@ -405,15 +414,21 @@ export function D4AgentControls({
           }
         />
       ))}
-
+      {children}
       <D4AgentSessions
         environmentId={environmentId}
         sessions={state.data?.openSessions ?? []}
         refresh={state.refresh}
       />
 
-      <Text className="px-4 py-3 text-sm text-foreground-muted">
-        Local token usage · {state.data?.usage.length ?? 0} recorded turns
+      <View className="flex-row items-center justify-between gap-3 px-4 py-3">
+        <Text className="flex-1 text-base text-foreground">Local token usage</Text>
+        <Text className="text-sm text-foreground-muted">
+          {state.data?.usage.length ?? 0} recorded turns
+        </Text>
+      </View>
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        Provider-reported counts. Missing counts are unavailable.
       </Text>
       {Arr.reverse(state.data?.usage.slice(-5) ?? []).map((turn) => (
         <Text key={turn.runId} className="px-4 pb-3 text-xs text-foreground-muted">
@@ -424,13 +439,6 @@ export function D4AgentControls({
           {turn.attributes["gen_ai.usage.cache_creation.input_tokens"] ?? "unavailable"}
         </Text>
       ))}
-
-      {children}
-      {state.error ? (
-        <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
-          {state.error}
-        </Text>
-      ) : null}
     </>
   );
 }

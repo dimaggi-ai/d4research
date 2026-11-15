@@ -1522,7 +1522,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
   expect(mocks.navigate).not.toHaveBeenCalled();
 });
 
-it("sends the exact request-local worker without changing Nia's manager model", async () => {
+it("saves the picked task model on the server without changing Nia's chat model", async () => {
   await using _nia = await setupNia();
   const manager = {
     instanceId: ProviderInstanceId.make("manager-instance"),
@@ -1550,24 +1550,22 @@ it("sends the exact request-local worker without changing Nia's manager model", 
   await act(async () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Nia task model"]')!.click(),
   );
-  await act(async () => writeNiaDraft("Use the selected worker"));
-  await act(async () => niaSubmit().click());
-  expect(mocks.send).toHaveBeenCalledWith({
+  // Every client reads the task model from the server, so picking one saves it there.
+  expect(mocks.updateSettings).toHaveBeenCalledWith({
     environmentId,
     input: {
-      attachments: [],
-      followUpBehavior: "queue",
-      taskModelSelection: {
-        instanceId: ProviderInstanceId.make("worker-explicit"),
-        model: "worker-model",
+      patch: {
+        d4Agent: expect.objectContaining({
+          modelSelection: manager,
+          taskModelSelection: {
+            instanceId: ProviderInstanceId.make("worker-explicit"),
+            model: "worker-model",
+          },
+        }),
       },
-      text: "Use the selected worker",
-      expectedContext: "Global",
-      expectedThreadId: threadId,
     },
   });
-  expect(mocks.updateSettings).not.toHaveBeenCalled();
-  expect(mocks.modelSelection).toEqual(manager);
+  expect(mocks.send).not.toHaveBeenCalled();
 });
 
 it("sends the human-edited rewrite only after explicit Send", async () => {

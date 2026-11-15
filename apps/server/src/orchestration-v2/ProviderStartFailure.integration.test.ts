@@ -42,6 +42,7 @@ const makeLayer = (reason: "context" | "model-unavailable" = "context") =>
       layerD4AgentContext: Layer.succeed(D4AgentContext.D4AgentContext, {
         owns: () => Effect.succeed(false),
         prepare: () => Effect.fail(new D4AgentError({ reason })),
+        taskModelSelection: () => Effect.die("unused"),
       }),
     },
   ).pipe(Layer.provideMerge(database));

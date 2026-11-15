@@ -9,6 +9,7 @@ import {
   type Project as ProjectRecord,
   type ModelSelection,
   type RuntimeMode,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2ThreadShell,
   ThreadId,
 } from "@d4research/contracts";
@@ -38,8 +39,18 @@ import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as D4AgentContext from "../../../d4Agent/D4AgentContext.ts";
+import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
+
+const NIA_TASK_MODEL = {
+  instanceId: ProviderInstanceId.make("claudeAgent"),
+  model: "claude-opus-5-5",
+};
+const NIA_REQUEST_TASK_MODEL = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: "gpt-6-astra",
+};
 
 const clientLaunchHarness = (input: {
   readonly runtimeModeCeiling: RuntimeMode;
@@ -85,6 +96,16 @@ const clientLaunchHarness = (input: {
     Layer.mock(D4AgentContext.D4AgentContext)({
       owns: (threadId) =>
         Effect.succeed(input.caller?.ownedByNia === true && threadId === callerId),
+      // The request the caller's active run answers picked its own worker.
+      taskModelSelection: (messageId) =>
+        Effect.succeed(messageId === "message:request" ? NIA_REQUEST_TASK_MODEL : NIA_TASK_MODEL),
+    }),
+    Layer.mock(ProjectionStore.ProjectionStoreV2)({
+      getRunMessage: () =>
+        Effect.succeed({
+          id: "message:request",
+          createdBy: "user",
+        } as unknown as OrchestrationV2ConversationMessage),
     }),
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
@@ -314,6 +335,7 @@ it.effect("a thread Nia launches starts at the configured default instead of Nia
     const launchFrom = Effect.fn("test.launchFrom")(function* (
       caller: { readonly runtimeMode: RuntimeMode; readonly ownedByNia: boolean },
       defaultRuntimeMode: RuntimeMode,
+      modelSelection?: ModelSelection,
     ) {
       const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
       const { projectId, dependencies } = clientLaunchHarness({
@@ -330,7 +352,12 @@ it.effect("a thread Nia launches starts at the configured default instead of Nia
         ),
       );
       yield* toolkit
-        .handle("t3_thread_launch", { projectId, title: "Fix", message: "Fix the bug" })
+        .handle("t3_thread_launch", {
+          projectId,
+          title: "Fix",
+          message: "Fix the bug",
+          ...(modelSelection === undefined ? {} : { modelSelection }),
+        })
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
       return launched[0];
     });
@@ -339,6 +366,14 @@ it.effect("a thread Nia launches starts at the configured default instead of Nia
     const fullAccess = yield* launchFrom(nia, "full-access");
     expect(fullAccess?.runtimeMode).toBe("full-access");
     expect(fullAccess?.initialMessage?.senderThreadId).toBe("thread:caller");
+    // Nia's work runs on the task model of the request it answers, never Nia's own chat model,
+    // even when Nia names another model.
+    expect(fullAccess?.modelSelection).toEqual(NIA_REQUEST_TASK_MODEL);
+    const named = yield* launchFrom(nia, "full-access", {
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "qwen-local/qwen3.8-flash",
+    });
+    expect(named?.modelSelection).toEqual(NIA_REQUEST_TASK_MODEL);
     expect((yield* launchFrom(nia, "auto"))?.runtimeMode).toBe("auto");
 
     // Any other agent thread still hands its own mode down.
@@ -347,6 +382,10 @@ it.effect("a thread Nia launches starts at the configured default instead of Nia
       "full-access",
     );
     expect(agent?.runtimeMode).toBe("approval-required");
+    expect(agent?.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus",
+    });
   }),
 );
 

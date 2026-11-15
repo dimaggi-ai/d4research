@@ -66,7 +66,7 @@ export function AgentMonitorSettings() {
     <View className="gap-4">
       {selectedProjectKey !== null ? (
         <Text className="px-2 text-sm text-foreground-muted">
-          Choose an environment to configure Nia.
+          Choose one environment to configure Nia.
         </Text>
       ) : (
         selectedTargets.map((target) => (
@@ -128,7 +128,14 @@ function EnvironmentMonitorSettings({
   );
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
   const monitor = target.serverConfig.settings.agentMonitor;
-  if (!monitor) return null;
+  if (!monitor)
+    return (
+      <SettingsSection title={`Nia · ${target.label}`}>
+        <Text className="px-4 py-3 text-sm text-foreground-muted">
+          This environment does not support Nia.
+        </Text>
+      </SettingsSection>
+    );
   const agent = target.serverConfig.settings.d4Agent;
   const taskSelection = resolveD4AgentTaskModelSelection(agent);
   // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
@@ -207,16 +214,22 @@ function EnvironmentMonitorSettings({
   return (
     <View className="gap-3">
       <SettingsSection title={`Nia · ${target.label}`}>
+        {saveError ? (
+          <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-destructive">
+            {saveError}
+          </Text>
+        ) : null}
         <SettingsSwitchRow
           icon="bubble.left"
           label="Enable Nia"
+          subtitle="Show Nia in the sidebar and allow agent chat about threads and host health."
           value={agent.enabled}
           disabled={!allowed || saving}
           onValueChange={(enabled) => void writeAgent({ enabled })}
         />
         <SettingsRow
           icon="gearshape"
-          label="Nia model"
+          label="Chat model"
           value={
             agent.modelSelection
               ? formatModelSelectionLabel(config?.providers, agent.modelSelection)
@@ -225,6 +238,10 @@ function EnvironmentMonitorSettings({
           disabled={!allowed || saving}
           onPress={() => setPicker("manager")}
         />
+        <Text className="px-4 pb-3 text-sm text-foreground-muted">
+          The model Nia uses for this chat. Uses the live provider catalog; an unavailable model
+          keeps Nia off.
+        </Text>
         <D4AgentControls
           environmentId={target.environmentId}
           agent={agent}
@@ -243,6 +260,9 @@ function EnvironmentMonitorSettings({
           disabled={!allowed || saving}
           onPress={() => setPicker("task")}
         />
+        <Text className="px-4 pb-3 text-sm text-foreground-muted">
+          Used for new threads and tasks Nia starts. It is separate from the chat model.
+        </Text>
       </SettingsSection>
       <SettingsSection title="MCP servers">
         {NIA_SERVERS.map((server) => (
@@ -284,7 +304,7 @@ function EnvironmentMonitorSettings({
               }
             >
               <Text className="text-base text-accent">
-                {setup.has(server.id) ? "Setup ▴" : "Setup ▾"}
+                {`${server.title} setup ${setup.has(server.id) ? "▴" : "▾"}`}
               </Text>
             </Pressable>
             {setup.has(server.id) ? (
@@ -304,6 +324,7 @@ function EnvironmentMonitorSettings({
                     <SettingsSwitchRow
                       icon="bolt.circle"
                       label="Monitor threads"
+                      subtitle="Classifies thread activity locally without model calls."
                       value={monitor.enabled}
                       disabled={!allowed || saving}
                       onValueChange={(enabled) => void write({ enabled })}
@@ -312,6 +333,7 @@ function EnvironmentMonitorSettings({
                     <SettingsSwitchRow
                       icon="bell.badge"
                       label="Attention notifications"
+                      subtitle="Allow connected clients to notify you when a thread needs attention. System alerts require device notification permission."
                       value={monitor.notificationsEnabled}
                       disabled={!allowed || saving}
                       onValueChange={(enabled) => void toggleNotifications(enabled)}
@@ -340,10 +362,16 @@ function EnvironmentMonitorSettings({
                         )}
                       </View>
                     ) : null}
-                    {monitor.enabled && activity.length > 0 ? (
+                    {monitor.enabled ? (
                       <View>
                         <Text className="px-4 py-3 text-base text-foreground">{`Thread activity · ${listCount(activity.length)}`}</Text>
-                        {activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map(threadRow)}
+                        {activity.length === 0 ? (
+                          <Text className="p-4 text-sm text-foreground-muted">
+                            Waiting for thread activity.
+                          </Text>
+                        ) : (
+                          activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map(threadRow)
+                        )}
                       </View>
                     ) : null}
                   </>
@@ -371,16 +399,21 @@ function EnvironmentMonitorSettings({
           disabled={!allowed || saving}
           save={(mcpServers) => writeAgent({ mcpServers })}
         />
+        {state.error ? (
+          <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-destructive">
+            {state.error}
+          </Text>
+        ) : null}
       </SettingsSection>
       <SettingsSection title="Skills">
-        <Text className="px-4 py-3 text-sm text-foreground-muted">{`Enable up to ${ENABLED_BY_DEFAULT_SKILL_MAX_COUNT} installed skills for Nia. Skills do not grant tool permissions.`}</Text>
+        <Text className="px-4 py-3 text-sm text-foreground-muted">{`Enable up to ${ENABLED_BY_DEFAULT_SKILL_MAX_COUNT} skills for Nia. Skills do not grant tool permissions.`}</Text>
         {inventoryError ? (
           <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
             {inventoryError}
           </Text>
         ) : inventory === null ? (
           <Text className="px-4 py-3 text-sm text-foreground-muted">
-            {connection ? "Loading installed skills…" : "Connect to load installed skills."}
+            {connection ? "Loading skills…" : "Connect to load installed skills."}
           </Text>
         ) : inventory.length === 0 ? (
           <Text className="px-4 py-3 text-sm text-foreground-muted">No installed skills.</Text>
@@ -410,7 +443,7 @@ function EnvironmentMonitorSettings({
                   key={name}
                   icon="gearshape"
                   label={name}
-                  subtitle="Not installed"
+                  subtitle="Skill is no longer installed."
                   value={true}
                   disabled={!allowed || saving}
                   onValueChange={(enabled) => {
@@ -420,13 +453,8 @@ function EnvironmentMonitorSettings({
               ))
           : null}
       </SettingsSection>
-      {saveError ? (
-        <Text accessibilityRole="alert" className="px-2 text-sm text-foreground-muted">
-          {saveError}
-        </Text>
-      ) : null}
       <ModelPickerSheet
-        title={picker === "task" ? "Task model" : "Nia model"}
+        title={picker === "task" ? "Task model" : "Chat model"}
         visible={picker !== null}
         groups={picker === "task" ? taskGroups : groups}
         selected={picker === "task" ? taskSelection : agent.modelSelection}

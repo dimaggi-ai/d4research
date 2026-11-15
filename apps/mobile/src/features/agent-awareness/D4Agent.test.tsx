@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(async () => ({ _tag: "Success", value: { threadId: "agent-thread" as ThreadId } })),
   undo: vi.fn(async () => ({ _tag: "Success" })),
   closeSession: vi.fn(async () => ({ _tag: "Success" })),
+  updateSettings: vi.fn(async (_input: unknown) => ({ _tag: "Success" })),
   resolveProposal: vi.fn(async () => ({ _tag: "Success" })),
   navigationProjects: [] as Array<{ id: ProjectId; title: string }>,
   identityAtom: null as unknown,
@@ -203,26 +204,29 @@ vi.mock("../../state/server", async () => {
       resolveD4AgentMemoryProposal: { permissionAtom: () => "permission", kind: "proposal" },
       switchD4AgentContext: { permissionAtom: () => "permission", kind: "switch" },
       resolveD4AgentAction: { permissionAtom: () => "permission" },
+      updateSettings: { permissionAtom: () => "permission", kind: "update-settings" },
     },
   };
 });
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: { kind?: string }) =>
-    command.kind === "load-earlier"
-      ? mocks.loadEarlier
-      : command.kind === "undo-archive"
-        ? mocks.undo
-        : command.kind === "send"
-          ? mocks.send
-          : command.kind === "close-session"
-            ? mocks.closeSession
-            : command.kind === "switch"
-              ? mocks.switchContext
-              : command.kind === "new-session"
-                ? mocks.newSession
-                : command.kind === "proposal"
-                  ? mocks.resolveProposal
-                  : mocks.resolve,
+    command.kind === "update-settings"
+      ? mocks.updateSettings
+      : command.kind === "load-earlier"
+        ? mocks.loadEarlier
+        : command.kind === "undo-archive"
+          ? mocks.undo
+          : command.kind === "send"
+            ? mocks.send
+            : command.kind === "close-session"
+              ? mocks.closeSession
+              : command.kind === "switch"
+                ? mocks.switchContext
+                : command.kind === "new-session"
+                  ? mocks.newSession
+                  : command.kind === "proposal"
+                    ? mocks.resolveProposal
+                    : mocks.resolve,
 }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
@@ -415,6 +419,12 @@ vi.mock("../threads/ThreadComposer", () => ({
   COMPOSER_EXPANDED_CHROME: 0,
   COMPOSER_LAYOUT_TRANSITION: undefined,
   COMPOSER_TRANSITION_DURATION_MS: 0,
+  useComposerSurfaceShape: () => ({
+    usesLargeControls: false,
+    borderRadius: 27,
+    borderCurve: "circular",
+    paddingVertical: 2,
+  }),
   ComposerSurface: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ThreadComposer: () => null,
 }));
@@ -762,6 +772,7 @@ beforeEach(() => {
   mocks.resolve.mockClear();
   mocks.connectionPhase = "connected";
   mocks.send.mockClear();
+  mocks.updateSettings.mockClear();
   mocks.undo.mockClear();
   mocks.switchContext.mockClear();
   mocks.newSession.mockClear();
@@ -1259,7 +1270,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
   expect(mocks.navigate).not.toHaveBeenCalled();
 });
 
-it("sends the exact request-local worker selected in native chat", async () => {
+it("saves the picked task model on the server without changing Nia's chat model", async () => {
   const worker = {
     instanceId: ProviderInstanceId.make("native-worker"),
     model: "alternate-worker",
@@ -1303,27 +1314,18 @@ it("sends the exact request-local worker selected in native chat", async () => {
     .reverse()
     .find((item) => item.textContent === "Alternate worker")!;
   await act(async () => workerLabel.closest<HTMLElement>("button, [role='radio']")!.click());
-  const input = container.querySelector(
-    'textarea[aria-label="Message Nia"]',
-  ) as HTMLTextAreaElement;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      input,
-      "Use alternate worker",
-    );
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await act(async () => press("Send").click());
-  expect(mocks.send).toHaveBeenCalledWith({
+  expect(mocks.updateSettings).toHaveBeenCalledWith({
     environmentId,
     input: {
-      text: "Use alternate worker",
-      taskModelSelection: worker,
-      expectedContext: "Global",
-      expectedThreadId: threadId,
+      patch: {
+        d4Agent: expect.objectContaining({
+          modelSelection: DEFAULT_SERVER_SETTINGS.d4Agent.modelSelection,
+          taskModelSelection: worker,
+        }),
+      },
     },
   });
+  expect(mocks.send).not.toHaveBeenCalled();
 });
 
 it("always shows a concrete task model and dictates into the Nia draft", async () => {

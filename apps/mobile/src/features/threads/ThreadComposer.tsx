@@ -348,6 +348,21 @@ function SendActionButton(props: {
   );
 }
 
+/** One composer shape for every chat, so Nia and threads cannot drift apart. */
+export function useComposerSurfaceShape() {
+  const { layout } = useAdaptiveWorkspaceLayout();
+  const floatingSidebarComposer = useAndroidFloatingTabs() && layout.usesSplitView;
+  const sidebarWorkspaceTabs = useSidebarWorkspaceTabs();
+  const deviceType = useDeviceType();
+  const usesLargeControls = sidebarWorkspaceTabs === "picker" || deviceType === "pad";
+  return {
+    usesLargeControls,
+    borderRadius: usesLargeControls ? 31 : 27,
+    borderCurve: "circular" as const,
+    paddingVertical: usesLargeControls ? 9 : floatingSidebarComposer ? 6 : 2,
+  };
+}
+
 export function ComposerSurface(props: {
   readonly children: ReactNode;
   readonly style: ViewStyle;
@@ -593,12 +608,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   );
   const isVoiceInputPresented = voicePresentation.statusKind === "active";
   const isExpanded = isFocused || settingsSheetPresentation.keepsComposerExpanded;
-  const { layout, setComposerEditing } = useAdaptiveWorkspaceLayout();
-  const floatingSidebarComposer = useAndroidFloatingTabs() && layout.usesSplitView;
-  const sidebarWorkspaceTabs = useSidebarWorkspaceTabs();
-  const deviceType = useDeviceType();
-  const usesLargeControls = sidebarWorkspaceTabs === "picker" || deviceType === "pad";
-  const surfacePaddingVertical = usesLargeControls ? 9 : floatingSidebarComposer ? 6 : 2;
+  const { setComposerEditing } = useAdaptiveWorkspaceLayout();
+  const { usesLargeControls, ...surfaceShape } = useComposerSurfaceShape();
+  const surfacePaddingVertical = surfaceShape.paddingVertical;
   const [compactRowWidth, setCompactRowWidth] = useState(0);
   const compactAttachmentLimit = compactRowWidth >= 500 ? 3 : 1;
   const compactEditor = useCompactComposerEditor(bodyText, draftMessage);
@@ -883,15 +895,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           />
         ) : null}
 
-        <ComposerSurface
-          animateLayout={false}
-          style={{
-            borderRadius: usesLargeControls ? 31 : 27,
-            borderCurve: "circular",
-            overflow: "hidden",
-            paddingVertical: surfacePaddingVertical,
-          }}
-        >
+        <ComposerSurface animateLayout={false} style={{ ...surfaceShape, overflow: "hidden" }}>
           <ComposerDictationError
             error={voiceInput.state.phase === "error" ? voiceInput.state.error : null}
             onDismiss={voiceInput.cancel}

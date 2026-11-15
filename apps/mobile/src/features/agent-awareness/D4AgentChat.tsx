@@ -34,6 +34,8 @@ import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
   resolveD4AgentTaskModelSelection,
+  supportsD4AgentDriver,
+  type D4AgentSettings,
   type D4AgentState,
   type EnvironmentId,
   type ModelSelection,
@@ -76,7 +78,7 @@ import {
   ComposerToolbarRow,
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
-import { ComposerSurface } from "../threads/ThreadComposer";
+import { ComposerSurface, useComposerSurfaceShape } from "../threads/ThreadComposer";
 import {
   ComposerDictationCancelAction,
   ComposerDictationPrimaryAction,
@@ -208,12 +210,15 @@ export function D4AgentChat({
 }) {
   const threadId = requestedThreadId === undefined ? state.threadId : requestedThreadId;
   const insets = useSafeAreaInsets();
+  const { usesLargeControls, ...surfaceShape } = useComposerSurfaceShape();
   const config = useEnvironmentServerConfig(environmentId);
   const projects = useProjects();
   const threads = useThreadShells();
   const enabled = config?.settings.d4Agent.enabled === true;
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
+  const canConfigure = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
   const [text, setTextState] = useState("");
   // Dictation reads and watches the draft outside render, so it mirrors the text in a ref.
   const textRef = useRef("");
@@ -225,11 +230,8 @@ export function D4AgentChat({
     for (const listener of textListeners.current) listener();
   };
   const [selection, setSelection] = useState<ComposerEditorSelection>({ start: 0, end: 0 });
-  // undefined follows the saved default task model; there is always a concrete task model.
-  const [taskSelectionOverride, setTaskSelectionOverride] = useState<ModelSelection | undefined>(
-    undefined,
-  );
-  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
+  const [picker, setPicker] = useState<"chat" | "task" | null>(null);
+  const [saving, setSaving] = useState(false);
   const [origin, setOrigin] = useState<AgentDraftOrigin | null>(null);
   if (!text.trim() && origin !== null) setOrigin(null);
   const bindDraft = () => setOrigin((current) => current ?? agentDraftOrigin(state));
@@ -245,9 +247,28 @@ export function D4AgentChat({
   });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const taskSelection =
-    taskSelectionOverride ??
-    resolveD4AgentTaskModelSelection(config?.settings.d4Agent ?? { taskModelSelection: null });
+  // Both models are server settings, so every client shows and changes the same ones.
+  const agentSettings = config?.settings.d4Agent;
+  const chatSelection = agentSettings?.modelSelection ?? null;
+  const taskSelection = resolveD4AgentTaskModelSelection(
+    agentSettings ?? { taskModelSelection: null },
+  );
+  const saveModel = async (
+    patch: Pick<Partial<D4AgentSettings>, "modelSelection" | "taskModelSelection">,
+  ) => {
+    if (!agentSettings || !canConfigure || saving) return;
+    setSaving(true);
+    setError(null);
+    await updateSettings({
+      environmentId,
+      input: { patch: { d4Agent: { ...agentSettings, ...patch } } },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") setError("Could not save Nia settings.");
+      })
+      .catch(() => setError("Could not save Nia settings."))
+      .finally(() => setSaving(false));
+  };
   const voiceInput = useVoiceInputController({
     ownerKey: state.threadId === null ? "nia" : `nia:${state.threadId}`,
     label: "Nia",
@@ -270,6 +291,12 @@ export function D4AgentChat({
   );
   const showsDictation = voicePresentation.statusLabel !== null;
   const taskGroups = groupByProvider(buildModelOptions(config, taskSelection, undefined, null));
+  // Text-only providers cannot enforce Nia's tool allowlist, so they are not offered for chat.
+  const chatGroups = groupByProvider(
+    buildModelOptions(config, chatSelection, undefined, null).filter((option) =>
+      supportsD4AgentDriver(option.providerDriver),
+    ),
+  );
   const submit = async () => {
     if (sending || !enabled || !allowed || !text.trim() || moved || voiceInput.blocksSubmission)
       return;
@@ -301,7 +328,6 @@ export function D4AgentChat({
       if (stale) refresh();
     } else {
       setText((current) => (current === submitted ? "" : current));
-      setTaskSelectionOverride(undefined);
       onSent?.(result.value.threadId);
       refresh();
     }
@@ -365,10 +391,7 @@ export function D4AgentChat({
             ) : null}
           </ScrollView>
         ) : null}
-        <ComposerSurface
-          animateLayout={false}
-          style={{ borderRadius: 26, minHeight: 112, overflow: "hidden", paddingTop: 10 }}
-        >
+        <ComposerSurface animateLayout={false} style={{ ...surfaceShape, overflow: "hidden" }}>
           <View className="min-h-16 px-3">
             <ComposerEditor
               placeholder="Message Nia"
@@ -391,17 +414,30 @@ export function D4AgentChat({
           <ComposerToolbarRow paddingBottom={4} paddingTop={2}>
             <ComposerToolbarScroller>
               <ComposerInlineControl
+                size={usesLargeControls ? "large" : "regular"}
+                accessibilityLabel="Nia chat model"
+                disabled={!canConfigure || saving || sending}
+                icon="bubble.left"
+                label={`Chat · ${
+                  chatSelection
+                    ? formatModelSelectionLabel(config?.providers, chatSelection)
+                    : "Choose model"
+                }`}
+                onPress={() => setPicker("chat")}
+              />
+              <ComposerInlineControl
+                size={usesLargeControls ? "large" : "regular"}
                 accessibilityLabel="Nia task model"
-                disabled={sending}
+                disabled={!canConfigure || saving || sending}
                 emphasized
                 icon="brain"
                 label={`Tasks · ${formatModelSelectionLabel(config?.providers, taskSelection)}`}
-                maxWidth="100%"
-                onPress={() => setTaskPickerOpen(true)}
+                onPress={() => setPicker("task")}
               />
             </ComposerToolbarScroller>
             {showsDictation ? null : (
               <ComposerDictationStartAction
+                size={usesLargeControls ? "large" : "regular"}
                 state={voiceInput.state}
                 isAvailable={voiceInput.isAvailable}
                 disabled={!enabled || !allowed || sending}
@@ -410,6 +446,7 @@ export function D4AgentChat({
               />
             )}
             <ComposerActionButton
+              size={usesLargeControls ? "large" : "regular"}
               accessibilityLabel={sending ? "Sending" : "Send"}
               disabled={
                 !enabled ||
@@ -428,6 +465,7 @@ export function D4AgentChat({
             <ComposerDictationToolbar showsDictation>
               <View className="h-11 flex-row items-center px-2">
                 <ComposerDictationCancelAction
+                  size={usesLargeControls ? "large" : "regular"}
                   presentation={voicePresentation}
                   onCancel={voiceInput.cancel}
                 />
@@ -438,6 +476,7 @@ export function D4AgentChat({
                   presentation={voicePresentation}
                 />
                 <ComposerDictationPrimaryAction
+                  size={usesLargeControls ? "large" : "regular"}
                   state={voiceInput.state}
                   presentation={voicePresentation}
                   isAvailable={voiceInput.isAvailable}
@@ -474,16 +513,19 @@ export function D4AgentChat({
         ) : null}
       </View>
       <ModelPickerSheet
-        title="Task model"
-        visible={taskPickerOpen}
-        groups={taskGroups}
-        selected={taskSelection}
+        title={picker === "chat" ? "Chat model" : "Task model (used for new threads and tasks)"}
+        visible={picker !== null}
+        groups={picker === "chat" ? chatGroups : taskGroups}
+        selected={picker === "chat" ? chatSelection : taskSelection}
         onSelect={(option) => {
-          setTaskSelectionOverride(option.selection);
-          setTaskPickerOpen(false);
-          bindDraft();
+          setPicker(null);
+          void saveModel(
+            picker === "chat"
+              ? { modelSelection: option.selection }
+              : { taskModelSelection: option.selection },
+          );
         }}
-        onClose={() => setTaskPickerOpen(false)}
+        onClose={() => setPicker(null)}
       />
     </KeyboardAvoidingView>
   );

@@ -15,6 +15,7 @@ import {
   OrchestratorCommandRejectedError,
   OrchestratorRuntimeModeAboveCeilingError,
 } from "../../../orchestration-v2/Orchestrator.ts";
+import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
@@ -98,6 +99,7 @@ export const layer = McpToolAccess.toLayer(
   ProjectToolkit,
   Effect.gen(function* () {
     const niaContext = yield* Effect.serviceOption(D4AgentContext.D4AgentContext);
+    const projections = yield* Effect.serviceOption(ProjectionStore.ProjectionStoreV2);
     const ownedByNia = (threadId: ThreadId) =>
       Option.isSome(niaContext) ? niaContext.value.owns(threadId) : Effect.succeed(false);
     return {
@@ -214,7 +216,22 @@ export const layer = McpToolAccess.toLayer(
                     ),
                   )
                 : undefined;
+            // Work Nia starts runs on the task model the user picked for this request, exactly as
+            // d4_agent_action binds it; inheriting the caller would put Nia's chat model on it.
+            const niaTaskModel =
+              caller !== undefined && launchedByNia && !replaying && Option.isSome(niaContext)
+                ? yield* Effect.gen(function* () {
+                    const runMessage =
+                      caller.activeRunId === null || Option.isNone(projections)
+                        ? undefined
+                        : yield* projections.value.getRunMessage(caller.id, caller.activeRunId);
+                    return yield* niaContext.value.taskModelSelection(
+                      runMessage?.createdBy === "user" ? String(runMessage.id) : null,
+                    );
+                  }).pipe(Effect.mapError(unavailable))
+                : undefined;
             const modelSelection =
+              niaTaskModel ??
               input.modelSelection ??
               launchedModel ??
               caller?.modelSelection ??

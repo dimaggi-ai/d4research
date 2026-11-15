@@ -132,11 +132,8 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   const workspace = useWorkspaceTabs();
   const query = workspace?.state.tabs.settings.query ?? "";
   const overflowRows = useOverflowRows();
-  const indexSections = useSettingsIndexSections();
-  const sections = filterSettingsSections(
-    [{ rows: overflowRows }, { title: "Connections", rows: props.connections }, ...indexSections],
-    query,
-  );
+  const indexSections = useSettingsIndexSections(props.connections);
+  const sections = filterSettingsSections([{ rows: overflowRows }, ...indexSections], query);
 
   return (
     <View collapsable={false} className="flex-1">
@@ -175,7 +172,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   );
 }
 
-function useSettingsIndexSections(): SettingsListSection[] {
+function useSettingsIndexSections(connections: readonly SettingsListRow[]): SettingsListSection[] {
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
@@ -236,9 +233,12 @@ function useSettingsIndexSections(): SettingsListSection[] {
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
         serverPage("SettingsThreads", "text.bubble", "Nia and threads"),
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
-        serverPage("SettingsSecondBrain", "text.alignleft", "Memory"),
         serverPage("SettingsDecisions", "checkmark.circle", "Decisions"),
       ],
+    },
+    {
+      title: "Research",
+      rows: [serverPage("SettingsSecondBrain", "text.alignleft", "Memory")],
     },
     {
       title: "Code",
@@ -253,12 +253,13 @@ function useSettingsIndexSections(): SettingsListSection[] {
         serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
       ],
     },
+    { title: "Connections", rows: connections },
     {
       rows: [
         serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
         page("SettingsLabs", "sparkles", "Labs"),
         page("SettingsUsage", "chart.bar.xaxis", "Usage"),
-        page("SettingsAbout", "info.circle", "About d4research"),
+        page("SettingsAbout", "info.circle", "About"),
         page("SettingsArchive", "archivebox", "Archive"),
       ],
     },

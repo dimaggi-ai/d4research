@@ -255,8 +255,8 @@ function AgentMonitorForm() {
               }
             />
             <SettingsRow
-              title="Nia model"
-              description="Uses the live provider catalog. An unavailable model keeps Nia off."
+              title="Chat model"
+              description="The model Nia uses for this chat. Uses the live provider catalog; an unavailable model keeps Nia off."
               control={
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <ProviderModelPicker
@@ -283,7 +283,7 @@ function AgentMonitorForm() {
           <>
             <SettingsRow
               title="Task model"
-              description="Default provider and model for new tasks. It is separate from Nia's own model."
+              description="Used for new threads and tasks Nia starts. It is separate from the chat model."
               control={
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <ProviderModelPicker

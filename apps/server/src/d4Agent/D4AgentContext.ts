@@ -1,6 +1,11 @@
 import { providerDecisionContext } from "./providerContext.ts";
 import * as AgentAccess from "./D4AgentAccess.ts";
-import { D4AgentError, type ModelSelection, type ThreadId } from "@d4research/contracts";
+import {
+  D4AgentError,
+  resolveD4AgentTaskModelSelection,
+  type ModelSelection,
+  type ThreadId,
+} from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { PortableSkillsInventory } from "../skillsInventory.ts";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -27,6 +32,13 @@ export class D4AgentContext extends Context.Service<
       providerSessionId?: string,
     ) => Effect.Effect<string | null, D4AgentError>;
     readonly owns: (threadId: ThreadId) => Effect.Effect<boolean>;
+    /**
+     * The worker for work Nia starts while answering `messageId`: that request's snapshot, else
+     * the saved task model. Never Nia's own chat model.
+     */
+    readonly taskModelSelection: (
+      messageId: string | null,
+    ) => Effect.Effect<ModelSelection, D4AgentError>;
     readonly isChatThread?: (threadId: ThreadId) => Effect.Effect<boolean>;
     readonly homeDirectory?: string;
   }
@@ -44,6 +56,17 @@ export const layer = Layer.effect(
     return D4AgentContext.of({
       owns,
       homeDirectory: store.homeDirectory ?? store.workspace,
+      taskModelSelection: Effect.fn("D4AgentContext.taskModelSelection")(function* (messageId) {
+        const settings = yield* settingsService.getSettings.pipe(
+          Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })),
+        );
+        const fallback = resolveD4AgentTaskModelSelection(settings.d4Agent);
+        if (messageId === null) return fallback;
+        const stored = (yield* store.get).userMessages?.find(
+          (entry) => entry.messageId === messageId,
+        );
+        return stored?.taskModelSelection ?? fallback;
+      }),
       isChatThread: Effect.fn("D4AgentContext.isChatThread")(function* (threadId) {
         const state = yield* store.get;
         return state.threadId === threadId || state.chatThreadIds?.includes(threadId) === true;

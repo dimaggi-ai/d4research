@@ -37,7 +37,10 @@ import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
 } from "@d4research/client-runtime/state/thread-requests";
-import type { ThreadRunSummary, ThreadRuntimeSummary } from "@d4research/client-runtime/state/shell";
+import type {
+  ThreadRunSummary,
+  ThreadRuntimeSummary,
+} from "@d4research/client-runtime/state/shell";
 import { threadRuntimeHasInterruptibleRun } from "@d4research/client-runtime/state/thread-execution";
 import { turnItemIsWorkspacePreparation } from "@d4research/client-runtime/state/turn-item-presentation";
 
@@ -633,6 +636,19 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
     const createdAt = projectedItemCreatedAt(row);
     const attempt = resolveAttempt(item);
     const attemptMetadata = attempt === undefined ? {} : { attempt };
+    // Runless notifications are the thread's own records: Nia's system messages (CTO answers,
+    // reminders, host-command results) and state-only notices. They read as chat cards, not as
+    // work-log rows inside a turn fold.
+    if (item.type === "notification" && item.runId === null) {
+      entries.push({
+        id: item.id,
+        kind: "event",
+        createdAt,
+        projectedItem: row,
+        ...attemptMetadata,
+      });
+      continue;
+    }
     if (item.type === "notification") {
       entries.push({
         id: item.id,

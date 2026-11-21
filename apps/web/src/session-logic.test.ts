@@ -1820,3 +1820,41 @@ it("renders automatic completion as a work entry instead of a user bubble", () =
     })[0]?.kind,
   ).toBe("message");
 });
+
+it("presents Nia's runless system notification as a standalone card, not a work-log row", () => {
+  const now = DateTime.makeUnsafe("2026-09-09T00:00:00Z");
+  const item = {
+    id: TurnItemId.make("d4-reminder:1"),
+    threadId: ThreadId.make("nia"),
+    runId: null,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 0,
+    status: "completed" as const,
+    title: "Reminder",
+    startedAt: now,
+    completedAt: now,
+    updatedAt: now,
+    type: "notification" as const,
+    source: { kind: "system" as const },
+    outcome: "completed" as const,
+    summary: "Reminder",
+    detail: "Check the YB benchmark before noon.",
+  };
+  const row = {
+    item,
+    position: 0,
+    visibility: "local" as const,
+    sourceThreadId: item.threadId,
+    sourceItemId: item.id,
+  };
+  const entries = deriveTimelineEntriesFromVisibleTurnItems({
+    optimisticMessages: [],
+    visibleTurnItems: [row],
+  });
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ kind: "event", projectedItem: row });
+});

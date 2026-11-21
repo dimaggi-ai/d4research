@@ -2334,6 +2334,10 @@ export function buildThreadFeed(
       entryRows.push(index);
       continue;
     }
+    // Runless notifications are the thread's own records: Nia's system messages (CTO answers,
+    // reminders, host-command results) and state-only notices. The feed has no chat card for
+    // them, so they stay out of the technical activity rows.
+    if (item.type === "notification" && item.runId === null) continue;
     const activity = toFeedActivity(row, attemptId);
     const entry: RawThreadFeedEntry = {
       type: "activity",

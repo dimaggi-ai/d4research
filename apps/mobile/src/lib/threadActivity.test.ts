@@ -93,6 +93,21 @@ it("keeps historical plan detail accessible from its paged turn item", () => {
   expect(presented[2]).toMatchObject({ activities: [{ projectedItem: { item } }] });
 });
 
+it("keeps Nia's runless system notification out of the technical activity rows", () => {
+  const notice: OrchestrationV2TurnItem = {
+    ...base("d4-reminder:1", "2026-08-29T00:00:00.000Z", 1),
+    runId: null,
+    type: "notification",
+    source: { kind: "system" },
+    outcome: "completed",
+    summary: "Reminder",
+    detail: "Check the YB benchmark before noon.",
+  };
+  expect(buildThreadFeed([projected(userMessage(), 0), projected(notice, 1)])).toMatchObject([
+    { type: "message" },
+  ]);
+});
+
 it("shows a compact command as one mobile divider before, during, and after compaction", () => {
   const startedAt = "2026-06-20T00:00:01.000Z";
   const prompt = projected({ ...userMessage(), text: "/compact", idleCompaction: "onReturn" }, 0);

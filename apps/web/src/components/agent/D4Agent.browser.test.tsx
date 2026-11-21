@@ -1354,9 +1354,12 @@ it("renders html_render output and command work through the shared Nia route tim
   await act(() => work!.click());
   expect(container.textContent).toContain("Test failed");
   expect(niaEditor()).toBeDefined();
-  const report = [...container.querySelectorAll<HTMLElement>("button, [role=button]")].find(
-    (button) => button.textContent?.startsWith("Research"),
-  );
+  const report = [...container.querySelectorAll<HTMLElement>("button, [role=button], section")]
+    .filter(
+      (el) =>
+        el.textContent?.startsWith("Research") && el.textContent?.includes("Research completed"),
+    )
+    .at(-1);
   expect(report).toBeDefined();
   await act(() => report!.click());
   expect(container.textContent).toContain("Research completed");
